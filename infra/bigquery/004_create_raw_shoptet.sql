@@ -1,118 +1,124 @@
 -- 004_create_raw_shoptet.sql
--- Raw layer for Shoptet (Czech e-commerce). Three tables: orders, products, customers.
--- All append-only. payload_json column preserves the untouched API response.
+-- Two tables matching the existing n8n Transform Item Data node output:
+--   raw_shoptet_orders       — one row per order_code (transform's _type='order')
+--   raw_shoptet_order_items  — one row per (order_code, item_code, variant) (transform's _type='item')
 --
--- Partition strategy: business date column (PARTITION BY)
--- Cluster strategy: client_id first (every query filters by tenant)
+-- Columns are camelCase to match the transform output → BQ Insert nodes map directly with no rename step.
+-- Renamed transform's `date` → `orderDate` to avoid BQ reserved-word friction. One line change in transform.
 --
--- Run order: AFTER 002.
+-- Run order: AFTER 002 (clients registry).
 
 -- =============================================================================
--- ORDERS — the revenue spine
+-- ORDERS — order rollup
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.raw.raw_shoptet_orders` (
-  -- Identity & ingest metadata
-  client_id            STRING    NOT NULL,
-  ingested_at          TIMESTAMP NOT NULL,
-  order_id             STRING    NOT NULL,
-  order_code           STRING,                  -- Shoptet's human-readable order number
+  client_id              STRING    NOT NULL,
+  ingested_at            TIMESTAMP NOT NULL,
 
-  -- When
-  order_date           DATE      NOT NULL,      -- partition key
-  created_at           TIMESTAMP,
-  updated_at           TIMESTAMP,
+  -- Identity
+  code                   STRING    NOT NULL,
+  orderDate              DATE      NOT NULL,
+  statusName             STRING,
+  sourceName             STRING,
 
-  -- Money (raw native currency — DO NOT pre-convert)
-  currency             STRING,
-  subtotal             NUMERIC,
-  shipping             NUMERIC,
-  tax                  NUMERIC,
-  discount             NUMERIC,
-  total                NUMERIC,
+  -- Customer (PII)
+  email                  STRING,
+  phone                  STRING,
 
-  -- Customer
-  customer_id          STRING,
-  customer_email       STRING,
-  customer_phone       STRING,
-  is_returning_customer BOOL,
-  shipping_country     STRING,                  -- two-letter ISO code
+  -- Currency
+  currency               STRING,
+  exchangeRate           NUMERIC,
 
-  -- Status
-  status               STRING,                  -- new | processing | shipped | done | cancelled
-  payment_method       STRING,
-  shipping_method      STRING,
+  -- Money (native)
+  totalPriceWithVat      NUMERIC,
+  totalPriceWithoutVat   NUMERIC,
+  priceToPay             NUMERIC,
 
-  -- Line items (nested for analytical queries; payload_json keeps the raw)
-  line_items ARRAY<STRUCT<
-    sku           STRING,
-    product_id    STRING,
-    variant_id    STRING,
-    name          STRING,
-    quantity      INT64,
-    unit_price    NUMERIC,
-    discount      NUMERIC,
-    total         NUMERIC
-  >>,
+  -- Money (CZK converted by transform)
+  totalPriceWithVatCZK   NUMERIC,
+  totalPriceWithoutVatCZK NUMERIC,
+  priceToPayCZK          NUMERIC,
 
-  -- Audit
-  payload_json         STRING                   -- entire original Shoptet API response
+  -- Logistics
+  cashOnDelivery         NUMERIC,
+  weight                 NUMERIC,
+  packageNumber          STRING,
+  shopRemark             STRING,
+  paymentForm            STRING,
+  shippingMethod         STRING,
+  paymentMethod          STRING,
+
+  -- Item rollup (computed in transform)
+  itemCount              INT64,
+  totalQuantity          INT64,
+  productRevenue         NUMERIC,
+  productRevenueCZK      NUMERIC,
+  totalPurchasePrice     NUMERIC,
+  totalPurchasePriceCZK  NUMERIC,
+  totalMargin            NUMERIC,
+  totalMarginCZK         NUMERIC,
+
+  -- Customer history (computed in transform)
+  customerOrderCount     INT64,
+  isReturningCustomer    BOOL,
+
+  payload_json           STRING
 )
-PARTITION BY order_date
-CLUSTER BY client_id, status
+PARTITION BY orderDate
+CLUSTER BY client_id, statusName
 OPTIONS (
-  description = "Shoptet orders. Append-only. Partitioned by order_date (24-month backfill on initial load). One row per order_id × ingest run.",
-  partition_expiration_days = NULL,            -- never expire; we keep history
-  require_partition_filter = TRUE              -- forces queries to filter by date — keeps cost free
-);
-
--- =============================================================================
--- PRODUCTS — for SKU-level reporting
--- =============================================================================
-CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.raw.raw_shoptet_products` (
-  client_id            STRING    NOT NULL,
-  ingested_at          TIMESTAMP NOT NULL,
-  product_id           STRING    NOT NULL,
-  sku                  STRING,
-  name                 STRING,
-  category_path        STRING,                  -- e.g. "Parfumerie / Dámské"
-  brand                STRING,
-  price                NUMERIC,
-  cost_price           NUMERIC,                 -- for margin calc; may be NULL if not in Shoptet
-  inventory_quantity   INT64,
-  status               STRING,                  -- visible | hidden | archived
-  created_at           TIMESTAMP,
-  updated_at           TIMESTAMP,
-  payload_json         STRING
-)
-PARTITION BY DATE(ingested_at)
-CLUSTER BY client_id, product_id
-OPTIONS (
-  description = "Shoptet products. Snapshot per ingest. Use latest snapshot per product_id for current state.",
+  description = "Shoptet orders, aggregated by code. Source: n8n transform from CSV export. One row per order_code per ingest run.",
   require_partition_filter = TRUE
 );
 
 -- =============================================================================
--- CUSTOMERS — for LTV, return-customer rate
+-- ORDER ITEMS — line-level
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.raw.raw_shoptet_customers` (
-  client_id            STRING    NOT NULL,
-  ingested_at          TIMESTAMP NOT NULL,
-  customer_id          STRING    NOT NULL,
-  email                STRING,
-  first_name           STRING,
-  last_name            STRING,
-  city                 STRING,
-  country              STRING,
-  total_orders         INT64,
-  total_spent          NUMERIC,
-  first_order_at       TIMESTAMP,
-  last_order_at        TIMESTAMP,
-  created_at           TIMESTAMP,
-  payload_json         STRING
+CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.raw.raw_shoptet_order_items` (
+  client_id                   STRING    NOT NULL,
+  ingested_at                 TIMESTAMP NOT NULL,
+
+  itemKey                     STRING    NOT NULL,
+  orderCode                   STRING    NOT NULL,
+  orderDate                   DATE      NOT NULL,
+  statusName                  STRING,
+
+  -- Repeated from order (denormalized for analytical convenience)
+  currency                    STRING,
+  exchangeRate                NUMERIC,
+  email                       STRING,
+  sourceName                  STRING,
+
+  -- Item identity
+  itemName                    STRING,
+  itemCode                    STRING,
+  itemVariantName             STRING,
+  itemManufacturer            STRING,
+  itemEan                     STRING,
+
+  -- Quantity + price
+  itemAmount                  NUMERIC,
+  itemUnitPriceWithVat        NUMERIC,
+  itemTotalPriceWithVat       NUMERIC,
+  itemTotalPriceWithVatCZK    NUMERIC,
+  itemTotalPriceWithoutVat    NUMERIC,
+  itemVatRate                 NUMERIC,
+
+  -- Cost + margin
+  itemUnitPurchasePrice       NUMERIC,
+  itemTotalPurchasePrice      NUMERIC,
+  itemTotalPurchasePriceCZK   NUMERIC,
+  itemMargin                  NUMERIC,
+  itemMarginCZK               NUMERIC,
+  itemMarginPercent           NUMERIC,
+
+  itemDiscountPercent         NUMERIC,
+
+  payload_json                STRING
 )
-PARTITION BY DATE(ingested_at)
-CLUSTER BY client_id, customer_id
+PARTITION BY orderDate
+CLUSTER BY client_id, itemCode
 OPTIONS (
-  description = "Shoptet customers. Snapshot per ingest. Latest snapshot = current state.",
+  description = "Shoptet order line items (product type only). Source: n8n transform from CSV export.",
   require_partition_filter = TRUE
 );

@@ -1,0 +1,48 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.json.key
+*-credentials.json
+*-key.json
+service-account-*.json
+gcp-key*.json
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local config
+.local/
+*.local
+
+# Vercel
+.vercel
+
+# n8n local exports (we keep workflow JSON deliberately, but not credentials)
+infra/n8n/*-credentials.json
+infra/n8n/credentials/
+
+# Python (if any helper scripts)
+__pycache__/
+*.pyc
+.venv/
+venv/

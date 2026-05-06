@@ -1,114 +1,153 @@
 -- 005_create_raw_ecomail.sql
--- Raw layer for Ecomail (Czech email platform). Three tables: campaigns, automations (flows), subscribers.
+-- Raw layer for Ecomail (Czech email platform). Three tables:
+--   - raw_ecomail_campaigns   : single-send broadcasts (cumulative all-time stats from /campaigns/all-stats/)
+--   - raw_ecomail_automations : pipelines / flows (cumulative all-time stats from /pipelines/{id}/stats)
+--   - raw_ecomail_lists       : subscriber-list health snapshots (from /lists + /lists/{id})
 --
--- IMPORTANT: Ecomail's flows endpoint returns CUMULATIVE all-time stats, not period-windowed.
--- We tag every row with metric_type so the mart layer treats them differently from campaigns.
+-- Field names mirror the actual Ecomail API responses (NOT prettified) so the n8n transforms
+-- can pass through `appendOrUpdate`-style auto-mapping cleanly.
 --
--- Run order: AFTER 002.
+-- Quirks:
+--   * Ecomail's `sent_at` arrives as a 14-digit string (YYYYMMDDHHMMSS). The n8n transform
+--     parses it to ISO-8601 before insert. Stored here as TIMESTAMP.
+--   * `/campaigns/all-stats/` returns an object keyed by campaign_id; the transform
+--     unpacks Object.entries(stats) into one row per campaign.
+--   * Pipeline stats endpoint is `/pipelines/{id}/stats` (NOT /all-stats — that 404s).
+--   * Both campaigns and pipelines return CUMULATIVE all-time numbers. The mart layer
+--     derives period stats by diffing snapshots — see metric_type column on automations.
+--   * Run order: AFTER 002.
+--
+-- If existing empty raw_ecomail_* tables are present from an earlier draft, run
+-- 005a_drop_raw_ecomail.sql first.
 
 -- =============================================================================
--- CAMPAIGNS — single-send broadcasts
+-- CAMPAIGNS — single-send broadcasts. Cumulative stats — append-only, latest by ingested_at wins in stg.
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.raw.raw_ecomail_campaigns` (
-  client_id            STRING    NOT NULL,
-  ingested_at          TIMESTAMP NOT NULL,
+  client_id         STRING    NOT NULL,
+  ingested_at       TIMESTAMP NOT NULL,
 
-  campaign_id          STRING    NOT NULL,
-  campaign_name        STRING,
-  campaign_type        STRING,                  -- newsletter | abtest | etc.
-  language             STRING,                  -- cs | sk | en — for CZ/SK split
-  status               STRING,
-  sent_at              TIMESTAMP,
+  campaign_id       STRING    NOT NULL,
+  title             STRING,
+  sent_at           TIMESTAMP,                      -- parsed from 14-digit YYYYMMDDHHMMSS string
 
-  list_id              STRING,
-  list_name            STRING,
+  -- Volumes (Ecomail's native field names)
+  inject            INT64,                           -- attempted sends
+  delivery          INT64,                           -- successfully delivered
+  delivery_rate     NUMERIC,
+  open              INT64,                           -- unique opens
+  total_open        INT64,                           -- total opens (incl. repeat opens)
+  open_rate         NUMERIC,
+  click             INT64,                           -- unique clicks
+  total_click       INT64,                           -- total clicks
+  click_rate        NUMERIC,
+  bounce            INT64,
+  bounce_rate       NUMERIC,
+  spam              INT64,
+  spam_rate         NUMERIC,
+  unsub             INT64,
+  unsub_rate        NUMERIC,
 
-  -- Engagement
-  recipients           INT64,
-  delivered            INT64,
-  bounces              INT64,
-  hard_bounces         INT64,
-  soft_bounces         INT64,
-  opens                INT64,
-  unique_opens         INT64,
-  open_rate            NUMERIC,
-  clicks               INT64,
-  unique_clicks        INT64,
-  click_rate           NUMERIC,
-  unsubscribes         INT64,
-  spam_complaints      INT64,
+  -- Revenue / attribution
+  conversions       INT64,
+  conversions_value NUMERIC,                         -- attributed revenue, currency = list currency
+  currency          STRING,                          -- not in /campaigns response — populated from ref.clients
 
-  -- Revenue (Ecomail conversion tracking)
-  conversions          INT64,
-  revenue              NUMERIC,
-  currency             STRING,
-
-  payload_json         STRING
+  payload_json      STRING                           -- full original API row (audit)
 )
 PARTITION BY DATE(sent_at)
-CLUSTER BY client_id, language
+CLUSTER BY client_id
 OPTIONS (
-  description = "Ecomail campaigns. Period-windowed metrics — sums correctly across any date range.",
+  description = "Ecomail campaigns. Cumulative all-time stats from /campaigns/all-stats/. Append-only — multiple rows per campaign_id over time. Use latest by ingested_at in stg.",
   require_partition_filter = TRUE
 );
 
 -- =============================================================================
--- AUTOMATIONS / FLOWS — cumulative stats
+-- AUTOMATIONS / PIPELINES / FLOWS — cumulative stats. Daily snapshot.
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.raw.raw_ecomail_automations` (
-  client_id            STRING    NOT NULL,
-  ingested_at          TIMESTAMP NOT NULL,
-  snapshot_date        DATE      NOT NULL,      -- the date this snapshot was taken (partition key)
+  client_id         STRING    NOT NULL,
+  ingested_at       TIMESTAMP NOT NULL,
+  snapshot_date     DATE      NOT NULL,              -- partition column
 
-  automation_id        STRING    NOT NULL,
-  automation_name      STRING,
-  status               STRING,
+  pipeline_id       STRING    NOT NULL,
+  list_id           STRING,                          -- the list this pipeline runs against
+  name              STRING,
+  created_at        TIMESTAMP,
+  updated_at        TIMESTAMP,
+
   -- 'cumulative' = all-time stats from Ecomail (what the API returns natively)
   -- 'period'     = if we ever derive period stats by diffing snapshots
-  metric_type          STRING    NOT NULL,
+  metric_type       STRING    NOT NULL,
 
-  emails_sent          INT64,
-  delivered            INT64,
-  opens                INT64,
-  unique_opens         INT64,
-  open_rate            NUMERIC,
-  clicks               INT64,
-  unique_clicks        INT64,
-  click_rate           NUMERIC,
+  -- Lifecycle counts
+  triggered         INT64,
+  active            INT64,
+  ended             INT64,
+  send              INT64,
+  inject            INT64,
 
-  conversions          INT64,
-  revenue              NUMERIC,
-  currency             STRING,
+  -- Engagement (Ecomail's native field names)
+  open              INT64,
+  total_open        INT64,
+  open_rate         NUMERIC,
+  click             INT64,
+  total_click       INT64,
+  click_rate        NUMERIC,
+  ctr               NUMERIC,
+  bounce            INT64,
+  bounce_rate       NUMERIC,
+  soft_bounce       INT64,
+  hard_bounce       INT64,
+  spam              INT64,
+  unsub             INT64,
+  delivery_rate     NUMERIC,
 
-  payload_json         STRING
+  -- Revenue
+  conversions       INT64,
+  conversions_value NUMERIC,
+  conversions_average NUMERIC,
+  conversionrate    NUMERIC,                         -- yes, one word — Ecomail's actual key
+
+  payload_json      STRING
 )
 PARTITION BY snapshot_date
-CLUSTER BY client_id, automation_id
+CLUSTER BY client_id, pipeline_id
 OPTIONS (
-  description = "Ecomail automations (flows). CUMULATIVE all-time stats — re-snapshot daily. To derive period metrics, diff two snapshots.",
+  description = "Ecomail automations (pipelines / flows). CUMULATIVE all-time stats from /pipelines/{id}/stats. Daily snapshot. Period metrics derived by diffing two snapshots in mart layer.",
   require_partition_filter = TRUE
 );
 
 -- =============================================================================
--- SUBSCRIBERS — list health snapshot
+-- LISTS — subscriber-list health snapshot. Daily.
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.raw.raw_ecomail_subscribers` (
-  client_id            STRING    NOT NULL,
-  ingested_at          TIMESTAMP NOT NULL,
-  snapshot_date        DATE      NOT NULL,
+CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.raw.raw_ecomail_lists` (
+  client_id          STRING    NOT NULL,
+  ingested_at        TIMESTAMP NOT NULL,
+  snapshot_date      DATE      NOT NULL,
 
-  list_id              STRING    NOT NULL,
-  list_name            STRING,
-  total_subscribers    INT64,
-  active_subscribers   INT64,
-  unsubscribed         INT64,
-  bounced              INT64,
-  spam_complained      INT64,
-  payload_json         STRING
+  list_id            STRING    NOT NULL,
+  list_name          STRING,
+
+  active_subscribers INT64,                          -- from /lists top level
+  -- Breakdown from /lists/{id}.subscribers
+  subscribed         INT64,
+  unsubscribed       INT64,
+  hard_bounced       INT64,
+  soft_bounced       INT64,                          -- not always returned; nullable
+  complained         INT64,
+  unconfirmed        INT64,
+  unknown            INT64,
+
+  currency           STRING,                          -- /lists/{id}.list.settings.currency
+  locale             STRING,                          -- /lists/{id}.list.settings.locale
+  created            TIMESTAMP,                       -- list creation date
+
+  payload_json       STRING
 )
 PARTITION BY snapshot_date
 CLUSTER BY client_id, list_id
 OPTIONS (
-  description = "Ecomail subscriber counts. Daily snapshot per list.",
+  description = "Ecomail subscriber-list health. Daily snapshot from /lists + /lists/{id}.",
   require_partition_filter = TRUE
 );

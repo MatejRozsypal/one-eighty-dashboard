@@ -1,0 +1,35 @@
+{
+  "name": "one-eighty-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One Eighty multi-client marketing dashboard. Reads from BigQuery mart layer, restricted to @oneeighty.cz via Google SSO.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.9.0",
+    "date-fns": "^3.6.0",
+    "next": "^14.2.18",
+    "next-auth": "^4.24.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.45",
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.5.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

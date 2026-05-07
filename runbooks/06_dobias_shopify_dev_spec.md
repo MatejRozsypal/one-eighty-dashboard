@@ -40,8 +40,10 @@ Tick these read scopes (all read-only, no write):
 
 | Scope | Why we need it |
 |---|---|
-| `read_orders` | order history, line items, refunds, totals |
+| `read_orders` | order history, line items, legacy refunds, totals |
 | `read_all_orders` | **critical** — without this, Shopify caps order history to last 60 days |
+| `read_orders_edits` | order modification history (post-purchase edits, partial refunds breakdown) |
+| `read_returns` | Shopify Returns API (2024-04+) — distinct from legacy refunds |
 | `read_products` | product catalog, SKUs, variants |
 | `read_inventory` | stock levels per SKU per location |
 | `read_customers` | customer records, lifetime value calculation |
@@ -50,8 +52,13 @@ Tick these read scopes (all read-only, no write):
 | `read_price_rules` | discount rule definitions |
 | `read_marketing_events` | marketing campaign performance attribution |
 | `read_analytics` | Shopify's native analytics aggregates |
+| `read_reports` | Shopify's pre-built reports (cohorts, sell-through, etc.) |
 | `read_locations` | warehouse / location info for multi-location stores |
 | `read_shipping` | shipping rates and zones |
+| `read_shopify_payments_payouts` | **only if the store uses Shopify Payments** — payout reconciliation vs gross revenue |
+| `read_shopify_payments_disputes` | **only if the store uses Shopify Payments** — chargebacks |
+
+If the store is **not** on Shopify Payments (e.g. uses Stripe / Authorize.Net via Shopify), tick the two `shopify_payments_*` scopes anyway — they'll return empty data, no harm done. It's better than coming back later for a re-grant.
 
 Save the configuration.
 
@@ -84,6 +91,17 @@ Three values, transmitted **securely** (1Password share, Bitwarden Send, or any 
 - Repository never contains the token (verified via GitHub secret scanning)
 - We can rotate the token any time you ask — just generate a new one and uninstall the old app
 - 90-day rotation reminder on our side regardless
+
+---
+
+## A few quick questions while you're in there
+
+(Answers help us not bother you twice. If unsure on any, leave blank — we'll figure it out.)
+
+1. **Payment processor:** Shopify Payments, Stripe, Authorize.Net, or other?
+2. **Plan tier:** Basic / Shopify / Advanced / Plus?
+3. **Multi-store / Shopify Markets active?** (Yes/No — affects how presentment_currency is interpreted)
+4. **Approximate order volume per month?** (helps us size the initial backfill window)
 
 ---
 

@@ -1,0 +1,62 @@
+{
+  "_source": "GET <IG_BUSINESS_ID>/media?fields=id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count,insights.metric(reach,impressions,saved,shares)&limit=5",
+  "_captured": "2026-05-08",
+  "_note": "Note: 'impressions' metric is NOT returned by IG API v22+ for media — response only has reach, saved, shares. Trim from DDL.",
+  "data": [
+    {
+      "id": "18094103885145028",
+      "caption": "Nejlepší dárek pro planetu? Přestat ji zahrnovat plastem...",
+      "media_type": "VIDEO",
+      "media_url": "https://scontent-prg1-1.cdninstagram.com/.../video.mp4",
+      "permalink": "https://www.instagram.com/reel/DXcFIvpDLYM/",
+      "timestamp": "2026-04-22T15:21:31+0000",
+      "like_count": 19,
+      "comments_count": 0,
+      "insights": {
+        "data": [
+          {"name": "reach",  "period": "lifetime", "values": [{"value": 2017}]},
+          {"name": "saved",  "period": "lifetime", "values": [{"value": 2}]},
+          {"name": "shares", "period": "lifetime", "values": [{"value": 1}]}
+        ]
+      }
+    },
+    {
+      "id": "18128074726600739",
+      "caption": "V kolotoči každodenních povinností je snadné zapomenout na sebe...",
+      "media_type": "VIDEO",
+      "media_url": "https://scontent-prg1-1.cdninstagram.com/.../video.mp4",
+      "permalink": "https://www.instagram.com/reel/DXPYBTxDcW_/",
+      "timestamp": "2026-04-17T17:03:28+0000",
+      "like_count": 8,
+      "comments_count": 0,
+      "insights": {
+        "data": [
+          {"name": "reach",  "period": "lifetime", "values": [{"value": 481}]},
+          {"name": "saved",  "period": "lifetime", "values": [{"value": 1}]},
+          {"name": "shares", "period": "lifetime", "values": [{"value": 0}]}
+        ]
+      }
+    },
+    {
+      "id": "18570488188047508",
+      "caption": "Vpusťte jaro tam, kde začíná vaše síla – dovnitř...",
+      "media_type": "VIDEO",
+      "media_url": "https://scontent-prg1-1.cdninstagram.com/.../video.mp4",
+      "permalink": "https://www.instagram.com/reel/DWGjRkiDcT3/",
+      "timestamp": "2026-03-20T10:12:17+0000",
+      "like_count": 7,
+      "comments_count": 0,
+      "insights": {
+        "data": [
+          {"name": "reach",  "period": "lifetime", "values": [{"value": 524}]},
+          {"name": "saved",  "period": "lifetime", "values": [{"value": 0}]},
+          {"name": "shares", "period": "lifetime", "values": [{"value": 1}]}
+        ]
+      }
+    }
+  ],
+  "paging": {
+    "cursors": {"before": "...", "after": "..."},
+    "next": "https://graph.facebook.com/v25.0/<IG_BUSINESS_ID>/media?..."
+  }
+}

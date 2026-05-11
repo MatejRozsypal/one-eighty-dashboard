@@ -1,0 +1,87 @@
+{
+  "_source": "GET act_<AD_ACCOUNT_ID>/insights?level=ad&date_preset=last_7d&fields=ad_id,ad_name,campaign_id,adset_id,spend,impressions,reach,frequency,clicks,ctr,cpc,actions,action_values,video_play_actions,video_thruplay_watched_actions",
+  "_captured": "2026-05-08",
+  "_note": "Schema-relevant fields preserved per row; long action arrays summarized to one representative row. The first row keeps full action/action_values arrays for schema completeness.",
+  "data": [
+    {
+      "ad_id": "120240872797080098",
+      "ad_name": "Testery - copy (zelený banner)",
+      "campaign_id": "120239118728890098",
+      "adset_id": "120239118728880098",
+      "spend": "1085.46",
+      "impressions": "11847",
+      "reach": "8885",
+      "frequency": "1.333371",
+      "clicks": "271",
+      "ctr": "2.287499",
+      "cpc": "4.005387",
+      "actions": [
+        {"action_type": "omni_purchase", "value": "3"},
+        {"action_type": "purchase", "value": "3"},
+        {"action_type": "add_to_cart", "value": "4"},
+        {"action_type": "initiate_checkout", "value": "2"},
+        {"action_type": "landing_page_view", "value": "53"},
+        {"action_type": "view_content", "value": "82"},
+        {"action_type": "link_click", "value": "140"},
+        {"action_type": "page_engagement", "value": "150"},
+        {"action_type": "post_engagement", "value": "149"},
+        {"action_type": "complete_registration", "value": "1"},
+        {"action_type": "add_payment_info", "value": "2"}
+      ],
+      "action_values": [
+        {"action_type": "purchase", "value": "1298.94"},
+        {"action_type": "add_to_cart", "value": "1010.72"},
+        {"action_type": "initiate_checkout", "value": "200"},
+        {"action_type": "view_content", "value": "46271.75"},
+        {"action_type": "add_payment_info", "value": "200"}
+      ],
+      "date_start": "2026-05-04",
+      "date_stop": "2026-05-10"
+    },
+    {
+      "ad_id": "120241343306430098",
+      "ad_name": "Něžná - 13MAR - OE",
+      "campaign_id": "120239118728890098",
+      "adset_id": "120239118728880098",
+      "spend": "3881.39",
+      "impressions": "35563",
+      "reach": "25645",
+      "frequency": "1.386742",
+      "clicks": "938",
+      "ctr": "2.637573",
+      "cpc": "4.137942",
+      "actions": [
+        {"action_type": "purchase", "value": "20"},
+        {"action_type": "add_to_cart", "value": "34"},
+        {"action_type": "video_view", "value": "13"}
+      ],
+      "action_values": [
+        {"action_type": "purchase", "value": "12501.64"},
+        {"action_type": "add_to_cart", "value": "15773.87"}
+      ],
+      "video_play_actions": [{"action_type": "video_view", "value": "50"}],
+      "date_start": "2026-05-04",
+      "date_stop": "2026-05-10"
+    },
+    {
+      "ad_id": "120242506295470098",
+      "ad_name": "Příběh Manami vid V2 - 31MAR - WIN",
+      "campaign_id": "120239118728890098",
+      "adset_id": "120239118728880098",
+      "spend": "2938.41",
+      "impressions": "8101",
+      "reach": "7363",
+      "frequency": "1.100231",
+      "clicks": "462",
+      "ctr": "5.703",
+      "cpc": "6.360195",
+      "actions": [{"action_type": "purchase", "value": "4"}],
+      "action_values": [{"action_type": "purchase", "value": "2000"}],
+      "video_play_actions": [{"action_type": "video_view", "value": "7782"}],
+      "video_thruplay_watched_actions": [{"action_type": "video_view", "value": "1090"}],
+      "date_start": "2026-05-04",
+      "date_stop": "2026-05-10"
+    }
+  ],
+  "paging": {"cursors": {"before": "MAZDZD", "after": "MTMZD"}}
+}

@@ -1,0 +1,38 @@
+{
+  "_source": "GET <IG_BUSINESS_ID>/insights?metric=reach,follower_count&period=day&since=<unix>&until=<unix>",
+  "_captured": "2026-05-08",
+  "_note": "profile_views and website_clicks split into metric_type=total_value in v22+ — fetched separately if needed. Daily time-series response shape shown.",
+  "data": [
+    {
+      "name": "reach",
+      "period": "day",
+      "values": [
+        {"value": 2164, "end_time": "2026-05-01T07:00:00+0000"},
+        {"value": 2030, "end_time": "2026-05-02T07:00:00+0000"},
+        {"value": 2398, "end_time": "2026-05-03T07:00:00+0000"},
+        {"value": 2719, "end_time": "2026-05-04T07:00:00+0000"},
+        {"value": 3076, "end_time": "2026-05-05T07:00:00+0000"},
+        {"value": 3023, "end_time": "2026-05-06T07:00:00+0000"},
+        {"value": 2531, "end_time": "2026-05-07T07:00:00+0000"}
+      ],
+      "title": "Reach",
+      "id": "17841439566446437/insights/reach/day"
+    },
+    {
+      "name": "follower_count",
+      "period": "day",
+      "values": [
+        {"value": 8,  "end_time": "2026-05-01T07:00:00+0000"},
+        {"value": 7,  "end_time": "2026-05-02T07:00:00+0000"},
+        {"value": 3,  "end_time": "2026-05-03T07:00:00+0000"},
+        {"value": 8,  "end_time": "2026-05-04T07:00:00+0000"},
+        {"value": 5,  "end_time": "2026-05-05T07:00:00+0000"},
+        {"value": 15, "end_time": "2026-05-06T07:00:00+0000"},
+        {"value": 6,  "end_time": "2026-05-07T07:00:00+0000"}
+      ],
+      "title": "Follower Count",
+      "id": "17841439566446437/insights/follower_count/day"
+    }
+  ],
+  "paging": {"previous": "...", "next": "..."}
+}

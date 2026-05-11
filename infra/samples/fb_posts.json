@@ -1,0 +1,91 @@
+{
+  "_source": "GET <PAGE_ID>/posts?fields=id,message,created_time,permalink_url,attachments&limit=5",
+  "_captured": "2026-05-08",
+  "_note": "Insights deferred — fetch per-post via separate /<post_id>/insights call in n8n. Most Manami 'posts' are actually reels (target.url = /reel/...). The id format is {page_id}_{post_id}.",
+  "data": [
+    {
+      "id": "124161305821828_1603970488190165",
+      "message": "Nejlepší dárek pro planetu? Přestat ji zahrnovat plastem...",
+      "created_time": "2026-04-22T15:21:45+0000",
+      "permalink_url": "https://www.facebook.com/reel/951899404320439/",
+      "attachments": {
+        "data": [
+          {
+            "media": {
+              "image": {"height": 720, "src": "https://scontent-prg1-1.xx.fbcdn.net/.../image.jpg", "width": 406},
+              "source": "https://scontent-prg1-1.xx.fbcdn.net/.../video.mp4"
+            },
+            "target": {"id": "951899404320439", "url": "https://www.facebook.com/reel/951899404320439/"},
+            "type": "video_autoplay",
+            "url": "https://www.facebook.com/reel/951899404320439/"
+          }
+        ]
+      }
+    },
+    {
+      "id": "124161305821828_1599449091975638",
+      "message": "V kolotoči každodenních povinností...",
+      "created_time": "2026-04-17T17:03:44+0000",
+      "permalink_url": "https://www.facebook.com/reel/2063373710873754/",
+      "attachments": {
+        "data": [
+          {
+            "media": {"image": {"height": 720, "src": "...", "width": 406}, "source": "..."},
+            "target": {"id": "2063373710873754", "url": "https://www.facebook.com/reel/2063373710873754/"},
+            "type": "video_autoplay",
+            "url": "https://www.facebook.com/reel/2063373710873754/"
+          }
+        ]
+      }
+    },
+    {
+      "id": "124161305821828_1581236263796921",
+      "message": "Jaký je příběh za vznikem MANAMI?...",
+      "created_time": "2026-03-27T18:07:43+0000",
+      "permalink_url": "https://www.facebook.com/reel/1529941812472789/",
+      "attachments": {
+        "data": [
+          {
+            "media": {"image": {"height": 720, "src": "...", "width": 406}, "source": "..."},
+            "target": {"id": "1529941812472789", "url": "https://www.facebook.com/reel/1529941812472789/"},
+            "type": "video_autoplay",
+            "url": "https://www.facebook.com/reel/1529941812472789/"
+          }
+        ]
+      }
+    },
+    {
+      "id": "124161305821828_1574318817821999",
+      "message": "Vpusťte jaro tam, kde začíná vaše síla...",
+      "created_time": "2026-03-20T10:12:30+0000",
+      "permalink_url": "https://www.facebook.com/reel/821267051011022/",
+      "attachments": {
+        "data": [
+          {
+            "media": {"image": {"height": 720, "src": "...", "width": 405}, "source": "..."},
+            "target": {"id": "821267051011022", "url": "https://www.facebook.com/reel/821267051011022/"},
+            "type": "video_autoplay",
+            "url": "https://www.facebook.com/reel/821267051011022/"
+          }
+        ]
+      }
+    },
+    {
+      "id": "124161305821828_1564007188853162",
+      "message": "Péče o sebe není odměna...",
+      "created_time": "2026-03-08T09:50:08+0000",
+      "permalink_url": "https://www.facebook.com/reel/1232165888984407/",
+      "attachments": {
+        "data": [
+          {
+            "media": {"image": {"height": 720, "src": "...", "width": 406}, "source": "..."},
+            "target": {"id": "1232165888984407", "url": "https://www.facebook.com/reel/1232165888984407/"},
+            "type": "video_autoplay",
+            "url": "https://www.facebook.com/reel/1232165888984407/"
+          }
+        ]
+      }
+    }
+  ],
+  "paging": {"cursors": {"before": "...", "after": "..."}, "next": "https://graph.facebook.com/v25.0/124161305821828/posts?..."}
+}

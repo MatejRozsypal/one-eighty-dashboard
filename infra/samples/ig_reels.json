@@ -1,0 +1,23 @@
+{
+  "_source": "GET <MEDIA_ID>?fields=id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count,insights.metric(reach,saved,shares,ig_reels_avg_watch_time,ig_reels_video_view_total_time,plays,total_interactions)",
+  "_captured": "2026-05-08",
+  "_note": "Note: 'plays' metric was NOT returned despite being requested — IG silently drops unsupported metrics from response (v22+). DDL omits it.",
+  "id": "18094103885145028",
+  "caption": "Nejlepší dárek pro planetu? Přestat ji zahrnovat plastem...",
+  "media_type": "VIDEO",
+  "media_url": "https://scontent-prg1-1.cdninstagram.com/.../video.mp4",
+  "permalink": "https://www.instagram.com/reel/DXcFIvpDLYM/",
+  "timestamp": "2026-04-22T15:21:31+0000",
+  "like_count": 19,
+  "comments_count": 0,
+  "insights": {
+    "data": [
+      {"name": "reach",                          "period": "lifetime", "values": [{"value": 2017}]},
+      {"name": "saved",                          "period": "lifetime", "values": [{"value": 2}]},
+      {"name": "shares",                         "period": "lifetime", "values": [{"value": 1}]},
+      {"name": "ig_reels_avg_watch_time",        "period": "lifetime", "values": [{"value": 8094}],     "_unit": "milliseconds"},
+      {"name": "ig_reels_video_view_total_time", "period": "lifetime", "values": [{"value": 16860209}], "_unit": "milliseconds"},
+      {"name": "total_interactions",             "period": "lifetime", "values": [{"value": 22}]}
+    ]
+  }
+}

@@ -1,0 +1,226 @@
+{
+  "name": "wf_meta_ads_to_bigquery",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "15 */1 * * *" } ] }
+      },
+      "id": "d0000000-0000-0000-0000-000000000001",
+      "name": "Hourly :15",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1700, 480]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "sqlQuery": "SELECT client_id, slug, currency, timezone, country\nFROM `oneeighty-warehouse.ref.clients`\nWHERE status='active' AND has_meta=TRUE",
+        "options": {}
+      },
+      "id": "d0000000-0000-0000-0000-000000000002",
+      "name": "Read active Meta clients",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [-1460, 480]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "d0000000-0000-0000-0000-000000000003",
+      "name": "Loop over clients",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-1220, 480]
+    },
+    {
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/meta-{{ $json.slug }}-access-token/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "id": "d0000000-0000-0000-0000-000000000010",
+      "name": "Get access_token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-980, 320]
+    },
+    {
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/meta-{{ $('Loop over clients').item.json.slug }}-ad-account-id/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "id": "d0000000-0000-0000-0000-000000000011",
+      "name": "Get ad_account_id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-980, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "const decode = b64 => Buffer.from(b64, 'base64').toString('utf8').trim();\nconst accessToken = decode($('Get access_token').first().json.payload.data);\nconst adAccountId = decode($('Get ad_account_id').first().json.payload.data);\nconst client = $('Loop over clients').item.json;\nconst API_VERSION = 'v22.0';\nreturn [{ json: {\n  client_id: client.client_id, slug: client.slug, currency: client.currency,\n  access_token: accessToken, ad_account_id: adAccountId, api_version: API_VERSION\n}}];\n"
+      },
+      "id": "d0000000-0000-0000-0000-000000000013",
+      "name": "Decode secrets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-740, 480]
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "sqlQuery": "SELECT\n  FORMAT_DATE('%Y-%m-%d',\n    COALESCE(\n      DATE_SUB(MAX(date_start), INTERVAL 3 DAY),\n      DATE_SUB(CURRENT_DATE(), INTERVAL 24 MONTH)\n    )\n  ) AS since_date,\n  FORMAT_DATE('%Y-%m-%d', CURRENT_DATE()) AS until_date\nFROM `oneeighty-warehouse.raw.raw_meta_campaign_insights`\nWHERE client_id = '{{ $json.client_id }}'\n  AND date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 24 MONTH)",
+        "options": {}
+      },
+      "id": "d0000000-0000-0000-0000-000000000020",
+      "name": "Watermark campaigns",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [-500, 360]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{ $('Decode secrets').item.json.api_version }}/{{ $('Decode secrets').item.json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "level",          "value": "campaign" },
+            { "name": "time_increment", "value": "1" },
+            { "name": "time_range",     "value": "={\"since\":\"{{ $json.since_date }}\",\"until\":\"{{ $json.until_date }}\"}" },
+            { "name": "fields",         "value": "campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,cpc,actions,action_values,purchase_roas" },
+            { "name": "limit",          "value": "500" },
+            { "name": "access_token",   "value": "={{ $('Decode secrets').item.json.access_token }}" }
+          ]
+        },
+        "options": {
+          "pagination": { "pagination": { "paginationMode": "responseHeaderLink", "limitPagesFetched": false } },
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } }
+        }
+      },
+      "id": "d0000000-0000-0000-0000-000000000021",
+      "name": "Fetch campaign insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-260, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst AD_ACCOUNT = ctx.ad_account_id;\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\nconst pick = (arr, type) => {\n  if (!Array.isArray(arr)) return null;\n  const row = arr.find(a => a.action_type === type);\n  return row ? Number(row.value) : null;\n};\nconst all = [];\nfor (const it of $input.all()) {\n  for (const r of (it.json.data || [])) all.push(r);\n}\nreturn all.map(r => ({ json: {\n  client_id: CLIENT_ID,\n  ingested_at: INGESTED_AT,\n  ingest_source: 'cron',\n  ad_account_id: AD_ACCOUNT,\n  campaign_id: String(r.campaign_id),\n  campaign_name: r.campaign_name ?? '',\n  date_start: r.date_start,\n  date_stop: r.date_stop,\n  spend: num(r.spend),\n  impressions: num(r.impressions),\n  reach: num(r.reach),\n  frequency: num(r.frequency),\n  clicks: num(r.clicks),\n  ctr: num(r.ctr),\n  cpc: num(r.cpc),\n  purchases:          pick(r.actions, 'omni_purchase') ?? pick(r.actions, 'purchase'),\n  purchase_value:     pick(r.action_values, 'omni_purchase') ?? pick(r.action_values, 'purchase'),\n  add_to_cart:        pick(r.actions, 'add_to_cart'),\n  initiate_checkout:  pick(r.actions, 'initiate_checkout'),\n  landing_page_views: pick(r.actions, 'landing_page_view'),\n  link_clicks:        pick(r.actions, 'link_click'),\n  video_views:        pick(r.actions, 'video_view'),\n  purchase_roas:      pick(r.purchase_roas, 'omni_purchase'),\n  actions:       (r.actions       || []).map(a => ({ action_type: a.action_type, value: Number(a.value) })),\n  action_values: (r.action_values || []).map(a => ({ action_type: a.action_type, value: Number(a.value) })),\n  payload_json: JSON.stringify(r)\n}}));\n"
+      },
+      "id": "d0000000-0000-0000-0000-000000000022",
+      "name": "Transform campaign insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-20, 360]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId":  { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
+        "datasetId":  { "__rl": true, "value": "raw",                 "mode": "list" },
+        "tableId":    { "__rl": true, "value": "raw_meta_campaign_insights", "mode": "list" },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "d0000000-0000-0000-0000-000000000023",
+      "name": "BQ: insert campaign insights",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [220, 360]
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "sqlQuery": "SELECT\n  FORMAT_DATE('%Y-%m-%d',\n    COALESCE(\n      DATE_SUB(MAX(date_start), INTERVAL 3 DAY),\n      DATE_SUB(CURRENT_DATE(), INTERVAL 24 MONTH)\n    )\n  ) AS since_date,\n  FORMAT_DATE('%Y-%m-%d', CURRENT_DATE()) AS until_date\nFROM `oneeighty-warehouse.raw.raw_meta_ad_insights`\nWHERE client_id = '{{ $('Decode secrets').item.json.client_id }}'\n  AND date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 24 MONTH)",
+        "options": {}
+      },
+      "id": "d0000000-0000-0000-0000-000000000030",
+      "name": "Watermark ads",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [-500, 600]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{ $('Decode secrets').item.json.api_version }}/{{ $('Decode secrets').item.json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "level",          "value": "ad" },
+            { "name": "time_increment", "value": "1" },
+            { "name": "time_range",     "value": "={\"since\":\"{{ $json.since_date }}\",\"until\":\"{{ $json.until_date }}\"}" },
+            { "name": "fields",         "value": "ad_id,ad_name,campaign_id,adset_id,spend,impressions,reach,frequency,clicks,ctr,cpc,actions,action_values,video_play_actions,video_thruplay_watched_actions" },
+            { "name": "limit",          "value": "500" },
+            { "name": "access_token",   "value": "={{ $('Decode secrets').item.json.access_token }}" }
+          ]
+        },
+        "options": {
+          "pagination": { "pagination": { "paginationMode": "responseHeaderLink", "limitPagesFetched": false } },
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } }
+        }
+      },
+      "id": "d0000000-0000-0000-0000-000000000031",
+      "name": "Fetch ad insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-260, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst AD_ACCOUNT = ctx.ad_account_id;\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\nconst pick = (arr, type) => {\n  if (!Array.isArray(arr)) return null;\n  const row = arr.find(a => a.action_type === type);\n  return row ? Number(row.value) : null;\n};\nconst all = [];\nfor (const it of $input.all()) {\n  for (const r of (it.json.data || [])) all.push(r);\n}\nreturn all.map(r => ({ json: {\n  client_id: CLIENT_ID,\n  ingested_at: INGESTED_AT,\n  ingest_source: 'cron',\n  ad_account_id: AD_ACCOUNT,\n  campaign_id: String(r.campaign_id ?? ''),\n  adset_id:    String(r.adset_id    ?? ''),\n  ad_id:       String(r.ad_id),\n  ad_name:     r.ad_name ?? '',\n  date_start: r.date_start,\n  date_stop: r.date_stop,\n  spend: num(r.spend),\n  impressions: num(r.impressions),\n  reach: num(r.reach),\n  frequency: num(r.frequency),\n  clicks: num(r.clicks),\n  ctr: num(r.ctr),\n  cpc: num(r.cpc),\n  purchases:          pick(r.actions, 'omni_purchase') ?? pick(r.actions, 'purchase'),\n  purchase_value:     pick(r.action_values, 'omni_purchase') ?? pick(r.action_values, 'purchase'),\n  add_to_cart:        pick(r.actions, 'add_to_cart'),\n  initiate_checkout:  pick(r.actions, 'initiate_checkout'),\n  landing_page_views: pick(r.actions, 'landing_page_view'),\n  link_clicks:        pick(r.actions, 'link_click'),\n  video_views:        pick(r.actions, 'video_view'),\n  video_play_actions: pick(r.video_play_actions, 'video_view'),\n  video_thruplays:    pick(r.video_thruplay_watched_actions, 'video_view'),\n  actions:                            (r.actions                            || []).map(a => ({ action_type: a.action_type, value: Number(a.value) })),\n  action_values:                      (r.action_values                      || []).map(a => ({ action_type: a.action_type, value: Number(a.value) })),\n  video_play_actions_raw:             (r.video_play_actions                 || []).map(a => ({ action_type: a.action_type, value: Number(a.value) })),\n  video_thruplay_watched_actions_raw: (r.video_thruplay_watched_actions     || []).map(a => ({ action_type: a.action_type, value: Number(a.value) })),\n  payload_json: JSON.stringify(r)\n}}));\n"
+      },
+      "id": "d0000000-0000-0000-0000-000000000032",
+      "name": "Transform ad insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-20, 600]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId":  { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
+        "datasetId":  { "__rl": true, "value": "raw",                 "mode": "list" },
+        "tableId":    { "__rl": true, "value": "raw_meta_ad_insights", "mode": "list" },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "d0000000-0000-0000-0000-000000000033",
+      "name": "BQ: insert ad insights",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [220, 600]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Hourly :15":               { "main": [[ { "node": "Read active Meta clients", "type": "main", "index": 0 } ]] },
+    "Read active Meta clients": { "main": [[ { "node": "Loop over clients",        "type": "main", "index": 0 } ]] },
+    "Loop over clients": {
+      "main": [[
+        { "node": "Get access_token",   "type": "main", "index": 0 },
+        { "node": "Get ad_account_id",  "type": "main", "index": 0 }
+      ]]
+    },
+    "Get access_token":  { "main": [[ { "node": "Decode secrets", "type": "main", "index": 0 } ]] },
+    "Get ad_account_id": { "main": [[ { "node": "Decode secrets", "type": "main", "index": 0 } ]] },
+    "Decode secrets": {
+      "main": [[
+        { "node": "Watermark campaigns", "type": "main", "index": 0 },
+        { "node": "Watermark ads",       "type": "main", "index": 0 }
+      ]]
+    },
+    "Watermark campaigns":         { "main": [[ { "node": "Fetch campaign insights",    "type": "main", "index": 0 } ]] },
+    "Fetch campaign insights":     { "main": [[ { "node": "Transform campaign insights","type": "main", "index": 0 } ]] },
+    "Transform campaign insights": { "main": [[ { "node": "BQ: insert campaign insights","type": "main", "index": 0 } ]] },
+    "BQ: insert campaign insights":{ "main": [[ { "node": "Loop over clients",          "type": "main", "index": 0 } ]] },
+    "Watermark ads":               { "main": [[ { "node": "Fetch ad insights",          "type": "main", "index": 0 } ]] },
+    "Fetch ad insights":           { "main": [[ { "node": "Transform ad insights",      "type": "main", "index": 0 } ]] },
+    "Transform ad insights":       { "main": [[ { "node": "BQ: insert ad insights",     "type": "main", "index": 0 } ]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "callerPolicy": "workflowsFromSameOwner" },
+  "tags": []
+}

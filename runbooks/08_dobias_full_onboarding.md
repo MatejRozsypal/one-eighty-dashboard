@@ -31,7 +31,7 @@ USING (
     'dobias' AS client_id,
     'dobias' AS slug,
     'Dr. Dobias Natural Pet Health' AS name,
-    'USD' AS currency,
+    'CAD' AS currency,
     'America/Vancouver' AS timezone,
     'CA' AS country,
     'shopify' AS shop_platform,
@@ -202,6 +202,26 @@ Once all 24-month backfills are in:
 | wf_klaviyo (Dobias) | every 6h :20 |
 | wf_meta_ads (both clients) | hourly :15 |
 | wf_instagram (both clients) | every 6h :30 |
+
+---
+
+## Currency policy for Dobias — CAD throughout
+
+Dobias trades in **CAD natively**. To keep analytics consistent, all of his revenue/spend metrics in BQ must arrive in CAD. Verify per source:
+
+| Source | Where currency is set | Action |
+|---|---|---|
+| **`ref.clients.currency`** | `'CAD'` | Done by Step 1's MERGE above. |
+| **Klaviyo** | Workflow uses `ctx.currency` from `ref.clients` → CAD. | No further action. Klaviyo itself stores conversions in whatever currency the Klaviyo account is configured for — confirm in Klaviyo admin: **Account → Settings → Brand assets → Default currency** must be **CAD**. |
+| **Shopify** | Orders return in the **shop's native currency** (`currency` field) + the customer's `presentment_currency`. If Dobias's Shopify store is set to CAD, every order lands as CAD natively. | Confirm in Shopify admin: **Settings → General → Store currency = CAD**. If anything other than CAD, raise with the dev — we'd otherwise need FX conversion in the mart layer. |
+| **Meta Ads** | Ad spend returns in the **ad account's currency** (set in Ads Manager when the ad account is created). Cannot be changed retroactively. | Verify in https://business.facebook.com → Settings → Accounts → Ad Accounts → Dobias's account → **Currency**. If it's USD, all `spend` and `purchase_value` from `wf_meta_ads` will be USD even though `ref.clients.currency='CAD'`. The mart layer would need to convert. If it's already CAD, no action. |
+| **Instagram / FB organic** | No revenue figures. N/A. |
+
+**If Meta ad account is USD and can't be changed:** flag it. Two options:
+1. **Accept the mismatch in raw** (store as-is in USD), then **convert in mart** with FX rates from `ref.fx_rates` (table not yet created — would be a small DDL). Mart layer queries `JOIN ref.fx_rates ON fx_rates.date = insights.date_start AND fx_rates.from = 'USD' AND fx_rates.to = 'CAD'`. FX rates feed in via daily n8n cron from openexchangerates.org or similar.
+2. **Don't convert, just label**. Mart presents Meta spend in USD with a clear label, leaves the analyst to mentally convert. Cheaper, less precise.
+
+For Phase 1, option 2 is fine. Address option 1 when you have multiple non-CAD ad accounts to worry about.
 
 ---
 

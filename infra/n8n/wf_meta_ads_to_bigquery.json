@@ -94,7 +94,8 @@
       "name": "Fetch campaign insights",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-520, 480]
+      "position": [-520, 480],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -119,7 +120,8 @@
       "name": "BQ: insert campaign insights",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [-40, 480]
+      "position": [-40, 480],
+      "onError": "continueRegularOutput"
     },
 
     {
@@ -142,7 +144,8 @@
       "name": "Fetch ad insights",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [200, 480]
+      "position": [200, 480],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -167,7 +170,8 @@
       "name": "BQ: insert ad insights",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [680, 480]
+      "position": [680, 480],
+      "onError": "continueRegularOutput"
     }
   ],
   "pinData": {},

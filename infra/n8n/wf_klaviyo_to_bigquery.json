@@ -62,13 +62,7 @@
 
     {
       "parameters": {
-        "url": "=https://a.klaviyo.com/api/campaigns/",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            { "name": "filter", "value": "equals(messages.channel,'email')" }
-          ]
-        },
+        "url": "=https://a.klaviyo.com/api/campaigns/?filter=equals(messages.channel,'email')",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -79,16 +73,7 @@
         },
         "options": {
           "response": { "response": { "responseFormat": "json" } },
-          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } },
-          "pagination": {
-            "pagination": {
-              "paginationMode": "responseContainsNextURL",
-              "nextURL": "={{ $response.body.links.next }}",
-              "complete": "={{ !$response.body.links.next }}",
-              "limitPagesFetched": true,
-              "maxRequests": 100
-            }
-          }
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } }
         }
       },
       "id": "g0000000-0000-0000-0000-000000000020",
@@ -136,16 +121,7 @@
         },
         "options": {
           "response": { "response": { "responseFormat": "json" } },
-          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } },
-          "pagination": {
-            "pagination": {
-              "paginationMode": "responseContainsNextURL",
-              "nextURL": "={{ $response.body.links.next }}",
-              "complete": "={{ !$response.body.links.next }}",
-              "limitPagesFetched": true,
-              "maxRequests": 100
-            }
-          }
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } }
         }
       },
       "id": "g0000000-0000-0000-0000-000000000030",
@@ -193,16 +169,7 @@
         },
         "options": {
           "response": { "response": { "responseFormat": "json" } },
-          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } },
-          "pagination": {
-            "pagination": {
-              "paginationMode": "responseContainsNextURL",
-              "nextURL": "={{ $response.body.links.next }}",
-              "complete": "={{ !$response.body.links.next }}",
-              "limitPagesFetched": true,
-              "maxRequests": 100
-            }
-          }
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } }
         }
       },
       "id": "g0000000-0000-0000-0000-000000000040",

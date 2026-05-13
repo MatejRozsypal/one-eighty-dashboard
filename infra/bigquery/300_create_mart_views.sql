@@ -22,9 +22,81 @@
 --     query one view regardless of client's email platform.
 
 -- =============================================================================
+-- mart_customer_lifetime
+-- One row per (client_id, customer_email). Cumulative lifetime revenue, margin,
+-- order count. Powers LTV, LTGP, return-rate, cohort analysis.
+-- =============================================================================
+CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_customer_lifetime` AS
+WITH all_orders AS (
+  -- Manami via Shoptet
+  SELECT
+    client_id,
+    LOWER(email) AS customer_key,
+    order_date,
+    total_with_vat_czk AS order_revenue,
+    margin_czk         AS order_margin,
+    'CZK'              AS currency
+  FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    AND email IS NOT NULL AND email != ''
+
+  UNION ALL
+
+  -- Dobias via Shopify (empty until token arrives)
+  SELECT
+    client_id,
+    LOWER(customer_email) AS customer_key,
+    order_date,
+    total_price           AS order_revenue,
+    CAST(NULL AS NUMERIC) AS order_margin,
+    ANY_VALUE(currency)   AS currency
+  FROM `oneeighty-warehouse.stg.stg_shopify_orders`
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    AND customer_email IS NOT NULL AND customer_email != ''
+  GROUP BY client_id, customer_email, order_date, total_price
+)
+SELECT
+  client_id,
+  customer_key AS customer_email,
+  ANY_VALUE(currency)                       AS currency,
+  COUNT(*)                                  AS total_orders,
+  SUM(order_revenue)                        AS lifetime_revenue,
+  SUM(order_margin)                         AS lifetime_gross_profit,
+  MIN(order_date)                           AS first_order_date,
+  MAX(order_date)                           AS last_order_date,
+  DATE_DIFF(MAX(order_date), MIN(order_date), DAY) AS days_active,
+  COUNT(*) > 1                              AS is_returning,
+  SAFE_DIVIDE(SUM(order_revenue), COUNT(*)) AS aov,
+  SAFE_DIVIDE(SUM(order_margin),  COUNT(*)) AS avg_margin_per_order
+FROM all_orders
+GROUP BY client_id, customer_key;
+
+-- =============================================================================
+-- mart_customer_cohorts
+-- Cohort-by-first-order-month aggregation. Used for cohort analysis pages.
+-- =============================================================================
+CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_customer_cohorts` AS
+SELECT
+  client_id,
+  DATE_TRUNC(first_order_date, MONTH) AS cohort_month,
+  COUNT(*)                            AS customer_count,
+  SUM(lifetime_revenue)               AS cohort_total_revenue,
+  SUM(lifetime_gross_profit)          AS cohort_total_gross_profit,
+  SUM(total_orders)                   AS cohort_total_orders,
+  ROUND(AVG(lifetime_revenue), 2)     AS ltv,
+  ROUND(AVG(lifetime_gross_profit), 2) AS ltgp,
+  ROUND(AVG(total_orders), 2)         AS avg_orders_per_customer,
+  COUNTIF(is_returning)               AS returning_customers,
+  SAFE_DIVIDE(COUNTIF(is_returning), COUNT(*)) * 100 AS return_rate_pct
+FROM `oneeighty-warehouse.mart.mart_customer_lifetime`
+GROUP BY client_id, cohort_month;
+
+-- =============================================================================
 -- mart_daily_kpis
 -- Profitability + Shop Performance — daily revenue + meta spend + computed KPIs.
 -- One row per (client_id, date). Looker pulls scorecards + time series here.
+--
+-- Enhanced columns: gross_margin_pct, cac, meta_gross_profit_naive.
 -- =============================================================================
 CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_daily_kpis` AS
 WITH shop_daily AS (
@@ -93,14 +165,17 @@ SELECT
   -- Computed shop-side
   SAFE_DIVIDE(s.revenue, s.orders)                              AS aov,
   SAFE_DIVIDE(s.returning_customer_orders, s.orders)            AS return_customer_rate,
+  SAFE_DIVIDE(s.gross_profit, s.revenue) * 100                  AS gross_margin_pct,
 
-  -- Computed cross-source — MER and net_profit only meaningful when currencies match.
+  -- Computed cross-source — MER, net_profit, CAC. Meaningful only when currencies match.
   -- Manami both CZK ✓ / Dobias shop CAD + meta USD ✗ → Looker should label both per page.
   SAFE_DIVIDE(s.revenue, m.meta_spend)                          AS mer,
   s.gross_profit - COALESCE(m.meta_spend, 0)                    AS net_profit_naive,
+  SAFE_DIVIDE(m.meta_spend, s.new_customer_orders)              AS cac,
 
   -- Computed meta-side
   SAFE_DIVIDE(m.meta_revenue, m.meta_spend)                     AS meta_roas,
+  m.meta_revenue - m.meta_spend                                 AS meta_gross_profit_naive,
   SAFE_DIVIDE(m.meta_clicks, m.meta_impressions) * 100          AS meta_ctr_pct,
   SAFE_DIVIDE(m.meta_spend, m.meta_clicks)                      AS meta_cpc,
   SAFE_DIVIDE(m.meta_spend, m.meta_purchases)                   AS meta_cost_per_purchase

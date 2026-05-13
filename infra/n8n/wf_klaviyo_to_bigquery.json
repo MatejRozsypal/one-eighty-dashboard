@@ -7,7 +7,7 @@
       "name": "Every 6h :20",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-2000, 480]
+      "position": [-2200, 480]
     },
     {
       "parameters": {
@@ -19,16 +19,9 @@
       "name": "Read active Klaviyo clients",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [-1760, 480]
+      "position": [-1960, 480]
     },
-    {
-      "parameters": { "batchSize": 1, "options": {} },
-      "id": "g0000000-0000-0000-0000-000000000003",
-      "name": "Loop over clients",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [-1520, 480]
-    },
+    { "parameters": { "batchSize": 1, "options": {} }, "id": "g0000000-0000-0000-0000-000000000003", "name": "Loop over clients", "type": "n8n-nodes-base.splitInBatches", "typeVersion": 3, "position": [-1720, 480] },
 
     {
       "parameters": {
@@ -41,7 +34,7 @@
       "name": "Get api_key",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-1280, 480]
+      "position": [-1480, 480]
     },
     {
       "parameters": {
@@ -54,17 +47,17 @@
       "name": "Get region",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-1040, 480]
+      "position": [-1240, 480]
     },
     {
       "parameters": {
-        "jsCode": "const decode = b64 => Buffer.from(b64, 'base64').toString('utf8').trim();\nconst apiKey = decode($('Get api_key').first().json.payload.data);\nconst region = decode($('Get region').first().json.payload.data) || 'us';\nconst client = $('Loop over clients').item.json;\nconst base = region === 'eu' ? 'https://a.klaviyo.com/api' : 'https://a.klaviyo.com/api';\n// Note: Klaviyo's API is the same URL for US and EU as of 2024-10+; region kept for future-proofing.\nreturn [{ json: {\n  client_id: client.client_id,\n  slug: client.slug,\n  currency: client.currency,\n  api_key: apiKey,\n  region: region,\n  api_base: base,\n  revision: '2024-10-15'\n}}];\n"
+        "jsCode": "const decode = b64 => Buffer.from(b64, 'base64').toString('utf8').trim();\nconst apiKey = decode($('Get api_key').first().json.payload.data);\nconst region = decode($('Get region').first().json.payload.data) || 'us';\nconst client = $('Loop over clients').item.json;\nreturn [{ json: {\n  client_id: client.client_id,\n  slug: client.slug,\n  currency: client.currency,\n  api_key: apiKey,\n  region: region,\n  revision: '2024-10-15'\n}}];\n"
       },
       "id": "g0000000-0000-0000-0000-000000000013",
       "name": "Decode secrets",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-800, 480]
+      "position": [-1000, 480]
     },
 
     {
@@ -84,23 +77,35 @@
             { "name": "accept",        "value": "application/json" }
           ]
         },
-        "options": { "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } } }
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.links.next }}",
+              "complete": "={{ !$response.body.links.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 100
+            }
+          }
+        }
       },
       "id": "g0000000-0000-0000-0000-000000000020",
       "name": "Fetch campaigns",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-560, 480]
+      "position": [-760, 320]
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst CURRENCY = ctx.currency || 'USD';\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\nconst fmtTs = s => {\n  if (!s) return null;\n  const d = new Date(s);\n  if (isNaN(d.getTime())) return null;\n  return d.toISOString().replace('T', ' ').replace(/\\.\\d+Z$/, '').replace('Z', '');\n};\n\n// Klaviyo response shape: { data: [ { id, attributes: {...}, relationships: {...} } ], links: {...} }\nconst all = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.data)) {\n    for (const r of j.data) all.push(r);\n  } else if (j.id && j.attributes) {\n    all.push(j);\n  }\n}\n\nreturn all.map(r => {\n  const a = r.attributes ?? {};\n  return { json: {\n    client_id: CLIENT_ID,\n    ingested_at: INGESTED_AT,\n    campaign_id: String(r.id),\n    campaign_name: a.name ?? '',\n    channel: 'email',\n    status: a.status ?? '',\n    send_time: fmtTs(a.send_time),\n    list_id: '',\n    list_name: '',\n    segment_id: '',\n    recipients: num(a.recipients_count),\n    delivered: num(a.delivered),\n    bounces: num(a.bounces),\n    opens: num(a.opens),\n    unique_opens: num(a.unique_opens),\n    open_rate: num(a.open_rate),\n    clicks: num(a.clicks),\n    unique_clicks: num(a.unique_clicks),\n    click_rate: num(a.click_rate),\n    unsubscribes: num(a.unsubscribes),\n    spam_complaints: num(a.spam_complaints),\n    conversions: num(a.conversions),\n    revenue: num(a.revenue),\n    currency: CURRENCY,\n    payload_json: JSON.stringify(r)\n  }};\n});\n"
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst CURRENCY = ctx.currency || 'USD';\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\nconst fmtTs = s => {\n  if (!s) return null;\n  const d = new Date(s);\n  if (isNaN(d.getTime())) return null;\n  return d.toISOString().replace('T', ' ').replace(/\\.\\d+Z$/, '').replace('Z', '');\n};\n\n// Klaviyo returns { data: [ { id, attributes: {...}, relationships: {...} } ], links: {...} }\nconst all = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.data)) {\n    for (const r of j.data) all.push(r);\n  } else if (j.id && j.attributes) {\n    all.push(j);\n  }\n}\n\nreturn all.map(r => {\n  const a = r.attributes ?? {};\n  const sendTime = a.send_time ?? a.send_strategy?.options_static?.datetime ?? null;\n  return { json: {\n    client_id: CLIENT_ID,\n    ingested_at: INGESTED_AT,\n    campaign_id: String(r.id),\n    campaign_name: a.name ?? '',\n    channel: 'email',\n    status: a.status ?? '',\n    send_time: fmtTs(sendTime),\n    list_id: '',\n    list_name: '',\n    segment_id: '',\n    recipients: num(a.recipients_count),\n    delivered: num(a.delivered),\n    bounces: num(a.bounces),\n    opens: num(a.opens),\n    unique_opens: num(a.unique_opens),\n    open_rate: num(a.open_rate),\n    clicks: num(a.clicks),\n    unique_clicks: num(a.unique_clicks),\n    click_rate: num(a.click_rate),\n    unsubscribes: num(a.unsubscribes),\n    spam_complaints: num(a.spam_complaints),\n    conversions: num(a.conversions),\n    revenue: num(a.revenue),\n    currency: CURRENCY,\n    payload_json: JSON.stringify(r)\n  }};\n});\n"
       },
       "id": "g0000000-0000-0000-0000-000000000021",
       "name": "Transform campaigns",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-320, 480]
+      "position": [-520, 320]
     },
     {
       "parameters": {
@@ -115,7 +120,7 @@
       "name": "BQ: insert campaigns",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [-80, 480]
+      "position": [-280, 320]
     },
 
     {
@@ -129,13 +134,25 @@
             { "name": "accept",        "value": "application/json" }
           ]
         },
-        "options": { "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } } }
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.links.next }}",
+              "complete": "={{ !$response.body.links.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 100
+            }
+          }
+        }
       },
       "id": "g0000000-0000-0000-0000-000000000030",
       "name": "Fetch flows",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [160, 480]
+      "position": [-40, 480]
     },
     {
       "parameters": {
@@ -145,7 +162,7 @@
       "name": "Transform flows",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [400, 480]
+      "position": [200, 480]
     },
     {
       "parameters": {
@@ -160,23 +177,83 @@
       "name": "BQ: insert flows",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [640, 480]
+      "position": [440, 480]
+    },
+
+    {
+      "parameters": {
+        "url": "=https://a.klaviyo.com/api/forms/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Klaviyo-API-Key {{ $('Decode secrets').item.json.api_key }}" },
+            { "name": "revision",      "value": "=2024-10-15" },
+            { "name": "accept",        "value": "application/json" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.links.next }}",
+              "complete": "={{ !$response.body.links.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 100
+            }
+          }
+        }
+      },
+      "id": "g0000000-0000-0000-0000-000000000040",
+      "name": "Fetch forms",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst INGESTED_AT = new Date().toISOString();\nconst SNAPSHOT_DATE = INGESTED_AT.slice(0, 10);\nconst fmtTs = s => {\n  if (!s) return null;\n  const d = new Date(s);\n  if (isNaN(d.getTime())) return null;\n  return d.toISOString().replace('T', ' ').replace(/\\.\\d+Z$/, '').replace('Z', '');\n};\n\nconst all = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.data)) {\n    for (const r of j.data) all.push(r);\n  } else if (j.id && j.attributes) {\n    all.push(j);\n  }\n}\n\nreturn all.map(r => {\n  const a = r.attributes ?? {};\n  return { json: {\n    client_id: CLIENT_ID,\n    ingested_at: INGESTED_AT,\n    snapshot_date: SNAPSHOT_DATE,\n    form_id: String(r.id),\n    form_name: a.name ?? '',\n    status: a.status ?? '',\n    archived: a.archived === true,\n    ab_test: a.ab_test === true,\n    created_at: fmtTs(a.created_at),\n    updated_at: fmtTs(a.updated_at),\n    payload_json: JSON.stringify(r)\n  }};\n});\n"
+      },
+      "id": "g0000000-0000-0000-0000-000000000041",
+      "name": "Transform forms",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 480]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
+        "datasetId": { "__rl": true, "value": "raw",                 "mode": "list" },
+        "tableId":   { "__rl": true, "value": "raw_klaviyo_forms", "mode": "list" },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "g0000000-0000-0000-0000-000000000042",
+      "name": "BQ: insert forms",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [1160, 480]
     }
   ],
   "pinData": {},
   "connections": {
-    "Every 6h :20":              { "main": [[ { "node": "Read active Klaviyo clients", "type": "main", "index": 0 } ]] },
-    "Read active Klaviyo clients":{ "main": [[ { "node": "Loop over clients",          "type": "main", "index": 0 } ]] },
-    "Loop over clients":         { "main": [[ { "node": "Get api_key",                "type": "main", "index": 0 } ]] },
-    "Get api_key":               { "main": [[ { "node": "Get region",                 "type": "main", "index": 0 } ]] },
-    "Get region":                { "main": [[ { "node": "Decode secrets",             "type": "main", "index": 0 } ]] },
-    "Decode secrets":            { "main": [[ { "node": "Fetch campaigns",            "type": "main", "index": 0 } ]] },
-    "Fetch campaigns":           { "main": [[ { "node": "Transform campaigns",        "type": "main", "index": 0 } ]] },
-    "Transform campaigns":       { "main": [[ { "node": "BQ: insert campaigns",       "type": "main", "index": 0 } ]] },
-    "BQ: insert campaigns":      { "main": [[ { "node": "Fetch flows",                "type": "main", "index": 0 } ]] },
-    "Fetch flows":               { "main": [[ { "node": "Transform flows",            "type": "main", "index": 0 } ]] },
-    "Transform flows":           { "main": [[ { "node": "BQ: insert flows",           "type": "main", "index": 0 } ]] },
-    "BQ: insert flows":          { "main": [[ { "node": "Loop over clients",          "type": "main", "index": 0 } ]] }
+    "Every 6h :20":               { "main": [[ { "node": "Read active Klaviyo clients", "type": "main", "index": 0 } ]] },
+    "Read active Klaviyo clients":{ "main": [[ { "node": "Loop over clients",           "type": "main", "index": 0 } ]] },
+    "Loop over clients":          { "main": [[ { "node": "Get api_key",                 "type": "main", "index": 0 } ]] },
+    "Get api_key":                { "main": [[ { "node": "Get region",                  "type": "main", "index": 0 } ]] },
+    "Get region":                 { "main": [[ { "node": "Decode secrets",              "type": "main", "index": 0 } ]] },
+    "Decode secrets":             { "main": [[ { "node": "Fetch campaigns",             "type": "main", "index": 0 } ]] },
+    "Fetch campaigns":            { "main": [[ { "node": "Transform campaigns",         "type": "main", "index": 0 } ]] },
+    "Transform campaigns":        { "main": [[ { "node": "BQ: insert campaigns",        "type": "main", "index": 0 } ]] },
+    "BQ: insert campaigns":       { "main": [[ { "node": "Fetch flows",                 "type": "main", "index": 0 } ]] },
+    "Fetch flows":                { "main": [[ { "node": "Transform flows",             "type": "main", "index": 0 } ]] },
+    "Transform flows":            { "main": [[ { "node": "BQ: insert flows",            "type": "main", "index": 0 } ]] },
+    "BQ: insert flows":           { "main": [[ { "node": "Fetch forms",                 "type": "main", "index": 0 } ]] },
+    "Fetch forms":                { "main": [[ { "node": "Transform forms",             "type": "main", "index": 0 } ]] },
+    "Transform forms":            { "main": [[ { "node": "BQ: insert forms",            "type": "main", "index": 0 } ]] },
+    "BQ: insert forms":           { "main": [[ { "node": "Loop over clients",           "type": "main", "index": 0 } ]] }
   },
   "active": false,
   "settings": { "executionOrder": "v1", "callerPolicy": "workflowsFromSameOwner" },

@@ -4,6 +4,56 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-05-23 (PM 2) — Klaviyo flow performance metrics live (24-month backfill)
+
+Mirror of the campaign-reports work for flows. Same root cause: `/api/flows/` returns metadata only. Performance stats live behind `/api/flow-values-reports/`.
+
+### What was done
+1. Created `raw.raw_klaviyo_flow_reports` (PARTITION BY ingested_at, CLUSTER BY client_id + flow_id) with same statistic columns as campaign-reports plus `flow_message_id` grouping.
+2. Backfilled 24 months via Cloud Shell in two 12-month chunks (runbook 16):
+   - Period 0: 2024-05-23 → 2025-05-22 → 66 flow-messages
+   - Period 1: 2025-05-23 → 2026-05-22 → 71 flow-messages
+   - 137 rows total: 23 unique flows / 75 unique flow-messages / 135 email + 2 SMS
+3. Rewrote `stg_klaviyo_flows` to JOIN metadata with aggregated reports:
+   - Latest snapshot per (flow_id, flow_message_id, period_window)
+   - SUM across messages AND across non-overlapping periods → flow-level totals
+   - Dobias CAD → USD currency override (same as campaigns)
+4. `mart_email_flow_perf` now shows real Klaviyo data alongside Ecomail.
+
+### Verified live (Dobias Klaviyo flows, lifetime)
+| | |
+|---|---:|
+| Flows | 44 |
+| Emails sent | 103,078 |
+| Conversions | 1,826 |
+| Revenue | $253,369 |
+| Open rate | 44.53% |
+| Click rate | 6.5% |
+
+Strong-performing flows channel — invisible until today.
+
+### Key constraint documented
+Flow report periods must be **non-overlapping** when backfilling/syncing. SUMming across overlapping period snapshots would double-count. Currently safe (two clean 12-month chunks). When ongoing sync is wired, use calendar months or other non-overlapping windows.
+
+### Gotcha worth remembering
+The Period 1 backfill silently returned 0 results because end date was 367 days after start (Klaviyo strictly caps 365). The original verify script counted rows but didn't check for an `errors` block. Now runbook 16 explicitly checks for errors after each call.
+
+### Files changed
+- BQ live: `raw.raw_klaviyo_flow_reports` populated; `stg.stg_klaviyo_flows` rewritten
+- `infra/bigquery/200_create_stg_views.sql` — stg view updated
+- `runbooks/16_klaviyo_flow_reports_backfill.md` — new
+- `METRICS.md` — changelog amendment 13
+- `PROJECT_LOG.md` — this entry
+
+### Looker
+`mart_email_flow_perf` data source — refresh fields. Klaviyo flow rows will populate. Same calc-field formulas as for campaigns (Open Rate %, Click Rate %, Conversion Rate %).
+
+### Open follow-ups
+1. **Ongoing daily sync via n8n** (same as campaigns): add a branch to `wf_klaviyo_to_bigquery` that pulls flow-values-reports on a rolling non-overlapping window (calendar month). ~1 hour of n8n work.
+2. **Ecomail flows open/click rates look low** (0.4% / 0.08%). Pre-existing issue with `delivery_rate` approximation inflating the denominator in mart formula. Not introduced today; flag for later inspection.
+
+---
+
 ## 2026-05-23 (PM) — Flow performance summing bug fixed ($113M phantom revenue)
 
 Looker's Flows scorecard showed Revenue $113,121,988 for "all time" — physically impossible. Root cause: both Ecomail (`raw_ecomail_automations`) and Klaviyo (`raw_klaviyo_flows`) APIs return **cumulative counters per flow**. The `delivered`, `opens`, `conversions`, `revenue` fields each contain the lifetime total of that flow AT the moment of snapshot.

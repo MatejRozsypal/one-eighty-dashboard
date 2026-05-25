@@ -364,6 +364,14 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 
 ## Changelog (most recent first)
 
+### 2026-05-23 (amendment 13)
+- **Klaviyo flow performance live.** Mirror of campaign-reports work: new `raw_klaviyo_flow_reports` table populated via `/api/flow-values-reports/` endpoint (24-month backfill via runbook 16). `stg_klaviyo_flows` now JOINs metadata with aggregated reports — performance metrics SUM'd from flow-message granularity up to flow level, across non-overlapping period windows.
+- Dobias result: 44 flows / 103k lifetime emails sent / 1,826 conversions / $253k revenue / 44.5% open rate / 6.5% click rate.
+- `mart_email_flow_perf` now shows real Klaviyo data alongside Ecomail.
+- Currency override for Dobias Klaviyo flows: CAD → USD (same n8n default issue campaigns had).
+- **Known constraint: periods must be non-overlapping** when backfilling/syncing flows. SUMming across overlapping snapshots would double-count. Runbook 16 documents the pattern.
+- Still open: ongoing daily sync via n8n (currently snapshot-only after backfill).
+
 ### 2026-05-23 (amendment 12)
 - **Flow performance views rewritten to take latest snapshot only.** Both Ecomail (`raw_ecomail_automations`) and Klaviyo (`raw_klaviyo_flows`) APIs return cumulative counters per flow at each snapshot. Old `mart_email_flow_perf` returned all snapshots; Looker summing them caused $113M phantom revenue. Now: `ROW_NUMBER() OVER (PARTITION BY flow_id ORDER BY snapshot_date DESC) WHERE rn=1` — one row per flow with cumulative-as-of-now totals.
 - Added `latest_snapshot_date` column for transparency on data freshness per flow.

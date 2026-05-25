@@ -301,6 +301,17 @@ SELECT
   JSON_VALUE(li, '$.sku')                                            AS sku,
   COALESCE(prod.product_title, JSON_VALUE(li, '$.title'), 'Unknown')  AS item_name,
   JSON_VALUE(li, '$.title')                                          AS line_item_title,
+  -- Dobias product-line classifier: Human Line products are tagged " H+" in
+  -- name (e.g., "FeelGood Omega® H+", "GutSense® H+"). Everything else is
+  -- canine. For non-Dobias clients (Manami), this column is NULL.
+  CASE
+    WHEN o.client_id = 'dobias' AND REGEXP_CONTAINS(
+      COALESCE(prod.product_title, JSON_VALUE(li, '$.title'), ''),
+      r' H\+'
+    ) THEN 'human'
+    WHEN o.client_id = 'dobias' THEN 'canine'
+    ELSE NULL
+  END                                                                AS product_line,
   CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC)                      AS quantity,
   CAST(JSON_VALUE(li, '$.price') AS NUMERIC)                         AS unit_price,
   COALESCE(CAST(JSON_VALUE(li, '$.total_discount') AS NUMERIC), 0)    AS line_discount,

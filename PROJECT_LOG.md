@@ -4,6 +4,39 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-05-23 (PM 5) — Dobias product_line dimension (Human vs Canine)
+
+Added segmentation so Dobias Shop Performance can be filtered/grouped by product line. Human Line products use the `H+` suffix convention (e.g., FeelGood Omega® H+, GutSense® H+); everything else is canine (supplements + accessories + topicals + harnesses + shipping).
+
+### Implementation
+- New `product_line` column in `stg.stg_shopify_order_items`. Regex: `' H\+'` in `item_name` → `'human'`; default `'canine'` for Dobias; NULL for non-Dobias clients (Manami/Shoptet has no line concept).
+- Propagated to `mart.mart_sku_perf` and `mart.mart_product_perf`.
+
+### Verified live (Dobias last 30d)
+| Line | Products | Units | Revenue | Margin | Margin % |
+|---|---:|---:|---:|---:|---:|
+| Canine | 26 | 3,825 | $169,576 | $136,881 | 80.72% |
+| Human (H+) | 7 | 793 | $35,387 | $27,855 | 78.71% |
+
+Human Line is 17.3% of revenue with ~2pp lower margin. Both meaningful.
+
+### Use in Looker
+- Drag `product_line` as a chart dimension or page-level filter on SKU/Product Performance charts.
+- For scorecard splits, use calc fields like `SUM(revenue) WHERE product_line = 'human'`.
+
+### Future considerations (not built)
+- **Order-level line split:** orders can have items from both lines. If you want "revenue_human_line / revenue_canine_line per order" on `mart_orders`, would require joining order_items aggregated by (order_id, product_line). Defer until requested — current SKU/product split usually sufficient.
+- **Daily revenue by line:** could add columns to `mart_daily_kpis`. Same JOIN logic. Same defer-until-needed.
+- **Ref table for line classification:** if H+ naming convention drifts (e.g., a Human Line product missing the suffix), could replace regex with `ref.product_lines` lookup table. Not needed today — all 7 Human products have clean `H+` suffix.
+
+### Files changed
+- BQ live: `stg_shopify_order_items`, `mart_sku_perf`, `mart_product_perf`
+- `infra/bigquery/200_create_stg_views.sql` — synced
+- `infra/bigquery/300_create_mart_views.sql` — synced
+- `METRICS.md` — amendment 15 + column documentation
+
+---
+
 ## 2026-05-23 (PM 4) — New/returning split gap fully reconciled with Shopify
 
 Asked Shopify AI to recompute its "Sales by customer behavior" report with our 36-month cutoff (May 23, 2023). Response confirmed the gap math exactly. No formula bugs remain — the discrepancy is 100% the historical-data window limit.

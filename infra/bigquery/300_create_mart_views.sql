@@ -316,10 +316,8 @@ FULL OUTER JOIN meta_daily m
 
 -- =============================================================================
 -- mart_sku_perf — Shop Performance — Top-SKUs bar + SKU table.
--- Manami via Shoptet + Dobias via Shopify (cost/margin from stg_shopify_order_items).
--- cost/margin/margin_pct are NULL for Shopify SKUs with no matched product cost.
--- NOTE: Shopify line revenue here may slightly overstate when order-level
--- discounts are present. Use mart_daily_kpis for headline GP — that's reconciled.
+-- product_line classifies Dobias products: 'human' = H+ supplements, 'canine'
+-- = everything else (default for Dobias). NULL for Manami/Shoptet (no line concept).
 -- =============================================================================
 CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_sku_perf` AS
 SELECT
@@ -327,6 +325,7 @@ SELECT
   order_date AS date,
   item_name  AS sku_name,
   variant,
+  CAST(NULL AS STRING) AS product_line,
   SUM(quantity)        AS units_sold,
   SUM(revenue_czk)     AS revenue,
   SUM(cost_czk)        AS cost,
@@ -344,6 +343,7 @@ SELECT
   order_date AS date,
   item_name  AS sku_name,
   sku        AS variant,
+  product_line,
   SUM(quantity)  AS units_sold,
   SUM(revenue)   AS revenue,
   SUM(line_cost) AS cost,
@@ -352,16 +352,18 @@ SELECT
   currency
 FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
 WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
-GROUP BY client_id, order_date, item_name, sku, currency;
+GROUP BY client_id, order_date, item_name, sku, product_line, currency;
 
 -- =============================================================================
 -- mart_product_perf — Products table (one row per product per date).
+-- product_line column same convention as mart_sku_perf.
 -- =============================================================================
 CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_product_perf` AS
 SELECT
   client_id,
   order_date AS date,
   item_name  AS product_name,
+  CAST(NULL AS STRING) AS product_line,
   SUM(quantity)    AS units_sold,
   SUM(revenue_czk) AS revenue,
   SUM(margin_czk)  AS margin,
@@ -376,13 +378,14 @@ SELECT
   client_id,
   order_date AS date,
   item_name  AS product_name,
+  product_line,
   SUM(quantity) AS units_sold,
   SUM(revenue)  AS revenue,
   SUM(margin)   AS margin,
   currency
 FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
 WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
-GROUP BY client_id, order_date, item_name, currency;
+GROUP BY client_id, order_date, item_name, product_line, currency;
 
 -- =============================================================================
 -- mart_orders — one row per Shopify order. Order-level grain for Looker

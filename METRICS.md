@@ -255,6 +255,7 @@ SKU-level / product-level performance. One row per (`client_id`, `date`, `sku`/`
 |---|---|---|
 | `sku_name` / `product_name` | string | |
 | `variant` / `sku` | string | SKU-level only |
+| `product_line` | string | **Dobias only.** `'human'` for H+ supplements, `'canine'` for everything else. NULL for Manami. |
 | `units_sold` | count | `SUM(quantity)` |
 | `revenue` | $ | Line-level revenue. **For Shopify, this can slightly overstate when order-level discounts present** — about 5% on Dobias. Use mart_daily_kpis for headline GP. |
 | `cost` | $ | SKU-level only. Dobias: from cost-matched products. Manami: from Shoptet. |
@@ -363,6 +364,11 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ---
 
 ## Changelog (most recent first)
+
+### 2026-05-23 (amendment 15)
+- **Dobias product_line dimension added** to `stg_shopify_order_items`, `mart_sku_perf`, `mart_product_perf`. Classifier: regex `' H\+'` in product/line-item title → `'human'`; everything else for Dobias → `'canine'`. Manami/Shoptet → NULL (no line concept).
+- Dobias 30d split: Canine 26 products / $169,576 revenue / 80.7% margin; Human 7 products / $35,387 revenue / 78.7% margin.
+- Use in Looker: drag `product_line` as a dimension or filter on SKU/Product Performance charts. To split by line in scorecards on these views, use calc field: `SUM(revenue) WHERE product_line = 'human'`.
 
 ### 2026-05-23 (amendment 14)
 - **Dobias `lifetime_gross_profit` now populated.** `mart_customer_lifetime` was setting Shopify order_margin to NULL — only Manami had per-customer LTGP. New logic joins `stg_shopify_order_items` to compute per-order COGS, then derives per-order margin = subtotal − COGS. Dobias: 9,102 of 9,310 customers (~98%) now have LTGP; total $3.1M / $4.1M LTV = 76% overall margin. 208 customers stay NULL (orders with no costed line items — rare, ~2%).

@@ -53,8 +53,17 @@
 -- so it lines up with the new revenue definition.
 -- =============================================================================
 CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_customer_lifetime` AS
-WITH all_orders AS (
-  -- Manami via Shoptet (CZK)
+WITH shopify_order_costs AS (
+  -- Sum line_cost per Shopify order = that order's COGS. Used to derive
+  -- per-customer lifetime gross profit for Dobias (Manami gets margin
+  -- directly from Shoptet via margin_czk).
+  SELECT client_id, order_id, SUM(line_cost) AS order_cogs
+  FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  GROUP BY client_id, order_id
+),
+all_orders AS (
+  -- Manami via Shoptet (CZK) — margin from Shoptet directly
   SELECT
     client_id,
     LOWER(email) AS customer_key,
@@ -68,17 +77,22 @@ WITH all_orders AS (
 
   UNION ALL
 
-  -- Dobias via Shopify (revenue = net sales + shipping, ex-tax)
+  -- Dobias via Shopify (revenue = net sales + shipping; margin = subtotal − COGS)
+  -- Margin is NULL for orders with no costed line items (~2% of customers).
   SELECT
-    client_id,
-    LOWER(customer_email) AS customer_key,
-    order_date,
-    subtotal_price + COALESCE(total_shipping, 0) AS order_revenue,
-    CAST(NULL AS NUMERIC)                        AS order_margin,
-    currency
-  FROM `oneeighty-warehouse.stg.stg_shopify_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
-    AND customer_email IS NOT NULL AND customer_email != ''
+    o.client_id,
+    LOWER(o.customer_email) AS customer_key,
+    o.order_date,
+    o.subtotal_price + COALESCE(o.total_shipping, 0) AS order_revenue,
+    CASE
+      WHEN c.order_cogs IS NULL THEN NULL
+      ELSE o.subtotal_price - c.order_cogs
+    END AS order_margin,
+    o.currency
+  FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
+  LEFT JOIN shopify_order_costs c USING (client_id, order_id)
+  WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    AND o.customer_email IS NOT NULL AND o.customer_email != ''
 )
 SELECT
   client_id,

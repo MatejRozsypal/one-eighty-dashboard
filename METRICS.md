@@ -364,6 +364,12 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 
 ## Changelog (most recent first)
 
+### 2026-05-23 (amendment 14)
+- **Dobias `lifetime_gross_profit` now populated.** `mart_customer_lifetime` was setting Shopify order_margin to NULL — only Manami had per-customer LTGP. New logic joins `stg_shopify_order_items` to compute per-order COGS, then derives per-order margin = subtotal − COGS. Dobias: 9,102 of 9,310 customers (~98%) now have LTGP; total $3.1M / $4.1M LTV = 76% overall margin. 208 customers stay NULL (orders with no costed line items — rare, ~2%).
+- Documented common Looker scorecard mistakes uncovered today:
+  - **Margin% scorecards showing >100%** = using `SUM(margin) / SUM(cost) * 100` (markup formula). Correct: `SUM(margin) / SUM(revenue) * 100`.
+  - **CAC drift** with multi-client unfiltered data = same multi-currency mixing pattern as ROAS. Always set page-level filter `client_id = <client>`.
+
 ### 2026-05-23 (amendment 13)
 - **Klaviyo flow performance live.** Mirror of campaign-reports work: new `raw_klaviyo_flow_reports` table populated via `/api/flow-values-reports/` endpoint (24-month backfill via runbook 16). `stg_klaviyo_flows` now JOINs metadata with aggregated reports — performance metrics SUM'd from flow-message granularity up to flow level, across non-overlapping period windows.
 - Dobias result: 44 flows / 103k lifetime emails sent / 1,826 conversions / $253k revenue / 44.5% open rate / 6.5% click rate.

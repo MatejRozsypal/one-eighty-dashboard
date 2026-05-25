@@ -4,6 +4,51 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-05-23 (PM 3) — Dobias lifetime_gross_profit + Shop Performance audit
+
+Profitability page review surfaced 5 issues. One was a real warehouse gap; four were Looker-side mistakes. Fixed the warehouse one + documented the Looker debugging.
+
+### Warehouse fix: Dobias lifetime_gross_profit was always NULL
+`mart_customer_lifetime` Shopify branch had `CAST(NULL AS NUMERIC) AS order_margin` since the original build — Manami had per-customer LTGP from Shoptet's margin_czk, Dobias had nothing. So Looker scorecards filtered to Dobias showed "No data" for LTGP.
+
+Rewrote the view: JOIN order_items → sum line_cost per order = order COGS → margin = subtotal_price − COGS per order → SUM per customer.
+
+Verified: 9,102 of 9,310 Dobias customers (~98%) now have LTGP. Total $3.1M / $4.1M LTV = 76% overall margin (matches our daily KPI margin calcs at order grain). The 208 NULL customers have orders with no costed line items (rare ~2% — same long tail as the cost coverage gap elsewhere).
+
+### Diagnosed Looker-side scorecard issues (not warehouse fixes)
+1. **Margin% showing 316%** — calc field was `SUM(margin) / SUM(cost) * 100` (= markup, can exceed 100%). Correct: `SUM(margin) / SUM(revenue) * 100`. For Dobias Apr 25–May 25 the right number is 80.37%.
+
+2. **AOV $126.74 vs BQ truth $149.28** — scorecard binding broken. BQ matches Shopify's $149.15 exactly (within $0.13). Likely wrong data source or stale calc field. Fix: rebind to `SUM(net_sales) / SUM(orders)` on mart_daily_kpis with client filter.
+
+3. **CAC $110 (or $10,415)** — no client filter, mixing Dobias USD spend with Manami CZK spend. Same multi-currency garbage we hit with ROAS. True CAC for Dobias Apr 25–May 25: $12.94. Fix: page-level filter `client_id = dobias`.
+
+4. **Shopify new/returning split mismatch reaffirmed.** Our totals + AOV match Shopify within 0.2%, but the new/returning split is 83% over on new orders / 17% under on returning. This is the 36-month-window vs Shopify's lifetime customer history gap documented in amendment 8. Not a new bug.
+
+### Reconciliation to Shopify (Apr 25–May 25, Dobias USD)
+| Metric | Shopify | Our BQ | Match? |
+|---|---:|---:|---|
+| Total Orders | 1,304 | 1,307 | ✓ |
+| AOV | $149.15 | $149.28 | ✓ |
+| New Customer Orders | 209 | 383 | ✗ (window-vs-lifetime) |
+| Returning Customer Orders | 1,095 | 924 | ✗ (same) |
+| New Customer Sales | $25,188 | $45,746 | ✗ (same) |
+| Returning Customer Sales | $180,356 | $149,361 | ✗ (same) |
+
+### Files changed
+- BQ live: `mart.mart_customer_lifetime` rewritten with shopify_order_costs JOIN
+- `infra/bigquery/300_create_mart_views.sql` — synced
+- `METRICS.md` — amendment 14 (LTGP fix + Looker scorecard gotchas)
+- `PROJECT_LOG.md` — this entry
+
+### What's pending — to fully match Shopify on new/returning split
+Two paths (either resolves the gap):
+- **A.** Extend the Shopify orders backfill from 36 months to 72 months via runbook 12 (would shrink the gap to customers acquired pre-2020, near zero for most businesses).
+- **B.** Populate `raw.raw_shopify_customers` with lifetime `orders_count` per customer; rewrite the is_returning_customer derivation to consult it. Most accurate, mirrors Shopify's own logic.
+
+Neither is blocking — current totals + AOV are reliable. Only the new/returning slice drifts. Pick when prioritizing customer-lifetime work.
+
+---
+
 ## 2026-05-23 (PM 2) — Klaviyo flow performance metrics live (24-month backfill)
 
 Mirror of the campaign-reports work for flows. Same root cause: `/api/flows/` returns metadata only. Performance stats live behind `/api/flow-values-reports/`.

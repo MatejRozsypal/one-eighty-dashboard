@@ -52,18 +52,20 @@
 -- Lifetime_revenue uses Shopify subtotal+shipping (net sales+shipping, ex-tax)
 -- so it lines up with the new revenue definition.
 -- =============================================================================
+-- Includes both LIFETIME metrics (all orders in our 36-month data window)
+-- and Y1 metrics (orders within 365 days of customer's first order). Y1 is
+-- maturity-controlled — apples-to-apples across cohorts, eliminates the
+-- "older cohorts have higher LTV simply because they've had more time" trap.
+-- Use is_y1_complete = TRUE to filter to customers whose Y1 window is fully past.
 CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_customer_lifetime` AS
 WITH shopify_order_costs AS (
-  -- Sum line_cost per Shopify order = that order's COGS. Used to derive
-  -- per-customer lifetime gross profit for Dobias (Manami gets margin
-  -- directly from Shoptet via margin_czk).
   SELECT client_id, order_id, SUM(line_cost) AS order_cogs
   FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
   WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
   GROUP BY client_id, order_id
 ),
 all_orders AS (
-  -- Manami via Shoptet (CZK) — margin from Shoptet directly
+  -- Manami via Shoptet
   SELECT
     client_id,
     LOWER(email) AS customer_key,
@@ -74,40 +76,50 @@ all_orders AS (
   FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
   WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
     AND email IS NOT NULL AND email != ''
-
   UNION ALL
-
-  -- Dobias via Shopify (revenue = net sales + shipping; margin = subtotal − COGS)
-  -- Margin is NULL for orders with no costed line items (~2% of customers).
+  -- Dobias via Shopify
   SELECT
     o.client_id,
     LOWER(o.customer_email) AS customer_key,
     o.order_date,
     o.subtotal_price + COALESCE(o.total_shipping, 0) AS order_revenue,
-    CASE
-      WHEN c.order_cogs IS NULL THEN NULL
-      ELSE o.subtotal_price - c.order_cogs
-    END AS order_margin,
+    CASE WHEN c.order_cogs IS NULL THEN NULL
+         ELSE o.subtotal_price - c.order_cogs END AS order_margin,
     o.currency
   FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
   LEFT JOIN shopify_order_costs c USING (client_id, order_id)
   WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
     AND o.customer_email IS NOT NULL AND o.customer_email != ''
+),
+with_first_date AS (
+  SELECT *,
+    MIN(order_date) OVER (PARTITION BY client_id, customer_key, currency) AS customer_first_order_date
+  FROM all_orders
 )
 SELECT
   client_id,
   customer_key AS customer_email,
   currency,
+  -- Lifetime metrics (all orders in 36-month data window)
   COUNT(*)                                  AS total_orders,
   SUM(order_revenue)                        AS lifetime_revenue,
   SUM(order_margin)                         AS lifetime_gross_profit,
+  -- Y1 metrics (orders within 365 days of first order — same maturity per customer)
+  COUNTIF(DATE_DIFF(order_date, customer_first_order_date, DAY) <= 365)             AS y1_orders,
+  SUM(CASE WHEN DATE_DIFF(order_date, customer_first_order_date, DAY) <= 365
+           THEN order_revenue END)                                                  AS y1_revenue,
+  SUM(CASE WHEN DATE_DIFF(order_date, customer_first_order_date, DAY) <= 365
+           THEN order_margin END)                                                   AS y1_gross_profit,
+  -- Maturity flag — TRUE when customer has had a full 365-day Y1 window
+  DATE_DIFF(CURRENT_DATE(), MIN(order_date), DAY) >= 365                            AS is_y1_complete,
+  -- Identifying / behavioral
   MIN(order_date)                           AS first_order_date,
   MAX(order_date)                           AS last_order_date,
   DATE_DIFF(MAX(order_date), MIN(order_date), DAY) AS days_active,
   COUNT(*) > 1                              AS is_returning,
   SAFE_DIVIDE(SUM(order_revenue), COUNT(*)) AS aov,
   SAFE_DIVIDE(SUM(order_margin),  COUNT(*)) AS avg_margin_per_order
-FROM all_orders
+FROM with_first_date
 GROUP BY client_id, customer_key, currency;
 
 -- =============================================================================
@@ -126,14 +138,23 @@ SELECT
   DATE_TRUNC(first_order_date, MONTH) AS cohort_month,
   currency,
   COUNT(*)                            AS customer_count,
+  COUNTIF(is_y1_complete)             AS y1_complete_customers,
+  -- Lifetime aggregates (grows with cohort age — NOT comparable across cohorts)
   SUM(lifetime_revenue)               AS cohort_total_revenue,
   SUM(lifetime_gross_profit)          AS cohort_total_gross_profit,
   SUM(total_orders)                   AS cohort_total_orders,
   ROUND(AVG(lifetime_revenue), 2)     AS ltv,
   ROUND(AVG(lifetime_gross_profit), 2) AS ltgp,
   ROUND(AVG(total_orders), 2)         AS avg_orders_per_customer,
-  COUNTIF(is_returning)               AS returning_customers,
-  SAFE_DIVIDE(COUNTIF(is_returning), COUNT(*)) * 100 AS cohort_repeat_rate_pct  -- True RCR
+  -- Y1 aggregates (maturity-corrected — comparable across cohorts).
+  -- Only counts customers whose Y1 window is fully past (is_y1_complete=TRUE).
+  -- AVG_IF(...,is_y1_complete) excludes immature customers automatically.
+  ROUND(AVG(IF(is_y1_complete, y1_revenue, NULL)), 2)        AS y1_ltv,
+  ROUND(AVG(IF(is_y1_complete, y1_gross_profit, NULL)), 2)   AS y1_ltgp,
+  ROUND(AVG(IF(is_y1_complete, y1_orders, NULL)), 2)         AS y1_orders_per_customer,
+  -- Returning behavior
+  COUNTIF(is_returning)                                      AS returning_customers,
+  SAFE_DIVIDE(COUNTIF(is_returning), COUNT(*)) * 100         AS cohort_repeat_rate_pct
 FROM `oneeighty-warehouse.mart.mart_customer_lifetime`
 GROUP BY client_id, cohort_month, currency;
 

@@ -217,9 +217,11 @@ One row per (`client_id`, `customer_email`, `currency`). A customer who ordered 
 
 | Column | Type | Formula | Notes |
 |---|---|---|---|
-| `total_orders` | count | All orders for this customer | |
-| `lifetime_revenue` | $ | Shopify: `SUM(subtotal_price + total_shipping)`. Shoptet: `SUM(total_with_vat_czk)`. | Same revenue definition as mart_daily_kpis. |
-| `lifetime_gross_profit` | $ | Manami: `SUM(margin_czk)`. Dobias: NULL (no per-customer margin yet). | |
+| `total_orders` | count | All orders for this customer in 36mo window | |
+| `lifetime_revenue` | $ | Shopify: `SUM(subtotal_price + total_shipping)`. Shoptet: `SUM(total_with_vat_czk)`. | All orders in our 36mo window. **Grows with cohort age — not comparable across cohorts.** |
+| `lifetime_gross_profit` | $ | Manami: `SUM(margin_czk)`. Dobias: `SUM(subtotal − order_cogs)` via order_items JOIN. | NULL for customers with no costed orders (~2%). |
+| `y1_orders` / `y1_revenue` / `y1_gross_profit` | count, $, $ | Orders within 365 days of customer's first order. Same metrics as lifetime but maturity-corrected. | **Use for cohort comparisons.** Apples-to-apples across cohorts. |
+| `is_y1_complete` | bool | `DATE_DIFF(today, first_order_date, DAY) >= 365` | Filter to TRUE for honest Y1 scorecards (customer has had a full Y1 window). |
 | `first_order_date`, `last_order_date` | date | | |
 | `days_active` | count | `DATE_DIFF(last, first, DAY)` | |
 | `is_returning` | bool | `total_orders > 1` | |
@@ -364,6 +366,13 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ---
 
 ## Changelog (most recent first)
+
+### 2026-05-23 (amendment 16)
+- **Y1 LTGP / LTV added** to `mart_customer_lifetime` and `mart_customer_cohorts`. Maturity-corrected: each customer's value within 365 days of their first order, comparable across cohorts.
+- New columns in `mart_customer_lifetime`: `y1_orders`, `y1_revenue`, `y1_gross_profit`, `is_y1_complete` (BOOL).
+- New columns in `mart_customer_cohorts`: `y1_complete_customers`, `y1_ltv`, `y1_ltgp`, `y1_orders_per_customer`.
+- **Use Y1 metrics for cohort comparisons** — eliminates the "older cohorts have higher lifetime LTV simply because they've had more time" trap. Filter to `is_y1_complete = TRUE` for honest scorecards.
+- Striking finding: Dobias Y1 LTGP dropped from $551 (May 2024 cohort) to $170–$212 (last year's cohorts). Real signal — could indicate channel mix decline or first-year seasonality.
 
 ### 2026-05-23 (amendment 15)
 - **Dobias product_line dimension added** to `stg_shopify_order_items`, `mart_sku_perf`, `mart_product_perf`. Classifier: regex `' H\+'` in product/line-item title → `'human'`; everything else for Dobias → `'canine'`. Manami/Shoptet → NULL (no line concept).

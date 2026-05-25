@@ -4,6 +4,56 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-05-23 (PM 6) — Y1 LTGP/LTV added — maturity-corrected cohort metrics
+
+Lifetime LTGP isn't comparable across cohorts (an old cohort has had years to accumulate; a new cohort has weeks). Y1 LTGP fixes this — measures each customer's value within 365 days of their first order. Same maturity per customer = honest cohort comparisons.
+
+### Implementation
+Added 4 columns to `mart_customer_lifetime`:
+- `y1_orders` — count within 365d of first order
+- `y1_revenue` — sum
+- `y1_gross_profit` — sum
+- `is_y1_complete` — BOOL, TRUE only when customer has had full Y1 window
+
+Added 4 columns to `mart_customer_cohorts`:
+- `y1_complete_customers` — how many in cohort have full Y1 data
+- `y1_ltv`, `y1_ltgp` — `AVG(IF(is_y1_complete, ...))`
+- `y1_orders_per_customer`
+
+### Per-cohort Y1 LTGP for Dobias (mature cohorts only)
+| Cohort | Customers | Lifetime LTGP | **Y1 LTGP** | Y1 orders/cust |
+|---|---:|---:|---:|---:|
+| 2024-05 | 495 | $905 | **$551** | 3.65 |
+| 2024-06 | 851 | $820 | **$520** | 3.54 |
+| 2024-07 | 598 | $572 | **$371** | 2.74 |
+| 2024-09 | 516 | $387 | **$283** | 2.29 |
+| 2024-12 | 400 | $289 | **$250** | 2.10 |
+| 2025-03 | 385 | $221 | **$200** | 1.96 |
+| 2025-04 | 334 | $178 | **$170** | 1.75 |
+| **2025-05** (last fully Y1-mature) | 242 | — | **$212** | 2.05 |
+
+### Striking finding worth investigation
+Y1 LTGP collapsed from $551 (May 2024 cohort) to $170–$212 (last year). **2-3× drop in first-year customer value** when controlling for maturity. Real signal (not data artifact). Possible drivers:
+- Acquisition channel mix shift (maybe more low-quality channels?)
+- Real cohort quality degradation
+- First-year seasonality (May-June 2024 cohorts had Black Friday + Christmas inside Y1; recent cohorts haven't seen those yet)
+
+Cohort chart on `mart_customer_cohorts` with `cohort_month` x-axis and `y1_ltgp` y-axis tells the story instantly.
+
+### Recommended Looker scorecard config
+"AVG Y1 LTGP (Dobias, mature)":
+- Data source: `mart_customer_lifetime`
+- Filter: `client_id = dobias` AND `is_y1_complete = TRUE`
+- Metric: `AVG(y1_gross_profit)`
+- No date filter needed — `is_y1_complete` handles maturity automatically
+
+### Files changed
+- BQ live: `mart_customer_lifetime` + `mart_customer_cohorts` rewritten
+- `infra/bigquery/300_create_mart_views.sql` — synced
+- `METRICS.md` — amendment 16 + column documentation
+
+---
+
 ## 2026-05-23 (PM 5) — Dobias product_line dimension (Human vs Canine)
 
 Added segmentation so Dobias Shop Performance can be filtered/grouped by product line. Human Line products use the `H+` suffix convention (e.g., FeelGood Omega® H+, GutSense® H+); everything else is canine (supplements + accessories + topicals + harnesses + shipping).

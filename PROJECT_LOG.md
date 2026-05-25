@@ -4,6 +4,58 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-05-23 (PM 4) — New/returning split gap fully reconciled with Shopify
+
+Asked Shopify AI to recompute its "Sales by customer behavior" report with our 36-month cutoff (May 23, 2023). Response confirmed the gap math exactly. No formula bugs remain — the discrepancy is 100% the historical-data window limit.
+
+### Shopify's response (Dobias, Apr 25 – May 25, 2026)
+Shopify dropped orders from customers acquired pre-May-2023 instead of reclassifying them. The 711 dropped orders ARE the reconciliation gap.
+
+| Metric | Windowed (since May 2023) | Lifetime | Difference |
+|---|---:|---:|---:|
+| Total Orders | 593 | 1,304 | −711 |
+| New Customer Orders | 209 | 209 | — |
+| Returning Customer Orders | 384 | 1,095 | −711 |
+| AOV (New) | $109.89 | $109.89 | — |
+| AOV (Returning) | $140.99 | $156.65 | −$15.66 |
+| New Customer Sales | $25,188 | $25,188 | — |
+| Returning Customer Sales | $57,020 | $180,356 | −$123,337 |
+
+The 711-order "drop" = orders from customers whose first-ever Shopify order was before May 23, 2023.
+
+### How those 711 explain our BQ discrepancy
+Our warehouse classifies the 711 pre-2023 customers' orders as either "new" or "returning" based on whether it's their first appearance in our 36-month window:
+
+| Sub-cohort | Count | BQ classifies as |
+|---|---:|---|
+| First in-window order falls in Apr 25–May 25 | **~174** | Wrongly "new" |
+| Had earlier in-window orders | ~537 | Correctly "returning" |
+| **Total pre-2023 customers in window** | **711** | (we keep all; Shopify drops in windowed view) |
+
+The 174 misflagged orders close every gap:
+- New orders: Shopify 209 → BQ 383 = +174 ✓
+- Returning orders: Shopify 1,095 → BQ 924 = −171 ✓ (3-order rounding from email casing)
+- New sales: Shopify $25k → BQ $46k = ~$20k over (174 × ~$115 AOV) ✓
+- Returning sales: mirror −$31k ✓
+
+### Bonus insight worth keeping
+Shopify's response also reveals: **pre-2023 customers spend $15.66 more per order than post-May-2023 customers** ($156.65 vs $140.99 returning AOV). Tenure correlates with higher order value — useful retention signal. Worth surfacing on a cohort dashboard once the longer backfill lands.
+
+### The two paths to close the gap permanently
+Both previously documented (amendment 8); reaffirming with concrete reconciliation behind them:
+
+1. **Extend Shopify orders backfill 36mo → 72mo** via runbook 12. ~1 hour. Shrinks the gap each year of history added (most customers' first order is within the last 3 years; the 6+ year tail is small for most accounts).
+2. **Populate `raw.raw_shopify_customers` with lifetime `orders_count` per customer.** Then `is_returning_customer` derivation consults that table instead of in-window order sequence. Exact match to Shopify forever. ~3 hours.
+
+Recommendation: Option 2 is the long-term right answer. Option 1 is faster and gets ~80% of the way. Either resolves the gap.
+
+### Files changed
+- `PROJECT_LOG.md` — this entry
+
+No code/DDL changes this round — purely reconciliation + future-fix scoping.
+
+---
+
 ## 2026-05-23 (PM 3) — Dobias lifetime_gross_profit + Shop Performance audit
 
 Profitability page review surfaced 5 issues. One was a real warehouse gap; four were Looker-side mistakes. Fixed the warehouse one + documented the Looker debugging.

@@ -46,3 +46,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Local Claude Code settings
+.claude/

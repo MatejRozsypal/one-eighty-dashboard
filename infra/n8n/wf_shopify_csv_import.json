@@ -1,0 +1,99 @@
+{
+  "name": "wf_shopify_csv_import",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Shopify CSV import — Dr. Dobias",
+        "formDescription": "Upload a Shopify orders-export CSV. Loads into raw.raw_shopify_orders with ingest_source='manual_csv'. One-off / dev use.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "orders_csv",
+              "fieldType": "file",
+              "acceptFileTypes": ".csv",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d2000000-0000-0000-0000-000000000001",
+      "name": "Upload CSV",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [-900, 400]
+    },
+
+    {
+      "parameters": {
+        "operation": "csv",
+        "binaryPropertyName": "orders_csv",
+        "options": { "headerRow": true }
+      },
+      "id": "d2000000-0000-0000-0000-000000000002",
+      "name": "Parse CSV",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-680, 400]
+    },
+
+    {
+      "parameters": {
+        "jsCode": "// Reshape a Shopify orders-export CSV (one row per line item) into\n// raw_shopify_orders shape. Input: rows from \"Parse CSV\". Output: one item per order.\n\nconst CLIENT_ID = 'dobias';\nconst INGESTED_AT = new Date().toISOString().slice(0, 19).replace('T', ' ');\n\nconst num = v => {\n  if (v === null || v === undefined || v === '') return 0;\n  const n = Number(String(v).replace(/[^0-9.\\-]/g, ''));\n  return isNaN(n) ? 0 : n;\n};\n\n// Shopify CSV timestamps: \"2024-05-01 12:30:00 -0400\" -> BQ \"YYYY-MM-DD HH:MM:SS\" (UTC)\nconst fmtTs = v => {\n  if (!v) return null;\n  const d = new Date(v);\n  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 19).replace('T', ' ');\n};\n\nconst ORDER_FIELDS = ['Name','Email','Financial Status','Paid at','Fulfillment Status',\n  'Currency','Subtotal','Shipping','Taxes','Total','Discount Amount','Created at',\n  'Shipping Province','Shipping Country','Cancelled at','Source','Id'];\n\n// Group flat rows into orders, keyed by \"Name\" (repeated on every line-item row).\nconst orders = {};\nfor (const item of $input.all()) {\n  const r = item.json;\n  const key = r['Name'];\n  if (!key) continue;\n  if (!orders[key]) orders[key] = { h: {}, rows: [] };\n  const h = orders[key].h;\n  for (const f of ORDER_FIELDS) {\n    if ((h[f] === undefined || h[f] === '') && r[f] !== undefined && r[f] !== '') h[f] = r[f];\n  }\n  orders[key].rows.push(r);\n}\n\nreturn Object.values(orders).map(({ h, rows }) => {\n  const createdAt = fmtTs(h['Created at']);\n  return {\n    json: {\n      client_id:             CLIENT_ID,\n      ingested_at:           INGESTED_AT,\n      ingest_source:         'manual_csv',\n\n      order_id:              String(h['Id'] ?? ''),\n      order_number:          h['Name'] ?? '',\n      order_date:            createdAt ? createdAt.slice(0, 10) : null,\n      created_at:            createdAt,\n      updated_at:            null,\n      processed_at:          fmtTs(h['Paid at']),\n\n      currency:              h['Currency'] ?? '',\n      presentment_currency:  h['Currency'] ?? '',\n      subtotal_price:        num(h['Subtotal']),\n      total_shipping:        num(h['Shipping']),\n      total_tax:             num(h['Taxes']),\n      total_discounts:       num(h['Discount Amount']),\n      total_price:           num(h['Total']),\n\n      customer_id:           '',\n      customer_email:        h['Email'] ?? '',\n      is_returning_customer: null,\n      shipping_country:      h['Shipping Country'] ?? '',\n      shipping_province:     h['Shipping Province'] ?? '',\n\n      financial_status:      h['Financial Status'] ?? '',\n      fulfillment_status:    h['Fulfillment Status'] ?? '',\n      cancelled_at:          fmtTs(h['Cancelled at']),\n      source_name:           h['Source'] ?? '',\n\n      line_items: JSON.stringify(\n        rows.filter(r => (r['Lineitem name'] ?? '') !== '').map(r => ({\n          line_item_id:       '',\n          product_id:         '',\n          variant_id:         '',\n          sku:                r['Lineitem sku'] ?? '',\n          title:              r['Lineitem name'] ?? '',\n          quantity:           num(r['Lineitem quantity']),\n          price:              num(r['Lineitem price']),\n          total_discount:     num(r['Lineitem discount']),\n          fulfillment_status: r['Lineitem fulfillment status'] ?? null\n        }))\n      ),\n\n      payload_json:          JSON.stringify(rows)\n    }\n  };\n});\n"
+      },
+      "id": "d2000000-0000-0000-0000-000000000003",
+      "name": "Reshape to raw_shopify_orders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-460, 400]
+    },
+
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list",
+          "cachedResultName": "oneeighty-warehouse"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list",
+          "cachedResultName": "raw"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_shopify_orders",
+          "mode": "list",
+          "cachedResultName": "raw_shopify_orders"
+        },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "d2000000-0000-0000-0000-000000000004",
+      "name": "BQ: insert orders",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [-240, 400]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Upload CSV": {
+      "main": [[ { "node": "Parse CSV", "type": "main", "index": 0 } ]]
+    },
+    "Parse CSV": {
+      "main": [[ { "node": "Reshape to raw_shopify_orders", "type": "main", "index": 0 } ]]
+    },
+    "Reshape to raw_shopify_orders": {
+      "main": [[ { "node": "BQ: insert orders", "type": "main", "index": 0 } ]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

@@ -46,18 +46,11 @@ CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.raw.raw_shopify_orders` (
   cancelled_at         TIMESTAMP,
   source_name          STRING,                  -- web | pos | shopify_draft_order
 
-  -- Line items
-  line_items ARRAY<STRUCT<
-    line_item_id    STRING,
-    product_id      STRING,
-    variant_id      STRING,
-    sku             STRING,
-    title           STRING,
-    quantity        INT64,
-    price           NUMERIC,
-    total_discount  NUMERIC,
-    fulfillment_status STRING
-  >>,
+  -- Line items — JSON array as STRING (not ARRAY<STRUCT>: streaming inserts
+  -- silently drop rows on REPEATED STRUCT). Parse in mart with JSON_QUERY_ARRAY.
+  -- Element: {line_item_id, product_id, variant_id, sku, title, quantity,
+  --           price, total_discount, fulfillment_status}
+  line_items           STRING,
 
   -- Audit
   payload_json         STRING

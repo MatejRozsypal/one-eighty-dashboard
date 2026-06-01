@@ -367,6 +367,38 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 
 ## Changelog (most recent first)
 
+### 2026-05-25 (amendment 17) — CA store history unlocked + USD conversion
+
+Major correction to two prior decisions:
+
+1. **The Matrixify-filter hypothesis was wrong.** Those 48k orders are real Canadian-store historical data migrated to the US Shopify store in March 2026 via the Matrixify app — NOT duplicates. Earlier we filtered them out as "ghost orders"; that lost ~$8.7M CAD of legitimate historical revenue and ~12k unique CA customers.
+
+2. **`order_date` semantics fixed.** Used to be DATE(created_at), which for migrated orders was the import date (March 2026). Now DATE(processed_at) — the original order placement timestamp. CA orders correctly distributed across their original months going back to 2013.
+
+3. **USD conversion live.** New `ref.fx_rates` table (CAD→USD monthly rates from Bank of Canada, June 2022 – May 2026). `stg_shopify_orders` joins on order month and applies conversion. Primary amount columns (subtotal_price, total_shipping, total_tax, total_price) are now USD. Native-currency values preserved in `*_original` columns.
+
+4. **New `store_origin` dimension** in stg_shopify_orders and stg_shopify_order_items: `'canada_migrated'` (Matrixify orders) or `'us_native'`. Lets Looker filter to "pre-merger CA business" vs "US-store business" if needed.
+
+5. **`currency` column now always returns `'USD'`** for Dobias (post-conversion). For Manami stays `'CZK'` (no conversion needed, single-currency store).
+
+### What this means in Looker
+- All existing scorecards bound to `revenue`, `net_sales`, `total_price`, `subtotal_price`, `cm1/cm2/cm3` will auto-update to USD-converted values
+- Historical periods now show combined CA + US business — Y/Y comparisons are now meaningful
+- Number of Dobias orders in mart roughly doubles (we got back the ~48k CA history)
+- Add `store_origin` as a chart dimension or page filter to split CA-migrated vs US-native
+
+### Updated quarterly revenue (Dobias, USD-converted)
+| Quarter | Revenue | CM1 | Orders |
+|---|---:|---:|---:|
+| 2026 Q2 (partial) | $420k | $337k | 2,777 |
+| 2026 Q1 (migration) | $498k | $401k | 3,461 |
+| 2025 Q4 | $681k | $541k | 4,595 |
+| 2024 Q4 (peak) | $707k | $574k | 4,295 |
+| 2023 Q3 (early CA) | $133k | $106k | 985 |
+
+### Known coverage limit
+~34k orders pre-June 2022 (going back to Dec 2013) are in raw but have NULL USD-converted columns because `ref.fx_rates` starts June 2022. These are outside our 36-month analytics window so they don't surface in mart anyway. If you want to use pre-2022 history, add FX rates back to that period in `ref.fx_rates`.
+
 ### 2026-05-23 (amendment 16)
 - **Y1 LTGP / LTV added** to `mart_customer_lifetime` and `mart_customer_cohorts`. Maturity-corrected: each customer's value within 365 days of their first order, comparable across cohorts.
 - New columns in `mart_customer_lifetime`: `y1_orders`, `y1_revenue`, `y1_gross_profit`, `is_y1_complete` (BOOL).

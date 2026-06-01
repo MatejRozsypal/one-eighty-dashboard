@@ -4,6 +4,91 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-05-25 — CA store history unlocked + USD conversion via fx_rates
+
+Major correction to two earlier assumptions, opening up ~48k orders of Canadian store history that had been wrongly filtered out, and proper currency normalization to USD across the warehouse.
+
+### Background
+Dobias had two separate Shopify stores until March 2026:
+- US store (oneeighty's current data source, active since 2024)
+- Canadian store (originally launched ~Dec 2013, decommissioned in the merge)
+
+In March 2026, the CA store was migrated INTO the US store via the Matrixify Shopify app. After that point, Canadian customers route through the unified store via Shopify Markets.
+
+### What we got wrong before
+Earlier this project flagged 48,771 Matrixify-tagged CAD-presentment orders as "ghost duplicates" of USD orders and filtered them out at stg level. **That was incorrect.** Those orders are the legitimate historical Canadian store data (different customers, different store, different currency). Filtering them out cost us:
+- ~$8.7M CAD of historical revenue (~$6.3M USD)
+- 12,513 unique Canadian customers
+- 13 years of Canadian-side history (Dec 2013 – Feb 2026)
+
+Why they looked like duplicates: their `created_at` was the import date (March 2026), making them appear as a sudden anomalous spike. They have separate order_ids from native USD orders and are not actual duplicates.
+
+### Investigation
+- `processed_at` on Matrixify orders ranges Dec 2013 → Feb 2026 — the original Canadian order dates
+- `created_at` ranges Jan 2025 → Apr 2026 — the import date
+- 48,621 of 48,777 Matrixify orders have processed_at >30 days earlier than created_at
+- Native US orders have processed_at ≈ created_at (44,422 of 44,424 same-day)
+
+Conclusion: Matrixify preserves the original transaction timestamp in `processed_at`; `created_at` becomes the import date. We should treat `processed_at` as the canonical "when the customer placed the order" timestamp.
+
+### What was changed
+1. **New `ref.fx_rates` table** (DDL: `infra/bigquery/012_create_ref_fx_rates.sql`). Seeded with 48 months of CAD→USD monthly rates from Bank of Canada (June 2022 – May 2026).
+2. **`stg_shopify_orders` rewritten:**
+   - Matrixify exclusion filter removed
+   - `order_date` redefined as `DATE(processed_at)` — canonical "order placed" date. Old `order_date` (= DATE(created_at)) preserved as `order_created_date` for audit
+   - LEFT JOIN to `ref.fx_rates` on `(DATE_TRUNC(processed_at, MONTH), currency, 'USD')` to get monthly rate
+   - Primary amount columns (`subtotal_price`, `total_shipping`, `total_tax`, `total_discounts`, `total_price`) now USD-converted
+   - Native-currency values preserved in `*_original` columns
+   - `currency` column always returns `'USD'` (post-conversion); `currency_original` preserves CAD/USD as raw
+   - New `store_origin` column: `'canada_migrated'` or `'us_native'`
+   - `is_returning_customer` rederived using processed_at order sequence
+3. **`stg_shopify_order_items` rewritten:**
+   - Inherits `fx_rate_to_usd` and `store_origin` from parent order
+   - `revenue` column USD-converted; `revenue_original` preserved
+   - Product `cost` is already in shop's primary currency (USD) so no conversion needed for COGS
+   - Margin = USD revenue − USD cost
+4. **All mart views auto-picked up new semantics** since column names stayed the same. No mart-view code changes needed.
+
+### Verification
+Quarterly revenue for Dobias (USD-converted, all stores combined):
+
+| Quarter | Revenue | Orders |
+|---|---:|---:|
+| 2026 Q2 (partial) | $420,393 | 2,777 |
+| 2026 Q1 (migration period) | $498,476 | 3,461 |
+| 2025 Q4 | $681,405 | 4,595 |
+| 2025 Q3 | $583,674 | 3,788 |
+| 2025 Q2 | $557,994 | 3,627 |
+| 2025 Q1 | $565,027 | 3,730 |
+| 2024 Q4 (peak) | $707,031 | 4,295 |
+| 2024 Q3 | $610,970 | 3,910 |
+| 2024 Q2 | $385,226 | 2,548 |
+| 2024 Q1 | $133,326 | 943 |
+| 2023 Q4 | $165,283 | 1,163 |
+| 2023 Q3 | $132,941 | 985 |
+| 2023 Q2 | $39,726 | 281 |
+
+Now reads as a coherent business trajectory: CA store building 2023, both stores active 2024-Q1 2026, merger Q1 2026, post-merger Q2 2026. Y/Y comparisons are meaningful for the first time.
+
+### Files changed
+- `infra/bigquery/012_create_ref_fx_rates.sql` (new — table + seed)
+- `infra/bigquery/200_create_stg_views.sql` — stg_shopify_orders + stg_shopify_order_items rewritten
+- `METRICS.md` — amendment 17 + global revenue convention update
+- `PROJECT_LOG.md` — this entry
+
+### Looker impact
+Refresh `mart_daily_kpis` data source. Every dollar-amount scorecard will:
+- Show USD values everywhere (no more mixed currency)
+- Show ~2× higher historical Dobias revenue once CA-merged data is included
+- Show meaningful Y/Y comparisons for the first time
+
+Add `store_origin` to any chart where you want to split US-native vs Canada-migrated history.
+
+### Known coverage gap
+~34k orders pre-June 2022 (Dec 2013 – May 2022) have NULL USD-converted values because ref.fx_rates starts June 2022. They're outside our 36-month analytics window so don't surface in mart anyway. If we ever want deeper history (5+ years), add older FX rates to ref.fx_rates and extend the 36-month stg filter.
+
+---
+
 ## 2026-05-23 (PM 6) — Y1 LTGP/LTV added — maturity-corrected cohort metrics
 
 Lifetime LTGP isn't comparable across cohorts (an old cohort has had years to accumulate; a new cohort has weeks). Y1 LTGP fixes this — measures each customer's value within 365 days of their first order. Same maturity per customer = honest cohort comparisons.

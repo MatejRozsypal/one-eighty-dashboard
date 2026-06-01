@@ -218,45 +218,77 @@ SELECT * EXCEPT(rn) FROM (
 -- =============================================================================
 -- SHOPIFY (forward-compatible — views ready before Dobias data lands)
 -- =============================================================================
--- stg_shopify_orders — deduped, Matrixify excluded, is_returning_customer derived.
+-- stg_shopify_orders — deduped, USD-converted, FX-rate-aware, store_origin-tagged.
 --
--- Matrixify exclusion: the Matrixify App was used in March 2026 to bulk-import
--- ~48k historical CAD-presentment "ghost" orders (Shopify Markets migration
--- artefact). Excluded here so all mart views inherit the clean baseline.
---
--- is_returning_customer is REDERIVED from order sequence within our data window
--- (not from Shopify's customer.orders_count flag, which was unreliable —
--- over-flagged orders as "new" because it didn't always update customer history
--- correctly, especially after Matrixify import operations affected customer
--- order counts).
---   FALSE = customer's first in-window order (= new acquisition)
---   TRUE  = customer's 2nd+ in-window order (= repeat purchase)
---   NULL  = guest order (no email) — excluded from both new and returning counts
---           via COUNTIF semantics in downstream views.
--- LIMITATION: customers whose first-ever order was before our 36-month window
--- appear as "new" on their first in-window order. To match Shopify's lifetime
--- definition we'd need a multi-year backfill. Documented in METRICS.md.
+-- KEY CHANGES (2026-05-25):
+-- 1. Matrixify filter REMOVED. Those ~48k orders are real Canadian-store
+--    historical data migrated via Matrixify in March 2026 — not duplicates.
+--    Earlier hypothesis was wrong (see PROJECT_LOG).
+-- 2. order_date is now DATE(processed_at) — the canonical "when customer placed
+--    the order" date. For migrated CA orders this preserves the original CA
+--    store dates (going back to 2013). The old order_date (= created_at) is
+--    preserved as `order_created_date` for audit.
+-- 3. USD conversion via ref.fx_rates joined by month. Original CAD amounts
+--    preserved in *_original columns. Primary columns (subtotal_price etc.)
+--    now always in USD. `currency` column always returns 'USD' for Dobias.
+-- 4. `store_origin` column: 'canada_migrated' for Matrixify orders, 'us_native'
+--    for everything else.
+-- 5. is_returning_customer rederived via processed_at order sequence by email.
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_shopify_orders` AS
 WITH deduped AS (
-  SELECT * EXCEPT(rn, is_returning_customer)
+  SELECT * EXCEPT(rn, is_returning_customer, order_date)
   FROM (
-    SELECT *,
-      ROW_NUMBER() OVER (PARTITION BY client_id, order_id ORDER BY ingested_at DESC) AS rn
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, order_id ORDER BY ingested_at DESC) AS rn
     FROM `oneeighty-warehouse.raw.raw_shopify_orders`
     WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
-  )
-  WHERE rn = 1 AND source_name != 'Matrixify App'
+  ) WHERE rn = 1
+),
+joined AS (
+  SELECT d.*,
+    DATE(d.processed_at) AS order_date_raw_processed,
+    fx.rate AS fx_rate_lookup
+  FROM deduped d
+  LEFT JOIN `oneeighty-warehouse.ref.fx_rates` fx
+    ON fx.from_currency = d.currency
+   AND fx.to_currency  = 'USD'
+   AND fx.month_start  = DATE_TRUNC(DATE(d.processed_at), MONTH)
 )
 SELECT
-  deduped.*,
+  client_id, ingested_at, ingest_source, order_id, order_number,
+  order_date_raw_processed AS order_date,
+  DATE(created_at)         AS order_created_date,
+  created_at, updated_at, processed_at,
+  currency AS currency_original,
+  'USD'    AS currency,
+  CASE WHEN currency = 'USD' THEN CAST(1.0 AS NUMERIC) ELSE fx_rate_lookup END AS fx_rate_to_usd,
+  CASE WHEN source_name = 'Matrixify App' THEN 'canada_migrated' ELSE 'us_native' END AS store_origin,
+  presentment_currency,
+  subtotal_price  AS subtotal_price_original,
+  total_shipping  AS total_shipping_original,
+  total_tax       AS total_tax_original,
+  total_discounts AS total_discounts_original,
+  total_price     AS total_price_original,
+  CASE WHEN currency = 'USD' THEN subtotal_price
+       WHEN currency = 'CAD' AND fx_rate_lookup IS NOT NULL THEN subtotal_price * fx_rate_lookup END AS subtotal_price,
+  CASE WHEN currency = 'USD' THEN total_shipping
+       WHEN currency = 'CAD' AND fx_rate_lookup IS NOT NULL THEN total_shipping * fx_rate_lookup END AS total_shipping,
+  CASE WHEN currency = 'USD' THEN total_tax
+       WHEN currency = 'CAD' AND fx_rate_lookup IS NOT NULL THEN total_tax * fx_rate_lookup END AS total_tax,
+  CASE WHEN currency = 'USD' THEN total_discounts
+       WHEN currency = 'CAD' AND fx_rate_lookup IS NOT NULL THEN total_discounts * fx_rate_lookup END AS total_discounts,
+  CASE WHEN currency = 'USD' THEN total_price
+       WHEN currency = 'CAD' AND fx_rate_lookup IS NOT NULL THEN total_price * fx_rate_lookup END AS total_price,
+  customer_id, customer_email, shipping_country, shipping_province,
+  financial_status, fulfillment_status, cancelled_at, source_name,
+  payload_json, line_items,
   CASE
     WHEN customer_email IS NULL OR TRIM(customer_email) = '' THEN CAST(NULL AS BOOL)
     ELSE ROW_NUMBER() OVER (
       PARTITION BY client_id, LOWER(TRIM(customer_email))
-      ORDER BY order_date, order_id
+      ORDER BY processed_at, order_id
     ) > 1
   END AS is_returning_customer
-FROM deduped;
+FROM joined;
 
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_shopify_products` AS
 SELECT * EXCEPT(rn) FROM (
@@ -282,10 +314,13 @@ SELECT * EXCEPT(rn) FROM (
 --   unit_cost / line_cost / margin are NULL where the SKU can't be matched to
 --   a costed product (bundles, discontinued items, chaotic legacy SKUs) —
 --   never zero, so a partial-coverage figure is never mistaken for the truth.
+-- Line items inherit fx_rate from parent order (via stg_shopify_orders).
+-- Revenue is USD-converted. Cost is in shop's primary currency (USD already)
+-- so no conversion. Margin = USD revenue - USD cost. Original-currency
+-- amounts preserved as *_original audit columns.
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_shopify_order_items` AS
 WITH prod AS (
-  SELECT
-    client_id,
+  SELECT client_id,
     TRIM(UPPER(REGEXP_REPLACE(sku, r'^DD-', ''))) AS norm_sku,
     MAX(cost)        AS cost,
     ANY_VALUE(title) AS product_title
@@ -294,34 +329,38 @@ WITH prod AS (
   GROUP BY client_id, norm_sku
 )
 SELECT
-  o.client_id,
-  o.order_id,
-  o.order_date,
-  o.currency,
+  o.client_id, o.order_id, o.order_date,
+  o.currency_original, o.currency, o.fx_rate_to_usd, o.store_origin,
   JSON_VALUE(li, '$.sku')                                            AS sku,
   COALESCE(prod.product_title, JSON_VALUE(li, '$.title'), 'Unknown')  AS item_name,
   JSON_VALUE(li, '$.title')                                          AS line_item_title,
-  -- Dobias product-line classifier: Human Line products are tagged " H+" in
-  -- name (e.g., "FeelGood Omega® H+", "GutSense® H+"). Everything else is
-  -- canine. For non-Dobias clients (Manami), this column is NULL.
   CASE
     WHEN o.client_id = 'dobias' AND REGEXP_CONTAINS(
-      COALESCE(prod.product_title, JSON_VALUE(li, '$.title'), ''),
-      r' H\+'
+      COALESCE(prod.product_title, JSON_VALUE(li, '$.title'), ''), r' H\+'
     ) THEN 'human'
     WHEN o.client_id = 'dobias' THEN 'canine'
     ELSE NULL
   END                                                                AS product_line,
   CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC)                      AS quantity,
-  CAST(JSON_VALUE(li, '$.price') AS NUMERIC)                         AS unit_price,
-  COALESCE(CAST(JSON_VALUE(li, '$.total_discount') AS NUMERIC), 0)    AS line_discount,
+  -- Native-currency line economics (audit)
+  CAST(JSON_VALUE(li, '$.price') AS NUMERIC)                         AS unit_price_original,
+  COALESCE(CAST(JSON_VALUE(li, '$.total_discount') AS NUMERIC), 0)    AS line_discount_original,
   CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC) * CAST(JSON_VALUE(li, '$.price') AS NUMERIC)
-    - COALESCE(CAST(JSON_VALUE(li, '$.total_discount') AS NUMERIC), 0)  AS revenue,
+    - COALESCE(CAST(JSON_VALUE(li, '$.total_discount') AS NUMERIC), 0)  AS revenue_original,
+  -- USD-converted (PRIMARY)
+  CASE WHEN o.fx_rate_to_usd IS NULL THEN NULL
+       ELSE CAST(JSON_VALUE(li, '$.price') AS NUMERIC) * o.fx_rate_to_usd END AS unit_price,
+  CASE WHEN o.fx_rate_to_usd IS NULL THEN NULL
+       ELSE COALESCE(CAST(JSON_VALUE(li, '$.total_discount') AS NUMERIC), 0) * o.fx_rate_to_usd END AS line_discount,
+  CASE WHEN o.fx_rate_to_usd IS NULL THEN NULL
+       ELSE (CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC) * CAST(JSON_VALUE(li, '$.price') AS NUMERIC)
+             - COALESCE(CAST(JSON_VALUE(li, '$.total_discount') AS NUMERIC), 0)) * o.fx_rate_to_usd END AS revenue,
+  -- Cost is already USD (stored in shop's primary currency = USD)
   prod.cost                                                          AS unit_cost,
   CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC) * prod.cost           AS line_cost,
-  CASE WHEN prod.cost IS NOT NULL THEN
-       CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC) * CAST(JSON_VALUE(li, '$.price') AS NUMERIC)
-       - COALESCE(CAST(JSON_VALUE(li, '$.total_discount') AS NUMERIC), 0)
+  CASE WHEN prod.cost IS NOT NULL AND o.fx_rate_to_usd IS NOT NULL THEN
+       (CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC) * CAST(JSON_VALUE(li, '$.price') AS NUMERIC)
+        - COALESCE(CAST(JSON_VALUE(li, '$.total_discount') AS NUMERIC), 0)) * o.fx_rate_to_usd
        - CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC) * prod.cost
   END                                                                AS margin
 FROM `oneeighty-warehouse.stg.stg_shopify_orders` o,

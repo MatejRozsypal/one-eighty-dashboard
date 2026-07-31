@@ -21,6 +21,17 @@
  * are capped at tens to low hundreds of rows, so a comparator in the browser is
  * instant and costs nothing.
  *
+ * ── Resizable columns ───────────────────────────────────────────────────────
+ * Column widths are dragged, not fixed by a `fr` template. Ad and campaign
+ * names here run to sixty characters and product names to forty, so any ratio
+ * chosen up front is wrong for somebody — the grid ends up with names truncated
+ * to nothing beside a Spend column padded with air.
+ *
+ * Widths start from the caller's template, measured once after first paint, and
+ * are only taken over by explicit pixels once a handle is actually dragged. So
+ * the default layout is still responsive; resizing is opt-in and per-session,
+ * which is the right trade for a table nobody wants to configure before reading.
+ *
  * ── Nulls ───────────────────────────────────────────────────────────────────
  * A null is "we don't know", not "zero", so nulls sort to the bottom in *both*
  * directions rather than flipping to the top on ascending. Sorting a column
@@ -28,7 +39,7 @@
  * to measure.
  */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type SortDirection = "desc" | "asc" | null;
 
@@ -78,6 +89,58 @@ export function DataTable({
   const [sortIndex, setSortIndex] = useState<number | null>(null);
   const [direction, setDirection] = useState<SortDirection>(null);
 
+  // Null until a drag happens, so the caller's responsive template stays in
+  // charge for anyone who never touches a handle.
+  const [widths, setWidths] = useState<number[] | null>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
+
+  const beginResize = useCallback(
+    (index: number, clientX: number) => {
+      const cells = headerRef.current
+        ? Array.from(headerRef.current.children)
+        : [];
+      const measured = cells.map((c) => (c as HTMLElement).getBoundingClientRect().width);
+      if (measured.length === 0) return;
+      setWidths((w) => w ?? measured);
+      drag.current = {
+        index,
+        startX: clientX,
+        startWidth: (widths ?? measured)[index] ?? 120,
+      };
+    },
+    [widths]
+  );
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const d = drag.current;
+      if (!d) return;
+      e.preventDefault();
+      setWidths((current) => {
+        if (!current) return current;
+        const next = [...current];
+        // 56px floor: narrower than this and the heading is unreadable, so the
+        // column can no longer say what it holds.
+        next[d.index] = Math.max(56, d.startWidth + (e.clientX - d.startX));
+        return next;
+      });
+    }
+    function onUp() {
+      drag.current = null;
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  const template = widths
+    ? { gridTemplateColumns: widths.map((w) => `${w}px`).join(" ") }
+    : undefined;
+
   const sorted = useMemo(() => {
     if (sortIndex === null || direction === null) return rows;
     // Copy first: sorting `rows` in place would mutate a prop and leave the
@@ -116,8 +179,10 @@ export function DataTable({
   return (
     <div role="table">
       <div
+        ref={headerRef}
         role="row"
-        className={`${gridClass} border-b border-hairline bg-gray-50 px-5 py-3`}
+        style={template}
+        className={`${widths ? "grid items-center gap-2" : gridClass} border-b border-hairline bg-gray-50 px-5 py-3`}
       >
         {columns.map((c, i) => {
           const active = sortIndex === i && direction !== null;
@@ -125,10 +190,30 @@ export function DataTable({
             c.align === "right" ? "text-right" : "text-left"
           }`;
 
+          const handle = (
+            <span
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={`Resize ${c.label}`}
+              onMouseDown={(e) => {
+                // Stops the header's own sort click from firing on drag start.
+                e.preventDefault();
+                e.stopPropagation();
+                beginResize(i, e.clientX);
+              }}
+              className="absolute right-[-5px] top-0 z-10 h-full w-[10px] cursor-col-resize select-none before:absolute before:left-[4px] before:top-1/2 before:h-[14px] before:w-px before:-translate-y-1/2 before:bg-hairline-strong before:opacity-0 hover:before:opacity-100"
+            />
+          );
+
           if (c.sortable === false) {
             return (
-              <span key={c.key} role="columnheader" className={`${base} text-content-muted`}>
+              <span
+                key={c.key}
+                role="columnheader"
+                className={`${base} relative text-content-muted`}
+              >
                 {c.label}
+                {i < columns.length - 1 && handle}
               </span>
             );
           }
@@ -155,7 +240,7 @@ export function DataTable({
               }
               className={`${base} inline-flex items-center gap-1 transition-colors duration-fast hover:text-content-strong ${
                 c.align === "right" ? "justify-end" : "justify-start"
-              } ${active ? "text-content-strong" : "text-content-muted"}`}
+              } relative ${active ? "text-content-strong" : "text-content-muted"}`}
             >
               <span className="truncate">{c.label}</span>
               {/*
@@ -170,6 +255,7 @@ export function DataTable({
               >
                 {direction === "asc" ? "▲" : "▼"}
               </span>
+              {i < columns.length - 1 && handle}
             </button>
           );
         })}
@@ -179,13 +265,14 @@ export function DataTable({
         <div
           key={row.key}
           role="row"
-          className={`${gridClass} border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50`}
+          style={template}
+          className={`${widths ? "grid items-center gap-2" : gridClass} border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50`}
         >
           {row.cells.map((cell, i) => (
             <span
               key={columns[i]?.key ?? i}
               role="cell"
-              className={columns[i]?.align === "right" ? "text-right" : undefined}
+              className={`min-w-0 truncate ${columns[i]?.align === "right" ? "text-right" : ""}`}
             >
               {cell}
             </span>

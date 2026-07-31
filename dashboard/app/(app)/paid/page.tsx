@@ -10,7 +10,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
-import { getMetaTotals, getTopAds } from "@/lib/queries/paid";
+import { getMetaTotals, getTopAds, getChannelTotals } from "@/lib/queries/paid";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
@@ -34,9 +34,10 @@ export default async function PaidPage({
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
 
-  const [totals, ads] = await Promise.all([
+  const [totals, ads, channels] = await Promise.all([
     getMetaTotals(client.clientId, params.range),
     getTopAds(client.clientId, params.range, 10),
+    getChannelTotals(client.clientId, params.range, client.capabilities.googleAds),
   ]);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
@@ -51,8 +52,23 @@ export default async function PaidPage({
     { label: "Purchases", value: totals.purchases },
   ].filter((s) => s.value !== null) as Array<{ label: string; value: number }>;
 
+  const paidRevenue = channels.reduce<number | null>(
+    (acc, c) => (c.revenue === null ? acc : (acc ?? 0) + c.revenue),
+    null
+  );
+  const paidSpend = channels.reduce<number | null>(
+    (acc, c) => (c.spend === null ? acc : (acc ?? 0) + c.spend),
+    null
+  );
+  const paidRoas =
+    paidRevenue !== null && paidSpend ? paidRevenue / paidSpend : null;
+
+  const livePlatforms = channels.filter((c) => c.connected && c.spend !== null);
+
   const kpis = [
     { label: "Spend", value: money(totals.spend) },
+    { label: "Revenue from paid", value: money(paidRevenue) },
+    { label: "ROAS", value: paidRoas !== null ? formatRatio(paidRoas) : "—" },
     { label: "Reach", value: formatNumber(totals.reach) },
     {
       label: "Frequency",
@@ -117,6 +133,67 @@ export default async function PaidPage({
             </div>
           ))}
         </section>
+
+        {livePlatforms.length > 1 && (
+          <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
+            <div className="flex flex-col gap-[5px]">
+              <Eyebrow>By platform</Eyebrow>
+              <span className="text-[12.5px] leading-[1.5] text-content-muted">
+                Each platform reports conversions under its own attribution
+                window, so these revenues can claim the same order twice and do
+                not sum to shop revenue. They are the right numerator for a
+                platform ROAS and the wrong one for anything else.
+              </span>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {livePlatforms.map((c) => {
+                const roas =
+                  c.revenue !== null && c.spend ? c.revenue / c.spend : null;
+                return (
+                  <div
+                    key={c.channel}
+                    className="flex flex-col gap-3 rounded-card border border-hairline p-[16px_18px]"
+                  >
+                    <span className="inline-flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+                      <span
+                        aria-hidden="true"
+                        className={`h-[9px] w-[9px] rounded-[3px] ${
+                          c.channel === "meta"
+                            ? "bg-platform-meta"
+                            : "bg-platform-google"
+                        }`}
+                      />
+                      {c.channel}
+                    </span>
+                    <div className="flex flex-wrap gap-x-7 gap-y-2">
+                      {[
+                        { k: "Spend", v: money(c.spend) },
+                        { k: "Revenue", v: money(c.revenue) },
+                        { k: "ROAS", v: roas !== null ? formatRatio(roas) : "—" },
+                      ].map((x) => (
+                        <span key={x.k} className="flex flex-col gap-1">
+                          <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-content-muted">
+                            {x.k}
+                          </span>
+                          <span className="font-mono text-[16px] font-semibold tabular text-content-strong">
+                            {x.v}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                    {c.revenue === null && (
+                      <span className="text-[12px] leading-[1.5] text-content-muted">
+                        No attributed revenue reported for this platform in the
+                        range — spend is real, the return is unmeasured.
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <div className="flex items-start gap-3 rounded-card border border-warning/[0.38] bg-[#FFFBF4] p-[14px_18px]">
           <span aria-hidden="true" className="text-[13px] leading-[1.4] text-warning">

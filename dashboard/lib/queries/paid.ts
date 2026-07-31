@@ -185,7 +185,10 @@ export async function getChannelTotals(
   hasGoogle: boolean
 ): Promise<ChannelTotal[]> {
   const [row] = await query<Record<string, unknown>>(
-    `SELECT SUM(meta_spend) AS meta_spend, SUM(google_spend) AS google_spend
+    `SELECT SUM(meta_spend)     AS meta_spend,
+            SUM(google_spend)   AS google_spend,
+            SUM(meta_revenue)   AS meta_revenue,
+            SUM(google_revenue) AS google_revenue
      FROM \`${PROJECT_ID}.mart.mart_daily_kpis\`
      WHERE client_id = @clientId AND date BETWEEN @from AND @to`,
     { clientId, from: range.from, to: range.to }
@@ -193,18 +196,22 @@ export async function getChannelTotals(
 
   const googleSpend = num(row?.google_spend);
 
+  // Platform-attributed revenue, and worth saying out loud: Meta and Google
+  // each claim conversions under their own attribution windows, so these do not
+  // add up to shop revenue and can double-count the same order. They are the
+  // right numerator for a platform ROAS and the wrong one for anything else.
   return [
     {
       channel: "meta",
       spend: num(row?.meta_spend),
-      revenue: null,
+      revenue: num(row?.meta_revenue),
       purchases: null,
       connected: true,
     },
     {
       channel: "google",
       spend: googleSpend,
-      revenue: null,
+      revenue: num(row?.google_revenue),
       purchases: null,
       connected: hasGoogle || googleSpend !== null,
     },

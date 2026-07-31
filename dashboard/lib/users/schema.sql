@@ -1,5 +1,8 @@
--- App user store. Run once against the Postgres database attached to the
--- Vercel project (Storage → your database → Query), or via psql.
+-- App user store.
+--
+-- You do not normally need to run this: the same DDL is applied on demand by
+-- `ensureSchema()` in lib/users/db.ts, so attaching a fresh database is enough.
+-- This file is the readable copy — keep the two in step.
 --
 -- This holds ONLY who may open the dashboard and what they may see. It is
 -- deliberately separate from BigQuery: `ref.clients` is business configuration

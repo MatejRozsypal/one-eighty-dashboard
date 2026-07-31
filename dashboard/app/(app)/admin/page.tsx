@@ -69,9 +69,9 @@ export default async function AdminPage() {
                   Neon Postgres. It adds <code className="font-mono">DATABASE_URL</code> automatically.
                 </li>
                 <li>
-                  Run <code className="font-mono">dashboard/lib/users/schema.sql</code> against it.
+                  Redeploy. The table creates itself on first use, so there is
+                  no migration to run.
                 </li>
-                <li>Redeploy. This screen then lists users instead of this note.</li>
               </ol>
               <span className="text-content-muted">
                 Until then every {process.env.ALLOWED_EMAIL_DOMAIN ?? "oneeighty.cz"} Google

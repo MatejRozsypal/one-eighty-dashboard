@@ -13,7 +13,7 @@ import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, viewQuery, comparisonLabel, type SearchParams } from "@/lib/params";
 import { getPnlSnapshot, metric } from "@/lib/queries/pnl";
-import { getLifetimeSummary } from "@/lib/queries/lifetime";
+import { getLifetimeSummary, getPayback } from "@/lib/queries/lifetime";
 import { getDiscounts, getExcludedCurrencies } from "@/lib/queries/context";
 import { ROLLUP_CURRENCY, formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { safeDiv } from "@/lib/coerce";
@@ -48,10 +48,11 @@ export default async function SnapshotPage({
   const display =
     params.displayCurrency === ROLLUP_CURRENCY ? ROLLUP_CURRENCY : "native";
 
-  const [snapshot, lifetime, discounts, excluded] =
+  const [snapshot, lifetime, payback, discounts, excluded] =
     await Promise.all([
       getPnlSnapshot(client.clientId, client.currency, params.period, display),
       optional(() => getLifetimeSummary(client.clientId, client.currency), null),
+      optional(() => getPayback(client.clientId, client.currency), null),
       getDiscounts(client.clientId, params.range),
       optional(
         () => getExcludedCurrencies(client.clientId, client.currency, params.range),
@@ -176,6 +177,7 @@ export default async function SnapshotPage({
             discounts={discounts}
           />
           <BottomLine
+            payback={payback}
             totals={t}
             currency={currency}
             lifetime={lifetime}

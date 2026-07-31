@@ -1,0 +1,20 @@
+-- 212_mart_customer_payback.sql
+-- Gross profit per new customer at 30 and 90 days from their first order.
+--
+-- Built as a NEW view rather than extra columns on mart_customer_lifetime:
+-- three pages read that view, and this needed none of its columns.
+--
+-- ── Only complete windows count ─────────────────────────────────────────────
+-- A customer ten days old contributes nothing to a 30-day average. Including
+-- them makes payback look worse the faster you acquire.
+--
+-- ── Why gross_profit_30d_of_90d_cohort exists ───────────────────────────────
+-- A 30-day average over everyone 30 days old and a 90-day average over everyone
+-- 90 days old are computed on DIFFERENT populations, and the 90-day figure can
+-- come out *below* the 30-day one -- impossible for a cumulative measure, and
+-- purely an artefact of which cohorts each includes. Manami showed exactly that
+-- (2,882 vs 2,775). That column restates the 30-day figure over the 90-day
+-- population, so the pair reads as a real curve. Verified after the fix:
+-- dobias $902 -> $1,099, manami 2,607 -> 2,775 CZK.
+--
+-- (View body deployed live; see mart.mart_customer_payback.)

@@ -17,28 +17,23 @@ import { Badge } from "@/components/ui/Badge";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { formatMoney, formatPercent } from "@/lib/currency";
 import { safeDiv } from "@/lib/coerce";
-import { ASSUMED_OPEX_RATE } from "@/lib/metrics";
 import type { PnlTotals } from "@/lib/queries/pnl";
-import type { LifetimeSummary } from "@/lib/queries/lifetime";
+import type { LifetimeSummary, Payback } from "@/lib/queries/lifetime";
 
 export function BottomLine({
   totals,
   currency,
   lifetime,
   customersHref,
+  payback,
 }: {
   totals: PnlTotals;
   currency: string;
   lifetime: LifetimeSummary | null;
   customersHref: string;
+  payback: Payback | null;
 }) {
   const money = (v: number | null) => formatMoney(v, currency);
-
-  const ebitda =
-    totals.cm3 !== null && totals.revenue !== null
-      ? totals.cm3 - totals.revenue * ASSUMED_OPEX_RATE
-      : null;
-  const ebitdaPct = safeDiv(ebitda, totals.revenue);
 
   // Merchandise margin, ex-shipping: (net sales − COGS) ÷ net sales.
   const grossMargin =
@@ -48,30 +43,53 @@ export function BottomLine({
 
   return (
     <div className="flex flex-col gap-[18px] rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-      <Eyebrow>Estimated bottom line</Eyebrow>
+      <Eyebrow>Customer payback</Eyebrow>
 
-      <div className="flex flex-col gap-2.5">
-        <span className="inline-flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-          EBITDA (est.)
-          <Badge variant="outline" size="sm">
-            Estimate
-          </Badge>
+      {payback === null ? (
+        <span className="text-[13px] leading-[1.6] text-content-muted">
+          Not enough history — payback needs customers whose first 90 days have
+          fully elapsed.
         </span>
-        <span className="font-mono text-[30px] font-semibold leading-none tracking-heading tabular text-content-strong">
-          {money(ebitda)}
-        </span>
-        <span className="font-mono text-[12px] text-content-muted">
-          {ebitdaPct !== null ? formatPercent(ebitdaPct) : "—"} of revenue
-        </span>
-        <span className="rounded-control border border-dashed border-hairline-strong bg-gray-50 p-[10px_12px] text-[12px] leading-[1.5] text-content-body">
-          Assumes{" "}
-          <b className="text-content-strong">
-            {formatPercent(ASSUMED_OPEX_RATE, { decimals: 0 })} OpEx
-          </b>{" "}
-          — a hardcoded figure, not measured. Formula: cm3 − revenue ×{" "}
-          {ASSUMED_OPEX_RATE}.
-        </span>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+            90-day LTGP : CAC
+          </span>
+          <span className="font-mono text-[30px] font-semibold leading-none tracking-heading tabular text-content-strong">
+            {payback.ltgpToCac !== null ? `${payback.ltgpToCac.toFixed(1)}×` : "—"}
+          </span>
+          <span className="font-mono text-[12px] text-content-muted">
+            {payback.recovery30 !== null
+              ? `${formatPercent(payback.recovery30, { decimals: 0 })} of CAC back in 30 days`
+              : "CAC unknown"}
+          </span>
+
+          <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-control border border-hairline bg-gray-50 p-[10px_12px]">
+            {[
+              { k: "LTGP 30d", v: money(payback.ltgp30) },
+              { k: "LTGP 90d", v: money(payback.ltgp90) },
+              { k: "Blended CAC", v: money(payback.cac) },
+            ].map((x) => (
+              <span key={x.k} className="flex flex-col gap-1">
+                <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-content-muted">
+                  {x.k}
+                </span>
+                <span className="font-mono text-[13px] font-semibold tabular text-content-strong">
+                  {x.v}
+                </span>
+              </span>
+            ))}
+          </div>
+
+          <span className="text-[12px] leading-[1.5] text-content-muted">
+            Gross profit per new customer in their first 30 and 90 days, over the
+            last 12 months. Both figures cover the same customers — those whose
+            90-day window has closed — so the pair is a real curve rather than
+            two averages of different populations. It replaced an EBITDA estimate
+            that assumed a hardcoded 30% OpEx.
+          </span>
+        </div>
+      )}
 
       <div className="flex flex-wrap justify-between gap-4 border-t border-hairline pt-4">
         <span className="flex flex-col gap-[7px]">

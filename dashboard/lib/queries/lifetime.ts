@@ -10,6 +10,7 @@
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num, safeDiv, isoDate } from "@/lib/coerce";
+import { isMissingObject } from "@/lib/queries/errors";
 
 export interface LifetimeSummary {
   currency: string;
@@ -125,4 +126,83 @@ export async function getTopCustomers(
     daysActive: num(r.days_active),
     isReturning: r.is_returning === true,
   }));
+}
+
+/**
+ * Payback windows — gross profit per new customer at 30 and 90 days.
+ *
+ * Answers the question CAC and lifetime LTGP together cannot: *how long* until
+ * an acquired customer has paid for themselves. Lifetime value says a customer
+ * is profitable; this says whether the cash comes back inside a quarter.
+ *
+ * ── Both numbers cover the same customers, on purpose ───────────────────────
+ * A 30-day average over everyone 30 days old and a 90-day average over everyone
+ * 90 days old are computed on different populations, and the 90-day figure can
+ * land *below* the 30-day one — impossible for a cumulative measure, and purely
+ * an artefact of which cohorts each includes. Manami showed exactly that
+ * (2,882 vs 2,775). Both figures here are restricted to customers whose 90-day
+ * window has fully elapsed, so the pair is a real curve.
+ *
+ * Only complete windows count at all: a customer ten days old contributes
+ * nothing to a 30-day average, otherwise payback looks worse the faster you
+ * acquire.
+ */
+export interface Payback {
+  customers: number | null;
+  ltgp30: number | null;
+  ltgp90: number | null;
+  /** Blended CAC over the same span — paid spend ÷ new customers. */
+  cac: number | null;
+  /** Share of CAC recovered in 30 days. */
+  recovery30: number | null;
+  /** 90-day gross profit per CAC currency unit. */
+  ltgpToCac: number | null;
+}
+
+export async function getPayback(
+  clientId: string,
+  currency: string,
+  monthsBack = 12
+): Promise<Payback | null> {
+  try {
+    const [rows, spend] = await Promise.all([
+      query<Record<string, unknown>>(
+        `SELECT SUM(customers_90d_complete) AS customers,
+                SUM(gross_profit_30d_of_90d_cohort) AS gp30,
+                SUM(gross_profit_90d) AS gp90
+         FROM \`${PROJECT_ID}.mart.mart_customer_payback\`
+         WHERE client_id = @clientId AND currency = @currency
+           AND cohort_date >= DATE_SUB(CURRENT_DATE(), INTERVAL @monthsBack MONTH)`,
+        { clientId, currency, monthsBack }
+      ),
+      query<Record<string, unknown>>(
+        `SELECT SUM(paid_spend) AS spend, SUM(new_customer_orders) AS new_orders
+         FROM \`${PROJECT_ID}.mart.mart_daily_kpis\`
+         WHERE client_id = @clientId
+           AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL @monthsBack MONTH)`,
+        { clientId, monthsBack }
+      ),
+    ]);
+
+    const customers = num(rows[0]?.customers);
+    if (!customers) return null;
+
+    const ltgp30 = safeDiv(num(rows[0]?.gp30), customers);
+    const ltgp90 = safeDiv(num(rows[0]?.gp90), customers);
+    // New-customer *orders* stands in for new customers: a first order is by
+    // definition one customer, so over a long window the two converge.
+    const cac = safeDiv(num(spend[0]?.spend), num(spend[0]?.new_orders));
+
+    return {
+      customers,
+      ltgp30,
+      ltgp90,
+      cac,
+      recovery30: cac ? safeDiv(ltgp30, cac) : null,
+      ltgpToCac: cac ? safeDiv(ltgp90, cac) : null,
+    };
+  } catch (error) {
+    if (!isMissingObject(error)) throw error;
+    return null;
+  }
 }

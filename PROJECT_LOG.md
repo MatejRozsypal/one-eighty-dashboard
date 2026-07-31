@@ -4,6 +4,126 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-07-31 (evening) — Dashboard iteration: auth, cohorts, unit economics, mobile
+
+Long working session on the live dashboard. Recorded because several of these
+were bugs found only by looking at real numbers, and the reasoning matters more
+than the diffs.
+
+### A per-customer average that was actually per-day — caught by an operator
+
+`mart_customer_payback` (migration 212) reported Manami at **2,607 CZK of
+30-day gross profit per new customer against a sub-1,000 CZK AOV**, and
+**8.6× LTGP:CAC**. Matěj flagged it as implausible on sight. It was.
+
+The `per_customer` CTE omitted `customer_key` from its `GROUP BY`, so it grouped
+by **cohort date**. The outer `COUNTIF` then counted dates, not customers, and
+every per-customer average was divided by the number of days instead of the
+number of people. The tell was arithmetic anyone could do: 2,607 CZK of *gross
+profit* implies roughly three full-margin orders inside 30 days.
+
+| | reported | actual |
+|---|---:|---:|
+| Manami "customers" (12m) | 319 | **976** |
+| Distinct first-order dates | — | 350 |
+| LTGP 30d | 2,607 CZK | **692 CZK** |
+| LTGP : CAC | 8.6× | **2.27×** |
+
+Dobias after the fix: LTGP30 $98, LTGP90 $119, CAC $8, ratio 15.6× — its paid
+spend ramped only recently, so a 12-month blended CAC is genuinely low.
+
+**Lesson worth keeping:** a `GROUP BY` that silently changes grain produces
+numbers that are wrong by a *factor*, not a rounding, and nothing in the
+pipeline objects. Sanity-check every new per-entity average against a figure
+you already trust — here, AOV.
+
+Also note the payback block uses a fixed 12-month CAC while the Snapshot CAC
+card follows the selected range, so the two legitimately differ. Now stated in
+the UI.
+
+### Warehouse changes
+
+- **`mart_orders` extended to Shoptet** (209). Was Shopify-only, so the whole
+  Orders screen was an empty state for Manami. Reconciles to the cent against
+  `mart_daily_kpis`. Shoptet carries **no address at all** (verified against
+  `raw_shoptet_orders.payload_json`), so `shipping_country` is structurally
+  NULL and the market split falls back to transacting currency, labelled as
+  such. Gains `platform`, `market_currency`, `order_margin`.
+- **`mart_customer_cohort_grid`** (210) — cohort × month-offset × market.
+  Verified: month 0 is 100% retention across all 64 cohort-months and cohort
+  sizes match `mart_customer_cohorts` exactly.
+- **`mart_unit_economics`** (211) — order-line economics split first-time vs
+  returning. AUR, UPT and discounts all need item-level quantity, which no
+  existing mart carried by segment.
+- **`mart_customer_payback`** (212) — see above.
+- **`ref.fx_rates` gained USD→CZK** (013), 50 months from ČNB. **That file
+  contains two tables** — per-month averages, then cumulative January-to-N —
+  and the first parse read the wrong one (22.568 vs a true 23.400 for 2022-06).
+  The table expires monthly and fails *silently* as a padlocked toggle;
+  runbook 23 has the refresh.
+
+### App access: roles and passwords
+
+Users live in **Postgres, not BigQuery** — a password hash has no business in an
+analytics warehouse several service accounts can read. Three roles: `client`
+(one client), `agency` (all), `admin` (+ user management). Confinement happens
+once, where the layout builds the client list, so every page inherits it.
+
+**A live lockout, and the fix.** The bootstrap rule keyed on the users table
+being *empty*. It stopped being empty when the first account was created as
+`agency` — from that moment nobody could bootstrap and the only account that
+existed couldn't reach user management. Now it keys on **no active admin** and
+*writes* the admin row, so the dangerous state self-heals and the rule closes
+behind whoever uses it.
+
+The email-domain allow-list was dropped: a client signs in with their own
+address, so the domain check refused them before their row was ever read. It
+survives only where nobody can administer the app, or any Google account could
+claim admin.
+
+**Cost assumptions moved to Admin.** OpEx, fulfilment and other CM1 were
+constants in code (30%, zero, zero). No connected source reports salaries or
+pick-and-pack, so they were never derivable — but a guess buried in code reads
+as a measurement. They are now per-client settings; a metric whose input is
+blank is hidden rather than guessed.
+
+### Deploy: git pushes were building nothing
+
+Vercel's `rootDirectory` was unset, so builds looked for `app/` at the repo root
+and died in 4s. It had never surfaced because every previous production deploy
+was `npx vercel --prod` run from `dashboard/`, which uses the local cwd. Set to
+`dashboard`.
+
+### A Tailwind bug that made styles invisible
+
+Tailwind cannot apply an opacity modifier to a colour declared as a bare
+`var()` — it emits **no rule at all**, silently. `border-negative/35`,
+`border-warning/40` and `bg-growth-500/20` were all dead: the error and warning
+cards had been drawing invisible borders. Colours now go through a `token()`
+helper returning `color-mix()` when an opacity is asked for.
+
+### UI
+
+Sortable + resizable tables everywhere (one shared `DataTable`); Meta funnel
+redrawn with a **broken scale** because impressions collapsed every later step
+to a sliver; revenue composition and unit economics as Shopify-style ledgers;
+cohort heatmap bucketed by **rank** rather than value, because retention lives
+in too narrow a band for a linear ramp to show anything; Growth gained a YoY
+view whose projection uses the **most recent** complete year, not the mean —
+averaging 2024's 28% share with 2025's 47% invented ~24% growth for a business
+whose Jan–Jun was flat, an artefact of the Canada store merge.
+
+Mobile: notch-safe black bar, title as page switcher, rounded shoulder that
+survives scrolling, bottom nav removed.
+
+### Still unverified at runtime
+
+Password sign-in, reset and forced change have **never been exercised**. Cohort
+heatmap and column dragging have not been seen rendered — local dev has no
+BigQuery credentials.
+
+---
+
 ## 2026-07-31 (PM) — CZK toggle unlocked + the top chrome put on a diet
 
 Two unrelated pieces of work: the FX gap from the handoff list is closed, and the

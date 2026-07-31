@@ -106,11 +106,13 @@ export function BottomLine({
           </div>
 
           <span className="text-[12px] leading-[1.5] text-content-muted">
-            Gross profit per new customer in their first 30 and 90 days, over the
-            last 12 months. Both figures cover the same customers — those whose
-            90-day window has closed — so the pair is a real curve rather than
-            two averages of different populations. It replaced an EBITDA estimate
-            that assumed a hardcoded 30% OpEx.
+            Gross profit per new customer in their first 30 and 90 days, over
+            the last 12 months. Both figures cover the same customers — those
+            whose 90-day window has closed — so the pair is a real curve rather
+            than two averages of different populations.
+            <br />
+            Blended CAC here is also the 12-month figure, so it will not match
+            the CAC card above, which follows the date range you selected.
           </span>
         </div>
       )}

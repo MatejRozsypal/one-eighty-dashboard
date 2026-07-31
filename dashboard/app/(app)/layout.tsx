@@ -51,7 +51,42 @@ export default async function AppLayout({
     redirect("/auth/signin");
   }
 
-  const clients = await getClients();
+  // An account can exist and still be allowed nothing — deactivated, or a
+  // Google login with no row once the store is populated. `role: null` is that
+  // state, and it must not fall through to "sees everything".
+  if (!session.user.role) {
+    redirect("/auth/error?error=AccessDenied");
+  }
+
+  // A temporary password gets you exactly one destination until it is replaced.
+  if (session.user.mustChangePassword) {
+    redirect("/auth/change-password");
+  }
+
+  const allClients = await getClients();
+
+  // The single point where a client-role user is confined. Every page resolves
+  // its client from this list, so there is no page-by-page check to forget —
+  // and `?client=` naming somebody else's account simply finds nothing.
+  const clients =
+    session.user.role === "client"
+      ? allClients.filter((c) => c.clientId === session.user.clientId)
+      : allClients;
+
+  if (clients.length === 0 && allClients.length > 0) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-editorial flex-col justify-center gap-3 px-6">
+        <h1 className="text-heading font-bold text-content-strong">
+          No client assigned
+        </h1>
+        <p className="text-content-body">
+          This account is set to client access but the client it points at
+          (<code className="font-mono text-[13px]">{session.user.clientId ?? "—"}</code>)
+          is not active. An admin can fix that under Admin → Users.
+        </p>
+      </main>
+    );
+  }
 
   if (clients.length === 0) {
     return (
@@ -68,10 +103,14 @@ export default async function AppLayout({
     );
   }
 
-  const name = session?.user?.name ?? session?.user?.email ?? "Signed in";
-  const role = session?.user?.email?.endsWith("@oneeighty.cz")
-    ? "Founder · internal"
-    : "Guest";
+  const name = session.user.name ?? session.user.email ?? "Signed in";
+  const role =
+    session.user.role === "admin"
+      ? "Admin"
+      : session.user.role === "agency"
+        ? "Agency"
+        : `Client · ${clients[0]?.name ?? session.user.clientId}`;
+  const isAdmin = session.user.role === "admin";
 
   return (
     // Black behind everything on mobile, so the content surface below can round
@@ -80,7 +119,7 @@ export default async function AppLayout({
     // background goes back to being the light one.
     <NavigationPendingProvider>
     <div className="flex min-h-screen items-start bg-ink-900 lg:bg-bg-subtle">
-      <Sidebar clients={clients} userName={name} userRole={role} />
+      <Sidebar clients={clients} userName={name} userRole={role} isAdmin={isAdmin} />
 
       {/*
         `min-h-screen` here, not just on the row: the row is `items-start` so
@@ -89,7 +128,7 @@ export default async function AppLayout({
         underneath it.
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <MobileTopBar clients={clients} />
+        <MobileTopBar clients={clients} isAdmin={isAdmin} />
 
         {/*
           One continuous surface for everything under the bar — which is why the

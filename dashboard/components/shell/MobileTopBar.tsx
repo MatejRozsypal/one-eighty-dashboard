@@ -31,17 +31,24 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { NAV, pageTitle } from "@/lib/nav";
+import { navFor, pageTitle } from "@/lib/nav";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import type { Client } from "@/lib/clients";
 
-export function MobileTopBar({ clients = [] }: { clients?: Client[] }) {
+export function MobileTopBar({
+  clients = [],
+  isAdmin = false,
+}: {
+  clients?: Client[];
+  isAdmin?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [clientOpen, setClientOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
   const title = pageTitle(pathname);
+  const nav = navFor(isAdmin);
 
   // Same resolution the sidebar uses: the selection lives in the URL, so both
   // switchers agree without any shared state.
@@ -197,7 +204,7 @@ export function MobileTopBar({ clients = [] }: { clients?: Client[] }) {
             aria-label="Pages"
             className="absolute left-3 top-[calc(var(--header-bar-h)+var(--safe-top))] z-[50] max-h-[70vh] w-[64%] min-w-[228px] max-w-[300px] overflow-y-auto rounded-lg bg-paper p-2 shadow-lg"
           >
-            {NAV.map((group) => (
+            {nav.map((group) => (
               <div key={group.label} className="flex flex-col">
                 <span className="px-3 pb-1 pt-3 font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
                   {group.label}

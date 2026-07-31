@@ -18,7 +18,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { NAV } from "@/lib/nav";
+import { navFor } from "@/lib/nav";
 import { Logo } from "@/components/ui/Logo";
 import { Badge } from "@/components/ui/Badge";
 import { ClientSwitcher } from "@/components/shell/ClientSwitcher";
@@ -28,14 +28,17 @@ export function Sidebar({
   clients,
   userName,
   userRole,
+  isAdmin = false,
 }: {
   clients: Client[];
   userName: string;
   userRole: string;
+  isAdmin?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
+  const nav = navFor(isAdmin);
 
   // Resolved here rather than passed in: `layout.tsx` has no access to
   // searchParams in the App Router, and the selected client lives in the URL.
@@ -58,7 +61,7 @@ export function Sidebar({
       <ClientSwitcher clients={clients} active={active} />
 
       <nav className="scrollbar-inverse flex flex-1 flex-col gap-[18px] overflow-auto">
-        {NAV.map((group) => (
+        {nav.map((group) => (
           <div key={group.label} className="flex flex-col gap-[3px]">
             <span className="px-2.5 pb-1.5 font-mono text-[10px] uppercase tracking-eyebrow text-gray-400">
               {group.label}

@@ -12,6 +12,8 @@ export interface NavItem {
   href?: string;
   /** Tooltip explaining why an unbuilt item is unbuilt. */
   note?: string;
+  /** Hidden entirely from non-admins, rather than shown and refused. */
+  adminOnly?: boolean;
 }
 
 export interface NavGroup {
@@ -52,7 +54,10 @@ export const NAV: NavGroup[] = [
   },
   {
     label: "Admin",
-    items: [{ label: "Data Health", href: "/health" }],
+    items: [
+      { label: "Data Health", href: "/health", adminOnly: true },
+      { label: "Users & access", href: "/admin", adminOnly: true },
+    ],
   },
 ];
 
@@ -69,4 +74,20 @@ export function pageTitle(pathname: string): string {
     if (item) return item.label;
   }
   return "Dashboard";
+}
+
+/**
+ * The navigation a given user should see.
+ *
+ * Admin items are removed from the tree rather than rendered disabled: an
+ * agency user has no business knowing the user-management screen exists, and a
+ * greyed-out row invites someone to ask for access they don't need. Groups that
+ * empty out disappear with their heading.
+ */
+export function navFor(isAdmin: boolean): NavGroup[] {
+  if (isAdmin) return NAV;
+  return NAV.map((g) => ({
+    ...g,
+    items: g.items.filter((i) => !i.adminOnly),
+  })).filter((g) => g.items.length > 0);
 }

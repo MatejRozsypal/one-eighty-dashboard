@@ -12,10 +12,12 @@
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.0",
+    "bcryptjs": "^3.0.3",
     "date-fns": "^3.6.0",
     "geist": "^1.7.2",
     "next": "^14.2.18",
     "next-auth": "^4.24.10",
+    "pg": "^8.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.13.0",
@@ -23,7 +25,9 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.14.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.20",

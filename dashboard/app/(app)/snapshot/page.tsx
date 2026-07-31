@@ -157,11 +157,14 @@ export default async function SnapshotPage({
           />
         </section>
 
+        <AcquisitionEconomics
+          snapshot={snapshot}
+          comparisonLabel={compareLabel}
+          shopPlatform={shopSource}
+        />
+
         <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-          <div className="flex flex-col gap-4">
-            <AcquisitionEconomics snapshot={snapshot} />
-            <RevenueMix series={snapshot.series} newShare={newShare} />
-          </div>
+          <RevenueMix series={snapshot.series} newShare={newShare} />
           <ChannelSplit snapshot={snapshot} client={client} />
         </section>
 

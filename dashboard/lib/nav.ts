@@ -31,6 +31,7 @@ export const NAV: NavGroup[] = [
       { label: "Growth (MoM)", href: "/growth" },
       { label: "Orders", href: "/orders" },
       { label: "Products", href: "/products" },
+      { label: "Unit economics", href: "/unit-economics" },
     ],
   },
   {

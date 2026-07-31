@@ -1,0 +1,20 @@
+-- 211_mart_unit_economics.sql
+-- Order-line economics split by first-time vs returning customer.
+--
+-- Daily grain so the page can honour the date picker. Everything above the line
+-- (AUR, UPT, gross retail, discounts) needs item-level quantity, which no
+-- existing mart carries broken down by customer type.
+--
+-- ── What is deliberately NULL ───────────────────────────────────────────────
+-- Shoptet `discounts`. Shoptet exposes a per-item discount *percentage*, not an
+-- amount; reconstructing the amount means dividing by (100 - pct), which blows
+-- up on a fully discounted line and invents money on the rest. Left null, the
+-- same way `mart_orders` already treats Shoptet discounts.
+--
+-- Returns are absent entirely — there is no refund column anywhere in
+-- `stg_shopify_orders`. That is the known METRICS.md gap, not something this
+-- view can fill; the page shows the row as unmeasured rather than omitting it.
+--
+-- Orders whose `is_returning_customer` is NULL (no email to derive it from) are
+-- excluded, so totals here sit slightly under mart_orders.
+-- (view body deployed live; see mart.mart_unit_economics)

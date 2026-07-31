@@ -166,7 +166,14 @@ export async function getCohortGrid(
     metric = "retention",
     markets,
     maxOffset = 24,
-  }: { metric?: CohortMetric; markets?: string[]; maxOffset?: number } = {}
+    monthsBack = 12,
+  }: {
+    metric?: CohortMetric;
+    markets?: string[];
+    maxOffset?: number;
+    /** Cohort months to include, counting back from this one. 0 = everything. */
+    monthsBack?: number;
+  } = {}
 ): Promise<CohortGrid> {
   const rows = await query<Record<string, unknown>>(
     `SELECT cohort_month, market, market_kind, month_offset,
@@ -175,8 +182,10 @@ export async function getCohortGrid(
      WHERE client_id = @clientId AND currency = @currency
        AND month_offset <= @maxOffset
        AND is_elapsed
+       AND (@monthsBack = 0 OR cohort_month >= DATE_TRUNC(
+             DATE_SUB(CURRENT_DATE(), INTERVAL @monthsBack MONTH), MONTH))
      ORDER BY cohort_month, month_offset`,
-    { clientId, currency, maxOffset }
+    { clientId, currency, maxOffset, monthsBack }
   );
 
   let marketKind: "country" | "currency" = "country";
@@ -221,7 +230,7 @@ export async function getCohortGrid(
   const spec = metricSpec(metric);
 
   const cohortRows: CohortRow[] = [...grid.keys()]
-    .sort((a, b) => b.localeCompare(a))
+    .sort((a, b) => a.localeCompare(b))
     .map((month) => {
       const size = cohortSize.get(month) ?? 0;
       const row = grid.get(month)!;

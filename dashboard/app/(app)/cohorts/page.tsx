@@ -63,12 +63,27 @@ export default async function CohortsPage({
         ? searchParams.market
         : [];
 
+  // 13 rows by default — this month plus the previous twelve. The warehouse
+  // holds 36, and at that length the grid is 37 columns wide as well, which is
+  // a wall rather than a chart. The longer views stay one click away.
+  const RANGES = [
+    { value: "12", label: "13 months" },
+    { value: "24", label: "25 months" },
+    { value: "0", label: "All" },
+  ];
+  const rangeParam = RANGES.some((r) => r.value === searchParams.cohortMonths)
+    ? (searchParams.cohortMonths as string)
+    : "12";
+  const monthsBack = Number(rangeParam);
+
   const [cohorts, grid] = await Promise.all([
     getCohorts(client.clientId, client.currency, 24),
     getCohortGrid(client.clientId, client.currency, {
       metric,
       markets: selectedMarkets,
-      maxOffset: 18,
+      // Offsets tracks the window: a 13-month view has nothing beyond month 12.
+      maxOffset: monthsBack === 0 ? 24 : monthsBack,
+      monthsBack,
     }),
   ]);
   const spec = metricSpec(metric);
@@ -160,6 +175,18 @@ export default async function CohortsPage({
                     value: m.value,
                     label: m.label,
                   }))}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted">
+                  Cohorts shown
+                </span>
+                <SegmentedControl
+                  param="cohortMonths"
+                  ariaLabel="How many cohort months"
+                  active={rangeParam}
+                  segments={RANGES}
                 />
               </div>
 

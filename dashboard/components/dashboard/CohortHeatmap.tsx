@@ -1,7 +1,21 @@
 /**
  * Cohort grid, drawn as a heatmap.
  *
- * ── Colour is scaled per grid, not per row ──────────────────────────────────
+ * ── Colour is bucketed by rank, not by value ────────────────────────────────
+ * A linear or square-root ramp on this data produced one grid of near-identical
+ * green: retention past month 1 lives in a narrow band, so almost every cell
+ * mapped to almost the same opacity and the heatmap carried no information.
+ *
+ * Cells are ranked against every other cell in the grid and dropped into six
+ * discrete steps instead. Rank spreads whatever distribution the data actually
+ * has, and discrete steps are far easier to tell apart than a continuous ramp —
+ * you can see that two cells differ without holding them side by side.
+ *
+ * The cost is that colour now shows *order*, not magnitude: a step up does not
+ * mean twice as much. The numbers are in every cell for magnitude; the colour
+ * is there to make the shape findable.
+ *
+ * ── Scaled per grid, not per row ────────────────────────────────────────────
  * Every cell shares one scale, so a dark cell means the same thing wherever it
  * is and cohorts are comparable down a column. Scaling per row would make every
  * cohort's own best month dark and destroy exactly the comparison the grid is
@@ -36,7 +50,25 @@ export function CohortHeatmap({
       if (offset > 0 && v !== null && v > 0) scaleValues.push(v);
     });
   }
-  const max = scaleValues.length > 0 ? Math.max(...scaleValues) : 0;
+  scaleValues.sort((a, b) => a - b);
+
+  /** Share of cells this one is greater than or equal to, 0..1. */
+  const rankOf = (v: number): number => {
+    if (scaleValues.length === 0) return 0;
+    let lo = 0;
+    let hi = scaleValues.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (scaleValues[mid] < v) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo / scaleValues.length;
+  };
+
+  // Six steps, spaced so the lightest is still visibly tinted and the darkest
+  // is the full accent. Text flips to inverse on the top two, where the
+  // background is too dark for body colour to stay legible.
+  const STEPS = [10, 24, 40, 58, 78, 100];
 
   const render = (v: number | null): string => {
     if (v === null) return "";
@@ -55,14 +87,12 @@ export function CohortHeatmap({
   // Opacity, not a colour ramp: one accent at varying strength keeps the grid
   // inside the brand's single-accent rule and stays readable to anyone who
   // can't separate hues.
-  const shade = (v: number | null, offset: number): string => {
-    if (v === null) return "";
-    if (offset === 0) return "background-color:var(--gray-100)";
-    if (max <= 0 || v <= 0) return "";
-    // Square root: the distribution is heavily skewed to small values, and a
-    // linear ramp would leave everything but the top few cells invisible.
-    const t = Math.min(1, Math.sqrt(v / max));
-    return `background-color:color-mix(in srgb, var(--accent) ${(t * 82).toFixed(0)}%, transparent)`;
+  const stepFor = (v: number | null, offset: number): number => {
+    if (v === null || offset === 0 || v <= 0 || scaleValues.length === 0) return -1;
+    return Math.min(
+      STEPS.length - 1,
+      Math.floor(rankOf(v) * STEPS.length)
+    );
   };
 
   const offsets = Array.from({ length: grid.maxOffset + 1 }, (_, i) => i);
@@ -121,14 +151,26 @@ export function CohortHeatmap({
             </span>
             {offsets.map((o) => {
               const v = row.cells[o] ?? null;
+              const step = stepFor(v, o);
+              const dark = step >= STEPS.length - 2;
               return (
                 <span
                   key={o}
-                  // Inline because the value is continuous — a Tailwind class
-                  // per shade would mean 100 classes that the JIT can't see.
-                  style={cssToStyle(shade(v, o))}
+                  style={
+                    o === 0 && v !== null
+                      ? { backgroundColor: "var(--gray-100)" }
+                      : step < 0
+                        ? undefined
+                        : {
+                            backgroundColor: `color-mix(in srgb, var(--accent) ${STEPS[step]}%, transparent)`,
+                          }
+                  }
                   className={`px-2.5 py-2.5 text-right font-mono text-[12px] tabular ${
-                    v === null ? "text-gray-200" : "text-content-strong"
+                    v === null
+                      ? "text-gray-200"
+                      : dark
+                        ? "font-semibold text-accent-contrast"
+                        : "text-content-strong"
                   }`}
                 >
                   {render(v)}
@@ -140,12 +182,6 @@ export function CohortHeatmap({
       </div>
     </div>
   );
-}
-
-function cssToStyle(css: string): React.CSSProperties {
-  if (!css) return {};
-  const [, value] = css.split("background-color:");
-  return value ? { backgroundColor: value } : {};
 }
 
 function monthLabel(month: string): string {

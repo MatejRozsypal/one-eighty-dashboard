@@ -178,3 +178,17 @@ body {
 .scrollbar-inverse::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/*
+ * Overscroll colour. iOS paints the rubber-band area beyond the page with the
+ * *html* background, so this is what shows when you drag past the top — black,
+ * matching the status-bar strip. `body` stays light so nothing dark leaks in
+ * below short pages.
+ */
+html {
+  background-color: var(--ink-900);
+}
+
+body {
+  background-color: var(--bg-subtle);
+}

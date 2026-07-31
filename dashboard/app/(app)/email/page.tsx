@@ -9,12 +9,13 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
-import { getEmailSummary } from "@/lib/queries/email";
+import { getEmailSummary, getFlows } from "@/lib/queries/email";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
+import { DataTable } from "@/components/ui/DataTable";
 import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Email" };
@@ -28,7 +29,10 @@ export default async function EmailPage({
   const params = parseViewParams(searchParams);
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
-  const summary = await getEmailSummary(client.clientId, params.range, 30);
+  const [summary, flows] = await Promise.all([
+    getEmailSummary(client.clientId, params.range, 30),
+    getFlows(client.clientId, client.currency),
+  ]);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
   const esp = client.emailPlatform
@@ -215,6 +219,121 @@ export default async function EmailPage({
             zero.
           </span>
         </div>
+        {flows && (
+          <section className="flex flex-col gap-4 overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
+            <div className="flex flex-col gap-4 px-5 pt-5">
+              <div className="flex flex-col gap-[5px]">
+                <Eyebrow>Flows · mart_email_flow_perf</Eyebrow>
+                <span className="text-[12.5px] leading-[1.5] text-content-muted">
+                  Automated flows, <b>lifetime to date</b> — not the selected
+                  range. Klaviyo and Ecomail both report a flow&apos;s totals
+                  since it was switched on, so there is no period to filter to.
+                  {flows.snapshotDate && ` Snapshot ${flows.snapshotDate}.`}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4">
+                {[
+                  { label: "Flow revenue", value: money(flows.totalRevenue), accent: true },
+                  { label: "Conversions", value: formatNumber(flows.totalConversions) },
+                  { label: "Emails sent", value: formatNumber(flows.totalEmails) },
+                  {
+                    label: "Open rate",
+                    value: flows.openRate !== null ? formatPercent(flows.openRate) : "—",
+                  },
+                  {
+                    label: "Click rate",
+                    value: flows.clickRate !== null ? formatPercent(flows.clickRate) : "—",
+                  },
+                ].map((k) => (
+                  <div key={k.label} className="flex flex-col gap-[7px]">
+                    <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+                      {k.label}
+                    </span>
+                    <span
+                      className={`font-mono text-[20px] font-semibold leading-none tracking-heading tabular ${
+                        k.accent ? "text-growth-700" : "text-content-strong"
+                      }`}
+                    >
+                      {k.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <div className="min-w-[880px]">
+                <DataTable
+                  gridClass="grid grid-cols-[2.2fr_0.8fr_0.9fr_0.8fr_0.8fr_0.8fr_1fr_0.9fr] items-center gap-2"
+                  columns={[
+                    { key: "flow", label: "Flow" },
+                    { key: "status", label: "Status" },
+                    { key: "sent", label: "Sent", align: "right" },
+                    { key: "open", label: "Open", align: "right" },
+                    { key: "click", label: "Click", align: "right" },
+                    { key: "cvr", label: "CVR", align: "right" },
+                    { key: "revenue", label: "Revenue", align: "right" },
+                    { key: "rpe", label: "Rev / email", align: "right" },
+                  ]}
+                  rows={flows.flows.map((f) => ({
+                    key: f.flowId,
+                    sort: [
+                      f.flowName,
+                      f.status,
+                      f.emailsSent,
+                      f.openRate,
+                      f.clickRate,
+                      f.conversionRate,
+                      f.revenue,
+                      f.revenuePerEmail,
+                    ],
+                    cells: [
+                      <span
+                        className="block truncate text-[13px] text-content-strong"
+                        title={f.flowName}
+                      >
+                        {f.flowName}
+                      </span>,
+                      <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-content-muted">
+                        {f.status ?? "—"}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-body">
+                        {formatNumber(f.emailsSent)}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-body">
+                        {f.openRate !== null ? formatPercent(f.openRate, { decimals: 1 }) : "—"}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-body">
+                        {f.clickRate !== null ? formatPercent(f.clickRate, { decimals: 1 }) : "—"}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-body">
+                        {f.conversionRate !== null
+                          ? formatPercent(f.conversionRate, { decimals: 2 })
+                          : "—"}
+                      </span>,
+                      <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
+                        {money(f.revenue)}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-growth-700">
+                        {f.revenuePerEmail !== null ? money(f.revenuePerEmail) : "—"}
+                      </span>,
+                    ],
+                  }))}
+                />
+              </div>
+            </div>
+
+            <div className="px-5 pb-4 text-[12px] leading-[1.6] text-content-muted">
+              Rates are delivery-weighted across flows, never a mean of per-flow
+              rates — averaging those weights a two-send flow the same as a
+              forty-thousand-send one. <b>Rev / email</b> is what one more send
+              of that flow has been worth, which is the column to rank by when
+              deciding what to build next.
+            </div>
+          </section>
+        )}
+
       </main>
     </>
   );

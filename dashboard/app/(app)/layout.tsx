@@ -103,12 +103,12 @@ export default async function AppLayout({
   const isAdmin = session.user.role === "admin";
 
   return (
-    // Black behind everything on mobile, so the content surface below can round
-    // its top corners against the status-bar strip the way a native sheet does.
-    // On desktop there is no strip and the sidebar owns the dark, so the page
-    // background goes back to being the light one.
+    // The page background is light everywhere. The black at the top is painted
+    // by MobileTopBar itself, which is sticky and covers the status-bar inset —
+    // making the whole shell black instead left a black band under the content
+    // on any page shorter than the viewport, and under Safari's bottom bar.
     <NavigationPendingProvider>
-    <div className="flex min-h-screen items-start bg-ink-900 lg:bg-bg-subtle">
+    <div className="flex min-h-screen items-start bg-bg-subtle">
       <Sidebar clients={clients} userName={name} userRole={role} isAdmin={isAdmin} />
 
       {/*

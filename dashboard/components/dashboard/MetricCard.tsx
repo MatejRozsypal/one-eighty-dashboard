@@ -119,10 +119,24 @@ export function MetricCard({
           )}
         </div>
       ) : (
-        <div className="flex items-end justify-between gap-3">
+        /*
+         * Value, then delta, then sparkline — three stacked rows.
+         *
+         * The sparkline used to sit beside the value, taking a fixed 92px out
+         * of the card's width while the value was `whitespace-nowrap` in a
+         * `min-w-0` column. Long figures didn't shrink and didn't wrap, they
+         * simply overflowed their column and ran underneath the chart. A CZK
+         * rollup total makes that certain rather than merely likely: the same
+         * revenue is ~21× the number of digits it is in USD.
+         *
+         * Giving each the full card width removes the collision by
+         * construction, rather than by tuning a width that only holds for the
+         * numbers we happen to have today.
+         */
+        <div className="flex flex-col gap-3.5">
           <div className="flex min-w-0 flex-col gap-[9px]">
             <span
-              className={`whitespace-nowrap font-mono text-[clamp(22px,2.1vw,31px)] font-semibold leading-none tracking-display tabular ${
+              className={`whitespace-nowrap font-mono text-[clamp(20px,1.9vw,28px)] font-semibold leading-none tracking-display tabular ${
                 isEmpty || value === null ? "text-gray-250" : "text-content-strong"
               }`}
             >
@@ -131,7 +145,7 @@ export function MetricCard({
 
             {isEmpty ? (
               <span className="text-[12px] leading-[1.5] text-content-muted">
-                {state.kind === "no-account" ? state.reason : state.reason}
+                {state.reason}
               </span>
             ) : state.kind === "partial" ? (
               <span className="text-[12px] leading-[1.5] text-content-body">
@@ -154,9 +168,13 @@ export function MetricCard({
           </div>
 
           {series && series.length > 1 && !isEmpty && (
-            <span className="w-[92px] min-w-[52px] flex-none">
-              <Sparkline data={series} tone={sparkTone} width={112} height={40} />
-            </span>
+            <Sparkline
+              data={series}
+              tone={sparkTone}
+              width={240}
+              height={28}
+              className="-mb-1"
+            />
           )}
         </div>
       )}

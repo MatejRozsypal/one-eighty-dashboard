@@ -81,7 +81,6 @@ export default async function CustomersPage({
       <Header
         eyebrow={pageEyebrow("/customers", client.name)}
         title="Customers"
-        rangeLabel="36-month window"
       />
 
       <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">

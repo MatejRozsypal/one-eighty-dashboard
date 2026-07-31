@@ -36,7 +36,6 @@ export default async function ProductsPage({
     <Header
       eyebrow={pageEyebrow("/products", client.name)}
       title="Products"
-      rangeLabel={`${params.range.from} → ${params.range.to}`}
     />
   );
 

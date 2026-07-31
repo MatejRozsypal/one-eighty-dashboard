@@ -38,7 +38,6 @@ export default async function EmailPage({
     <Header
       eyebrow={pageEyebrow("/email", client.name)}
       title="Email"
-      rangeLabel={`${params.range.from} → ${params.range.to}`}
     />
   );
 

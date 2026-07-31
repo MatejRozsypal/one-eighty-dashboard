@@ -51,7 +51,6 @@ export default async function CohortsPage({
     <Header
       eyebrow={pageEyebrow("/cohorts", client.name)}
       title="Cohorts"
-      rangeLabel="by first-order month"
     />
   );
 

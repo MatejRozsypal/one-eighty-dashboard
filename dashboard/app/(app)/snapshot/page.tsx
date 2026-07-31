@@ -14,11 +14,7 @@ import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, viewQuery, comparisonLabel, type SearchParams } from "@/lib/params";
 import { getPnlSnapshot, metric } from "@/lib/queries/pnl";
 import { getLifetimeSummary } from "@/lib/queries/lifetime";
-import {
-  getDataThrough,
-  getDiscounts,
-  getExcludedCurrencies,
-} from "@/lib/queries/context";
+import { getDiscounts, getExcludedCurrencies } from "@/lib/queries/context";
 import { getConversionCoverage, ROLLUP_CURRENCY, formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { safeDiv } from "@/lib/coerce";
 import { optional } from "@/lib/queries/errors";
@@ -52,11 +48,10 @@ export default async function SnapshotPage({
   const display =
     params.displayCurrency === ROLLUP_CURRENCY ? ROLLUP_CURRENCY : "native";
 
-  const [snapshot, lifetime, through, discounts, excluded, coverage] =
+  const [snapshot, lifetime, discounts, excluded, coverage] =
     await Promise.all([
       getPnlSnapshot(client.clientId, client.currency, params.period, display),
       optional(() => getLifetimeSummary(client.clientId, client.currency), null),
-      getDataThrough(client.clientId),
       getDiscounts(client.clientId, params.range),
       optional(
         () => getExcludedCurrencies(client.clientId, client.currency, params.range),
@@ -91,7 +86,6 @@ export default async function SnapshotPage({
       <Header
         eyebrow={pageEyebrow("/snapshot", client.name)}
         title="Snapshot"
-        rangeLabel={`${params.range.from} → ${params.range.to}`}
       />
 
       <ControlBar
@@ -102,8 +96,6 @@ export default async function SnapshotPage({
         nativeCurrency={client.currency}
         displayCurrency={params.displayCurrency}
         conversion={coverage}
-        shopThrough={through.shop}
-        adsThrough={through.ads}
       />
 
       <main className="flex max-w-[1440px] flex-col gap-6 px-5 pb-14 pt-6 lg:px-8">

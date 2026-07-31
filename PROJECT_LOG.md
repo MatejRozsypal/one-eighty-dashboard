@@ -4,6 +4,100 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-07-31 (PM) — CZK toggle unlocked + the top chrome put on a diet
+
+Two unrelated pieces of work: the FX gap from the handoff list is closed, and the
+first round of real-use feedback on the live dashboard is fixed.
+
+### `ref.fx_rates` now holds USD→CZK (migration 013)
+
+50 monthly rows, 2022-06 → 2026-07, from **ČNB's published monthly averages**
+(`prumerne_mena.txt?mena=USD`, quantity 1, so `rate` is CZK per 1 USD). Monthly
+averages rather than spot, matching the CAD→USD seed and the way
+`lib/currency.ts` joins — every daily row converts at *its own* month's rate and
+only then sums, so a multi-month range is never converted as though one rate held
+throughout.
+
+Verified live: 0 missing months for both the default range and Dobias's full
+history; July 2026 revenue $197,659 → **4,192,354 CZK** at a blended 21.21, with
+no row failing to find a rate. The toggle needed no code change — it reads
+coverage and lit up on its own.
+
+**A trap worth recording:** that ČNB file contains *two* tables — per-month
+averages, then cumulative January-to-N averages after a blank line, under a
+header that looks nearly identical. The first parse read the second table and
+produced 22.568 for 2022-06 where the truth is 23.400. Wrong by ~1% and entirely
+plausible-looking. The migration and runbook 23 both call this out; the parser
+now asserts the header's third column is exactly `leden`.
+
+**This table expires and fails silently.** ČNB publishes a month's average only
+after the month closes, so 2026-07 carries a month-to-date mean tagged
+`source = 'cnb_mtd_avg@2026-07-30'`. Come August, a missing row disables the
+toggle again — and because partial coverage is (correctly) treated as no
+coverage, the symptom is a padlock, not an error. **Runbook 23** has the monthly
+procedure, a ready-to-run parser, and the n8n shape that would end the manual
+step. Nobody has automated it yet.
+
+`CAD→USD` was left at 2026-05 deliberately: no CAD-presentment order has landed
+since 2026-03, so nothing joins a missing rate. Runbook 23 carries the query that
+catches it if one ever does.
+
+### UI fixes from first real use
+
+- **Sparkline no longer collides with the value.** It sat beside the number,
+  taking a fixed 92px, while the number was `whitespace-nowrap` inside a
+  `min-w-0` column — so long figures didn't shrink and didn't wrap, they
+  overflowed and ran under the chart. Now value, delta and sparkline are three
+  stacked rows at full card width, which removes the collision by construction
+  rather than by tuning a width. This mattered more after the FX work: the same
+  revenue in CZK is ~21× the digits it is in USD.
+- **Header and control bar cut from ~150px to ~104px.** Eyebrow now sits inline
+  beside the title instead of stacked; the header is a fixed `--header-h` (52px)
+  and the control bar sticks to that variable instead of a bare `top-[71px]`
+  that silently overlapped whenever the header's padding changed.
+- **Removed:** the header's date-range caption (the date picker directly below
+  says the same thing) and the two "data through" freshness stamps, which were
+  what forced the bar into a second wrapped row. Freshness lives on Data Health,
+  which judges each source against its own expectation. Dropping the stamps also
+  removed one BigQuery query from the snapshot page.
+- **Currency control is hidden for CZK-native clients** instead of rendering
+  `CZK → CZK 🔒` — a padlock guarding nothing, costing a fifth of the bar.
+
+### Every interaction now answers immediately
+
+Every control writes to the URL and lets the server re-render, which is the right
+architecture and felt broken: React keeps the old page mounted and interactive
+for the whole BigQuery round trip, so a click looked ignored and got clicked
+again.
+
+- `app/(app)/loading.tsx` — skeleton for navigation *between* pages.
+- `RouteProgress` — a fixed 2px indeterminate bar, driven by each control's own
+  `useTransition`. **`loading.tsx` does not cover the common case**: changing a
+  search param on the page you are already on doesn't remount the segment, so it
+  never fires. That is most interactions here.
+- Date picker, compare/currency toggles and the client switcher now adopt the
+  new selection *on click* and hand authority back to the server when `isPending`
+  clears. The date popover closes immediately rather than sitting open for
+  seconds.
+
+Verified against a temporary harness page (since deleted) since local dev has
+neither OAuth nor BigQuery credentials: no overlap at `CZK 4,192,354`, control
+bar unwrapped down to 1180px, and the progress bar confirmed in the DOM as
+`fixed / 2px / full width / animating` — it is subpixel in a scaled screenshot.
+
+**Not verified in production.** `main` is not pushed and Vercel has not
+redeployed; the FX rows, however, are live in BigQuery now.
+
+### Files
+
+- `infra/bigquery/013_seed_fx_usd_czk.sql` — deployed (50 rows MERGEd)
+- `runbooks/23_fx_rates_refresh.md` — new
+- `dashboard/components/ui/RouteProgress.tsx`, `dashboard/app/(app)/loading.tsx` — new
+- `MetricCard`, `Header`, `ControlBar`, `SegmentedControl`, `DateRangeControl`,
+  `ClientSwitcher`, `globals.css`, `lib/currency.ts`, 10 pages (`rangeLabel` dropped)
+
+---
+
 ## 2026-07-31 — Dashboard shipped to `dashboard.oneeighty.cz` (Phase 4 live)
 
 The Next.js frontend is **live in production** behind Google SSO. 11 pages, wired to

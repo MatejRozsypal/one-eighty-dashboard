@@ -70,7 +70,7 @@ export default async function HealthPage() {
 
   return (
     <>
-      <Header eyebrow="Admin" title="Data Health" rangeLabel={`Checked ${checkedAt}`} />
+      <Header eyebrow="Admin" title="Data Health" />
 
       <main className="flex max-w-[1240px] flex-col gap-[22px] px-5 pb-14 pt-6 lg:px-8">
         {drift.length > 0 && (

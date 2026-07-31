@@ -68,7 +68,6 @@ export default async function PaidPage({
       <Header
         eyebrow={pageEyebrow("/paid", client.name)}
         title="Paid"
-        rangeLabel={`${params.range.from} → ${params.range.to}`}
       />
 
       <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">

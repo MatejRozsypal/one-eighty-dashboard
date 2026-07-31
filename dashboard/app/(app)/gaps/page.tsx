@@ -40,7 +40,6 @@ export default async function GapsPage({
     <Header
       eyebrow={pageEyebrow("/gaps", client.name)}
       title="Time between orders"
-      rangeLabel={stats?.windowLabel}
     />
   );
 

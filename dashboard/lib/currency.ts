@@ -17,13 +17,20 @@
  * `ref.fx_rates` is monthly (`month_start`), which is why the join is on
  * DATE_TRUNC(date, MONTH).
  *
- * ── Known gap ───────────────────────────────────────────────────────────────
- * As of 2026-07-30 `ref.fx_rates` holds exactly one pair — CAD→USD, 48 months,
- * last month 2026-05-01, hand-seeded (`source = 'manual_entry_2026-05-25'`).
- * There is no USD→CZK, so converting Dobias into CZK is not possible yet, and
- * `getConversionCoverage` reports that honestly so the UI can disable the toggle
- * instead of rendering a plausible-looking wrong number. The moment USD→CZK
- * rows land, the toggle lights up with no code change.
+ * ── The rate table expires ──────────────────────────────────────────────────
+ * `ref.fx_rates` is hand-fed, not derived. USD→CZK now covers 2022-06 onward
+ * from ČNB's published monthly averages (migration 013), which is what unlocked
+ * this toggle — before that the table held only CAD→USD and conversion was
+ * impossible.
+ *
+ * But a table seeded through July is broken in August. ČNB publishes a month's
+ * average only once the month closes, so the current month carries a
+ * month-to-date mean tagged `source LIKE 'cnb_mtd_avg%'`, and **somebody has to
+ * add next month's row**. `getConversionCoverage` treats partial coverage as no
+ * coverage, so a single missing month disables the toggle outright rather than
+ * quietly returning a total assembled from converted and unconverted months.
+ * That is the right failure, but it is a silent one — it looks like a padlock,
+ * not an error. Refresh procedure: runbooks/23_fx_rates_refresh.md.
  */
 
 import { query, PROJECT_ID } from "@/lib/bigquery";

@@ -11,8 +11,9 @@
  * silently reset the date range you spent time choosing.
  */
 
-import { useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { RouteProgress } from "@/components/ui/RouteProgress";
 import type { Client } from "@/lib/clients";
 
 function initials(name: string): string {
@@ -49,11 +50,29 @@ export function ClientSwitcher({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  // Switching client re-runs every query on the page. The button adopts the new
+  // client immediately so the switch reads as taken, not ignored.
+  const [isPending, startTransition] = useTransition();
+  const [optimistic, setOptimistic] = useState<Client | null>(null);
+  useEffect(() => {
+    if (!isPending) setOptimistic(null);
+  }, [isPending]);
+
+  const shown = optimistic ?? active;
+
   function select(clientId: string) {
+    if (clientId === shown.clientId) {
+      setOpen(false);
+      return;
+    }
+    setOptimistic(clients.find((c) => c.clientId === clientId) ?? null);
+    setOpen(false);
+
     const params = new URLSearchParams(searchParams.toString());
     params.set("client", clientId);
-    router.push(`${pathname}?${params.toString()}`);
-    setOpen(false);
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`);
+    });
   }
 
   return (
@@ -62,21 +81,26 @@ export function ClientSwitcher({
         Client
       </span>
 
+      <RouteProgress active={isPending} />
+
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 rounded-control border border-white/[0.12] bg-white/[0.06] px-3 py-2.5 text-left text-content-inverse transition-colors duration-fast hover:bg-white/[0.11]"
+        aria-busy={isPending}
+        className={`flex w-full items-center gap-2.5 rounded-control border border-white/[0.12] bg-white/[0.06] px-3 py-2.5 text-left text-content-inverse transition-colors duration-fast hover:bg-white/[0.11] ${
+          isPending ? "animate-pulse" : ""
+        }`}
       >
         <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-lg bg-growth-500/20 font-mono text-[11px] font-semibold text-growth-300">
-          {initials(active.name)}
+          {initials(shown.name)}
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <span className="truncate text-[13px] font-semibold tracking-[-0.01em]">
-            {active.name}
+            {shown.name}
           </span>
           <span className="truncate font-mono text-[10px] tracking-[0.06em] text-gray-300">
-            {meta(active)}
+            {meta(shown)}
           </span>
         </span>
         <span className="text-[10px] text-gray-300" aria-hidden="true">
@@ -87,7 +111,7 @@ export function ClientSwitcher({
       {open && (
         <div className="flex flex-col gap-0.5 rounded-control border border-hairline-inverse bg-ink-800 p-1.5">
           {clients.map((c) => {
-            const isActive = c.clientId === active.clientId;
+            const isActive = c.clientId === shown.clientId;
             return (
               <button
                 key={c.clientId}

@@ -13,8 +13,9 @@
  * it without a round trip.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { RouteProgress } from "@/components/ui/RouteProgress";
 import {
   PRESET_LABELS,
   presetRange,
@@ -78,6 +79,21 @@ export function DateRangeControl({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  // The popover closes and the trigger relabels the instant you choose, while
+  // the query runs behind the progress bar. Holding the popover open until
+  // BigQuery answers would leave the calendar sitting there for seconds
+  // looking like the click was dropped.
+  const [isPending, startTransition] = useTransition();
+
+  // While a range is in flight the trigger shows the range you asked for, not
+  // the one still on screen.
+  const [pendingRange, setPendingRange] = useState<DateRange | null>(null);
+  useEffect(() => {
+    if (!isPending) setPendingRange(null);
+  }, [isPending]);
+
+  const shownRange = pendingRange ?? range;
+
   // Close on outside click / Escape — a popover this large is easy to strand open.
   useEffect(() => {
     if (!open) return;
@@ -98,9 +114,14 @@ export function DateRangeControl({
   function apply(params: Record<string, string>) {
     const next = new URLSearchParams(searchParams.toString());
     for (const [k, v] of Object.entries(params)) next.set(k, v);
-    router.push(`${pathname}?${next.toString()}`);
+    if (params.from && params.to) {
+      setPendingRange({ from: params.from, to: params.to });
+    }
     setOpen(false);
     setCustomMode(false);
+    startTransition(() => {
+      router.push(`${pathname}?${next.toString()}`);
+    });
   }
 
   function choosePreset(key: PresetKey) {
@@ -108,8 +129,11 @@ export function DateRangeControl({
     next.set("preset", key);
     next.delete("from");
     next.delete("to");
-    router.push(`${pathname}?${next.toString()}`);
+    setPendingRange(presetRange(key));
     setOpen(false);
+    startTransition(() => {
+      router.push(`${pathname}?${next.toString()}`);
+    });
   }
 
   function pickDay(day: string) {
@@ -138,23 +162,32 @@ export function DateRangeControl({
 
   return (
     <div ref={wrapRef} className="relative flex items-center gap-2">
+      <RouteProgress active={isPending} />
+
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="inline-flex items-center gap-2.5 rounded-control border border-hairline-strong bg-paper px-3 py-2 text-content-strong transition-colors duration-fast hover:bg-gray-50"
+        aria-busy={isPending}
+        className={`inline-flex items-center gap-2.5 rounded-control border border-hairline-strong bg-paper px-3 py-2 text-content-strong transition-colors duration-fast hover:bg-gray-50 ${
+          isPending ? "animate-pulse" : ""
+        }`}
       >
         <span aria-hidden="true" className="text-[13px]">
           🗓
         </span>
         <span className="font-mono text-[12px] tracking-[-0.01em] tabular">
-          {fmt(range.from)} – {fmt(range.to)}
+          {fmt(shownRange.from)} – {fmt(shownRange.to)}
         </span>
         <span aria-hidden="true" className="text-[9px] text-content-muted">
           {open ? "▴" : "▾"}
         </span>
       </button>
-      <span className="hidden font-mono text-[11px] uppercase tracking-[0.06em] text-content-muted sm:inline">
+      <span
+        className={`hidden font-mono text-[11px] uppercase tracking-[0.06em] text-content-muted sm:inline ${
+          isPending ? "opacity-40" : ""
+        }`}
+      >
         {label}
       </span>
 

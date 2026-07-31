@@ -39,6 +39,14 @@
     monospace;
 
   /*
+   * Height of the sticky page header. The control bar sticks directly beneath
+   * it, so the two are coupled — this variable is where that coupling lives.
+   * It used to be a bare `top-[71px]` inside ControlBar, which silently
+   * overlapped the header the moment the header's padding changed.
+   */
+  --header-h: 52px;
+
+  /*
    * Platform colors for the two Czech-market sources. The handoff ships
    * Shopify / Meta / Klaviyo / Google, but our warehouse also carries Shoptet
    * and Ecomail, and every metric card is tagged with the system it came from.
@@ -79,6 +87,19 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+}
+
+/*
+ * Indeterminate sweep for `RouteProgress`. Indeterminate on purpose: a BigQuery
+ * round trip reports no progress, so a percentage bar would have to invent one.
+ */
+@keyframes oe-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
 }
 
 /* Skeleton shimmer, used while BigQuery runs. */

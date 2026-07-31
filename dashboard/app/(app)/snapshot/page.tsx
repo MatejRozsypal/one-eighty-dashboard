@@ -25,7 +25,6 @@ import { MetricCard } from "@/components/dashboard/MetricCard";
 import { MarginStack } from "@/components/dashboard/MarginStack";
 import { AcquisitionEconomics } from "@/components/dashboard/AcquisitionEconomics";
 import { RevenueMix } from "@/components/dashboard/RevenueMix";
-import { ChannelSplit } from "@/components/dashboard/ChannelSplit";
 import { RevenueComposition } from "@/components/dashboard/RevenueComposition";
 import { BottomLine } from "@/components/dashboard/BottomLine";
 import { pageEyebrow } from "@/lib/nav";
@@ -166,10 +165,7 @@ export default async function SnapshotPage({
           shopPlatform={shopSource}
         />
 
-        <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-          <RevenueMix series={snapshot.series} newShare={newShare} />
-          <ChannelSplit snapshot={snapshot} client={client} />
-        </section>
+        <RevenueMix series={snapshot.series} newShare={newShare} />
 
         <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           <RevenueComposition

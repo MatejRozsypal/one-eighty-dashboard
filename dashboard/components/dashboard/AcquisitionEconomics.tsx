@@ -155,8 +155,8 @@ function OrderMix({
       delta: hasComparison
         ? metric(snapshot, (x) => x.returningCustomerOrders).delta
         : null,
-      bar: "bg-ink-700",
-      dot: "bg-ink-700",
+      bar: "bg-info",
+      dot: "bg-info",
     },
   ];
 

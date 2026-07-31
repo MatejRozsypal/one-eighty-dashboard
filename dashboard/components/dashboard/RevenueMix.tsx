@@ -95,7 +95,7 @@ export function RevenueMix({
             New {newShare !== null ? formatPercent(newShare, { decimals: 0 }) : ""}
           </span>
           <span className="inline-flex items-center gap-[7px] font-mono text-[11px] text-content-body">
-            <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[3px] bg-ink-600" />
+            <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[3px] bg-info" />
             Returning{" "}
             {newShare !== null ? formatPercent(1 - newShare, { decimals: 0 }) : ""}
           </span>
@@ -109,7 +109,7 @@ export function RevenueMix({
         role="img"
         aria-label="Daily revenue split between new and returning customers"
       >
-        <path d={areaPath(returningTop, baseline)} fill="rgba(38,38,43,0.88)" />
+        <path d={areaPath(returningTop, baseline)} fill="color-mix(in srgb, var(--info) 80%, transparent)" />
         <path
           d={areaPath(totalTop, returningTop.map((p) => ({ x: p.x, y: p.yTop })))}
           fill="rgba(18,183,106,0.85)"

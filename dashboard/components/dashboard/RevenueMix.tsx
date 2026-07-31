@@ -17,6 +17,13 @@ import type { PnlDay } from "@/lib/queries/pnl";
 const W = 720;
 const H = 210;
 
+/** Just the top edge of a band, for the boundary stroke. */
+function linePath(points: Array<{ x: number; yTop: number }>): string {
+  return points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.yTop.toFixed(1)}`)
+    .join(" ");
+}
+
 function areaPath(
   points: Array<{ x: number; yTop: number }>,
   baseline: Array<{ x: number; y: number }>
@@ -109,10 +116,55 @@ export function RevenueMix({
         role="img"
         aria-label="Daily revenue split between new and returning customers"
       >
-        <path d={areaPath(returningTop, baseline)} fill="color-mix(in srgb, var(--info) 80%, transparent)" />
+        {/*
+          Soft vertical gradients with a crisp line along the top of each band,
+          rather than two flat saturated slabs. Flat fills at 80-85% opacity
+          made the chart read as poster art: the two colours competed at equal
+          weight everywhere, and neither boundary — the one that actually
+          carries the split — stood out from the mass behind it.
+
+          The fade also puts the strongest colour where each band begins, so
+          thickness reads as magnitude instead of the whole area shouting at
+          once. `preserveAspectRatio="none"` stretches the geometry, so the
+          gradients are declared in objectBoundingBox units to stretch with it.
+        */}
+        <defs>
+          <linearGradient id="mix-returning" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--info)" stopOpacity="0.42" />
+            <stop offset="100%" stopColor="var(--info)" stopOpacity="0.06" />
+          </linearGradient>
+          <linearGradient id="mix-new" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.45" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.08" />
+          </linearGradient>
+        </defs>
+
+        <path d={areaPath(returningTop, baseline)} fill="url(#mix-returning)" />
         <path
           d={areaPath(totalTop, returningTop.map((p) => ({ x: p.x, y: p.yTop })))}
-          fill="rgba(18,183,106,0.85)"
+          fill="url(#mix-new)"
+        />
+
+        {/*
+          The two boundaries, drawn last so nothing sits on top of them.
+          `vectorEffect` keeps them hairline-thin despite the non-uniform
+          scaling that `preserveAspectRatio="none"` applies.
+        */}
+        <path
+          d={linePath(totalTop)}
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth="1.75"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path
+          d={linePath(returningTop)}
+          fill="none"
+          stroke="var(--info)"
+          strokeWidth="1.75"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
         />
         {/* Last day: structurally incomplete, not a drop. */}
         <rect

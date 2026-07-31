@@ -23,21 +23,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
-import { MobileNav } from "@/components/shell/MobileNav";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
 import {
   NavigationPendingProvider,
   PendingRegion,
 } from "@/components/shell/NavigationPending";
-
-function initialsOf(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
-}
 
 export default async function AppLayout({
   children,
@@ -134,14 +124,13 @@ export default async function AppLayout({
           One continuous surface for everything under the bar — which is why the
           bar cannot live inside the per-page Header.
 
-          No `overflow-hidden` with the rounding: it would turn this into a
-          scroll container and silently kill `position: sticky` on the control
-          bar inside. The corners are drawn by the background alone, which is
-          all that is needed as long as the first child is transparent.
+          Deliberately NOT rounded: the curve is drawn by the sticky shoulder
+          inside MobileTopBar, so it survives scrolling. A corner here would
+          only exist at scroll-top.
 
-          The bottom padding clears the floating pill and the home indicator.
+          Bottom padding clears the home indicator.
         */}
-        <div className="flex min-w-0 flex-1 flex-col rounded-t-2xl bg-bg-subtle pb-[calc(6rem+var(--safe-bottom))] lg:rounded-none lg:pb-0">
+        <div className="flex min-w-0 flex-1 flex-col bg-bg-subtle pb-[calc(1.5rem+var(--safe-bottom))] lg:pb-0">
           {/*
             Pulses the figures — and only the figures — while a control's
             navigation is in flight, so a stale number never sits there looking
@@ -151,7 +140,6 @@ export default async function AppLayout({
         </div>
       </div>
 
-      <MobileNav initials={initialsOf(name)} />
     </div>
     </NavigationPendingProvider>
   );

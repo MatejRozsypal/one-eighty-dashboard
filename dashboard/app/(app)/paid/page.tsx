@@ -15,6 +15,7 @@ import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/cur
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Funnel } from "@/components/dashboard/Funnel";
+import { DataTable } from "@/components/ui/DataTable";
 import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Paid" };
@@ -141,65 +142,77 @@ export default async function PaidPage({
 
             <div className="overflow-x-auto">
               <div className="min-w-[1000px]">
-                <div className="grid grid-cols-[2.1fr_1.2fr_0.9fr_0.9fr_0.7fr_0.9fr_0.7fr_0.7fr_0.7fr_0.8fr] gap-2 border-b border-hairline bg-gray-50 px-5 py-3">
-                  {["Ad", "Campaign", "Spend", "Revenue", "ROAS", "Reach", "CTR", "CPC", "Freq.", "CPA"].map(
-                    (h) => (
+                <DataTable
+                  gridClass="grid grid-cols-[2.1fr_1.2fr_0.9fr_0.9fr_0.7fr_0.9fr_0.7fr_0.7fr_0.7fr_0.8fr] items-center gap-2"
+                  columns={[
+                    { key: "ad", label: "Ad" },
+                    { key: "campaign", label: "Campaign" },
+                    { key: "spend", label: "Spend", align: "right" },
+                    { key: "revenue", label: "Revenue", align: "right" },
+                    { key: "roas", label: "ROAS", align: "right" },
+                    { key: "reach", label: "Reach", align: "right" },
+                    { key: "ctr", label: "CTR", align: "right" },
+                    { key: "cpc", label: "CPC", align: "right" },
+                    { key: "freq", label: "Freq.", align: "right" },
+                    { key: "cpa", label: "CPA", align: "right" },
+                  ]}
+                  rows={ads.map((a) => ({
+                    key: `${a.adName}-${a.campaignName}`,
+                    sort: [
+                      a.adName,
+                      a.campaignName,
+                      a.spend,
+                      a.revenue,
+                      a.roas,
+                      a.reach,
+                      a.ctr,
+                      a.cpc,
+                      a.frequency,
+                      a.cpa,
+                    ],
+                    cells: [
+                      <span className="block truncate text-[13px] text-content-strong" title={a.adName}>
+                        {a.adName}
+                      </span>,
                       <span
-                        key={h}
-                        className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
+                        className="block truncate font-mono text-[11px] text-content-muted"
+                        title={a.campaignName}
                       >
-                        {h}
-                      </span>
-                    )
-                  )}
-                </div>
-
-                {ads.map((a) => (
-                  <div
-                    key={`${a.adName}-${a.campaignName}`}
-                    className="grid grid-cols-[2.1fr_1.2fr_0.9fr_0.9fr_0.7fr_0.9fr_0.7fr_0.7fr_0.7fr_0.8fr] items-center gap-2 border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50"
-                  >
-                    <span className="truncate text-[13px] text-content-strong" title={a.adName}>
-                      {a.adName}
-                    </span>
-                    <span
-                      className="truncate font-mono text-[11px] text-content-muted"
-                      title={a.campaignName}
-                    >
-                      {a.campaignName}
-                    </span>
-                    <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                      {money(a.spend)}
-                    </span>
-                    <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {money(a.revenue)}
-                    </span>
-                    {/* Null ROAS means nothing was attributed — not 0.00×. */}
-                    <span
-                      className={`font-mono text-[12.5px] tabular ${
-                        a.roas === null ? "text-gray-250" : "text-growth-700"
-                      }`}
-                      title={a.roas === null ? "No conversions attributed" : undefined}
-                    >
-                      {formatRatio(a.roas)}
-                    </span>
-                    <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {formatNumber(a.reach)}
-                    </span>
-                    <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {a.ctr !== null ? formatPercent(a.ctr, { decimals: 2 }) : "—"}
-                    </span>
-                    <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {money(a.cpc)}
-                    </span>
-                    <span className="font-mono text-[12.5px] tabular text-content-muted">
-                      {a.frequency !== null ? a.frequency.toFixed(2) : "—"}
-                    </span>
-                    <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {money(a.cpa)}
-                    </span>
-                  </div>
-                ))}
+                        {a.campaignName}
+                      </span>,
+                      <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
+                        {money(a.spend)}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-strong">
+                        {money(a.revenue)}
+                      </span>,
+                      // Null ROAS means nothing was attributed — not 0.00×.
+                      <span
+                        className={`font-mono text-[12.5px] tabular ${
+                          a.roas === null ? "text-gray-250" : "text-growth-700"
+                        }`}
+                        title={a.roas === null ? "No conversions attributed" : undefined}
+                      >
+                        {formatRatio(a.roas)}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-strong">
+                        {formatNumber(a.reach)}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-strong">
+                        {a.ctr !== null ? formatPercent(a.ctr, { decimals: 2 }) : "—"}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-strong">
+                        {money(a.cpc)}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-muted">
+                        {a.frequency !== null ? a.frequency.toFixed(2) : "—"}
+                      </span>,
+                      <span className="font-mono text-[12.5px] tabular text-content-strong">
+                        {money(a.cpa)}
+                      </span>,
+                    ],
+                  }))}
+                />
               </div>
             </div>
 

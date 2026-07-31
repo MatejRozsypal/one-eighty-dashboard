@@ -178,6 +178,19 @@ export function MobileTopBar({
         )}
       </div>
 
+      {/*
+        The rounded shoulder, and it lives *inside* the sticky header on
+        purpose. When it was a corner on the scrolling content it was only
+        visible at scroll-top: scroll down and the curve left with the content,
+        so the page went flush against the black bar. Here it sticks, so the
+        content always passes underneath a rounded edge.
+        Black outside, content colour inside — the corner cut-outs are what
+        show the black through.
+      */}
+      <div aria-hidden="true" className="h-4 bg-ink-900">
+        <div className="h-4 rounded-t-2xl bg-bg-subtle" />
+      </div>
+
       {open && (
         <>
           {/*

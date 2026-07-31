@@ -14,6 +14,7 @@ import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { safeDiv } from "@/lib/coerce";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
+import { DataTable } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { pageEyebrow } from "@/lib/nav";
 
@@ -144,68 +145,72 @@ export default async function ProductsPage({
           <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
             <Eyebrow>Products · mart_product_perf</Eyebrow>
             <span className="text-[12px] text-content-muted">
-              Sorted by revenue
+              Click a heading to sort
             </span>
           </div>
 
           <div className="overflow-x-auto">
             <div className="min-w-[820px]">
-              <div className="grid grid-cols-[2.2fr_0.7fr_0.7fr_1fr_1fr_1.4fr] gap-2 border-b border-hairline bg-gray-50 px-5 py-3">
-                {["Product", "Line", "Units", "Revenue", "Margin", "Margin %"].map(
-                  (h) => (
+              <DataTable
+                gridClass="grid grid-cols-[2.2fr_0.7fr_0.7fr_1fr_1fr_1.4fr] items-center gap-2"
+                columns={[
+                  { key: "product", label: "Product" },
+                  { key: "line", label: "Line" },
+                  { key: "units", label: "Units", align: "right" },
+                  { key: "revenue", label: "Revenue", align: "right" },
+                  { key: "margin", label: "Margin", align: "right" },
+                  { key: "marginPct", label: "Margin %" },
+                ]}
+                rows={products.map((p) => ({
+                  key: p.productName,
+                  sort: [
+                    p.productName,
+                    p.productLine,
+                    p.units,
+                    p.revenue,
+                    p.margin,
+                    p.marginPct,
+                  ],
+                  cells: [
                     <span
-                      key={h}
-                      className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
+                      className="block truncate text-[13px] text-content-strong"
+                      title={p.productName}
                     >
-                      {h}
-                    </span>
-                  )
-                )}
-              </div>
-
-              {products.map((p) => (
-                <div
-                  key={p.productName}
-                  className="grid grid-cols-[2.2fr_0.7fr_0.7fr_1fr_1fr_1.4fr] items-center gap-2 border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50"
-                >
-                  <span
-                    className="truncate text-[13px] text-content-strong"
-                    title={p.productName}
-                  >
-                    {p.productName}
-                  </span>
-                  <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-content-muted">
-                    {p.productLine ?? "—"}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-body">
-                    {formatNumber(p.units)}
-                  </span>
-                  <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                    {money(p.revenue)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-growth-700">
-                    {money(p.margin)}
-                  </span>
-                  <span className="flex items-center gap-2.5">
-                    <span className="h-1.5 flex-1 overflow-hidden rounded-pill bg-gray-100">
-                      <span
-                        className="block h-1.5 rounded-pill bg-accent"
-                        style={{
-                          width:
-                            p.marginPct !== null
-                              ? `${Math.max(4, ((p.marginPct - minMargin) / marginSpan) * 100)}%`
-                              : "0%",
-                        }}
-                      />
-                    </span>
-                    <span className="w-[46px] shrink-0 text-right font-mono text-[12px] tabular text-content-strong">
-                      {p.marginPct !== null
-                        ? formatPercent(p.marginPct, { decimals: 0 })
-                        : "—"}
-                    </span>
-                  </span>
-                </div>
-              ))}
+                      {p.productName}
+                    </span>,
+                    <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-content-muted">
+                      {p.productLine ?? "—"}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-body">
+                      {formatNumber(p.units)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
+                      {money(p.revenue)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-growth-700">
+                      {money(p.margin)}
+                    </span>,
+                    <span className="flex items-center gap-2.5">
+                      <span className="h-1.5 flex-1 overflow-hidden rounded-pill bg-gray-100">
+                        <span
+                          className="block h-1.5 rounded-pill bg-accent"
+                          style={{
+                            width:
+                              p.marginPct !== null
+                                ? `${Math.max(4, ((p.marginPct - minMargin) / marginSpan) * 100)}%`
+                                : "0%",
+                          }}
+                        />
+                      </span>
+                      <span className="w-[46px] shrink-0 text-right font-mono text-[12px] tabular text-content-strong">
+                        {p.marginPct !== null
+                          ? formatPercent(p.marginPct, { decimals: 0 })
+                          : "—"}
+                      </span>
+                    </span>,
+                  ],
+                }))}
+              />
             </div>
           </div>
 

@@ -3,6 +3,12 @@
  *
  * The page you open when a number on the Snapshot looks wrong. Its job is to
  * let you get from a total down to the individual orders behind it.
+ *
+ * Serves both platforms. Where they differ, the page drops the column rather
+ * than printing a row of dashes: Shoptet has no address on the order and no
+ * separable shipping or discounts, so those columns simply aren't rendered for
+ * it, and the market split is cut by transacting currency (CZK = CZ, EUR =
+ * SK/EU for Manami) under a heading that says so.
  */
 
 import type { Metadata } from "next";
@@ -19,13 +25,20 @@ export const metadata: Metadata = { title: "Orders" };
 export const dynamic = "force-dynamic";
 
 const REGION = new Intl.DisplayNames(["en"], { type: "region" });
+const CURRENCY_MARKETS: Record<string, string> = {
+  CZK: "Czechia (CZK)",
+  EUR: "Eurozone / SK (EUR)",
+  USD: "United States (USD)",
+  CAD: "Canada (CAD)",
+};
 
-function countryLabel(code: string): string {
-  if (!code) return "Not set";
+function marketLabel(key: string, dimension: "country" | "currency"): string {
+  if (!key) return "Not set";
+  if (dimension === "currency") return CURRENCY_MARKETS[key] ?? key;
   try {
-    return REGION.of(code) ?? code;
+    return REGION.of(key) ?? key;
   } catch {
-    return code;
+    return key;
   }
 }
 
@@ -67,10 +80,10 @@ export default async function OrdersPage({
               No order-level data for {client.name}.
             </span>
             <span className="text-[13px] leading-[1.6] text-content-body">
-              <code className="font-mono">mart_orders</code> is built from
-              Shopify only. {client.name} is on{" "}
-              {client.shopPlatform ?? "another platform"}, so the daily totals on
-              Snapshot work but there is no per-order view yet.
+              <code className="font-mono">mart_orders</code> returned no rows for{" "}
+              {client.name} in this range. It carries both Shopify and Shoptet,
+              so this is an empty range rather than an unsupported platform —
+              try widening the dates.
             </span>
           </div>
         </main>
@@ -83,28 +96,71 @@ export default async function OrdersPage({
     1
   );
 
+  const isCurrencySplit = summary.dimension === "currency";
+
+  // Columns follow the platform. Shoptet exposes neither per-order discounts
+  // nor a shipping/merchandise split, so those columns are dropped rather than
+  // rendered as a column of em dashes that looks like missing data.
+  const columns: Array<{ key: string; label: string; align?: "right" }> = [
+    { key: "date", label: "Date" },
+    { key: "order", label: "Order" },
+    { key: "customer", label: "Customer" },
+    { key: "market", label: isCurrencySplit ? "Currency" : "Country" },
+    { key: "revenue", label: "Revenue" },
+    { key: "net", label: "Net sales" },
+    ...(summary.margin !== null
+      ? [{ key: "margin", label: "Margin" } as const]
+      : []),
+    ...(summary.hasDiscounts
+      ? [{ key: "discounts", label: "Discounts" } as const]
+      : []),
+    { key: "status", label: "Type" },
+  ];
+
+  const grid = `grid grid-cols-[0.85fr_0.75fr_1.5fr_0.6fr_repeat(${
+    columns.length - 5
+  },minmax(0,1fr))_0.85fr] items-center gap-2`;
+
+  const cards = [
+    { label: "Orders", value: formatNumber(summary.orders) },
+    { label: "Revenue", value: money(summary.revenue) },
+    { label: "AOV (net)", value: money(summary.aovNet), note: "net sales ÷ orders" },
+    ...(summary.hasShippingSplit
+      ? [
+          {
+            label: "AOV incl. shipping",
+            value: money(summary.aovInclShipping),
+            muted: true,
+          },
+        ]
+      : []),
+    ...(summary.margin !== null
+      ? [
+          {
+            label: "Gross profit",
+            value: money(summary.margin),
+            note:
+              summary.marginRate !== null
+                ? `${formatPercent(summary.marginRate, { decimals: 1 })} of net sales`
+                : undefined,
+          },
+        ]
+      : []),
+    {
+      label: "Returning",
+      value:
+        summary.returningShare !== null
+          ? formatPercent(summary.returningShare)
+          : "—",
+    },
+  ];
+
   return (
     <>
       {header}
       <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <section className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-          {[
-            { label: "Orders", value: formatNumber(summary.orders) },
-            { label: "Revenue", value: money(summary.revenue) },
-            { label: "AOV (net)", value: money(summary.aovNet), accent: true },
-            {
-              label: "AOV incl. shipping",
-              value: money(summary.aovInclShipping),
-              muted: true,
-            },
-            {
-              label: "Returning",
-              value:
-                summary.returningShare !== null
-                  ? formatPercent(summary.returningShare)
-                  : "—",
-            },
-          ].map((s) => (
+          {cards.map((s) => (
             <div
               key={s.label}
               className="flex flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm"
@@ -114,15 +170,13 @@ export default async function OrdersPage({
               </span>
               <span
                 className={`font-mono text-[22px] font-semibold leading-none tracking-heading tabular ${
-                  s.muted ? "text-gray-400" : "text-content-strong"
+                  "muted" in s && s.muted ? "text-gray-400" : "text-content-strong"
                 }`}
               >
                 {s.value}
               </span>
-              {s.accent && (
-                <span className="text-[11.5px] text-gray-300">
-                  net sales ÷ orders
-                </span>
+              {"note" in s && s.note && (
+                <span className="text-[11.5px] text-gray-300">{s.note}</span>
               )}
             </div>
           ))}
@@ -130,24 +184,35 @@ export default async function OrdersPage({
 
         <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
           <div className="flex flex-col gap-[5px]">
-            <Eyebrow>Market split</Eyebrow>
+            <Eyebrow>
+              {isCurrencySplit ? "Market split · by currency" : "Market split"}
+            </Eyebrow>
             <span className="text-[12.5px] leading-[1.5] text-content-muted">
-              Where the orders shipped. One store, several markets.
+              {isCurrencySplit ? (
+                <>
+                  Shoptet puts no address on an order, so this is split by the
+                  currency the customer transacted in — the closest thing to a
+                  market boundary that the data actually contains. Amounts are
+                  still shown in CZK.
+                </>
+              ) : (
+                <>Where the orders shipped. One store, several markets.</>
+              )}
             </span>
           </div>
 
           <div className="flex flex-col">
             {summary.markets.map((m) => (
               <div
-                key={m.country || "unset"}
+                key={m.key || "unset"}
                 className="grid grid-cols-[minmax(110px,1.2fr)_minmax(60px,2fr)_repeat(3,minmax(64px,0.8fr))] items-center gap-3 border-b border-hairline py-2.5"
               >
                 <span
                   className={`truncate text-[13px] ${
-                    m.country ? "text-content-strong" : "text-gray-400 italic"
+                    m.key ? "text-content-strong" : "text-gray-400 italic"
                   }`}
                 >
-                  {countryLabel(m.country)}
+                  {marketLabel(m.key, summary.dimension)}
                 </span>
                 <span className="h-2 overflow-hidden rounded-pill bg-gray-100">
                   <span
@@ -174,8 +239,14 @@ export default async function OrdersPage({
 
           <span className="text-[12px] leading-[1.6] text-content-muted">
             Columns are revenue, orders, and share of orders from returning
-            customers. A blank market means the order carried no shipping
-            country — that&apos;s missing data, not a place.
+            customers.
+            {!isCurrencySplit && (
+              <>
+                {" "}
+                A blank market means the order carried no shipping country —
+                that&apos;s missing data, not a place.
+              </>
+            )}
           </span>
         </section>
 
@@ -189,53 +260,82 @@ export default async function OrdersPage({
 
           <div className="overflow-x-auto">
             <div className="min-w-[860px]">
-              <div className="grid grid-cols-[0.9fr_0.8fr_1.6fr_0.7fr_1fr_1fr_0.9fr_0.9fr] gap-2 border-b border-hairline bg-gray-50 px-5 py-3">
-                {["Date", "Order", "Customer", "Country", "Revenue", "Net sales", "Discounts", "Status"].map(
-                  (h) => (
-                    <span
-                      key={h}
-                      className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
-                    >
-                      {h}
-                    </span>
-                  )
-                )}
+              <div className={`${grid} border-b border-hairline bg-gray-50 px-5 py-3`}>
+                {columns.map((c) => (
+                  <span
+                    key={c.key}
+                    className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
+                  >
+                    {c.label}
+                  </span>
+                ))}
               </div>
 
               {orders.map((o, i) => (
                 <div
                   key={`${o.orderNumber}-${i}`}
-                  className="grid grid-cols-[0.9fr_0.8fr_1.6fr_0.7fr_1fr_1fr_0.9fr_0.9fr] items-center gap-2 border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50"
+                  className={`${grid} border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50`}
                 >
-                  <span className="font-mono text-[12px] tabular text-content-muted">
-                    {o.date ?? "—"}
-                  </span>
-                  <span className="font-mono text-[12px] text-content-strong">
-                    {o.orderNumber}
-                  </span>
-                  <span className="truncate font-mono text-[12px] text-content-body">
-                    {o.customerEmail}
-                  </span>
-                  <span className="font-mono text-[12px] text-content-muted">
-                    {o.country || "—"}
-                  </span>
-                  <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                    {money(o.revenue)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-body">
-                    {money(o.netSales)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-muted">
-                    {o.discounts ? `−${money(o.discounts)}` : "—"}
-                  </span>
-                  <span className="justify-self-start">
-                    <Badge
-                      variant={o.isReturning ? "positive" : "neutral"}
-                      size="sm"
-                    >
-                      {o.isReturning ? "Returning" : "New"}
-                    </Badge>
-                  </span>
+                  {columns.map((c) => {
+                    switch (c.key) {
+                      case "date":
+                        return (
+                          <span key={c.key} className="font-mono text-[12px] tabular text-content-muted">
+                            {o.date ?? "—"}
+                          </span>
+                        );
+                      case "order":
+                        return (
+                          <span key={c.key} className="truncate font-mono text-[12px] text-content-strong">
+                            {o.orderNumber}
+                          </span>
+                        );
+                      case "customer":
+                        return (
+                          <span key={c.key} className="truncate font-mono text-[12px] text-content-body">
+                            {o.customerEmail}
+                          </span>
+                        );
+                      case "market":
+                        return (
+                          <span key={c.key} className="font-mono text-[12px] text-content-muted">
+                            {o.market || "—"}
+                          </span>
+                        );
+                      case "revenue":
+                        return (
+                          <span key={c.key} className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
+                            {money(o.revenue)}
+                          </span>
+                        );
+                      case "net":
+                        return (
+                          <span key={c.key} className="font-mono text-[12.5px] tabular text-content-body">
+                            {money(o.netSales)}
+                          </span>
+                        );
+                      case "margin":
+                        return (
+                          <span key={c.key} className="font-mono text-[12.5px] tabular text-content-body">
+                            {o.margin !== null ? money(o.margin) : "—"}
+                          </span>
+                        );
+                      case "discounts":
+                        return (
+                          <span key={c.key} className="font-mono text-[12.5px] tabular text-content-muted">
+                            {o.discounts ? `−${money(o.discounts)}` : "—"}
+                          </span>
+                        );
+                      default:
+                        return (
+                          <span key={c.key} className="justify-self-start">
+                            <Badge variant={o.isReturning ? "positive" : "neutral"} size="sm">
+                              {o.isReturning ? "Returning" : "New"}
+                            </Badge>
+                          </span>
+                        );
+                    }
+                  })}
                 </div>
               ))}
             </div>

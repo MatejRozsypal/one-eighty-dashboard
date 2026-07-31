@@ -20,8 +20,14 @@ export const metadata: Metadata = {
   },
   formatDetection: { telephone: false },
   icons: {
-    icon: "/brand/oneeighty-mark.png",
-    apple: "/brand/oneeighty-mark.png",
+    icon: [
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    // 180px and deliberately flattened to RGB. iOS composites any alpha channel
+    // in an apple-touch-icon onto black, so the transparent brand mark that used
+    // to be pointed at here landed on the home screen as a black square.
+    apple: { url: "/icons/apple-touch-icon.png", sizes: "180x180" },
   },
 };
 

@@ -13,19 +13,28 @@
  *  1. **No user store configured** — before the Postgres database exists,
  *     `app_users` cannot be read at all. Rather than refuse every sign-in, the
  *     old behaviour stands: any allowed-domain Google account gets in as admin.
- *  2. **Store configured but empty** — the first allowed-domain Google sign-in
- *     is admin, so there is a way to create the first real user. Once one row
- *     exists this stops, and a Google account with no active row is rejected.
+ *  2. **No active admin** — an allowed-domain Google sign-in claims admin and
+ *     a row is written for it, so the rule closes behind them.
  *
- * Without those, attaching the database would have locked everyone out of the
- * page needed to add the first account.
+ * The second one originally keyed on the table being *empty*, and that was
+ * wrong in a way that bit immediately: the first user created was an `agency`
+ * account, the table stopped being empty, and from that moment no
+ * allowed-domain account could bootstrap while the only account that existed
+ * couldn't reach user management either. The app was unadministrable with no
+ * way back in. Keying on "no active admin" makes that exact state the one that
+ * repairs itself.
  */
 
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { userStoreConfigured } from "@/lib/users/db";
-import { countUsers, findUserByEmail, verifyPassword, type Role } from "@/lib/users/store";
+import {
+  claimAdminIfNoneExists,
+  findUserByEmail,
+  verifyPassword,
+  type Role,
+} from "@/lib/users/store";
 
 const ALLOWED_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN ?? "oneeighty.cz";
 const ALLOWED_DOMAINS = ALLOWED_DOMAIN.split(",").map((d) => d.trim().toLowerCase());
@@ -66,8 +75,9 @@ export async function resolveAccess(email: string): Promise<SessionAccess | null
       };
     }
 
-    // Bootstrap: an empty table plus an allowed domain is the only way in.
-    if (isAllowedDomain(lower) && (await countUsers()) === 0) {
+    // Recovery: an allowed-domain account claims admin when there is none.
+    if (isAllowedDomain(lower) && (await claimAdminIfNoneExists(lower))) {
+      console.warn(`[auth] ${lower} claimed admin — no active admin existed`);
       return { role: "admin", clientId: null, mustChangePassword: false };
     }
 

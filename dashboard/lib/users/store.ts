@@ -92,6 +92,39 @@ export async function countUsers(): Promise<number> {
 }
 
 /**
+ * Recovery path: claim admin when the app has no active admin at all.
+ *
+ * The first version of this keyed on the table being *empty*, which locked the
+ * app the moment a first user was created as anything other than admin — the
+ * table was no longer empty, so no allowed-domain account could bootstrap, and
+ * the only account that existed couldn't reach user management either. Nobody
+ * could administer the app and there was no way back in.
+ *
+ * Keying on "no active admin" instead makes the dangerous state the one that
+ * self-heals. It **writes the row**, so the moment one allowed-domain person
+ * signs in there is a real admin and this closes behind them — rather than
+ * leaving a standing rule that anyone on the domain is an admin.
+ *
+ * The insert is conditional in SQL, not in JS, so two simultaneous sign-ins
+ * cannot both pass the check and both claim it.
+ */
+export async function claimAdminIfNoneExists(
+  email: string
+): Promise<boolean> {
+  const rows = await sql<{ id: string }>(
+    `INSERT INTO app_users (email, role, must_change_password)
+     SELECT LOWER($1), 'admin', FALSE
+     WHERE NOT EXISTS (
+       SELECT 1 FROM app_users WHERE role = 'admin' AND is_active
+     )
+     ON CONFLICT DO NOTHING
+     RETURNING id::text`,
+    [email]
+  );
+  return rows.length > 0;
+}
+
+/**
  * Readable but not guessable: 4 words plus digits beats a 12-char scramble
  * that gets written on a sticky note because nobody can dictate it over a
  * call. `randomInt` is the CSPRNG — `Math.random()` is not.

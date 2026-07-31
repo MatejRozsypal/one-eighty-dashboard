@@ -82,7 +82,7 @@ export function MetricCard({
   return (
     <div className={shell}>
       <div className="flex items-center justify-between gap-2">
-        <span className="relative inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-content-muted">
+        <span className="relative inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] font-medium uppercase leading-[1.35] tracking-[0.08em] text-content-muted">
           {label}
           {definition && <MetricTooltip definition={definition} />}
         </span>

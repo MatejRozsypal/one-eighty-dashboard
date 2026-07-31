@@ -46,7 +46,7 @@ export function AcquisitionEconomics({
         </span>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(252px,1fr))] gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <MetricCard
           label="MER"
           value={formatRatio(t.mer)}
@@ -74,7 +74,7 @@ export function AcquisitionEconomics({
           source="Warehouse"
         />
         <MetricCard
-          label="PNO"
+          label="Ad spend % of revenue"
           // Ad spend as a share of revenue — the Czech "podíl nákladů na
           // obratu", and the inverse of MER. Same information, but a cost
           // ratio is what people actually budget against, and lower is better.

@@ -7,7 +7,7 @@
  *
  * ── The two empty steps are the honest part ─────────────────────────────────
  * `cm1_other_costs` (inbound freight, duties, packaging, payment fees) and
- * `fulfilment_cost` (outbound shipping, warehousing, returns) are both hardcoded
+ * `fulfilment_cost` (outbound shipping, warehousing, returns) is hardcoded
  * to zero in `mart_daily_kpis`. They are drawn as hatched placeholders labelled
  * "not measured yet" rather than as zero-height steps, because a zero-height
  * step reads as "this business has no fulfilment costs" — which is false, and a
@@ -68,13 +68,6 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
       kind: "cost",
       delta: metric(snapshot, (x) => x.cogs).delta,
       goodWhen: "down",
-    },
-    {
-      label: "− Other CM1 costs",
-      value: null,
-      base: cm1,
-      magnitude: 0,
-      kind: "placeholder",
     },
     {
       label: "CM1",
@@ -276,13 +269,10 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
           No data
         </span>
         <span className="text-[12.5px] leading-[1.6] text-content-body">
-          Two cost steps are hardcoded to zero:{" "}
-          <b className="text-content-strong">other CM1 costs</b> (inbound freight,
-          duties, packaging, payment fees) and{" "}
-          <b className="text-content-strong">fulfilment</b> (shipping, warehousing).
-          CM1 and CM2 are therefore identical today. Both steps are drawn empty
-          rather than as zero; when the data lands they fill in and nothing else
-          moves.
+          <b className="text-content-strong">Fulfilment</b> (outbound shipping,
+          warehousing) is not measured, so CM1 and CM2 are identical today. The
+          step is drawn empty rather than as zero; when a rate is set it fills in
+          and nothing else moves.
         </span>
       </div>
     </section>

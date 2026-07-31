@@ -62,6 +62,26 @@ export interface DataTableRow {
   sort: Array<number | string | null>;
 }
 
+/**
+ * Once widths are explicit pixels, the row must size to its own columns.
+ *
+ * Rows sit inside a `min-w-[…]` block within an `overflow-x-auto` parent, so a
+ * plain grid takes that block's width — 1000px, say — while dragged columns can
+ * total 1260px. The `px-5` then belongs to the 1000px box and the overflow
+ * escapes it: scrolled fully right, the last column lands exactly on the
+ * container edge with zero padding, and the row's bottom border and hover
+ * background stop 260px short of the content.
+ *
+ * `w-max` makes the box as wide as the columns actually are, so the padding
+ * travels to the true end of the row; `min-w-full` keeps it filling the
+ * container when the dragged total is narrower than the viewport.
+ *
+ * This applies only to the resized branch. The default branch uses `fr` columns,
+ * which resolve against available space and would collapse to min-content under
+ * `w-max` — and it has no such bug, because `fr` never overflows the box.
+ */
+const ROW_RESIZED = "grid w-max min-w-full items-center gap-2";
+
 function compare(
   a: number | string | null,
   b: number | string | null
@@ -182,7 +202,7 @@ export function DataTable({
         ref={headerRef}
         role="row"
         style={template}
-        className={`${widths ? "grid items-center gap-2" : gridClass} border-b border-hairline bg-gray-50 px-5 py-3`}
+        className={`${widths ? ROW_RESIZED : gridClass} border-b border-hairline bg-gray-50 px-5 py-3`}
       >
         {columns.map((c, i) => {
           const active = sortIndex === i && direction !== null;
@@ -266,7 +286,7 @@ export function DataTable({
           key={row.key}
           role="row"
           style={template}
-          className={`${widths ? "grid items-center gap-2" : gridClass} border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50`}
+          className={`${widths ? ROW_RESIZED : gridClass} border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50`}
         >
           {row.cells.map((cell, i) => (
             <span

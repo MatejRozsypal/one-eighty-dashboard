@@ -13,6 +13,7 @@ import { getProducts } from "@/lib/queries/products";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { safeDiv } from "@/lib/coerce";
 import { Header } from "@/components/shell/Header";
+import { PageControls } from "@/components/controls/PageControls";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { DataTable } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
@@ -34,10 +35,14 @@ export default async function ProductsPage({
   const money = (v: number | null) => formatMoney(v, client.currency);
 
   const header = (
-    <Header
-      eyebrow={pageEyebrow("/products", client.name)}
-      title="Products"
-    />
+    <>
+      <Header
+        eyebrow={pageEyebrow("/products", client.name)}
+        title="Products"
+      />
+
+      <PageControls client={client} params={params} />
+    </>
   );
 
   if (products.length === 0) {

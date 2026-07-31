@@ -17,6 +17,7 @@ import { parseViewParams, type SearchParams } from "@/lib/params";
 import { getOrdersSummary, getRecentOrders } from "@/lib/queries/orders";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
+import { PageControls } from "@/components/controls/PageControls";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable } from "@/components/ui/DataTable";
@@ -60,10 +61,14 @@ export default async function OrdersPage({
   const money = (v: number | null) => formatMoney(v, client.currency);
 
   const header = (
-    <Header
-      eyebrow={pageEyebrow("/orders", client.name)}
-      title="Orders"
-    />
+    <>
+      <Header
+        eyebrow={pageEyebrow("/orders", client.name)}
+        title="Orders"
+      />
+
+      <PageControls client={client} params={params} />
+    </>
   );
 
   if (!summary) {

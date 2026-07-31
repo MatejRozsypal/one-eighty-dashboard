@@ -12,6 +12,7 @@ import { parseViewParams, type SearchParams } from "@/lib/params";
 import { getEmailSummary } from "@/lib/queries/email";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
+import { PageControls } from "@/components/controls/PageControls";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
 import { pageEyebrow } from "@/lib/nav";
@@ -35,10 +36,14 @@ export default async function EmailPage({
     : "Email";
 
   const header = (
-    <Header
-      eyebrow={pageEyebrow("/email", client.name)}
-      title="Email"
-    />
+    <>
+      <Header
+        eyebrow={pageEyebrow("/email", client.name)}
+        title="Email"
+      />
+
+      <PageControls client={client} params={params} />
+    </>
   );
 
   if (!summary) {

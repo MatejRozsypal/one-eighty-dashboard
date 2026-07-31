@@ -15,11 +15,11 @@ import { parseViewParams, viewQuery, comparisonLabel, type SearchParams } from "
 import { getPnlSnapshot, metric } from "@/lib/queries/pnl";
 import { getLifetimeSummary } from "@/lib/queries/lifetime";
 import { getDiscounts, getExcludedCurrencies } from "@/lib/queries/context";
-import { getConversionCoverage, ROLLUP_CURRENCY, formatMoney, formatNumber, formatPercent } from "@/lib/currency";
+import { ROLLUP_CURRENCY, formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { safeDiv } from "@/lib/coerce";
 import { optional } from "@/lib/queries/errors";
 import { Header } from "@/components/shell/Header";
-import { ControlBar } from "@/components/controls/ControlBar";
+import { PageControls } from "@/components/controls/PageControls";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { MarginStack } from "@/components/dashboard/MarginStack";
 import { AcquisitionEconomics } from "@/components/dashboard/AcquisitionEconomics";
@@ -48,7 +48,7 @@ export default async function SnapshotPage({
   const display =
     params.displayCurrency === ROLLUP_CURRENCY ? ROLLUP_CURRENCY : "native";
 
-  const [snapshot, lifetime, discounts, excluded, coverage] =
+  const [snapshot, lifetime, discounts, excluded] =
     await Promise.all([
       getPnlSnapshot(client.clientId, client.currency, params.period, display),
       optional(() => getLifetimeSummary(client.clientId, client.currency), null),
@@ -57,12 +57,6 @@ export default async function SnapshotPage({
         () => getExcludedCurrencies(client.clientId, client.currency, params.range),
         []
       ),
-      client.currency === ROLLUP_CURRENCY
-        ? Promise.resolve(null)
-        : optional(
-            () => getConversionCoverage(client.currency, ROLLUP_CURRENCY, params.range),
-            null
-          ),
     ]);
 
   const t = snapshot.current;
@@ -88,15 +82,7 @@ export default async function SnapshotPage({
         title="Snapshot"
       />
 
-      <ControlBar
-        range={params.range}
-        presetKey={params.presetKey}
-        comparison={params.period.comparison}
-        comparisonMode={params.comparisonMode}
-        nativeCurrency={client.currency}
-        displayCurrency={params.displayCurrency}
-        conversion={coverage}
-      />
+      <PageControls client={client} params={params} />
 
       <main className="flex max-w-[1440px] flex-col gap-6 px-5 pb-14 pt-6 lg:px-8">
         {excluded.length > 0 && display === "native" && (

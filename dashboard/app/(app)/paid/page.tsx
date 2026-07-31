@@ -13,6 +13,7 @@ import { parseViewParams, type SearchParams } from "@/lib/params";
 import { getMetaTotals, getTopAds } from "@/lib/queries/paid";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
+import { PageControls } from "@/components/controls/PageControls";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Funnel } from "@/components/dashboard/Funnel";
 import { DataTable } from "@/components/ui/DataTable";
@@ -68,6 +69,8 @@ export default async function PaidPage({
         eyebrow={pageEyebrow("/paid", client.name)}
         title="Paid"
       />
+
+      <PageControls client={client} params={params} />
 
       <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {funnel.length > 1 ? (

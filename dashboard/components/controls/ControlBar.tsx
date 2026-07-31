@@ -20,6 +20,7 @@
 
 import { DateRangeControl } from "@/components/controls/DateRangeControl";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
+import { includesToday } from "@/lib/period";
 import type { ComparisonMode, DateRange, PresetKey } from "@/lib/period";
 import type { ConversionCoverage } from "@/lib/currency";
 import { ROLLUP_CURRENCY } from "@/lib/currency";
@@ -100,6 +101,13 @@ export function ControlBar({
           </span>
         )}
       </div>
+
+      {includesToday(range) && (
+        <span className="inline-flex items-center gap-1.5 rounded-pill border border-warning/[0.45] bg-[#FFFBF4] px-2.5 py-1 font-mono text-[10.5px] text-content-body">
+          <span aria-hidden="true" className="text-warning">⚠</span>
+          Includes today — ad platforms report D-1, so paid metrics are incomplete
+        </span>
+      )}
 
       {showCurrency && (
         <>

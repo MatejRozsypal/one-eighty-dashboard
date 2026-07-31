@@ -3,11 +3,12 @@
 /**
  * Date range control — preset menu plus a two-month calendar for custom ranges.
  *
- * Every preset ends **yesterday**, never today. Today is always partial: shops
- * report same-day but ad platforms are structurally a day behind, so a range
- * including today can never be complete across sources and would show every
- * metric falling off a cliff. The control makes that choice for you rather than
- * leaving a trap in the UI.
+ * Every preset ends **yesterday** — except "Today", which is opt-in. Today is
+ * always partial: shops report same-day but ad platforms are structurally a day
+ * behind, so a range including it can never be complete across sources and
+ * every paid metric reads near zero. The default protects you from that; the
+ * preset lets you ask for it anyway, and the range carries a warning when you
+ * do.
  *
  * State lives in the URL so the view is shareable and server components can read
  * it without a round trip.
@@ -25,7 +26,7 @@ import {
   addDays,
 } from "@/lib/period";
 
-const PRESETS: PresetKey[] = ["7d", "28d", "30d", "90d", "mtd", "ytd", "12m"];
+const PRESETS: PresetKey[] = ["today", "7d", "28d", "30d", "90d", "mtd", "ytd", "12m"];
 
 function fmt(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -288,8 +289,9 @@ export function DateRangeControl({
                         const inRange =
                           draft.to !== null && day >= draft.from && day <= draft.to;
                         const isEdge = day === draft.from || day === draft.to;
-                        // Today and later are unselectable — see the header comment.
-                        const disabled = day > addDays(new Date().toISOString().slice(0, 10), -1);
+                        // Future days only. Today is selectable now that a
+                        // preset offers it; the range warns when it is included.
+                        const disabled = day > new Date().toISOString().slice(0, 10);
 
                         return (
                           <button

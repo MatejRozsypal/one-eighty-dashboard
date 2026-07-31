@@ -16,10 +16,19 @@ import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { getCohorts } from "@/lib/queries/cohorts";
+import {
+  getCohortGrid,
+  metricSpec,
+  COHORT_METRICS,
+  type CohortMetric,
+} from "@/lib/queries/cohortGrid";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
+import { SegmentedControl } from "@/components/controls/SegmentedControl";
+import { MarketFilter } from "@/components/controls/MarketFilter";
+import { CohortHeatmap } from "@/components/dashboard/CohortHeatmap";
 import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Cohorts" };
@@ -42,7 +51,27 @@ export default async function CohortsPage({
   const params = parseViewParams(searchParams);
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
-  const cohorts = await getCohorts(client.clientId, client.currency, 24);
+  const metric = (COHORT_METRICS.some((m) => m.value === searchParams.metric)
+    ? searchParams.metric
+    : "retention") as CohortMetric;
+
+  // `market` repeats, so a multi-select stays a plain shareable URL.
+  const selectedMarkets =
+    typeof searchParams.market === "string"
+      ? [searchParams.market]
+      : Array.isArray(searchParams.market)
+        ? searchParams.market
+        : [];
+
+  const [cohorts, grid] = await Promise.all([
+    getCohorts(client.clientId, client.currency, 24),
+    getCohortGrid(client.clientId, client.currency, {
+      metric,
+      markets: selectedMarkets,
+      maxOffset: 18,
+    }),
+  ]);
+  const spec = metricSpec(metric);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
   const mature = cohorts.filter((c) => c.isMature);
@@ -106,6 +135,64 @@ export default async function CohortsPage({
             </span>
           </span>
         </div>
+
+        <section className="flex flex-col gap-4 overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
+          <div className="flex flex-col gap-4 px-5 pt-5">
+            <div className="flex flex-col gap-[5px]">
+              <Eyebrow>Cohort grid · mart_customer_cohort_grid</Eyebrow>
+              <span className="text-[12.5px] leading-[1.5] text-content-muted">
+                {spec.blurb} Columns are months since the cohort&apos;s first
+                order. Blank means the cohort hasn&apos;t lived that long yet —
+                not that it went to zero.
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
+              <div className="flex flex-col gap-2">
+                <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted">
+                  Metric
+                </span>
+                <SegmentedControl
+                  param="metric"
+                  ariaLabel="Cohort metric"
+                  active={metric}
+                  segments={COHORT_METRICS.map((m) => ({
+                    value: m.value,
+                    label: m.label,
+                  }))}
+                />
+              </div>
+
+              {grid.markets.length > 1 && (
+                <MarketFilter
+                  markets={grid.markets}
+                  kind={grid.marketKind}
+                  active={selectedMarkets}
+                />
+              )}
+            </div>
+
+            {grid.marketKind === "currency" && (
+              <span className="text-[12px] leading-[1.5] text-content-muted">
+                Shoptet puts no address on an order, so these are the currency
+                each customer first transacted in — the closest thing to a
+                market the data holds, not a country.
+              </span>
+            )}
+          </div>
+
+          {grid.rows.length === 0 ? (
+            <div className="px-5 py-8 text-[13px] text-content-muted">
+              No cohorts match this filter.
+            </div>
+          ) : (
+            <CohortHeatmap
+              grid={grid}
+              format={spec.format}
+              currency={client.currency}
+            />
+          )}
+        </section>
 
         {mature.length > 0 && (
           <section className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4">

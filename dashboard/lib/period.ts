@@ -136,7 +136,15 @@ export function delta(
 // Presets
 // ---------------------------------------------------------------------------
 
-export type PresetKey = "7d" | "28d" | "30d" | "90d" | "mtd" | "ytd" | "12m";
+export type PresetKey =
+  | "today"
+  | "7d"
+  | "28d"
+  | "30d"
+  | "90d"
+  | "mtd"
+  | "ytd"
+  | "12m";
 
 /**
  * Named ranges for the date picker.
@@ -151,6 +159,13 @@ export function presetRange(preset: PresetKey, today = todayUtc()): DateRange {
   const yesterday = addDays(today, -1);
 
   switch (preset) {
+    // The one preset that deliberately breaks the yesterday rule below. Shops
+    // report same-day, so today's revenue and orders are real — but every ad
+    // platform is structurally D-1, so spend, ROAS and CAC will read as zero or
+    // near it. `isPartialRange` flags this so the UI can say so rather than
+    // letting someone read a 0.0x ROAS as a catastrophe.
+    case "today":
+      return { from: today, to: today };
     case "7d":
       return { from: addDays(yesterday, -6), to: yesterday };
     case "28d":
@@ -168,7 +183,16 @@ export function presetRange(preset: PresetKey, today = todayUtc()): DateRange {
   }
 }
 
+/**
+ * True when the range includes today, whose ad-platform figures cannot be
+ * complete. Kept next to `presetRange` so the two can't drift.
+ */
+export function includesToday(range: DateRange, today = todayUtc()): boolean {
+  return range.to >= today;
+}
+
 export const PRESET_LABELS: Record<PresetKey, string> = {
+  today: "Today",
   "7d": "Last 7 days",
   "28d": "Last 28 days",
   "30d": "Last 30 days",

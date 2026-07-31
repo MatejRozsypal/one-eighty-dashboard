@@ -84,6 +84,16 @@ export default async function CustomersPage({
       />
 
       <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        {/*
+          Lifetime figures are cumulative over everything we hold, so this page
+          is not filtered by the date picker. Stated next to the numbers rather
+          than in the header, where it read as a range that had been applied.
+        */}
+        <span className="text-[12.5px] leading-[1.5] text-content-muted">
+          Lifetime values across the full 36-month window — not the selected date
+          range.
+        </span>
+
         <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">
           <div className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
             <Eyebrow>Lifetime value vs lifetime gross profit</Eyebrow>

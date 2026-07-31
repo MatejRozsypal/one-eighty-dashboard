@@ -78,6 +78,16 @@ export default async function CohortsPage({
     <>
       {header}
       <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        {/*
+          This page ignores the date picker: cohorts are cut by the month of a
+          customer's FIRST order, not by the selected range. Saying so here
+          rather than in the header keeps it next to the numbers it qualifies.
+        */}
+        <span className="text-[12.5px] leading-[1.5] text-content-muted">
+          Grouped by first-order month, across the full 36-month window — not the
+          selected date range.
+        </span>
+
         <div className="flex items-start gap-3 rounded-card border border-warning/[0.38] bg-[#FFFBF4] p-[14px_18px]">
           <span aria-hidden="true" className="mt-0.5 text-[13px] text-warning">
             ⚠

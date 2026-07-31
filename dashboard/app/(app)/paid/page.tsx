@@ -14,6 +14,7 @@ import { getMetaTotals, getTopAds } from "@/lib/queries/paid";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
+import { Funnel } from "@/components/dashboard/Funnel";
 import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Paid" };
@@ -48,15 +49,12 @@ export default async function PaidPage({
     { label: "Purchases", value: totals.purchases },
   ].filter((s) => s.value !== null) as Array<{ label: string; value: number }>;
 
-  const funnelTop = funnel[0]?.value ?? 1;
-
   const kpis = [
     { label: "Spend", value: money(totals.spend) },
     { label: "Reach", value: formatNumber(totals.reach) },
     {
       label: "Frequency",
       value: totals.frequency !== null ? totals.frequency.toFixed(2) : "—",
-      warn: true,
     },
     { label: "CTR", value: totals.ctr !== null ? formatPercent(totals.ctr, { decimals: 2 }) : "—" },
     { label: "CPC", value: money(totals.cpc) },
@@ -86,39 +84,7 @@ export default async function PaidPage({
               </span>
             </div>
 
-            <div className="flex flex-col gap-2.5">
-              {funnel.map((step, i) => (
-                <div
-                  key={step.label}
-                  className="grid grid-cols-[minmax(120px,190px)_minmax(60px,1fr)_minmax(80px,110px)] items-center gap-3.5"
-                >
-                  <span className="flex min-w-0 flex-col gap-1.5">
-                    <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                      {step.label}
-                    </span>
-                    <span className="font-mono text-[11px] text-gray-300">
-                      {i === 0
-                        ? "top of funnel"
-                        : `${((step.value / funnel[i - 1].value) * 100).toFixed(1)}% of previous step`}
-                    </span>
-                  </span>
-                  <span className="block h-[26px] min-w-0 rounded-xs bg-gray-100">
-                    <span
-                      className={`block h-[26px] rounded-xs ${
-                        i === funnel.length - 1 ? "bg-accent" : "bg-ink-700"
-                      }`}
-                      style={{
-                        width: `${Math.max(4, (step.value / funnelTop) * 100).toFixed(2)}%`,
-                        opacity: i === funnel.length - 1 ? 1 : 1 - i * 0.12,
-                      }}
-                    />
-                  </span>
-                  <span className="whitespace-nowrap text-right font-mono text-[15px] font-semibold tracking-heading tabular text-content-strong">
-                    {formatNumber(step.value)}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <Funnel steps={funnel} />
           </section>
         ) : (
           <div className="flex flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[24px]">
@@ -144,13 +110,6 @@ export default async function PaidPage({
               <span className="font-mono text-[22px] font-semibold leading-none tracking-heading tabular text-content-strong">
                 {k.value}
               </span>
-              {k.warn && (
-                <span className="text-[11.5px] leading-[1.5] text-content-muted">
-                  Recomputed as impressions ÷ reach —{" "}
-                  <b className="text-content-strong">not</b> an average of
-                  frequency_per_day.
-                </span>
-              )}
             </div>
           ))}
         </section>

@@ -157,8 +157,6 @@ export default async function SnapshotPage({
           />
         </section>
 
-        <MarginStack snapshot={snapshot} />
-
         <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-4">
             <AcquisitionEconomics snapshot={snapshot} />
@@ -187,6 +185,15 @@ export default async function SnapshotPage({
           excluding fixed costs, salaries and platform fees. Meta and Google spend
           is platform-reported; revenue is shop-reported.
         </p>
+
+        {/*
+          Last on the page on purpose. The stack explains how revenue becomes
+          CM3, which is worth having but is reference material — you read it
+          once to understand the model, not every time you open the page. Two
+          of its seven steps are hardcoded to zero as well, so it currently
+          spends a third of its width on cost lines nobody is measuring.
+        */}
+        <MarginStack snapshot={snapshot} />
       </main>
     </>
   );

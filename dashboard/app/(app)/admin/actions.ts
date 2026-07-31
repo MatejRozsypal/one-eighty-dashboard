@@ -19,6 +19,7 @@ import {
   updateUser,
   type Role,
 } from "@/lib/users/store";
+import { saveClientSettings } from "@/lib/users/settings";
 
 async function requireAdmin(): Promise<string> {
   const session = await getServerSession(authOptions);
@@ -127,4 +128,35 @@ export async function deleteUserAction(formData: FormData): Promise<void> {
 
   await deleteUser(String(formData.get("id") ?? ""));
   revalidatePath("/admin");
+}
+
+export async function saveSettingsAction(formData: FormData): Promise<void> {
+  const adminEmail = await requireAdmin();
+
+  // Empty means "not stated" and must stay null. Coercing a blank field to 0
+  // would silently assert that fulfilment costs nothing, which is exactly the
+  // false-precision this table exists to remove.
+  const numberOrNull = (key: string): number | null => {
+    const raw = String(formData.get(key) ?? "").trim().replace(",", ".");
+    if (raw === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const opexPct = numberOrNull("opexPct");
+
+  await saveClientSettings(
+    String(formData.get("clientId") ?? ""),
+    {
+      // Entered as a percentage because that is how people say it; stored as a
+      // share, because that is how it is used.
+      opexRate: opexPct === null ? null : opexPct / 100,
+      fulfilmentPerOrder: numberOrNull("fulfilmentPerOrder"),
+      otherCm1PerOrder: numberOrNull("otherCm1PerOrder"),
+    },
+    adminEmail
+  );
+
+  revalidatePath("/admin");
+  revalidatePath("/snapshot");
 }

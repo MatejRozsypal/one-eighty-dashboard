@@ -74,6 +74,27 @@ export function AcquisitionEconomics({
           source="Warehouse"
         />
         <MetricCard
+          label="PNO"
+          // Ad spend as a share of revenue — the Czech "podíl nákladů na
+          // obratu", and the inverse of MER. Same information, but a cost
+          // ratio is what people actually budget against, and lower is better.
+          value={
+            t.paidSpend !== null && t.revenue
+              ? formatPercent(t.paidSpend / t.revenue, { decimals: 1 })
+              : "—"
+          }
+          delta={
+            hasComparison
+              ? metric(snapshot, (x) =>
+                  x.paidSpend !== null && x.revenue ? x.paidSpend / x.revenue : null
+                ).delta
+              : undefined
+          }
+          goodWhen="down"
+          comparisonLabel={comparisonLabel}
+          source="Warehouse"
+        />
+        <MetricCard
           label="AOV (net)"
           // Canonical AOV is net_sales ÷ orders — ex-shipping, ex-tax, the
           // version that reconciles against Shopify's own dashboard.

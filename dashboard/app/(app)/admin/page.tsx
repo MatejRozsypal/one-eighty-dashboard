@@ -13,13 +13,14 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
 import { listUsers, type AppUser } from "@/lib/users/store";
+import { listClientSettings } from "@/lib/users/settings";
 import { userStoreConfigured } from "@/lib/users/db";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
 import { pageEyebrow } from "@/lib/nav";
 import { CreateUserForm, ResetPasswordButton } from "./UserForms";
-import { deleteUserAction, updateUserAction } from "./actions";
+import { deleteUserAction, updateUserAction, saveSettingsAction } from "./actions";
 
 export const metadata: Metadata = { title: "Users & access" };
 export const dynamic = "force-dynamic";
@@ -94,6 +95,7 @@ export default async function AdminPage() {
   }
 
   const clients = await getClients();
+  const settings = await listClientSettings().catch(() => []);
 
   return (
     <>
@@ -104,6 +106,97 @@ export default async function AdminPage() {
             {loadError} — has <code className="font-mono">schema.sql</code> been run?
           </div>
         )}
+
+        <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
+          <div className="flex flex-col gap-[5px]">
+            <Eyebrow>Cost assumptions</Eyebrow>
+            <span className="text-[12.5px] leading-[1.5] text-content-muted">
+              No connected source reports operating expenses, fulfilment or the
+              other CM1 costs, so they cannot be derived — they are your input.
+              These used to be constants in the code (30% OpEx, zero
+              fulfilment), which is worse: a guess buried in code reads as a
+              measurement. Leave a field empty and the metric that depends on it
+              is hidden rather than guessed.
+            </span>
+          </div>
+
+          {clients.map((c) => {
+            const cur = settings.find((s) => s.clientId === c.clientId);
+            const field =
+              "w-[110px] rounded-control border border-hairline-strong bg-paper px-2.5 py-1.5 text-right font-mono text-[12.5px]";
+            return (
+              <form
+                key={c.clientId}
+                action={saveSettingsAction}
+                className="flex flex-wrap items-end gap-3 border-b border-hairline pb-3 last:border-0"
+              >
+                <input type="hidden" name="clientId" value={c.clientId} />
+                <span className="min-w-[150px] flex-1 text-[13.5px] font-semibold text-content-strong">
+                  {c.name}
+                </span>
+
+                <label className="flex flex-col gap-1.5">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-content-muted">
+                    OpEx % of revenue
+                  </span>
+                  <input
+                    name="opexPct"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="—"
+                    defaultValue={
+                      cur?.opexRate !== null && cur?.opexRate !== undefined
+                        ? (cur.opexRate * 100).toString()
+                        : ""
+                    }
+                    className={field}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1.5">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-content-muted">
+                    Fulfilment / order ({c.currency})
+                  </span>
+                  <input
+                    name="fulfilmentPerOrder"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="—"
+                    defaultValue={cur?.fulfilmentPerOrder?.toString() ?? ""}
+                    className={field}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1.5">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-content-muted">
+                    Other CM1 / order ({c.currency})
+                  </span>
+                  <input
+                    name="otherCm1PerOrder"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="—"
+                    defaultValue={cur?.otherCm1PerOrder?.toString() ?? ""}
+                    className={field}
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  className="rounded-control border border-hairline-strong px-3 py-2 font-mono text-[11px] text-content-body transition-colors duration-fast hover:bg-gray-50"
+                >
+                  Save
+                </button>
+
+                {cur?.updatedAt && (
+                  <span className="font-mono text-[10.5px] text-content-muted">
+                    {cur.updatedAt.slice(0, 10)} · {cur.updatedBy}
+                  </span>
+                )}
+              </form>
+            );
+          })}
+        </section>
 
         <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
           <div className="flex flex-col gap-[5px]">

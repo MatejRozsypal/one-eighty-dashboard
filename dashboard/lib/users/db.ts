@@ -87,6 +87,26 @@ CREATE TABLE IF NOT EXISTS app_users (
     CHECK (role <> 'client' OR client_id IS NOT NULL)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS app_users_email_key ON app_users (LOWER(email));
+
+-- Cost assumptions the warehouse cannot measure.
+--
+-- OpEx, fulfilment and the other CM1 costs are salaries, rent, platform fees,
+-- pick-and-pack -- none of which any connected source reports, so they cannot
+-- be derived. They used to be hardcoded in the app (30% OpEx, zero fulfilment),
+-- which is worse than storing them: a guess buried in code looks like a
+-- measurement and nobody knows to revisit it. Here they are somebody's stated
+-- input, visible and editable, and a metric that depends on one is hidden
+-- entirely until it is filled in.
+CREATE TABLE IF NOT EXISTS client_settings (
+  client_id             TEXT PRIMARY KEY,
+  -- Share of revenue, 0..1. NULL means "not stated" -- never assume a default.
+  opex_rate             NUMERIC,
+  -- Per-order costs in the client's own trading currency.
+  fulfilment_per_order  NUMERIC,
+  other_cm1_per_order   NUMERIC,
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by            TEXT
+);
 `;
 
 const globalForSchema = globalThis as unknown as { oeSchemaReady?: Promise<void> };

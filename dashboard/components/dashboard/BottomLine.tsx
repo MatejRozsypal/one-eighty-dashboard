@@ -26,12 +26,15 @@ export function BottomLine({
   lifetime,
   customersHref,
   payback,
+  opexRate,
 }: {
   totals: PnlTotals;
   currency: string;
   lifetime: LifetimeSummary | null;
   customersHref: string;
   payback: Payback | null;
+  /** Share of revenue, from Admin → Cost assumptions. Null = not stated. */
+  opexRate: number | null;
 }) {
   const money = (v: number | null) => formatMoney(v, currency);
 
@@ -43,6 +46,27 @@ export function BottomLine({
 
   return (
     <div className="flex flex-col gap-[18px] rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
+      {/*
+        EBITDA appears only once somebody has stated an OpEx rate in Admin.
+        It used to be computed against a hardcoded 30%, which presented an
+        assumption as a measurement; an absent card is the honest version of an
+        unknown, and the rate is now attributable to whoever entered it.
+      */}
+      {opexRate !== null && totals.cm3 !== null && totals.revenue !== null && (
+        <div className="flex flex-col gap-2.5 border-b border-hairline pb-[18px]">
+          <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+            EBITDA (est.)
+          </span>
+          <span className="font-mono text-[26px] font-semibold leading-none tracking-heading tabular text-content-strong">
+            {money(totals.cm3 - totals.revenue * opexRate)}
+          </span>
+          <span className="font-mono text-[12px] text-content-muted">
+            CM3 − revenue × {formatPercent(opexRate, { decimals: 0 })} OpEx · your
+            stated rate, not measured
+          </span>
+        </div>
+      )}
+
       <Eyebrow>Customer payback</Eyebrow>
 
       {payback === null ? (

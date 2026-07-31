@@ -25,7 +25,9 @@ export function MobileNav({ initials }: { initials: string }) {
   const qs = searchParams.toString();
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex items-center justify-center gap-2 px-3 pb-6 pt-2.5 lg:hidden">
+    // pb sits on top of the home-indicator inset rather than guessing past it:
+    // on a Face ID phone `--safe-bottom` is ~34px, on older hardware it is 0.
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex items-center justify-center gap-2 px-3 pt-2.5 pb-[calc(0.75rem+var(--safe-bottom))] lg:hidden">
       <span className="pointer-events-auto flex flex-1 items-center justify-around rounded-pill bg-paper px-1.5 py-1.5 shadow-lg">
         {TABS.map((tab) => {
           const isActive = pathname === tab.href;

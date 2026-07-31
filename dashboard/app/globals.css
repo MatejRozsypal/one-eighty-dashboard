@@ -39,12 +39,24 @@
     monospace;
 
   /*
-   * Height of the sticky page header. The control bar sticks directly beneath
-   * it, so the two are coupled — this variable is where that coupling lives.
-   * It used to be a bare `top-[71px]` inside ControlBar, which silently
-   * overlapped the header the moment the header's padding changed.
+   * iPhone safe areas. `viewportFit: "cover"` (app/layout.tsx) lets the page
+   * paint edge to edge, which is what makes an installed PWA look like an app —
+   * and also what puts our own header underneath the clock and the battery.
+   * `env()` returns 0px everywhere there is no notch or home indicator, so
+   * these are safe to apply unconditionally rather than behind a breakpoint.
    */
-  --header-h: 52px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /*
+   * Height of the sticky page header, status-bar inset included. The control
+   * bar sticks directly beneath it, so the two are coupled — this variable is
+   * where that coupling lives. It used to be a bare `top-[71px]` inside
+   * ControlBar, which silently overlapped the header the moment the header's
+   * padding changed, and knew nothing about the notch.
+   */
+  --header-bar-h: 52px;
+  --header-h: calc(var(--header-bar-h) + var(--safe-top));
 
   /*
    * Platform colors for the two Czech-market sources. The handoff ships

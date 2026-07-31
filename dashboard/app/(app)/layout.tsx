@@ -71,7 +71,10 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-screen items-start bg-bg-subtle">
       <Sidebar clients={clients} userName={name} userRole={role} />
-      <div className="flex min-w-0 flex-1 flex-col pb-24 lg:pb-0">{children}</div>
+      {/* Clears the floating bottom pill and the home indicator underneath it. */}
+      <div className="flex min-w-0 flex-1 flex-col pb-[calc(6rem+var(--safe-bottom))] lg:pb-0">
+        {children}
+      </div>
       <MobileNav initials={initialsOf(name)} />
     </div>
   );

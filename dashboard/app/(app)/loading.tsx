@@ -24,7 +24,11 @@ const shimmer =
 export default function Loading() {
   return (
     <>
-      <div className="sticky top-0 z-30 flex h-[var(--header-h)] items-center gap-3 border-b border-hairline bg-paper px-5 lg:px-8">
+      {/* Mirrors the real header's two shapes, so the swap isn't a colour flash. */}
+      <div className="sticky top-0 z-30 flex h-[var(--header-h)] items-center gap-3 bg-ink-900 px-4 pt-[var(--safe-top)] lg:hidden">
+        <span className="h-[19px] w-[128px] rounded-xs bg-white/15" />
+      </div>
+      <div className="sticky top-0 z-30 hidden h-[var(--header-h)] items-center gap-3 border-b border-hairline bg-paper px-5 pt-[var(--safe-top)] lg:flex lg:px-8">
         <span className={`h-[15px] w-[132px] rounded-xs ${shimmer}`} />
         <span className={`h-[9px] w-[104px] rounded-pill ${shimmer}`} />
       </div>

@@ -10,7 +10,31 @@ import type { Config } from "tailwindcss";
  *
  * That indirection is the point: no hex code should ever appear in a component.
  * If you find yourself reaching for one, the token is missing.
+ *
+ * ── Why colours go through `token()` rather than a bare "var(--x)" ──────────
+ * Tailwind cannot apply an opacity modifier to a plain `var()` colour: it does
+ * not know the channels, so it silently emits **no rule at all**. Classes like
+ * `border-negative/35`, `border-warning/40` and `bg-growth-500/20` were used
+ * across the app and never rendered — the error and warning cards had been
+ * drawing invisible borders, and the sidebar avatar an invisible tint.
+ *
+ * `token()` returns the raw `var()` when no opacity is asked for, and a
+ * `color-mix()` when one is, so the tokens stay hex in their own files (the
+ * handoff can still overwrite them verbatim) while `/opacity` works everywhere.
+ *
+ * The cast is needed because Tailwind's `colors` type only admits strings, while
+ * the runtime has always also accepted this callback. Returning a plain
+ * `color-mix(...)` string with `<alpha-value>` would type cleanly, but then
+ * *every* colour in the app would route through `color-mix` — so a browser
+ * without support loses the entire palette instead of only the translucent
+ * few. The callback keeps full-opacity colours as a bare `var()`.
  */
+const token = (name: string) =>
+  ((({ opacityValue }: { opacityValue?: string }) =>
+    opacityValue === undefined
+      ? `var(${name})`
+      : `color-mix(in srgb, var(${name}) calc(${opacityValue} * 100%), transparent)`) as unknown as string);
+
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
@@ -18,84 +42,84 @@ const config: Config = {
       colors: {
         // Ink / near-black scale — brand black comes from the logo mark
         ink: {
-          950: "var(--ink-950)",
-          900: "var(--ink-900)",
-          800: "var(--ink-800)",
-          700: "var(--ink-700)",
-          600: "var(--ink-600)",
-          500: "var(--ink-500)",
+          950: token("--ink-950"),
+          900: token("--ink-900"),
+          800: token("--ink-800"),
+          700: token("--ink-700"),
+          600: token("--ink-600"),
+          500: token("--ink-500"),
         },
         gray: {
-          400: "var(--gray-400)",
-          300: "var(--gray-300)",
-          250: "var(--gray-250)",
-          200: "var(--gray-200)",
-          150: "var(--gray-150)",
-          100: "var(--gray-100)",
-          50: "var(--gray-50)",
+          400: token("--gray-400"),
+          300: token("--gray-300"),
+          250: token("--gray-250"),
+          200: token("--gray-200"),
+          150: token("--gray-150"),
+          100: token("--gray-100"),
+          50: token("--gray-50"),
         },
-        paper: "var(--paper)",
+        paper: token("--paper"),
 
         // The single signature accent
         growth: {
-          700: "var(--growth-700)",
-          600: "var(--growth-600)",
-          500: "var(--growth-500)",
-          400: "var(--growth-400)",
-          300: "var(--growth-300)",
-          100: "var(--growth-100)",
-          50: "var(--growth-50)",
+          700: token("--growth-700"),
+          600: token("--growth-600"),
+          500: token("--growth-500"),
+          400: token("--growth-400"),
+          300: token("--growth-300"),
+          100: token("--growth-100"),
+          50: token("--growth-50"),
         },
 
         // Semantic status — red/amber/blue exist ONLY as status, never decoration
-        positive: "var(--positive)",
-        negative: "var(--negative)",
-        warning: "var(--warning)",
-        info: "var(--info)",
+        positive: token("--positive"),
+        negative: token("--negative"),
+        warning: token("--warning"),
+        info: token("--info"),
 
         // Platform colors. Per the brand guide these appear *only* inside
         // product/dashboard UI — which is exactly what this app is. They tag a
         // metric with the system it came from, mirroring the source badges on
         // the reference dashboard.
         platform: {
-          shopify: "var(--shopify)",
-          meta: "var(--meta)",
-          klaviyo: "var(--klaviyo)",
-          google: "var(--google)",
-          shoptet: "var(--shoptet)",
-          ecomail: "var(--ecomail)",
+          shopify: token("--shopify"),
+          meta: token("--meta"),
+          klaviyo: token("--klaviyo"),
+          google: token("--google"),
+          shoptet: token("--shoptet"),
+          ecomail: token("--ecomail"),
         },
 
         // Semantic aliases — prefer these in components over raw scale steps
         bg: {
-          DEFAULT: "var(--bg)",
-          subtle: "var(--bg-subtle)",
-          inverse: "var(--bg-inverse)",
-          "inverse-2": "var(--bg-inverse-2)",
+          DEFAULT: token("--bg"),
+          subtle: token("--bg-subtle"),
+          inverse: token("--bg-inverse"),
+          "inverse-2": token("--bg-inverse-2"),
         },
         surface: {
-          card: "var(--surface-card)",
-          "card-subtle": "var(--surface-card-subtle)",
-          "card-inverse": "var(--surface-card-inverse)",
+          card: token("--surface-card"),
+          "card-subtle": token("--surface-card-subtle"),
+          "card-inverse": token("--surface-card-inverse"),
         },
         content: {
-          strong: "var(--text-strong)",
-          body: "var(--text-body)",
-          muted: "var(--text-muted)",
-          inverse: "var(--text-inverse)",
-          "inverse-muted": "var(--text-inverse-muted)",
-          accent: "var(--text-accent)",
+          strong: token("--text-strong"),
+          body: token("--text-body"),
+          muted: token("--text-muted"),
+          inverse: token("--text-inverse"),
+          "inverse-muted": token("--text-inverse-muted"),
+          accent: token("--text-accent"),
         },
         hairline: {
-          DEFAULT: "var(--border)",
-          strong: "var(--border-strong)",
-          inverse: "var(--border-inverse)",
+          DEFAULT: token("--border"),
+          strong: token("--border-strong"),
+          inverse: token("--border-inverse"),
         },
         accent: {
-          DEFAULT: "var(--accent)",
-          hover: "var(--accent-hover)",
-          contrast: "var(--accent-contrast)",
-          soft: "var(--accent-soft)",
+          DEFAULT: token("--accent"),
+          hover: token("--accent-hover"),
+          contrast: token("--accent-contrast"),
+          soft: token("--accent-soft"),
         },
       },
 

@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/Badge";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
 import { MarketFilter } from "@/components/controls/MarketFilter";
 import { CohortHeatmap } from "@/components/dashboard/CohortHeatmap";
+import { DataTable } from "@/components/ui/DataTable";
 import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Cohorts" };
@@ -285,85 +286,81 @@ export default async function CohortsPage({
 
           <div className="overflow-x-auto">
             <div className="min-w-[920px]">
-              <div className="grid grid-cols-[1fr_0.6fr_0.8fr_1fr_1fr_1fr_1fr_0.9fr] gap-2 border-b border-hairline bg-gray-50 px-5 py-3">
-                {[
-                  "Cohort",
-                  "Age",
-                  "Customers",
-                  "LTV",
-                  "LTGP",
-                  "Y1 LTV",
-                  "Y1 LTGP",
-                  "Repeat rate",
-                ].map((h) => (
-                  <span
-                    key={h}
-                    className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
-                  >
-                    {h}
-                  </span>
-                ))}
-              </div>
-
-              {cohorts.map((c) => (
-                <div
-                  key={c.cohortMonth}
-                  className={`grid grid-cols-[1fr_0.6fr_0.8fr_1fr_1fr_1fr_1fr_0.9fr] items-center gap-2 border-b border-hairline px-5 py-3 ${
-                    c.isMature ? "" : "bg-gray-50/60"
-                  }`}
-                >
-                  <span className="text-[13px] text-content-body">
-                    {monthLabel(c.cohortMonth)}
-                  </span>
-                  <span
-                    className={`font-mono text-[12px] tabular ${
-                      c.isMature ? "text-content-muted" : "text-warning"
-                    }`}
-                    title={
-                      c.isMature
-                        ? "Fully matured — Y1 figures are comparable"
-                        : "Still maturing — repeat rate will keep rising"
-                    }
-                  >
-                    {c.ageMonths}m
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-strong">
-                    {formatNumber(c.customerCount)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-strong">
-                    {money(c.ltv)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-body">
-                    {money(c.ltgp)}
-                  </span>
-                  <span
-                    className={`font-mono text-[12.5px] tabular ${
-                      c.y1Ltv === null ? "text-gray-250" : "text-growth-700"
-                    }`}
-                  >
-                    {c.y1Ltv === null ? "—" : money(c.y1Ltv)}
-                  </span>
-                  <span
-                    className={`font-mono text-[12.5px] tabular ${
-                      c.y1Ltgp === null ? "text-gray-250" : "text-content-strong"
-                    }`}
-                  >
-                    {c.y1Ltgp === null ? "—" : money(c.y1Ltgp)}
-                  </span>
-                  {/* Muted while immature: the figure is real but not yet
-                      comparable to the rows below it. */}
-                  <span
-                    className={`font-mono text-[12.5px] tabular ${
-                      c.isMature ? "text-content-strong" : "text-gray-400"
-                    }`}
-                  >
-                    {c.repeatRate !== null ? formatPercent(c.repeatRate) : "—"}
-                    {!c.isMature && (
-                      <span className="ml-1 text-[10px] text-warning">↗</span>
-                    )}
-                  </span>
-                </div>
-              ))}
+              <DataTable
+                gridClass="grid grid-cols-[1fr_0.6fr_0.8fr_1fr_1fr_1fr_1fr_0.9fr] items-center gap-2"
+                columns={[
+                  { key: "cohort", label: "Cohort" },
+                  { key: "age", label: "Age", align: "right" },
+                  { key: "customers", label: "Customers", align: "right" },
+                  { key: "ltv", label: "LTV", align: "right" },
+                  { key: "ltgp", label: "LTGP", align: "right" },
+                  { key: "y1ltv", label: "Y1 LTV", align: "right" },
+                  { key: "y1ltgp", label: "Y1 LTGP", align: "right" },
+                  { key: "repeat", label: "Repeat rate", align: "right" },
+                ]}
+                rows={cohorts.map((c) => ({
+                  key: c.cohortMonth,
+                  sort: [
+                    c.cohortMonth,
+                    c.ageMonths,
+                    c.customerCount,
+                    c.ltv,
+                    c.ltgp,
+                    c.y1Ltv,
+                    c.y1Ltgp,
+                    c.repeatRate,
+                  ],
+                  cells: [
+                    <span className="text-[13px] text-content-body">
+                      {monthLabel(c.cohortMonth)}
+                    </span>,
+                    <span
+                      className={`font-mono text-[12px] tabular ${
+                        c.isMature ? "text-content-muted" : "text-warning"
+                      }`}
+                      title={
+                        c.isMature
+                          ? "Fully matured — Y1 figures are comparable"
+                          : "Still maturing — repeat rate will keep rising"
+                      }
+                    >
+                      {c.ageMonths}m
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-strong">
+                      {formatNumber(c.customerCount)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-strong">
+                      {money(c.ltv)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-body">
+                      {money(c.ltgp)}
+                    </span>,
+                    <span
+                      className={`font-mono text-[12.5px] tabular ${
+                        c.y1Ltv === null ? "text-gray-250" : "text-growth-700"
+                      }`}
+                    >
+                      {c.y1Ltv === null ? "—" : money(c.y1Ltv)}
+                    </span>,
+                    <span
+                      className={`font-mono text-[12.5px] tabular ${
+                        c.y1Ltgp === null ? "text-gray-250" : "text-content-strong"
+                      }`}
+                    >
+                      {c.y1Ltgp === null ? "—" : money(c.y1Ltgp)}
+                    </span>,
+                    // Muted while immature: the figure is real but not yet
+                    // comparable to the rows below it.
+                    <span
+                      className={`font-mono text-[12.5px] tabular ${
+                        c.isMature ? "text-content-strong" : "text-gray-400"
+                      }`}
+                    >
+                      {c.repeatRate !== null ? formatPercent(c.repeatRate) : "—"}
+                    </span>,
+                  ],
+                }))}
+              />
             </div>
           </div>
 

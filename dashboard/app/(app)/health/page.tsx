@@ -20,6 +20,7 @@ import { optional } from "@/lib/queries/errors";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
+import { DataTable } from "@/components/ui/DataTable";
 import { formatNumber } from "@/lib/currency";
 
 export const metadata: Metadata = { title: "Data Health" };
@@ -116,56 +117,53 @@ export default async function HealthPage() {
 
           <div className="overflow-x-auto">
             <div className="min-w-[720px]">
-              <div className="grid grid-cols-[1.1fr_1fr_1.1fr_1fr_0.8fr] gap-2.5 border-b border-hairline bg-gray-50 px-5 py-3">
-                {["Client", "Source", "Last date landed", "Expected", "Status"].map(
-                  (h) => (
-                    <span
-                      key={h}
-                      className="font-mono text-[10px] uppercase tracking-[0.1em] text-content-muted"
-                    >
-                      {h}
-                    </span>
-                  )
-                )}
-              </div>
-
-              {freshness.map((s) => {
-                const badge = STATUS_BADGE[s.status];
-                return (
-                  <div
-                    key={`${s.clientId}-${s.source}`}
-                    className="grid grid-cols-[1.1fr_1fr_1.1fr_1fr_0.8fr] items-center gap-2.5 border-b border-hairline px-5 py-3"
-                  >
-                    <span className="text-[13px] text-content-body">
-                      {s.clientName}
-                    </span>
-                    <span className="inline-flex items-center gap-2 font-mono text-[11.5px] uppercase tracking-[0.04em] text-content-strong">
+              <DataTable
+                gridClass="grid grid-cols-[1.1fr_1fr_1.1fr_1fr_0.8fr] items-center gap-2.5"
+                columns={[
+                  { key: "client", label: "Client" },
+                  { key: "source", label: "Source" },
+                  { key: "last", label: "Last date landed" },
+                  { key: "expected", label: "Expected" },
+                  { key: "status", label: "Status" },
+                ]}
+                rows={freshness.map((s) => {
+                  const badge = STATUS_BADGE[s.status];
+                  // Worst first when sorted descending — the point of sorting
+                  // this column is to find what is broken, not to alphabetise.
+                  const severity = { blocked: 3, stale: 2, late: 1, ok: 0 }[s.status];
+                  return {
+                    key: `${s.clientId}-${s.source}`,
+                    sort: [s.clientName, s.source, s.lastDate, s.expected, severity],
+                    cells: [
+                      <span className="text-[13px] text-content-body">
+                        {s.clientName}
+                      </span>,
+                      <span className="inline-flex items-center gap-2 font-mono text-[11.5px] uppercase tracking-[0.04em] text-content-strong">
+                        <span
+                          aria-hidden="true"
+                          className={`h-[9px] w-[9px] flex-none rounded-[3px] ${
+                            PLATFORM_DOT[s.platform] ?? "bg-gray-400"
+                          }`}
+                        />
+                        {s.source}
+                      </span>,
                       <span
-                        aria-hidden="true"
-                        className={`h-[9px] w-[9px] rounded-[3px] ${
-                          PLATFORM_DOT[s.platform] ?? "bg-gray-400"
+                        className={`font-mono text-[12px] tabular ${
+                          s.status === "ok" ? "text-content-body" : "text-content-muted"
                         }`}
-                      />
-                      {s.source}
-                    </span>
-                    <span
-                      className={`font-mono text-[12px] tabular ${
-                        s.status === "ok" ? "text-content-body" : "text-content-muted"
-                      }`}
-                    >
-                      {fmtDate(s.lastDate)}
-                    </span>
-                    <span className="font-mono text-[12px] text-content-muted">
-                      {s.expected}
-                    </span>
-                    <span className="justify-self-start">
+                      >
+                        {fmtDate(s.lastDate)}
+                      </span>,
+                      <span className="font-mono text-[12px] text-content-muted">
+                        {s.expected}
+                      </span>,
                       <Badge variant={badge.variant} size="sm">
                         {badge.label}
-                      </Badge>
-                    </span>
-                  </div>
-                );
-              })}
+                      </Badge>,
+                    ],
+                  };
+                })}
+              />
             </div>
           </div>
 

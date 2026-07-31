@@ -18,6 +18,7 @@ import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
 import { DeltaChip } from "@/components/ui/Delta";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
+import { DataTable } from "@/components/ui/DataTable";
 import { YearOverYear } from "@/components/dashboard/YearOverYear";
 import { pageEyebrow } from "@/lib/nav";
 
@@ -170,46 +171,48 @@ export default async function GrowthPage({
           <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
             <div className="overflow-x-auto">
               <div className="min-w-[720px]">
-                <div className="grid grid-cols-[1fr_1fr_0.8fr_1fr_0.8fr_0.7fr] gap-2.5 border-b border-hairline bg-gray-50 px-5 py-3">
-                  {["Month", "Revenue", "MoM", "New cust. orders", "MoM", ""].map(
-                    (h, i) => (
-                      <span
-                        key={i}
-                        className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
-                      >
-                        {h}
-                      </span>
-                    )
-                  )}
-                </div>
-
-                {months.map((m) => (
-                  <div
-                    key={m.monthStart}
-                    className={`grid grid-cols-[1fr_1fr_0.8fr_1fr_0.8fr_0.7fr] items-center gap-2.5 border-b border-hairline px-5 py-3 ${
-                      m.isPartial ? "bg-gray-50" : ""
-                    }`}
-                  >
-                    <span className="text-[13px] text-content-body">
-                      {monthLabel(m.monthStart)}
-                    </span>
-                    <span className="font-mono text-[14px] font-semibold tracking-heading tabular text-content-strong">
-                      {formatMoney(m.revenue, client.currency)}
-                    </span>
-                    <DeltaChip delta={m.revenueMoM} goodWhen="up" />
-                    <span className="font-mono text-[14px] tracking-heading tabular text-content-strong">
-                      {formatNumber(m.newCustomerOrders)}
-                    </span>
-                    <DeltaChip delta={m.newCustomerOrdersMoM} goodWhen="up" />
-                    <span className="justify-self-start">
-                      {m.isPartial && (
+                <DataTable
+                  gridClass="grid grid-cols-[1fr_1fr_0.8fr_1fr_0.8fr_0.7fr] items-center gap-2.5"
+                  columns={[
+                    { key: "month", label: "Month" },
+                    { key: "revenue", label: "Revenue", align: "right" },
+                    { key: "mom", label: "MoM", align: "right" },
+                    { key: "newOrders", label: "New cust. orders", align: "right" },
+                    { key: "newMom", label: "MoM", align: "right" },
+                    { key: "flag", label: "", sortable: false },
+                  ]}
+                  rows={months.map((m) => ({
+                    key: m.monthStart,
+                    sort: [
+                      m.monthStart,
+                      m.revenue,
+                      m.revenueMoM,
+                      m.newCustomerOrders,
+                      m.newCustomerOrdersMoM,
+                      null,
+                    ],
+                    cells: [
+                      <span className="text-[13px] text-content-body">
+                        {monthLabel(m.monthStart)}
+                      </span>,
+                      <span className="font-mono text-[14px] font-semibold tracking-heading tabular text-content-strong">
+                        {formatMoney(m.revenue, client.currency)}
+                      </span>,
+                      <DeltaChip delta={m.revenueMoM} goodWhen="up" />,
+                      <span className="font-mono text-[14px] tracking-heading tabular text-content-strong">
+                        {formatNumber(m.newCustomerOrders)}
+                      </span>,
+                      <DeltaChip delta={m.newCustomerOrdersMoM} goodWhen="up" />,
+                      m.isPartial ? (
                         <Badge variant="neutral" size="sm" dot>
                           Partial
                         </Badge>
-                      )}
-                    </span>
-                  </div>
-                ))}
+                      ) : (
+                        <span />
+                      ),
+                    ],
+                  }))}
+                />
               </div>
             </div>
 

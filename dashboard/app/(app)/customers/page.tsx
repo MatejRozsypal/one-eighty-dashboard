@@ -15,6 +15,7 @@ import { optional } from "@/lib/queries/errors";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
+import { DataTable } from "@/components/ui/DataTable";
 import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Customers" };
@@ -174,65 +175,67 @@ export default async function CustomersPage({
 
           <div className="overflow-x-auto">
             <div className="min-w-[900px]">
-              <div className="grid grid-cols-[1.6fr_1fr_1fr_0.6fr_1fr_1fr_0.9fr_0.7fr_0.8fr] gap-2 border-b border-hairline bg-gray-50 px-5 py-3">
-                {[
-                  "Email",
-                  "First order",
-                  "Last order",
-                  "Orders",
-                  "Lifetime rev.",
-                  "Lifetime GP",
-                  "AOV",
-                  "Days",
-                  "Type",
-                ].map((h) => (
-                  <span
-                    key={h}
-                    className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
-                  >
-                    {h}
-                  </span>
-                ))}
-              </div>
-
-              {rows.map((r) => (
-                <div
-                  key={r.email}
-                  className="grid grid-cols-[1.6fr_1fr_1fr_0.6fr_1fr_1fr_0.9fr_0.7fr_0.8fr] items-center gap-2 border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50"
-                >
-                  <span className="truncate font-mono text-[12px] text-content-strong">
-                    {r.email}
-                  </span>
-                  <span className="font-mono text-[12px] text-content-muted">
-                    {fmtDate(r.firstOrder)}
-                  </span>
-                  <span className="font-mono text-[12px] text-content-muted">
-                    {fmtDate(r.lastOrder)}
-                  </span>
-                  <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                    {formatNumber(r.orders)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-strong">
-                    {money(r.lifetimeRevenue)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-growth-700">
-                    {money(r.lifetimeGrossProfit)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-strong">
-                    {money(r.aov)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-muted">
-                    {formatNumber(r.daysActive)}
-                  </span>
-                  <span className="justify-self-start">
-                    {r.isReturning && (
+              <DataTable
+                gridClass="grid grid-cols-[1.6fr_1fr_1fr_0.6fr_1fr_1fr_0.9fr_0.7fr_0.8fr] items-center gap-2"
+                columns={[
+                  { key: "email", label: "Email" },
+                  { key: "first", label: "First order" },
+                  { key: "last", label: "Last order" },
+                  { key: "orders", label: "Orders", align: "right" },
+                  { key: "rev", label: "Lifetime rev.", align: "right" },
+                  { key: "gp", label: "Lifetime GP", align: "right" },
+                  { key: "aov", label: "AOV", align: "right" },
+                  { key: "days", label: "Days", align: "right" },
+                  { key: "type", label: "Type" },
+                ]}
+                rows={rows.map((r) => ({
+                  key: r.email,
+                  sort: [
+                    r.email,
+                    r.firstOrder,
+                    r.lastOrder,
+                    r.orders,
+                    r.lifetimeRevenue,
+                    r.lifetimeGrossProfit,
+                    r.aov,
+                    r.daysActive,
+                    r.isReturning ? 1 : 0,
+                  ],
+                  cells: [
+                    <span className="block truncate font-mono text-[12px] text-content-strong">
+                      {r.email}
+                    </span>,
+                    <span className="font-mono text-[12px] text-content-muted">
+                      {fmtDate(r.firstOrder)}
+                    </span>,
+                    <span className="font-mono text-[12px] text-content-muted">
+                      {fmtDate(r.lastOrder)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
+                      {formatNumber(r.orders)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-strong">
+                      {money(r.lifetimeRevenue)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-growth-700">
+                      {money(r.lifetimeGrossProfit)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-strong">
+                      {money(r.aov)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-muted">
+                      {formatNumber(r.daysActive)}
+                    </span>,
+                    r.isReturning ? (
                       <Badge variant="positive" size="sm">
                         Returning
                       </Badge>
-                    )}
-                  </span>
-                </div>
-              ))}
+                    ) : (
+                      <span />
+                    ),
+                  ],
+                }))}
+              />
             </div>
           </div>
 

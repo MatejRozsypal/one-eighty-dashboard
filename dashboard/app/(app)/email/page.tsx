@@ -144,65 +144,73 @@ export default async function EmailPage({
           <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
             <Eyebrow>Campaigns · mart_email_campaign_message_perf</Eyebrow>
             <span className="text-[12px] text-content-muted">
-              Sorted by revenue
+              Click a heading to sort
             </span>
           </div>
 
           <div className="overflow-x-auto">
             <div className="min-w-[960px]">
-              <div className="grid grid-cols-[2.4fr_0.8fr_0.8fr_0.7fr_0.7fr_0.7fr_1fr_1fr] gap-2 border-b border-hairline bg-gray-50 px-5 py-3">
-                {["Campaign", "Sent", "Recipients", "Open", "Click", "Orders", "Revenue", "Rev / recipient"].map(
-                  (h) => (
+              <DataTable
+                gridClass="grid grid-cols-[2.4fr_0.8fr_0.8fr_0.7fr_0.7fr_0.7fr_1fr_1fr] items-center gap-2"
+                columns={[
+                  { key: "campaign", label: "Campaign" },
+                  { key: "sent", label: "Sent" },
+                  { key: "recipients", label: "Recipients", align: "right" },
+                  { key: "open", label: "Open", align: "right" },
+                  { key: "click", label: "Click", align: "right" },
+                  { key: "orders", label: "Orders", align: "right" },
+                  { key: "revenue", label: "Revenue", align: "right" },
+                  { key: "rpr", label: "Rev / recipient", align: "right" },
+                ]}
+                rows={summary.campaigns.map((c, i) => ({
+                  key: `${c.campaignName}-${i}`,
+                  sort: [
+                    c.campaignName,
+                    c.sendDate,
+                    c.sent,
+                    c.openRate,
+                    c.clickRate,
+                    c.uniqueOrders,
+                    c.revenue,
+                    c.revenuePerRecipient,
+                  ],
+                  cells: [
                     <span
-                      key={h}
-                      className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
+                      className="block truncate text-[13px] text-content-strong"
+                      title={c.campaignName}
                     >
-                      {h}
-                    </span>
-                  )
-                )}
-              </div>
-
-              {summary.campaigns.map((c, i) => (
-                <div
-                  key={`${c.campaignName}-${i}`}
-                  className="grid grid-cols-[2.4fr_0.8fr_0.8fr_0.7fr_0.7fr_0.7fr_1fr_1fr] items-center gap-2 border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50"
-                >
-                  <span
-                    className="truncate text-[13px] text-content-strong"
-                    title={c.campaignName}
-                  >
-                    {c.campaignName}
-                  </span>
-                  <span className="font-mono text-[12px] tabular text-content-muted">
-                    {c.sendDate ?? "—"}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-body">
-                    {formatNumber(c.sent)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-muted">
-                    {c.openRate !== null
-                      ? formatPercent(c.openRate, { decimals: 0 })
-                      : "—"}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-muted">
-                    {c.clickRate !== null
-                      ? formatPercent(c.clickRate, { decimals: 2 })
-                      : "—"}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-content-strong">
-                    {formatNumber(c.uniqueOrders)}
-                  </span>
-                  <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                    {money(c.revenue)}
-                  </span>
-                  <span className="font-mono text-[12.5px] tabular text-growth-700">
-                    {c.revenuePerRecipient !== null
-                      ? money(c.revenuePerRecipient)
-                      : "—"}
-                  </span>
-                </div>
-              ))}
+                      {c.campaignName}
+                    </span>,
+                    <span className="font-mono text-[12px] tabular text-content-muted">
+                      {c.sendDate ?? "—"}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-body">
+                      {formatNumber(c.sent)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-muted">
+                      {c.openRate !== null
+                        ? formatPercent(c.openRate, { decimals: 0 })
+                        : "—"}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-muted">
+                      {c.clickRate !== null
+                        ? formatPercent(c.clickRate, { decimals: 2 })
+                        : "—"}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-content-strong">
+                      {formatNumber(c.uniqueOrders)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
+                      {money(c.revenue)}
+                    </span>,
+                    <span className="font-mono text-[12.5px] tabular text-growth-700">
+                      {c.revenuePerRecipient !== null
+                        ? money(c.revenuePerRecipient)
+                        : "—"}
+                    </span>,
+                  ],
+                }))}
+              />
             </div>
           </div>
         </section>
@@ -212,11 +220,12 @@ export default async function EmailPage({
             Not here yet
           </span>
           <span className="text-[12.5px] leading-[1.6] text-content-muted">
-            <b className="text-content-strong">Flows</b> and{" "}
-            <b className="text-content-strong">list growth</b> are missing. Flow
-            revenue is in the warehouse but has no page yet; subscriber growth is
-            blocked on a Klaviyo segment mirroring the master list — unknown, not
-            zero.
+            <b className="text-content-strong">List growth</b> is missing —
+            blocked on a Klaviyo segment mirroring the master list, so it is
+            unknown rather than zero. <b className="text-content-strong">Daily
+            flow revenue</b> is also unavailable: the series exists for Dobias
+            only and stops 2026-06-20, because the backfill was never wired to
+            an ongoing sync. Flow totals below are cumulative instead.
           </span>
         </div>
         {flows && (

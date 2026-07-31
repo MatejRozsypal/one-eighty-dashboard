@@ -1,0 +1,42 @@
+/* One Eighty — Typography tokens
+ * Geist Sans for everything UI/editorial; Geist Mono for numbers, metrics,
+ * labels and eyebrows. Key-phrase emphasis is set in ITALIC (a core brand
+ * motif — headlines lean a phrase into italic for rhythm). */
+:root {
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-display: var(--font-sans);
+
+  /* Weights */
+  --fw-light: 300;      /* @kind other */
+  --fw-regular: 400;    /* @kind other */
+  --fw-medium: 500;     /* @kind other */
+  --fw-semibold: 600;   /* @kind other */
+  --fw-bold: 700;       /* @kind other */
+  --fw-extrabold: 800;  /* @kind other */
+
+  /* Display / heading scale (clamped for responsive hero use) */
+  --text-display-2xl: clamp(3rem, 6vw, 5rem);      /* 48 → 80 */
+  --text-display-xl:  clamp(2.5rem, 4.5vw, 3.75rem); /* 40 → 60 */
+  --text-display-lg:  clamp(2rem, 3.2vw, 2.75rem);  /* 32 → 44 */
+  --text-heading:     1.75rem;   /* 28 */
+  --text-title:       1.375rem;  /* 22 */
+  --text-subtitle:    1.125rem;  /* 18 */
+  --text-body:        1rem;      /* 16 */
+  --text-body-sm:     0.9375rem; /* 15 */
+  --text-caption:     0.8125rem; /* 13 */
+  --text-eyebrow:     0.75rem;   /* 12 */
+
+  /* Line heights */
+  --lh-tight: 1.04;     /* @kind other */
+  --lh-snug: 1.15;      /* @kind other */
+  --lh-heading: 1.22;   /* @kind other */
+  --lh-body: 1.6;       /* @kind other */
+  --lh-relaxed: 1.7;    /* @kind other */
+
+  /* Letter spacing */
+  --tracking-display: -0.03em;   /* @kind other */
+  --tracking-heading: -0.02em;   /* @kind other */
+  --tracking-normal: 0em;        /* @kind other */
+  --tracking-eyebrow: 0.14em;    /* @kind other */
+}

@@ -136,6 +136,59 @@ WHERE DATE(ingested_at) = CURRENT_DATE()
 
 The table is append-only — re-running creates new snapshots. `stg_klaviyo_campaigns` always picks the latest snapshot per campaign via ROW_NUMBER over `ingested_at DESC`. Safe to re-run for refresh.
 
+## Refresh 2026-06-21 (close the post-backfill stale gap)
+
+The original 24-month backfill ended at the `2026-05-23` window. Because the ongoing
+n8n sync was never wired (see PROJECT_LOG follow-up), every campaign sent after
+`2026-05-22` came back with NULL performance metrics — 41 Dobias email campaigns
+(`2026-04-16 → 2026-06-20`) with NULL `delivered`/`opens`/`recipients`. On a "last 30
+days" Looker window this empties the Email page (open-rate scorecard blank, table all
+null).
+
+Fix = re-run the same procedure with the window shifted to end **today**. Identical
+block as above, only the two timeframe windows change (paste in Cloud Shell):
+
+```bash
+# Period 0:  2024-06-22T00:00:00+00:00 → 2025-06-21T23:59:59+00:00
+# Period 1:  2025-06-22T00:00:00+00:00 → 2026-06-22T00:00:00+00:00
+```
+
+and update the two `transform.py` date args to match:
+
+```bash
+python3 transform.py dobias "2024-06-22" "2025-06-21" "refresh_$(date -u +%F)" period_0.json > period_0.ndjson
+python3 transform.py dobias "2025-06-22" "2026-06-22" "refresh_$(date -u +%F)" period_1.json > period_1.ndjson
+```
+
+Everything else (statistics list, conversion_metric_id `Vyfqq8`, `bq load`, verify) is
+unchanged. Append-only + latest-snapshot semantics mean the 41 stale campaigns get
+real values and older campaigns refresh their still-evolving (~30d post-send) conversion
+stats. Verify after load:
+
+```sql
+SELECT COUNTIF(delivered IS NULL) AS still_null, MAX(send_date) AS latest_with_data
+FROM `oneeighty-warehouse.mart.mart_email_campaign_perf`
+WHERE client_id='dobias' AND DATE(send_date) >= '2026-05-01';
+-- expect still_null → 0 (or only genuine zero-recipient drafts), latest_with_data → ~today
+```
+
+**Durable fix — DONE 2026-06-21.** `wf_klaviyo_to_bigquery` now has a `Fetch campaign
+reports → Transform campaign reports → BQ: insert campaign reports` branch that POSTs
+`/api/campaign-values-reports/` for a rolling 35-day window every 6h, per active Klaviyo
+client. `stg_klaviyo_campaigns` already takes the latest snapshot per campaign, so the
+rolling re-fetch refreshes recent campaigns (incl. the ~30-day conversion tail) without
+double-counting. The manual backfill above is now only needed for first-time history or
+to re-pull a window older than 35 days.
+
+Prereq for the branch: `ref.clients.klaviyo_conversion_metric_id` must be set per client
+(`Vyfqq8` for Dobias) — the workflow reads it and passes it as `conversion_metric_id`.
+
+> **Flows are NOT yet on ongoing sync.** `stg_klaviyo_flows` SUMs across non-overlapping
+> timeframe windows, so a naive rolling pull would overlap the 12-month backfill chunks
+> and re-inflate flow revenue (the phantom-revenue bug from 2026-05-24). Wiring flow
+> ongoing sync requires switching both the backfill and stg to a stable calendar-month
+> period key first. Tracked as a follow-up.
+
 ## For a new client
 
 Replace 3 values:

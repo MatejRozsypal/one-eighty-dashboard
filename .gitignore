@@ -49,3 +49,6 @@ venv/
 
 # Local Claude Code settings
 .claude/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

@@ -4,6 +4,291 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-07-31 — Dashboard shipped to `dashboard.oneeighty.cz` (Phase 4 live)
+
+The Next.js frontend is **live in production** behind Google SSO. 11 pages, wired to
+BigQuery, installable as a PWA. This entry is written for handoff — it records what
+exists, what broke, and what is still open.
+
+**Live:** https://dashboard.oneeighty.cz · Vercel project
+`matejrozsypals-projects/one-eighty-dashboard`
+
+### Pages built (11)
+
+| Page | Route | Source |
+|---|---|---|
+| Profitability Snapshot | `/snapshot` | `mart_daily_kpis`, `mart_customer_lifetime`, `mart_orders` |
+| Growth (MoM) | `/growth` | `mart_monthly_kpis` |
+| Orders | `/orders` | `mart_orders` (Shopify-only → Manami shows an empty state) |
+| Products | `/products` | `mart_product_perf` |
+| Paid | `/paid` | `mart_meta_campaign_perf`, `mart_meta_ad_perf` |
+| Channels (GA4) | `/channels` | none — deliberate "not connected" page |
+| Customers | `/customers` | `mart_customer_lifetime` |
+| Time between orders | `/gaps` | `mart_order_gaps` (**new**, migration 208) |
+| Cohorts | `/cohorts` | `mart_customer_cohorts` |
+| Email | `/email` | `mart_email_campaign_message_perf` |
+| Data Health | `/health` | `mart_daily_kpis`, `ref.clients`, `ops.pipeline_log` |
+
+Design comes from the One Eighty design system handoff (Claude Design). Tokens are
+copied verbatim into `dashboard/styles/tokens/` and mapped into Tailwind — **no hex
+codes in components**. Geist is self-hosted via `next/font` so the PWA starts offline.
+
+### Warehouse changes
+
+- **`mart.mart_order_gaps`** (`infra/bigquery/208_mart_order_gaps.sql`) — order-to-order
+  gaps, UNION of Shopify + Shoptet, 24-month window. Emits gap length only, **no
+  customer identifier**, so no PII crosses into `mart`. Verified: Dobias 21,042 gaps,
+  median 59 days, mean 84.9; Manami 438 gaps, median 39.
+- **`ref.clients` corrected** — `dobias.currency` CAD → **USD** (the registry had never
+  been updated after brief V3 corrected the original CAD assumption);
+  `manami.has_gads` false → **TRUE** (Google Ads has been spending since 2025-10).
+  Both were being reported live by the dashboard's drift detector before the fix.
+
+### The security model was wrong, and how it was fixed
+
+`sa-frontend-reader` existed with the description "reads mart only, never raw" but
+**had no dataset grant at all** — only project-level BigQuery Job User. It could run
+jobs and read nothing.
+
+Granting READER on `mart` alone was still not enough: **mart objects are views over
+`stg`, and BigQuery requires the caller to have access to the underlying tables**
+unless the view is authorized. Every page 500'd with
+`Access Denied: Table ...stg_google_ads_campaign_insights`.
+
+Fixed with **authorized datasets**, which preserves least privilege exactly — the
+service account still cannot query `stg`, `raw` or `raw_google_ads` directly, only
+through `mart` views:
+
+```
+mart, ref, ops        → READER for sa-frontend-reader
+stg                   → authorizes  mart
+raw                   → authorizes  stg, mart
+raw_google_ads        → authorizes  stg, mart      ← easy to miss; Google Ads DTS
+                                                     lives outside `raw`
+```
+
+Verified end-to-end from production (temporary `/api/selftest` route, since removed):
+all 8 mart views return `ok`.
+
+### Three failures worth remembering
+
+1. **Vercel Framework Preset was "Other"**, not Next.js. The project pre-dated the app
+   by two months. With "Other" Vercel never runs `next build`; it publishes an empty
+   deployment. Every route returned 404 / `x-vercel-error: NOT_FOUND`, which reads like
+   a DNS or routing fault. **The tell: `vercel inspect` shows empty Builds and Aliases.**
+2. **`next-auth/middleware` does not survive the Edge runtime** — `ReferenceError:
+   __dirname is not defined` on every request, so the whole site 500'd *including the
+   sign-in page*. There is now **no `middleware.ts`**; the session is enforced in
+   `app/(app)/layout.tsx`, which wraps every data route and runs beside the queries it
+   protects. Don't reintroduce auth middleware without testing a real deployment.
+3. **Forpsi doesn't publish zone edits immediately.** The A record was visible in the
+   panel for ~30 minutes while the SOA serial stayed at `2026072201`. The serial — not
+   whether something resolves — is the reliable signal that a zone change went live.
+
+### One design decision reversed mid-build
+
+Optional queries were originally wrapped in `.catch(() => [])`. When every mart view
+was returning 403, three pages caught it and rendered a calm "No data yet." **A
+dashboard that says "no data" when it means "I wasn't allowed to look" is worse than
+one that crashes** — the crash gets fixed, the false empty state gets believed.
+
+`dashboard/lib/queries/errors.ts` now distinguishes the two: a genuinely missing object
+degrades to an empty state; permission errors, timeouts and quota failures are
+re-thrown and surface as real errors.
+
+### Known gaps at handoff
+
+- **No USD→CZK FX rates.** `ref.fx_rates` holds only CAD→USD, last month 2026-05, hand-
+  seeded. The CZK rollup toggle is built and renders **disabled with a padlock** until
+  rates land. Needs either a manual seed or a ČNB-fed n8n workflow.
+- **GA4 is not connected at all** — no traffic, channel or funnel data exists anywhere.
+  `/channels` states this rather than hiding it.
+- **Google Ads has no mart view.** Spend totals come from `mart_daily_kpis.google_spend`
+  and work; per-campaign Google detail does not exist.
+- **Klaviyo subscriber growth** still blocked on a segment mirroring the master list
+  (runbook 21).
+- **Repurchase breakdown by first product** — the one nav item still marked "Soon".
+  Needs a new view over `stg_shopify_order_items`.
+- **Cost placeholders unchanged** — `cm1_other_costs` and `fulfillment_cost` are still
+  hardcoded zero, so CM1 = CM2. The margin stack draws both as hatched "not measured
+  yet" steps rather than as zero-height bars.
+
+### Files
+
+- `dashboard/` — 11 pages, `lib/queries/*` (one module per screen), `components/{ui,shell,controls,dashboard}`
+- `dashboard/DESIGN_BRIEF*.md` — the three briefs given to Claude Design
+- `infra/bigquery/208_mart_order_gaps.sql` — deployed
+- `runbooks/22_dashboard_deploy.md` — full deploy procedure incl. the three failures above
+
+---
+
+## 2026-07-03 — Google Ads spend folded into CM3 (`paid_spend`) — runbook 17 phases 2–3 deployed
+
+**Goal:** make CM3 net *all* paid media (Meta + Google), not Meta alone. Previously
+`cm3 = revenue − cogs − meta_spend`, so after-marketing margin was overstated wherever
+Google runs (~18–20k CZK/mo on Manami).
+
+**Deployed live (both `CREATE OR REPLACE VIEW`, executed against BigQuery):**
+- `stg.stg_google_ads_campaign_insights` (migration `202_stg_google_ads.sql`)
+- `mart.mart_daily_kpis` (migration `203_add_google_spend_to_mart.sql`)
+
+**Two bugs found in the `202` draft and fixed before deploy** (both verified against the
+landed DTS tables — either would have produced empty/failed output):
+1. *Wildcard over views.* Draft read `ads_CampaignBasicStats_*`. In this project the `ads_*`
+   objects are VIEWS over the DTS `p_ads_*` base tables, and BigQuery rejects prefix queries
+   over views (`Views cannot be queried through prefix`). Fixed: reference the concrete
+   per-account view `ads_CampaignBasicStats_5865960448`; add a UNION ALL per new account.
+2. *`_LATEST_DATE = _DATA_DATE` zeroed history.* Here `_DATA_DATE = DATE(_PARTITIONTIME)` = the
+   metric date and `_LATEST_DATE` is a constant literal, so that predicate kept only the single
+   latest day → ~0 for every historical month. No cross-run duplication exists (one partition per
+   metric date), so no dedup is needed. Fixed: dropped the predicate, aggregate over `segments_date`.
+
+**New columns on `mart_daily_kpis`:** `google_spend, google_revenue, google_purchases,
+google_impressions, google_clicks, paid_spend`. `cm3` is now `revenue − cogs − paid_spend`
+where `paid_spend = COALESCE(meta_spend,0) + COALESCE(google_spend,0)`. Backward-compatible:
+all `meta_*` names and existing columns are unchanged, so existing Looker fields keep working.
+
+**Multi-tenant safety (clients without Google Ads are untouched):** `paid_daily` is a FULL OUTER
+JOIN of `meta_daily` and `google_daily`; `google_daily` only emits rows for accounts in the
+`client_map` (Manami only). Dobias has no Google rows → `google_spend` is NULL → `paid_spend =
+meta_spend` → `cm3` identical to before. Confirmed on the live view:
+
+| client | month | meta_spend | google_spend | paid_spend | cm3 (new) | cm3 (was) |
+|---|---|---|---|---|---|---|
+| dobias | 2026-05 | 5,114 | NULL | 5,114 | 159,961 | 159,961 (unchanged) |
+| dobias | 2026-06 | 7,805 | NULL | 7,805 | 150,916 | 150,916 (unchanged) |
+| manami | 2026-05 | 66,009 | 18,069 | 84,077 | 84,608 | 102,677 |
+| manami | 2026-06 | 66,093 | 19,901 | 85,995 | 65,202 | 85,103 |
+
+Google Ads data (Manami account 5865960448) is present from 2025-10-01; earlier months carry no
+Google, as expected.
+
+**Follow-up (NOT yet done):** runbook 17 Phase 4 — repoint `MER / aMER / CAC` in METRICS.md and
+the Looker Profitability calc fields from `meta_spend` to `paid_spend`. Until then those three
+still divide by Meta only. After Looker refresh, run **Refresh fields** so `google_*` / `paid_spend`
+appear as bindable fields.
+
+**Files changed:** `infra/bigquery/202_stg_google_ads.sql` (corrected + deployed);
+`mart.mart_daily_kpis` view (content of `203_add_google_spend_to_mart.sql`, deployed live).
+
+---
+
+## 2026-06-21 — Klaviyo daily time-series marts (date-picker email dashboard)
+
+Target: rebuild Looker Email page as daily charts driven by a date-range control, matching
+Klaviyo's native dashboard (Conversion Summary, Flows Conversion, Subscriber Growth, Campaign
+message performance detail). Full spec in runbook 19. Scope chosen: all phases, ~24 months history.
+
+### Shipped + verified live
+- **`mart.mart_email_campaign_message_perf`** (+ `stg.stg_klaviyo_campaign_messages`) — per
+  campaign-message table (recipients, delivered, unique opens/clicks, unique orders, revenue, AOV,
+  rev/rec). Built from existing `raw_klaviyo_campaign_reports` — **no new endpoint**. Verified to the
+  cent vs Klaviyo UI (Dandelion: 44,447 recipients / $8,551.64 / AOV $161.35 / 35.0% open). Excludes
+  phantom draft/clone campaign objects via `delivered IS NOT NULL`. (204)
+
+### Built, awaiting backfill data
+- Raw landing tables `raw_klaviyo_campaign_series`, `raw_klaviyo_flow_series`,
+  `raw_klaviyo_subscriber_daily` (205).
+- Daily views (206): `stg_klaviyo_campaign_series`, `stg_klaviyo_flow_series` (latest-snapshot per
+  entity-day); marts `mart_email_daily` (campaign vs flow daily revenue + emails/day),
+  `mart_email_flow_daily` (flow selector), `mart_email_subscriber_daily`.
+
+### Key design decision
+Use Klaviyo **series-reports** (`interval=daily`) not values-reports for the time charts. Daily
+buckets are non-overlapping → SUM across dates is safe → **dissolves the flow double-count problem**
+that blocked flow ongoing sync (no calendar-month workaround needed).
+
+### Built this session (daily pipeline) — CORRECTED after Cloud Shell test
+- **Correction:** `/api/campaign-series-reports/` does **not exist** (404 — confirmed via docs; series
+  are flows/forms/segments only). Also: **daily series interval ≤ 60 days/call** (not 1 year). First
+  runbook-20 draft hit both. Fixed.
+- Daily revenue now sourced two ways: **flows** via `/api/flow-series-reports/` (daily, 60-day chunks) →
+  `raw_klaviyo_flow_series`; **Conversion Summary** via `/api/metric-aggregates/` on `Vyfqq8`
+  (`$attributed_channel` + `$attributed_flow`, daily) → `raw_klaviyo_conversion_daily`, with
+  `campaign = Σchannel − Σflow` (validated live: May 1 campaign $2,309 = $2,877 − $568). New mart layer
+  `207_klaviyo_conversion_daily.sql` (mart_email_daily, mart_email_flow_daily rebuilt on this).
+- `wf_klaviyo_to_bigquery` (30 nodes): campaign-series branch replaced by **conv channel + conv flow**
+  metric-aggregates branches (`application/json` headers); flow-series + subscriber-series branches kept.
+  Graph validated. `raw_klaviyo_campaign_series` (205) now unused/empty — harmless.
+- **Runbook 20** rewritten: one 60-day-chunked loop doing flow-series + 2 metric-aggregates per window,
+  throttled, with May cross-check (flow ≈$14,710 / campaign ≈$116,570).
+- **First Cloud Shell run found 2 bugs (fixed):** (1) BQ `NUMERIC` rejects raw API floats
+  (`Invalid NUMERIC value: 1926.1899999999998` — scale > 9) → round `conversion_value` to 4 dp in
+  runbook + both n8n conv transforms + flow-series transform. (2) flow-series-reports throttles hard
+  (metric-aggregates doesn't) → runbook now has `kfetch` that parses "available in N seconds" and
+  retries. metric-aggregates conv generation worked (8,058 rows); only the load failed on the float.
+
+### Validated live against the Dobias Klaviyo account (MCP = Dobias account TjBumR)
+- Series **response shape confirmed** via Klaviyo docs: `data.attributes.date_times[]` +
+  `results[].{groupings,statistics}` with statistics as date-aligned arrays. 1-yr max timeframe.
+- Conversion magnitudes (metric-aggregates, May): flows `$attributed_flow` sum ≈ **$14,856** (UI
+  $14,710), campaign ≈ **$117,240** (UI $116,570), email+sms total $132,096 (UI $131,281). All within
+  attribution drift. These are the cross-check targets for the backfill.
+- `$attributed_channel` = email/sms (NOT campaign/flow — that needs `$attributed_flow`).
+
+### Subscriber growth — solved via segment-series (NOT forward-only; earlier note corrected)
+- `/api/segment-series-reports/` returns daily `total_members` / `members_added` / `members_removed` /
+  `net_members_changed`, **backfillable to 2023-06-01**. `members_removed` = Klaviyo's true exclusions
+  (don't reconstruct from unsub+bounce+spam — that gave 6,294 vs UI 1,031). Validated live on segment
+  `Ykr8TQ`. Daily interval ≤ 60-day chunks.
+- **Catch:** only works on SEGMENTS. The 78,551 audience is list `TuNgAg` (rejected). Needs a segment
+  mirroring it (`is in list "(NEW) Master List - USA & Canada"`). User chose "mirror the master list".
+- Built: `ref.clients.klaviyo_subscriber_segment_id` column; `wf_klaviyo_to_bigquery` subscriber-series
+  branch (rolling, onError-guarded so a null segment id can't break the run); **runbook 21** backfill.
+  Blocked only on the user creating the segment + setting the id.
+
+### Validation tooling note
+The Klaviyo MCP (server `0f839221`) is connected to **Dobias's own account** (`TjBumR`) — used to
+validate every metric/report live before building. Keep using it for Klaviyo verification.
+
+### Next (deploy)
+- Run runbook 20 (series) + 21 (subscriber, after segment) backfills → daily marts populate; verify vs
+  cross-check targets (flows ≈$14,710, campaigns ≈$116,570; subs May new ≈647 / excl ≈1,031).
+- Re-import + activate `wf_klaviyo_to_bigquery` (27 nodes) for ongoing daily sync.
+- Build Looker daily pages on `mart_email_daily` / `mart_email_flow_daily` / `mart_email_subscriber_daily`
+  / `mart_email_campaign_message_perf`.
+
+---
+
+## 2026-06-21 — Klaviyo campaign performance: ongoing sync wired (Email page nulls)
+
+### Symptom
+Looker Email Marketing page (Dobias): open-rate scorecard blank, campaign table full of
+null metrics.
+
+### Root cause
+Two issues, both confirmed against live BQ:
+1. **Stale data.** Klaviyo campaign performance (delivered/opens/clicks/revenue) only comes
+   from `/api/campaign-values-reports/`, which was run *once* as a manual backfill on
+   2026-05-23 and never wired into n8n. Metadata (names/dates) syncs every 6h, so recent
+   campaigns appear with names but null numbers. 41 of 142 Dobias email campaigns
+   (2026-04-16 → 2026-06-20) had NULL `delivered`/`opens`/`recipients`. On a "last 30 days"
+   Looker window the whole page reads null.
+2. **Scorecard mis-binding.** Raw `open_rate` is a per-campaign fraction (0.27–1.0, incl. a
+   100% outlier). A scorecard bound to it reads ~42.8% (unweighted AVG) vs. the correct
+   delivery-weighted 34.96% (`SUM(unique_opens)/SUM(delivered)*100`); SUM aggregation reads
+   blank. Fix is the calc field already in METRICS.md (lines 131–138).
+
+### Change
+- `wf_klaviyo_to_bigquery` gained a `Fetch campaign reports → Transform → BQ: insert`
+  branch: POSTs `/api/campaign-values-reports/` for a rolling 35-day window every 6h per
+  active Klaviyo client, writing to `raw.raw_klaviyo_campaign_reports`. Window is computed
+  once in `Decode secrets` so the request timeframe and stored `report_timeframe_*` agree.
+- New registry column `ref.clients.klaviyo_conversion_metric_id` (Dobias = `Vyfqq8`),
+  read by the workflow and passed as `conversion_metric_id`. **DDL must be run before
+  activating** (see runbook 15).
+- Safe with `stg_klaviyo_campaigns` (latest-snapshot-per-campaign → rolling re-fetch just
+  refreshes; no double-count).
+
+### Still open
+- **Flows ongoing sync NOT wired.** `stg_klaviyo_flows` SUMs non-overlapping windows; a
+  rolling pull would overlap the 12-month backfill chunks and re-inflate revenue. Needs a
+  calendar-month period-key redesign of backfill + stg first. Runbook 15 has the note.
+- **One-off refresh** (runbook 15 "Refresh 2026-06-21") still recommended to populate the
+  41 stale campaigns immediately, rather than waiting for the next 6h n8n run after deploy.
+
+---
+
 ## 2026-05-25 — CA store history unlocked + USD conversion via fx_rates
 
 Major correction to two earlier assumptions, opening up ~48k orders of Canadian store history that had been wrongly filtered out, and proper currency normalization to USD across the warehouse.

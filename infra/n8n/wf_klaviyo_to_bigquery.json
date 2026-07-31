@@ -12,7 +12,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "sqlQuery": "SELECT client_id, slug, currency\nFROM `oneeighty-warehouse.ref.clients`\nWHERE status='active' AND has_klaviyo=TRUE",
+        "sqlQuery": "SELECT client_id, slug, currency, klaviyo_conversion_metric_id, klaviyo_subscriber_segment_id\nFROM `oneeighty-warehouse.ref.clients`\nWHERE status='active' AND has_klaviyo=TRUE",
         "options": {}
       },
       "id": "g0000000-0000-0000-0000-000000000002",
@@ -51,7 +51,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const decode = b64 => Buffer.from(b64, 'base64').toString('utf8').trim();\nconst apiKey = decode($('Get api_key').first().json.payload.data);\nconst region = decode($('Get region').first().json.payload.data) || 'us';\nconst client = $('Loop over clients').item.json;\nreturn [{ json: {\n  client_id: client.client_id,\n  slug: client.slug,\n  currency: client.currency,\n  api_key: apiKey,\n  region: region,\n  revision: '2024-10-15'\n}}];\n"
+        "jsCode": "const decode = b64 => Buffer.from(b64, 'base64').toString('utf8').trim();\nconst apiKey = decode($('Get api_key').first().json.payload.data);\nconst region = decode($('Get region').first().json.payload.data) || 'us';\nconst client = $('Loop over clients').item.json;\n// Rolling window for the *-values-reports endpoints. 35 days covers Klaviyo's ~30-day\n// conversion-attribution tail (older campaigns keep re-fetching until stable) plus any\n// newly-sent campaigns since the last run. Computed once per client so the request body\n// timeframe and the stored report_timeframe_* columns always agree.\nconst nowD = new Date();\nconst startD = new Date(nowD.getTime() - 35 * 24 * 60 * 60 * 1000);\nreturn [{ json: {\n  client_id: client.client_id,\n  slug: client.slug,\n  currency: client.currency,\n  conversion_metric_id: client.klaviyo_conversion_metric_id || null,\n  subscriber_segment_id: client.klaviyo_subscriber_segment_id || null,\n  api_key: apiKey,\n  region: region,\n  revision: '2024-10-15',\n  window_start_iso: startD.toISOString(),\n  window_end_iso: nowD.toISOString(),\n  window_start_date: startD.toISOString().slice(0, 10),\n  window_end_date: nowD.toISOString().slice(0, 10)\n}}];\n"
       },
       "id": "g0000000-0000-0000-0000-000000000013",
       "name": "Decode secrets",
@@ -202,6 +202,273 @@
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
       "position": [1160, 480]
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://a.klaviyo.com/api/campaign-values-reports/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",  "value": "=Klaviyo-API-Key {{ $('Decode secrets').item.json.api_key }}" },
+            { "name": "revision",       "value": "=2024-10-15" },
+            { "name": "accept",         "value": "application/vnd.api+json" },
+            { "name": "content-type",   "value": "application/vnd.api+json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ data: { type: 'campaign-values-report', attributes: { statistics: ['recipients','delivered','bounced','opens','opens_unique','clicks','clicks_unique','conversions','conversion_value','unsubscribes','spam_complaints','delivery_rate','open_rate','click_rate','conversion_rate','revenue_per_recipient','average_order_value'], timeframe: { start: $('Decode secrets').item.json.window_start_iso, end: $('Decode secrets').item.json.window_end_iso }, conversion_metric_id: $('Decode secrets').item.json.conversion_metric_id } } }) }}",
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } }
+        }
+      },
+      "id": "g0000000-0000-0000-0000-000000000050",
+      "name": "Fetch campaign reports",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst INGESTED_AT = new Date().toISOString();\nconst TF_START = ctx.window_start_date;\nconst TF_END = ctx.window_end_date;\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n\n// /api/campaign-values-reports/ returns a SINGLE object: { data: { attributes: { results: [ {groupings, statistics}, ... ] } } }.\n// results includes ALL channels (email + sms + push) — keep them; mart filters channel='email'.\nconst results = [];\nfor (const it of $input.all()) {\n  const rs = it.json?.data?.attributes?.results;\n  if (Array.isArray(rs)) for (const r of rs) results.push(r);\n}\n\nreturn results.filter(r => r?.groupings?.campaign_id).map(r => {\n  const g = r.groupings ?? {};\n  const s = r.statistics ?? {};\n  return { json: {\n    client_id: CLIENT_ID,\n    ingested_at: INGESTED_AT,\n    ingest_source: 'n8n_rolling_35d',\n    report_timeframe_start: TF_START,\n    report_timeframe_end: TF_END,\n    campaign_id: String(g.campaign_id),\n    campaign_message_id: g.campaign_message_id ?? null,\n    send_channel: g.send_channel ?? null,\n    recipients: num(s.recipients),\n    delivered: num(s.delivered),\n    bounced: num(s.bounced),\n    opens: num(s.opens),\n    opens_unique: num(s.opens_unique),\n    clicks: num(s.clicks),\n    clicks_unique: num(s.clicks_unique),\n    delivery_rate: num(s.delivery_rate),\n    open_rate: num(s.open_rate),\n    click_rate: num(s.click_rate),\n    conversion_rate: num(s.conversion_rate),\n    unsubscribes: num(s.unsubscribes),\n    spam_complaints: num(s.spam_complaints),\n    conversions: num(s.conversions),\n    conversion_value: num(s.conversion_value),\n    revenue_per_recipient: num(s.revenue_per_recipient),\n    average_order_value: num(s.average_order_value),\n    payload_json: JSON.stringify(r)\n  }};\n});\n"
+      },
+      "id": "g0000000-0000-0000-0000-000000000051",
+      "name": "Transform campaign reports",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 480]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
+        "datasetId": { "__rl": true, "value": "raw",                 "mode": "list" },
+        "tableId":   { "__rl": true, "value": "raw_klaviyo_campaign_reports", "mode": "list" },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "g0000000-0000-0000-0000-000000000052",
+      "name": "BQ: insert campaign reports",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [1880, 480]
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://a.klaviyo.com/api/metric-aggregates/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",  "value": "=Klaviyo-API-Key {{ $('Decode secrets').item.json.api_key }}" },
+            { "name": "revision",       "value": "=2024-10-15" },
+            { "name": "accept",         "value": "application/json" },
+            { "name": "content-type",   "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ data: { type: 'metric-aggregate', attributes: { metric_id: $('Decode secrets').item.json.conversion_metric_id, measurements: ['sum_value','count'], interval: 'day', timezone: 'US/Pacific', by: ['$attributed_channel'], filter: ['greater-or-equal(datetime,' + $('Decode secrets').item.json.window_start_date + 'T00:00:00)', 'less-than(datetime,' + $('Decode secrets').item.json.window_end_date + 'T00:00:00)'] } } }) }}",
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } }
+        }
+      },
+      "id": "g0000000-0000-0000-0000-000000000060",
+      "name": "Fetch conv channel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-760, 760]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst INGESTED_AT = new Date().toISOString();\nconst DIM_TYPE = 'channel';\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n\n// metric-aggregates: { data: { attributes: { dates: [...], data: [ {dimensions:[...], measurements:{sum_value:[...],count:[...]}} ] } } }\nconst out = [];\nfor (const it of $input.all()) {\n  const a = it.json?.data?.attributes;\n  if (!a) continue;\n  const dates = (a.dates || []).map(d => String(d).slice(0, 10));\n  for (const row of (a.data || [])) {\n    const dv = (row.dimensions && row.dimensions[0] != null) ? String(row.dimensions[0]) : '';\n    const sv = row.measurements?.sum_value || [];\n    const ct = row.measurements?.count || [];\n    for (let i = 0; i < dates.length; i++) {\n      out.push({ json: {\n        client_id: CLIENT_ID,\n        ingested_at: INGESTED_AT,\n        ingest_source: 'n8n_conv_rolling_35d',\n        metric_date: dates[i],\n        dim_type: DIM_TYPE,\n        dim_value: dv,\n        conversion_value: (sv[i] != null && sv[i] !== '' ? Math.round(Number(sv[i]) * 10000) / 10000 : null),\n        conversions: (ct[i] != null ? Math.round(Number(ct[i])) : null),\n        payload_json: JSON.stringify({ dim: dv, date: dates[i] })\n      }});\n    }\n  }\n}\nreturn out;\n"
+      },
+      "id": "g0000000-0000-0000-0000-000000000061",
+      "name": "Transform conv channel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-520, 760]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
+        "datasetId": { "__rl": true, "value": "raw",                 "mode": "list" },
+        "tableId":   { "__rl": true, "value": "raw_klaviyo_conversion_daily", "mode": "list" },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "g0000000-0000-0000-0000-000000000062",
+      "name": "BQ: insert conv channel",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [-280, 760]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://a.klaviyo.com/api/metric-aggregates/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",  "value": "=Klaviyo-API-Key {{ $('Decode secrets').item.json.api_key }}" },
+            { "name": "revision",       "value": "=2024-10-15" },
+            { "name": "accept",         "value": "application/json" },
+            { "name": "content-type",   "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ data: { type: 'metric-aggregate', attributes: { metric_id: $('Decode secrets').item.json.conversion_metric_id, measurements: ['sum_value','count'], interval: 'day', timezone: 'US/Pacific', by: ['$attributed_flow'], filter: ['greater-or-equal(datetime,' + $('Decode secrets').item.json.window_start_date + 'T00:00:00)', 'less-than(datetime,' + $('Decode secrets').item.json.window_end_date + 'T00:00:00)'] } } }) }}",
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } }
+        }
+      },
+      "id": "g0000000-0000-0000-0000-000000000063",
+      "name": "Fetch conv flow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-40, 1000]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst INGESTED_AT = new Date().toISOString();\nconst DIM_TYPE = 'flow';\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n\nconst out = [];\nfor (const it of $input.all()) {\n  const a = it.json?.data?.attributes;\n  if (!a) continue;\n  const dates = (a.dates || []).map(d => String(d).slice(0, 10));\n  for (const row of (a.data || [])) {\n    const dv = (row.dimensions && row.dimensions[0] != null) ? String(row.dimensions[0]) : '';\n    const sv = row.measurements?.sum_value || [];\n    const ct = row.measurements?.count || [];\n    for (let i = 0; i < dates.length; i++) {\n      out.push({ json: {\n        client_id: CLIENT_ID,\n        ingested_at: INGESTED_AT,\n        ingest_source: 'n8n_conv_rolling_35d',\n        metric_date: dates[i],\n        dim_type: DIM_TYPE,\n        dim_value: dv,\n        conversion_value: (sv[i] != null && sv[i] !== '' ? Math.round(Number(sv[i]) * 10000) / 10000 : null),\n        conversions: (ct[i] != null ? Math.round(Number(ct[i])) : null),\n        payload_json: JSON.stringify({ dim: dv, date: dates[i] })\n      }});\n    }\n  }\n}\nreturn out;\n"
+      },
+      "id": "g0000000-0000-0000-0000-000000000064",
+      "name": "Transform conv flow",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 1000]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
+        "datasetId": { "__rl": true, "value": "raw",                 "mode": "list" },
+        "tableId":   { "__rl": true, "value": "raw_klaviyo_conversion_daily", "mode": "list" },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "g0000000-0000-0000-0000-000000000065",
+      "name": "BQ: insert conv flow",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [440, 1000]
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://a.klaviyo.com/api/flow-series-reports/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",  "value": "=Klaviyo-API-Key {{ $('Decode secrets').item.json.api_key }}" },
+            { "name": "revision",       "value": "=2024-10-15" },
+            { "name": "accept",         "value": "application/vnd.api+json" },
+            { "name": "content-type",   "value": "application/vnd.api+json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ data: { type: 'flow-series-report', attributes: { statistics: ['recipients','delivered','bounced','opens','opens_unique','clicks','clicks_unique','conversions','conversion_value','unsubscribes','spam_complaints'], timeframe: { start: $('Decode secrets').item.json.window_start_iso, end: $('Decode secrets').item.json.window_end_iso }, interval: 'daily', conversion_metric_id: $('Decode secrets').item.json.conversion_metric_id } } }) }}",
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } }
+        }
+      },
+      "id": "g0000000-0000-0000-0000-000000000070",
+      "name": "Fetch flow series",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-40, 760]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n\n// flow-series-report: same shape as campaign-series. Zip date_times with each statistic array.\nconst out = [];\nfor (const it of $input.all()) {\n  const attr = it.json?.data?.attributes;\n  if (!attr) continue;\n  const dts = (attr.date_times || []).map(d => String(d).slice(0, 10));\n  for (const r of (attr.results || [])) {\n    const g = r.groupings ?? {};\n    const s = r.statistics ?? {};\n    if (!g.flow_id) continue;\n    const at = (arr, i) => (Array.isArray(arr) ? num(arr[i]) : null);\n    for (let i = 0; i < dts.length; i++) {\n      out.push({ json: {\n        client_id: CLIENT_ID,\n        ingested_at: INGESTED_AT,\n        ingest_source: 'n8n_series_rolling_35d',\n        metric_date: dts[i],\n        flow_id: String(g.flow_id),\n        flow_message_id: g.flow_message_id ?? null,\n        send_channel: g.send_channel ?? null,\n        recipients: at(s.recipients, i),\n        delivered: at(s.delivered, i),\n        bounced: at(s.bounced, i),\n        opens: at(s.opens, i),\n        opens_unique: at(s.opens_unique, i),\n        clicks: at(s.clicks, i),\n        clicks_unique: at(s.clicks_unique, i),\n        conversions: at(s.conversions, i),\n        conversion_value: (function(x){ return (x != null ? Math.round(x * 10000) / 10000 : null); })(at(s.conversion_value, i)),\n        unsubscribes: at(s.unsubscribes, i),\n        spam_complaints: at(s.spam_complaints, i),\n        payload_json: JSON.stringify({ groupings: g, metric_date: dts[i] })\n      }});\n    }\n  }\n}\nreturn out;\n"
+      },
+      "id": "g0000000-0000-0000-0000-000000000071",
+      "name": "Transform flow series",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 760]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
+        "datasetId": { "__rl": true, "value": "raw",                 "mode": "list" },
+        "tableId":   { "__rl": true, "value": "raw_klaviyo_flow_series", "mode": "list" },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "g0000000-0000-0000-0000-000000000072",
+      "name": "BQ: insert flow series",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [440, 760]
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://a.klaviyo.com/api/segment-series-reports/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",  "value": "=Klaviyo-API-Key {{ $('Decode secrets').item.json.api_key }}" },
+            { "name": "revision",       "value": "=2024-10-15" },
+            { "name": "accept",         "value": "application/vnd.api+json" },
+            { "name": "content-type",   "value": "application/vnd.api+json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ data: { type: 'segment-series-report', attributes: { statistics: ['total_members','members_added','members_removed','net_members_changed'], timeframe: { start: $('Decode secrets').item.json.window_start_iso, end: $('Decode secrets').item.json.window_end_iso }, interval: 'daily', filter: 'equals(segment_id,\"' + ($('Decode secrets').item.json.subscriber_segment_id || '') + '\")' } } }) }}",
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "retry": { "retry": { "maxTries": 3, "waitBetweenTries": 2000 } }
+        }
+      },
+      "id": "g0000000-0000-0000-0000-000000000080",
+      "name": "Fetch subscriber series",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [680, 760]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n\n// segment-series-report: results[].statistics arrays (total_members/members_added/members_removed)\n// aligned to date_times[]. Empty results (e.g. segment_id not set yet) -> 0 rows, no error.\nconst out = [];\nfor (const it of $input.all()) {\n  const attr = it.json?.data?.attributes;\n  if (!attr) continue;\n  const dts = (attr.date_times || []).map(d => String(d).slice(0, 10));\n  for (const r of (attr.results || [])) {\n    const s = r.statistics ?? {};\n    const at = (a, i) => (Array.isArray(a) ? num(a[i]) : null);\n    for (let i = 0; i < dts.length; i++) {\n      out.push({ json: {\n        client_id: CLIENT_ID,\n        ingested_at: INGESTED_AT,\n        ingest_source: 'n8n_subscriber_series_rolling',\n        metric_date: dts[i],\n        channel: 'email',\n        total_subscribers: at(s.total_members, i),\n        new_subscribers: at(s.members_added, i),\n        exclusions: at(s.members_removed, i),\n        payload_json: JSON.stringify({ groupings: r.groupings ?? {}, metric_date: dts[i] })\n      }});\n    }\n  }\n}\nreturn out;\n"
+      },
+      "id": "g0000000-0000-0000-0000-000000000081",
+      "name": "Transform subscriber series",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 760]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
+        "datasetId": { "__rl": true, "value": "raw",                 "mode": "list" },
+        "tableId":   { "__rl": true, "value": "raw_klaviyo_subscriber_daily", "mode": "list" },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "g0000000-0000-0000-0000-000000000082",
+      "name": "BQ: insert subscriber daily",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "position": [1160, 760]
     }
   ],
   "pinData": {},
@@ -220,7 +487,22 @@
     "BQ: insert flows":           { "main": [[ { "node": "Fetch forms",                 "type": "main", "index": 0 } ]] },
     "Fetch forms":                { "main": [[ { "node": "Transform forms",             "type": "main", "index": 0 } ]] },
     "Transform forms":            { "main": [[ { "node": "BQ: insert forms",            "type": "main", "index": 0 } ]] },
-    "BQ: insert forms":           { "main": [[ { "node": "Loop over clients",           "type": "main", "index": 0 } ]] }
+    "BQ: insert forms":           { "main": [[ { "node": "Fetch campaign reports",      "type": "main", "index": 0 } ]] },
+    "Fetch campaign reports":     { "main": [[ { "node": "Transform campaign reports",  "type": "main", "index": 0 } ]] },
+    "Transform campaign reports": { "main": [[ { "node": "BQ: insert campaign reports", "type": "main", "index": 0 } ]] },
+    "BQ: insert campaign reports":{ "main": [[ { "node": "Fetch conv channel",          "type": "main", "index": 0 } ]] },
+    "Fetch conv channel":         { "main": [[ { "node": "Transform conv channel",      "type": "main", "index": 0 } ]] },
+    "Transform conv channel":     { "main": [[ { "node": "BQ: insert conv channel",     "type": "main", "index": 0 } ]] },
+    "BQ: insert conv channel":    { "main": [[ { "node": "Fetch conv flow",             "type": "main", "index": 0 } ]] },
+    "Fetch conv flow":            { "main": [[ { "node": "Transform conv flow",         "type": "main", "index": 0 } ]] },
+    "Transform conv flow":        { "main": [[ { "node": "BQ: insert conv flow",        "type": "main", "index": 0 } ]] },
+    "BQ: insert conv flow":       { "main": [[ { "node": "Fetch flow series",           "type": "main", "index": 0 } ]] },
+    "Fetch flow series":          { "main": [[ { "node": "Transform flow series",       "type": "main", "index": 0 } ]] },
+    "Transform flow series":      { "main": [[ { "node": "BQ: insert flow series",       "type": "main", "index": 0 } ]] },
+    "BQ: insert flow series":     { "main": [[ { "node": "Fetch subscriber series",      "type": "main", "index": 0 } ]] },
+    "Fetch subscriber series":    { "main": [[ { "node": "Transform subscriber series",  "type": "main", "index": 0 } ]] },
+    "Transform subscriber series":{ "main": [[ { "node": "BQ: insert subscriber daily",  "type": "main", "index": 0 } ]] },
+    "BQ: insert subscriber daily":{ "main": [[ { "node": "Loop over clients",           "type": "main", "index": 0 } ]] }
   },
   "active": false,
   "settings": { "executionOrder": "v1", "callerPolicy": "workflowsFromSameOwner" },

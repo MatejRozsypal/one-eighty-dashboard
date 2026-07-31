@@ -1,0 +1,71 @@
+/* One Eighty — Color tokens
+ * Monochrome brand (black mark) + a single signature GROWTH green used for
+ * positive/data-forward accents. Platform colors are for product/dashboard UI. */
+:root {
+  /* ---- Ink / near-black scale (brand black comes from the logo mark) ---- */
+  --ink-950: #050506;
+  --ink-900: #0A0A0B;   /* brand black */
+  --ink-800: #141416;
+  --ink-700: #1C1C20;
+  --ink-600: #26262B;
+  --ink-500: #34343A;
+
+  /* ---- Neutral grays ---- */
+  --gray-400: #6A6A72;
+  --gray-300: #9797A0;
+  --gray-250: #B8B8BF;
+  --gray-200: #D2D2D0;
+  --gray-150: #E4E4E1;
+  --gray-100: #EFEFEC;
+  --gray-50:  #F6F6F3;
+  --paper:    #FFFFFF;
+
+  /* ---- Signature growth green ---- */
+  --growth-700: #0A7C47;
+  --growth-600: #0E9F5D;
+  --growth-500: #12B76A;   /* primary accent */
+  --growth-400: #2CD489;
+  --growth-300: #7BE9B9;
+  --growth-100: #D6F6E7;
+  --growth-50:  #EAFAF2;
+
+  /* ---- Semantic status ---- */
+  --positive: #12B76A;
+  --negative: #E5484D;
+  --warning:  #F5A623;
+  --info:     #0866FF;
+
+  /* ---- Platform (product/dashboard UI kit only) ---- */
+  --shopify: #95BF47;
+  --meta:    #0866FF;
+  --klaviyo: #1B1B1B;
+  --google:  #4285F4;
+
+  /* ================= Semantic aliases ================= */
+  --bg:              var(--paper);
+  --bg-subtle:       var(--gray-50);
+  --bg-inverse:      var(--ink-900);
+  --bg-inverse-2:    var(--ink-800);
+
+  --surface-card:          var(--paper);
+  --surface-card-subtle:   var(--gray-50);
+  --surface-card-inverse:  var(--ink-800);
+
+  --text-strong:        var(--ink-900);
+  --text-body:          var(--ink-600);
+  --text-muted:         var(--gray-400);
+  --text-inverse:       var(--paper);
+  --text-inverse-muted: var(--gray-300);
+  --text-accent:        var(--growth-600);
+
+  --border:          var(--gray-150);
+  --border-strong:   var(--gray-200);
+  --border-inverse:  var(--ink-600);
+
+  --accent:            var(--growth-500);
+  --accent-hover:      var(--growth-600);
+  --accent-contrast:   #04351F;   /* text on green */
+  --accent-soft:       var(--growth-50);
+
+  --focus-ring: var(--growth-500);
+}

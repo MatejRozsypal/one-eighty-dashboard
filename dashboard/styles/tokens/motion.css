@@ -1,0 +1,12 @@
+/* One Eighty — Motion tokens
+ * Calm, confident, no bounce. Fast state changes, smooth reveals. */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);      /* @kind other */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);   /* @kind other */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);   /* @kind other */
+
+  --dur-fast: 120ms;    /* @kind other */
+  --dur-base: 200ms;    /* @kind other */
+  --dur-slow: 360ms;    /* @kind other */
+  --dur-reveal: 640ms;  /* @kind other */
+}

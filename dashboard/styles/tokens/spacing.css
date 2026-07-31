@@ -1,0 +1,27 @@
+/* One Eighty — Spacing & layout tokens (4px base grid) */
+:root {
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-32: 128px;
+
+  /* Section rhythm */
+  --section-y: clamp(64px, 9vw, 128px);  /* @kind spacing */
+
+  /* Container widths */
+  --container-sm: 640px;
+  --container-md: 800px;   /* editorial / letter column */
+  --container-lg: 1080px;
+  --container-xl: 1200px;
+  --gutter: clamp(20px, 5vw, 48px);  /* @kind spacing */
+}

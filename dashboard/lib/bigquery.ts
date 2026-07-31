@@ -18,13 +18,30 @@ function getClient(): BigQuery {
   const keyBase64 = process.env.GCP_SERVICE_ACCOUNT_KEY_BASE64;
 
   if (!projectId) throw new Error("GCP_PROJECT_ID env var not set");
-  if (!keyBase64) throw new Error("GCP_SERVICE_ACCOUNT_KEY_BASE64 env var not set");
 
-  const credentials = JSON.parse(
-    Buffer.from(keyBase64, "base64").toString("utf-8")
-  );
+  if (keyBase64) {
+    const credentials = JSON.parse(
+      Buffer.from(keyBase64, "base64").toString("utf-8")
+    );
+    _client = new BigQuery({ projectId, credentials, location: "EU" });
+    return _client;
+  }
 
-  _client = new BigQuery({ projectId, credentials, location: "EU" });
+  // No key: fall back to Application Default Credentials. This is for local
+  // development only — run `gcloud auth application-default login` and the app
+  // reads BigQuery as you, with no key file on disk to leak. In production the
+  // env var is always set, and it maps to sa-frontend-reader, which is scoped
+  // to the mart dataset. ADC would run with your own (much wider) permissions,
+  // so it must never be the production path.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "GCP_SERVICE_ACCOUNT_KEY_BASE64 is not set. Production must use the " +
+        "sa-frontend-reader key — Application Default Credentials would run " +
+        "with far broader permissions than this app should have."
+    );
+  }
+
+  _client = new BigQuery({ projectId, location: "EU" });
   return _client;
 }
 

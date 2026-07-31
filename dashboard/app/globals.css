@@ -1,21 +1,147 @@
+/*
+ * Global stylesheet.
+ *
+ * Order matters: design tokens first, then Tailwind, then the few local
+ * additions. The token files under styles/tokens/ are copied verbatim from the
+ * One Eighty design system handoff — treat them as read-only. Anything this app
+ * needs beyond them goes in the "local extensions" block at the bottom, so a
+ * future handoff can overwrite the token files without losing our additions.
+ */
+
+@import "../styles/tokens/colors.css";
+@import "../styles/tokens/typography.css";
+@import "../styles/tokens/spacing.css";
+@import "../styles/tokens/radii.css";
+@import "../styles/tokens/shadows.css";
+@import "../styles/tokens/motion.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   Local extensions — NOT part of the design system handoff
+   ========================================================================== */
+
 :root {
-  --background: 255 255 255;
-  --foreground: 15 23 42;
+  /*
+   * Fonts are self-hosted through next/font (the `geist` package) rather than
+   * the handoff's Google Fonts @import. Two reasons: the CDN import blocks
+   * first paint and causes a visible flash, and this app installs as a PWA —
+   * an offline launch must not depend on fonts.googleapis.com being reachable.
+   *
+   * The families are identical; only the delivery differs. `--font-geist-sans`
+   * and `--font-geist-mono` are injected by next/font in app/layout.tsx.
+   */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, Consolas,
+    monospace;
+
+  /*
+   * Platform colors for the two Czech-market sources. The handoff ships
+   * Shopify / Meta / Klaviyo / Google, but our warehouse also carries Shoptet
+   * and Ecomail, and every metric card is tagged with the system it came from.
+   *
+   * ⚠ These two are approximations taken from each vendor's own marketing site,
+   * not from the One Eighty brand guide. Worth confirming before this dashboard
+   * is shown to a client.
+   */
+  --shoptet: #1a2c4e;
+  --ecomail: #00b4f1;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: 15 23 42;
-    --foreground: 248 250 252;
-  }
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+html {
+  /* The app is a fixed-shell dashboard; the content pane scrolls, not the page. */
+  height: 100%;
 }
 
 body {
-  color: rgb(var(--foreground));
-  background: rgb(var(--background));
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text-body);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * Every figure in this dashboard is set in mono with tabular figures, so digits
+ * occupy identical width. Without this, a revenue number ticking from 1 to 7
+ * shifts the whole column and the page appears to jitter on refresh.
+ */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Skeleton shimmer, used while BigQuery runs. */
+@keyframes oe-shimmer {
+  0% {
+    background-position: -320px 0;
+  }
+  100% {
+    background-position: 320px 0;
+  }
+}
+
+/*
+ * Hatched fill for cost steps that are structurally unmeasured — fulfilment and
+ * other CM1 costs are hardcoded to zero in the warehouse. Drawing them hatched
+ * rather than as a zero-height bar is the whole point: a zero bar reads as
+ * "we have no such costs", which is false.
+ */
+.hatched {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--gray-100) 0 6px,
+    var(--paper) 6px 12px
+  );
+}
+
+/* Focus ring — green, matching --focus-ring, and only for keyboard users. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/*
+ * Calm, no bounce — a stated brand rule. Honour the OS-level reduced-motion
+ * preference by removing animation entirely rather than merely shortening it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Scrollbars inside the dark sidebar. Left at browser defaults they render as a
+ * bright strip against near-black, which reads as a rendering bug.
+ */
+.scrollbar-inverse {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+.scrollbar-inverse::-webkit-scrollbar {
+  width: 8px;
+}
+.scrollbar-inverse::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-pill);
+}
+.scrollbar-inverse::-webkit-scrollbar-track {
+  background: transparent;
 }

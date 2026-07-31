@@ -19,6 +19,7 @@ import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
+import { DataTable } from "@/components/ui/DataTable";
 import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Orders" };
@@ -106,13 +107,13 @@ export default async function OrdersPage({
     { key: "order", label: "Order" },
     { key: "customer", label: "Customer" },
     { key: "market", label: isCurrencySplit ? "Currency" : "Country" },
-    { key: "revenue", label: "Revenue" },
-    { key: "net", label: "Net sales" },
+    { key: "revenue", label: "Revenue", align: "right" as const },
+    { key: "net", label: "Net sales", align: "right" as const },
     ...(summary.margin !== null
-      ? [{ key: "margin", label: "Margin" } as const]
+      ? [{ key: "margin", label: "Margin", align: "right" as const }]
       : []),
     ...(summary.hasDiscounts
-      ? [{ key: "discounts", label: "Discounts" } as const]
+      ? [{ key: "discounts", label: "Discounts", align: "right" as const }]
       : []),
     { key: "status", label: "Type" },
   ];
@@ -254,90 +255,102 @@ export default async function OrdersPage({
           <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
             <Eyebrow>Recent orders · mart_orders</Eyebrow>
             <span className="text-[12px] text-content-muted">
-              Latest {orders.length}
+              Latest {orders.length} · click a heading to sort
             </span>
           </div>
 
           <div className="overflow-x-auto">
             <div className="min-w-[860px]">
-              <div className={`${grid} border-b border-hairline bg-gray-50 px-5 py-3`}>
-                {columns.map((c) => (
-                  <span
-                    key={c.key}
-                    className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
-                  >
-                    {c.label}
-                  </span>
-                ))}
-              </div>
-
-              {orders.map((o, i) => (
-                <div
-                  key={`${o.orderNumber}-${i}`}
-                  className={`${grid} border-b border-hairline px-5 py-3 transition-colors duration-fast hover:bg-gray-50`}
-                >
-                  {columns.map((c) => {
+              <DataTable
+                gridClass={grid}
+                columns={columns}
+                rows={orders.map((o, i) => ({
+                  key: `${o.orderNumber}-${i}`,
+                  cells: columns.map((c) => {
                     switch (c.key) {
                       case "date":
                         return (
-                          <span key={c.key} className="font-mono text-[12px] tabular text-content-muted">
+                          <span className="font-mono text-[12px] tabular text-content-muted">
                             {o.date ?? "—"}
                           </span>
                         );
                       case "order":
                         return (
-                          <span key={c.key} className="truncate font-mono text-[12px] text-content-strong">
+                          <span className="block truncate font-mono text-[12px] text-content-strong">
                             {o.orderNumber}
                           </span>
                         );
                       case "customer":
                         return (
-                          <span key={c.key} className="truncate font-mono text-[12px] text-content-body">
+                          <span className="block truncate font-mono text-[12px] text-content-body">
                             {o.customerEmail}
                           </span>
                         );
                       case "market":
                         return (
-                          <span key={c.key} className="font-mono text-[12px] text-content-muted">
+                          <span className="font-mono text-[12px] text-content-muted">
                             {o.market || "—"}
                           </span>
                         );
                       case "revenue":
                         return (
-                          <span key={c.key} className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
+                          <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
                             {money(o.revenue)}
                           </span>
                         );
                       case "net":
                         return (
-                          <span key={c.key} className="font-mono text-[12.5px] tabular text-content-body">
+                          <span className="font-mono text-[12.5px] tabular text-content-body">
                             {money(o.netSales)}
                           </span>
                         );
                       case "margin":
                         return (
-                          <span key={c.key} className="font-mono text-[12.5px] tabular text-content-body">
+                          <span className="font-mono text-[12.5px] tabular text-content-body">
                             {o.margin !== null ? money(o.margin) : "—"}
                           </span>
                         );
                       case "discounts":
                         return (
-                          <span key={c.key} className="font-mono text-[12.5px] tabular text-content-muted">
+                          <span className="font-mono text-[12.5px] tabular text-content-muted">
                             {o.discounts ? `−${money(o.discounts)}` : "—"}
                           </span>
                         );
                       default:
                         return (
-                          <span key={c.key} className="justify-self-start">
-                            <Badge variant={o.isReturning ? "positive" : "neutral"} size="sm">
-                              {o.isReturning ? "Returning" : "New"}
-                            </Badge>
-                          </span>
+                          <Badge
+                            variant={o.isReturning ? "positive" : "neutral"}
+                            size="sm"
+                          >
+                            {o.isReturning ? "Returning" : "New"}
+                          </Badge>
                         );
                     }
-                  })}
-                </div>
-              ))}
+                  }),
+                  sort: columns.map((c) => {
+                    switch (c.key) {
+                      case "date":
+                        return o.date;
+                      case "order":
+                        return o.orderNumber;
+                      case "customer":
+                        return o.customerEmail;
+                      case "market":
+                        return o.market;
+                      case "revenue":
+                        return o.revenue;
+                      case "net":
+                        return o.netSales;
+                      case "margin":
+                        return o.margin;
+                      case "discounts":
+                        return o.discounts;
+                      default:
+                        return o.isReturning ? 1 : 0;
+                    }
+                  }),
+                }))}
+              />
             </div>
           </div>
         </section>

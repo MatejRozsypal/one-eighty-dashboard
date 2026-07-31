@@ -7,22 +7,29 @@
  * provider backed by `app_users`. Both land in the same session shape, and the
  * role in that session is the only thing the rest of the app consults.
  *
- * ── Not locking anybody out ─────────────────────────────────────────────────
- * Two fallbacks, both deliberate:
+ * ── `app_users` is the allow-list ───────────────────────────────────────────
+ * There is no domain restriction on ordinary sign-in. There used to be, from
+ * when Google was the only way in and every user was @oneeighty.cz — but a
+ * client invited to see their own numbers signs in with their own address, and
+ * a domain check refuses them before their row is ever consulted. Having a
+ * user table *and* a domain rule means two allow-lists that disagree; the
+ * table wins, and it is the one an admin can actually edit.
  *
- *  1. **No user store configured** — before the Postgres database exists,
- *     `app_users` cannot be read at all. Rather than refuse every sign-in, the
- *     old behaviour stands: any allowed-domain Google account gets in as admin.
+ * ── Where the domain check survives, and why it must ────────────────────────
+ * Exactly two places, both about the state where nobody can administer the app:
+ *
+ *  1. **No user store configured** — before Postgres exists there is no table
+ *     to consult, so an allowed-domain Google account gets in as admin.
  *  2. **No active admin** — an allowed-domain Google sign-in claims admin and
- *     a row is written for it, so the rule closes behind them.
+ *     writes the row, so the rule closes behind them.
  *
- * The second one originally keyed on the table being *empty*, and that was
- * wrong in a way that bit immediately: the first user created was an `agency`
- * account, the table stopped being empty, and from that moment no
- * allowed-domain account could bootstrap while the only account that existed
- * couldn't reach user management either. The app was unadministrable with no
- * way back in. Keying on "no active admin" makes that exact state the one that
- * repairs itself.
+ * Dropping the domain check from *those* would let any Google account on the
+ * internet claim admin the moment the app had none. It stays.
+ *
+ * Rule 2 originally keyed on the table being *empty*, which bit immediately:
+ * the first account created was `agency`, the table stopped being empty, and
+ * from that moment nobody could bootstrap while the only existing account
+ * couldn't reach user management either.
  */
 
 import type { NextAuthOptions } from "next-auth";

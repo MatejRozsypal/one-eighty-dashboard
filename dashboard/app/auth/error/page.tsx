@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
+// NOTE: access is decided by the `app_users` table, not by email domain — see
+// lib/auth.ts. The copy here must not promise a domain rule that isn't applied.
 
 /**
  * Sign-in failure.
@@ -9,9 +11,10 @@ import { Logo } from "@/components/ui/Logo";
  * Suspense boundary and broke the production build — there's no reason for this
  * page to be interactive at all.
  *
- * The wrong-domain message is deliberately not blaming: being turned away from
- * an internal tool usually means you're signed into a personal Google account,
- * not that you did something wrong.
+ * The refusal message is deliberately not blaming, and deliberately vague about
+ * *why*: it is the same screen whether the address has no account, has been
+ * deactivated, or is simply the wrong one of someone's several Google logins.
+ * Spelling out which would let anyone enumerate who has access here.
  */
 
 export const dynamic = "force-dynamic";
@@ -21,7 +24,7 @@ export default function AuthErrorPage({
 }: {
   searchParams: { error?: string };
 }) {
-  const isDomain = searchParams.error === "AccessDenied";
+  const noAccess = searchParams.error === "AccessDenied";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-bg-inverse p-5">
@@ -30,17 +33,15 @@ export default function AuthErrorPage({
 
         <div className="flex flex-col gap-2.5">
           <h1 className="m-0 text-[22px] font-bold tracking-heading text-content-inverse">
-            {isDomain ? "That account isn't on the allow-list." : "Sign-in didn't complete."}
+            {noAccess ? "This account doesn't have access." : "Sign-in didn't complete."}
           </h1>
           <p className="m-0 text-[13.5px] leading-[1.6] text-gray-300">
-            {isDomain ? (
+            {noAccess ? (
               <>
-                This dashboard is restricted to{" "}
-                <code className="font-mono text-[12.5px] text-growth-300">
-                  @oneeighty.cz
-                </code>{" "}
-                accounts. If you have one, you may be signed into a personal
-                Google account instead — pick the right one on the next screen.
+                Access is granted per account by a One Eighty admin — ask them
+                to add you. If you know you already have access, you may have
+                picked the wrong Google account; choose another on the next
+                screen.
               </>
             ) : (
               "Something went wrong between here and Google. Trying again usually resolves it."

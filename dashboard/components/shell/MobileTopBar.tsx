@@ -21,18 +21,24 @@
  * destinations. Rather than hide the other eight behind a hamburger, the page
  * title itself opens the full list — the label you are already looking at is
  * the control that changes it.
+ *
+ * The title comes from the route rather than a prop, which is what lets the
+ * app layout own this bar. That matters for the rounded shoulder: the content
+ * beneath has to be a single surface the layout can round the top of, so the
+ * bar cannot live inside the per-page `Header`.
  */
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { NAV } from "@/lib/nav";
+import { NAV, pageTitle } from "@/lib/nav";
 
-export function MobileTopBar({ title }: { title: string }) {
+export function MobileTopBar() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
+  const title = pageTitle(pathname);
 
   // Close on route change — without this the sheet stays up over the new page
   // for the whole BigQuery round trip and reads as a stuck menu.
@@ -89,9 +95,15 @@ export function MobileTopBar({ title }: { title: string }) {
             className="fixed inset-0 top-[calc(var(--header-bar-h)+var(--safe-top))] z-[45] block w-full cursor-default bg-ink-950/45"
           />
 
+          {/*
+            A panel down the left, not a full-width sheet: it hangs off the
+            title it was opened from, and leaving the right-hand strip of the
+            page visible keeps it reading as a menu over the screen rather than
+            a new screen.
+          */}
           <nav
             aria-label="Pages"
-            className="absolute inset-x-3 top-[calc(var(--header-bar-h)+var(--safe-top))] z-[50] max-h-[70vh] overflow-y-auto rounded-lg bg-paper p-2 shadow-lg"
+            className="absolute left-3 top-[calc(var(--header-bar-h)+var(--safe-top))] z-[50] max-h-[70vh] w-[64%] min-w-[228px] max-w-[300px] overflow-y-auto rounded-lg bg-paper p-2 shadow-lg"
           >
             {NAV.map((group) => (
               <div key={group.label} className="flex flex-col">

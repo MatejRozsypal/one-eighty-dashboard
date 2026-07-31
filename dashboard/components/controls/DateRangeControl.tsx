@@ -13,9 +13,9 @@
  * it without a round trip.
  */
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { RouteProgress } from "@/components/ui/RouteProgress";
+import { useEffect, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useNavigation } from "@/components/shell/NavigationPending";
 import {
   PRESET_LABELS,
   presetRange,
@@ -75,7 +75,6 @@ export function DateRangeControl({
   });
 
   const wrapRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -83,7 +82,7 @@ export function DateRangeControl({
   // the query runs behind the progress bar. Holding the popover open until
   // BigQuery answers would leave the calendar sitting there for seconds
   // looking like the click was dropped.
-  const [isPending, startTransition] = useTransition();
+  const { isPending, navigate } = useNavigation();
 
   // While a range is in flight the trigger shows the range you asked for, not
   // the one still on screen.
@@ -119,9 +118,7 @@ export function DateRangeControl({
     }
     setOpen(false);
     setCustomMode(false);
-    startTransition(() => {
-      router.push(`${pathname}?${next.toString()}`);
-    });
+    navigate(`${pathname}?${next.toString()}`);
   }
 
   function choosePreset(key: PresetKey) {
@@ -131,9 +128,7 @@ export function DateRangeControl({
     next.delete("to");
     setPendingRange(presetRange(key));
     setOpen(false);
-    startTransition(() => {
-      router.push(`${pathname}?${next.toString()}`);
-    });
+    navigate(`${pathname}?${next.toString()}`);
   }
 
   function pickDay(day: string) {
@@ -162,8 +157,6 @@ export function DateRangeControl({
 
   return (
     <div ref={wrapRef} className="relative flex items-center gap-2">
-      <RouteProgress active={isPending} />
-
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

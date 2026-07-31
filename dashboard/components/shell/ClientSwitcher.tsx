@@ -11,9 +11,9 @@
  * silently reset the date range you spent time choosing.
  */
 
-import { useEffect, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { RouteProgress } from "@/components/ui/RouteProgress";
+import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useNavigation } from "@/components/shell/NavigationPending";
 import type { Client } from "@/lib/clients";
 
 function initials(name: string): string {
@@ -46,13 +46,12 @@ export function ClientSwitcher({
   active: Client;
 }) {
   const [open, setOpen] = useState(false);
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   // Switching client re-runs every query on the page. The button adopts the new
   // client immediately so the switch reads as taken, not ignored.
-  const [isPending, startTransition] = useTransition();
+  const { isPending, navigate } = useNavigation();
   const [optimistic, setOptimistic] = useState<Client | null>(null);
   useEffect(() => {
     if (!isPending) setOptimistic(null);
@@ -70,9 +69,7 @@ export function ClientSwitcher({
 
     const params = new URLSearchParams(searchParams.toString());
     params.set("client", clientId);
-    startTransition(() => {
-      router.push(`${pathname}?${params.toString()}`);
-    });
+    navigate(`${pathname}?${params.toString()}`);
   }
 
   return (
@@ -80,8 +77,6 @@ export function ClientSwitcher({
       <span className="px-2 font-mono text-[10px] uppercase tracking-eyebrow text-gray-400">
         Client
       </span>
-
-      <RouteProgress active={isPending} />
 
       <button
         type="button"

@@ -8,8 +8,8 @@
  *
  * This covers navigation *between* pages. Changing a search param on the page
  * you are already on does not remount the segment and never reaches here; that
- * case is handled by `RouteProgress`, driven from each control's own
- * `useTransition`. The two together mean no interaction is ever silent.
+ * case is handled by `NavigationPendingProvider`, which drives the progress bar
+ * and pulses the figures. The two together mean no interaction is ever silent.
  *
  * Deliberately generic. The pages differ below the fold, but all of them open
  * with a header, a control strip and a row of metric cards, and a skeleton
@@ -24,16 +24,17 @@ const shimmer =
 export default function Loading() {
   return (
     <>
-      {/* Mirrors the real header's two shapes, so the swap isn't a colour flash. */}
-      <div className="sticky top-0 z-30 flex h-[var(--header-h)] items-center gap-3 bg-ink-900 px-4 pt-[var(--safe-top)] lg:hidden">
-        <span className="h-[19px] w-[128px] rounded-xs bg-white/15" />
-      </div>
+      {/*
+        No mobile bar here: `MobileTopBar` lives in the layout, outside this
+        boundary, so it stays put across the transition. Only the desktop
+        header is inside the swapped subtree.
+      */}
       <div className="sticky top-0 z-30 hidden h-[var(--header-h)] items-center gap-3 border-b border-hairline bg-paper px-5 pt-[var(--safe-top)] lg:flex lg:px-8">
         <span className={`h-[15px] w-[132px] rounded-xs ${shimmer}`} />
         <span className={`h-[9px] w-[104px] rounded-pill ${shimmer}`} />
       </div>
 
-      <div className="sticky top-[var(--header-h)] z-20 flex items-center gap-4 border-b border-hairline bg-paper px-5 py-2 lg:px-8">
+      <div className="z-20 flex items-center gap-4 px-5 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline lg:bg-paper lg:px-8">
         <span className={`h-[34px] w-[232px] rounded-control ${shimmer}`} />
         <span className={`h-[30px] w-[216px] rounded-pill ${shimmer}`} />
         <span className={`hidden h-[30px] w-[188px] rounded-pill lg:block ${shimmer}`} />

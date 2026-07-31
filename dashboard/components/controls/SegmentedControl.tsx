@@ -12,9 +12,9 @@
  * nothing visible for the length of a BigQuery query and reads as broken.
  */
 
-import { useEffect, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { RouteProgress } from "@/components/ui/RouteProgress";
+import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useNavigation } from "@/components/shell/NavigationPending";
 
 export interface Segment {
   value: string;
@@ -36,11 +36,11 @@ export function SegmentedControl({
   active: string;
   ariaLabel: string;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [isPending, startTransition] = useTransition();
+  // Shared with the rest of the page, so the figures pulse while this resolves.
+  const { isPending, navigate } = useNavigation();
   const [optimistic, setOptimistic] = useState<string | null>(null);
 
   // `isPending` stays true until the new server output is committed, so this
@@ -57,9 +57,7 @@ export function SegmentedControl({
 
     const next = new URLSearchParams(searchParams.toString());
     next.set(param, value);
-    startTransition(() => {
-      router.push(`${pathname}?${next.toString()}`);
-    });
+    navigate(`${pathname}?${next.toString()}`);
   }
 
   return (
@@ -69,8 +67,6 @@ export function SegmentedControl({
       aria-busy={isPending}
       className="flex gap-0.5 rounded-pill bg-gray-100 p-[3px]"
     >
-      <RouteProgress active={isPending} />
-
       {segments.map((seg) => {
         const isActive = seg.value === shown;
 

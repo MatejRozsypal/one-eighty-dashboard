@@ -24,6 +24,11 @@ import { authOptions } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { MobileNav } from "@/components/shell/MobileNav";
+import { MobileTopBar } from "@/components/shell/MobileTopBar";
+import {
+  NavigationPendingProvider,
+  PendingRegion,
+} from "@/components/shell/NavigationPending";
 
 function initialsOf(name: string): string {
   return name
@@ -69,13 +74,46 @@ export default async function AppLayout({
     : "Guest";
 
   return (
-    <div className="flex min-h-screen items-start bg-bg-subtle">
+    // Black behind everything on mobile, so the content surface below can round
+    // its top corners against the status-bar strip the way a native sheet does.
+    // On desktop there is no strip and the sidebar owns the dark, so the page
+    // background goes back to being the light one.
+    <NavigationPendingProvider>
+    <div className="flex min-h-screen items-start bg-ink-900 lg:bg-bg-subtle">
       <Sidebar clients={clients} userName={name} userRole={role} />
-      {/* Clears the floating bottom pill and the home indicator underneath it. */}
-      <div className="flex min-w-0 flex-1 flex-col pb-[calc(6rem+var(--safe-bottom))] lg:pb-0">
-        {children}
+
+      {/*
+        `min-h-screen` here, not just on the row: the row is `items-start` so
+        the sidebar can hug the top, which also stops this column from
+        stretching — leaving a short page's rounded surface floating with black
+        underneath it.
+      */}
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <MobileTopBar />
+
+        {/*
+          One continuous surface for everything under the bar — which is why the
+          bar cannot live inside the per-page Header.
+
+          No `overflow-hidden` with the rounding: it would turn this into a
+          scroll container and silently kill `position: sticky` on the control
+          bar inside. The corners are drawn by the background alone, which is
+          all that is needed as long as the first child is transparent.
+
+          The bottom padding clears the floating pill and the home indicator.
+        */}
+        <div className="flex min-w-0 flex-1 flex-col rounded-t-2xl bg-bg-subtle pb-[calc(6rem+var(--safe-bottom))] lg:rounded-none lg:pb-0">
+          {/*
+            Pulses the figures — and only the figures — while a control's
+            navigation is in flight, so a stale number never sits there looking
+            like the answer.
+          */}
+          <PendingRegion>{children}</PendingRegion>
+        </div>
       </div>
+
       <MobileNav initials={initialsOf(name)} />
     </div>
+    </NavigationPendingProvider>
   );
 }

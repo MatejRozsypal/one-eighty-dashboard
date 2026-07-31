@@ -32,18 +32,44 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { NAV, pageTitle } from "@/lib/nav";
+import { useNavigation } from "@/components/shell/NavigationPending";
+import type { Client } from "@/lib/clients";
 
-export function MobileTopBar() {
+export function MobileTopBar({ clients = [] }: { clients?: Client[] }) {
   const [open, setOpen] = useState(false);
+  const [clientOpen, setClientOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
   const title = pageTitle(pathname);
 
+  // Same resolution the sidebar uses: the selection lives in the URL, so both
+  // switchers agree without any shared state.
+  const activeClient =
+    clients.find((c) => c.clientId === searchParams.get("client")) ?? clients[0];
+
+  const { isPending, navigate } = useNavigation();
+  const [optimisticClient, setOptimisticClient] = useState<Client | null>(null);
+  useEffect(() => {
+    if (!isPending) setOptimisticClient(null);
+  }, [isPending]);
+
+  const shownClient = optimisticClient ?? activeClient;
+
+  function selectClient(client: Client) {
+    setClientOpen(false);
+    if (client.clientId === shownClient?.clientId) return;
+    setOptimisticClient(client);
+    const next = new URLSearchParams(qs);
+    next.set("client", client.clientId);
+    navigate(`${pathname}?${next.toString()}`);
+  }
+
   // Close on route change — without this the sheet stays up over the new page
   // for the whole BigQuery round trip and reads as a stuck menu.
   useEffect(() => {
     setOpen(false);
+    setClientOpen(false);
   }, [pathname, qs]);
 
   // A sheet this tall over a scrollable page invites scrolling the page behind
@@ -77,6 +103,72 @@ export function MobileTopBar() {
             ⌄
           </span>
         </button>
+
+        {/*
+          Client switcher, mirroring the sidebar's. On a phone the sidebar is
+          gone entirely, so without this the only way to change client is to
+          edit `?client=` by hand. Shows the short name rather than initials —
+          two clients whose initials collide are a real possibility, and there
+          is room for a word.
+        */}
+        {shownClient && clients.length > 1 && (
+          <div className="relative flex-none">
+            <button
+              type="button"
+              onClick={() => setClientOpen((v) => !v)}
+              aria-expanded={clientOpen}
+              aria-haspopup="menu"
+              aria-label={`Client: ${shownClient.name}`}
+              className={`flex max-w-[136px] items-center gap-1.5 rounded-pill bg-white/[0.11] px-3 py-1.5 text-content-inverse transition-colors duration-fast active:bg-white/[0.18] ${
+                isPending ? "animate-pulse" : ""
+              }`}
+            >
+              <span className="truncate font-mono text-[11.5px] font-medium">
+                {shownClient.name}
+              </span>
+              <span aria-hidden="true" className="flex-none text-[10px] leading-none">
+                ⌄
+              </span>
+            </button>
+
+            {clientOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close client menu"
+                  onClick={() => setClientOpen(false)}
+                  className="fixed inset-0 z-[55] block w-full cursor-default"
+                />
+                <div
+                  role="menu"
+                  className="absolute right-0 top-[38px] z-[60] flex w-[212px] flex-col gap-0.5 rounded-lg bg-paper p-1.5 shadow-lg"
+                >
+                  {clients.map((c) => {
+                    const isActive = c.clientId === shownClient.clientId;
+                    return (
+                      <button
+                        key={c.clientId}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => selectClient(c)}
+                        className={`flex items-center justify-between gap-2 rounded-sm px-3 py-2.5 text-left text-[14px] transition-colors duration-fast ${
+                          isActive
+                            ? "bg-gray-100 font-semibold text-content-strong"
+                            : "text-content-body"
+                        }`}
+                      >
+                        <span className="truncate">{c.name}</span>
+                        <span className="flex-none font-mono text-[10px] text-content-muted">
+                          {c.currency}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {open && (

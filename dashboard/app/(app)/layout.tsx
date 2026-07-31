@@ -89,7 +89,7 @@ export default async function AppLayout({
         underneath it.
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <MobileTopBar />
+        <MobileTopBar clients={clients} />
 
         {/*
           One continuous surface for everything under the bar — which is why the

@@ -111,15 +111,35 @@ export async function getTopAds(
   range: DateRange,
   limit = 10
 ): Promise<AdRow[]> {
+  // `mart_meta_ad_perf` carries campaign_id but not campaign_name — the name
+  // only exists on the campaign view, so it's resolved by join. The inner
+  // SELECT is again a block boundary: the mart columns are already aggregates,
+  // and summing them directly trips "Aggregations of aggregations".
   const rows = await query<Record<string, unknown>>(
-    `SELECT
-       ad_name, campaign_name,
-       SUM(spend) AS spend, SUM(revenue) AS revenue, SUM(purchases) AS purchases,
-       SUM(impressions) AS impressions, SUM(reach) AS reach, SUM(clicks) AS clicks
-     FROM \`${PROJECT_ID}.mart.mart_meta_ad_perf\`
-     WHERE client_id = @clientId AND date BETWEEN @from AND @to
-     GROUP BY ad_name, campaign_name
-     HAVING SUM(spend) > 0
+    `WITH ads AS (
+       SELECT ad_name, campaign_id, spend, revenue, purchases,
+              impressions, reach, clicks
+       FROM \`${PROJECT_ID}.mart.mart_meta_ad_perf\`
+       WHERE client_id = @clientId AND date BETWEEN @from AND @to
+     ),
+     names AS (
+       SELECT campaign_id, ANY_VALUE(campaign_name) AS campaign_name
+       FROM (
+         SELECT campaign_id, campaign_name
+         FROM \`${PROJECT_ID}.mart.mart_meta_campaign_perf\`
+         WHERE client_id = @clientId AND date BETWEEN @from AND @to
+       )
+       GROUP BY campaign_id
+     )
+     SELECT
+       a.ad_name,
+       COALESCE(n.campaign_name, a.campaign_id) AS campaign_name,
+       SUM(a.spend) AS spend, SUM(a.revenue) AS revenue, SUM(a.purchases) AS purchases,
+       SUM(a.impressions) AS impressions, SUM(a.reach) AS reach, SUM(a.clicks) AS clicks
+     FROM ads a
+     LEFT JOIN names n USING (campaign_id)
+     GROUP BY a.ad_name, campaign_name
+     HAVING SUM(a.spend) > 0
      ORDER BY spend DESC
      LIMIT @limit`,
     { clientId, from: range.from, to: range.to, limit }

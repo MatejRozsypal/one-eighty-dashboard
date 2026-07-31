@@ -77,21 +77,30 @@ export async function getExcludedCurrencies(
   nativeCurrency: string,
   range: DateRange
 ): Promise<Array<{ currency: string; orders: number; revenue: number }>> {
+  // Summed here rather than in SQL: mart_daily_kpis' `orders` and `revenue` are
+  // themselves aggregates, and BigQuery rejects SUM over them with
+  // "Aggregations of aggregations are not allowed" once it inlines the view.
+  // The row count is one per currency per day, so this is trivial.
   const rows = await query<Record<string, unknown>>(
-    `SELECT currency, SUM(orders) AS orders, SUM(revenue) AS revenue
+    `SELECT currency, orders, revenue
      FROM \`${PROJECT_ID}.mart.mart_daily_kpis\`
      WHERE client_id = @clientId
        AND date BETWEEN @from AND @to
-       AND currency != @nativeCurrency
-     GROUP BY currency
-     HAVING SUM(orders) > 0
-     ORDER BY revenue DESC`,
+       AND currency != @nativeCurrency`,
     { clientId, nativeCurrency, from: range.from, to: range.to }
   );
 
-  return rows.map((r) => ({
-    currency: String(r.currency),
-    orders: num(r.orders) ?? 0,
-    revenue: num(r.revenue) ?? 0,
-  }));
+  const byCurrency = new Map<string, { orders: number; revenue: number }>();
+  for (const r of rows) {
+    const currency = String(r.currency);
+    const acc = byCurrency.get(currency) ?? { orders: 0, revenue: 0 };
+    acc.orders += num(r.orders) ?? 0;
+    acc.revenue += num(r.revenue) ?? 0;
+    byCurrency.set(currency, acc);
+  }
+
+  return [...byCurrency.entries()]
+    .map(([currency, v]) => ({ currency, ...v }))
+    .filter((c) => c.orders > 0)
+    .sort((a, b) => b.revenue - a.revenue);
 }

@@ -96,6 +96,29 @@ one that crashes** — the crash gets fixed, the false empty state gets believed
 degrades to an empty state; permission errors, timeouts and quota failures are
 re-thrown and surface as real errors.
 
+### Four query bugs that only production found
+
+The first self-test only ran `SELECT COUNT(*)` against each view. That proved the
+service account could reach them and proved nothing about whether the real queries
+were valid — so the pages still 500'd after it reported green. **A self-test that
+doesn't exercise the actual code path is theatre.** Rewritten to call the real query
+functions; it immediately found four failures:
+
+- **`Aggregations of aggregations are not allowed`** on `mart_customer_lifetime`,
+  `mart_product_perf` and `mart_daily_kpis`. Mart columns are themselves aggregates
+  (`aov` is a SAFE_DIVIDE of SUM/COUNT, `is_returning` is `COUNT(*) > 1`), so
+  aggregating them again fails once BigQuery inlines the view. **A plain subquery is
+  not a strong enough boundary** — it gets inlined too.
+  - `mart_customer_lifetime`: fixed with a subquery (that one does hold).
+  - `mart_product_perf`, `mart_daily_kpis`: rolled up in TypeScript instead, matching
+    what `pnl.ts` already does. Row counts are small and the arithmetic is free.
+  - Useful signal while debugging: `MAX(date)` over the same view works while
+    `SUM(orders)` fails — plain columns are fine, aggregate columns are not.
+- **`mart_meta_ad_perf` has no `campaign_name`**, only `campaign_id`. The name lives
+  on the campaign view and is now resolved by join.
+
+Final state: **33/33 real queries pass in production** for both clients.
+
 ### Known gaps at handoff
 
 - **No USD→CZK FX rates.** `ref.fx_rates` holds only CAD→USD, last month 2026-05, hand-

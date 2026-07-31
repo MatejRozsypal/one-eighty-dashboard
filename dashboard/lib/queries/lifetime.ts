@@ -42,17 +42,27 @@ export async function getLifetimeSummary(
   clientId: string,
   currency: string
 ): Promise<LifetimeSummary> {
+  // The inner SELECT is not cosmetic. `mart_customer_lifetime` is a view whose
+  // columns are themselves aggregates — `aov` is SAFE_DIVIDE(SUM(...), COUNT(*))
+  // and `is_returning` is COUNT(*) > 1. Aggregating those directly makes
+  // BigQuery inline the view and reject the query with "Aggregations of
+  // aggregations are not allowed". Selecting the columns in a subquery first
+  // creates the block boundary that keeps the two levels apart.
   const [row] = await query<Record<string, unknown>>(
     `SELECT
-       COUNT(*)                                   AS customers,
-       AVG(lifetime_revenue)                      AS ltv,
-       AVG(lifetime_gross_profit)                 AS ltgp,
-       AVG(total_orders)                          AS orders_per_customer,
-       AVG(aov)                                   AS avg_aov,
+       COUNT(*)                                     AS customers,
+       AVG(lifetime_revenue)                        AS ltv,
+       AVG(lifetime_gross_profit)                   AS ltgp,
+       AVG(total_orders)                            AS orders_per_customer,
+       AVG(aov)                                     AS avg_aov,
        SAFE_DIVIDE(COUNTIF(is_returning), COUNT(*)) AS repeat_rate,
-       AVG(IF(is_returning, days_active, NULL))   AS avg_days_active
-     FROM \`${PROJECT_ID}.mart.mart_customer_lifetime\`
-     WHERE client_id = @clientId AND currency = @currency`,
+       AVG(IF(is_returning, days_active, NULL))     AS avg_days_active
+     FROM (
+       SELECT lifetime_revenue, lifetime_gross_profit, total_orders,
+              aov, is_returning, days_active
+       FROM \`${PROJECT_ID}.mart.mart_customer_lifetime\`
+       WHERE client_id = @clientId AND currency = @currency
+     )`,
     { clientId, currency }
   );
 

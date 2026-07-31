@@ -67,7 +67,7 @@ export default async function PaidPage({
 
   const kpis = [
     { label: "Spend", value: money(totals.spend) },
-    { label: "Revenue from paid", value: money(paidRevenue) },
+    { label: "Revenue", value: money(paidRevenue) },
     { label: "ROAS", value: paidRoas !== null ? formatRatio(paidRoas) : "—" },
     { label: "Reach", value: formatNumber(totals.reach) },
     {
@@ -75,7 +75,6 @@ export default async function PaidPage({
       value: totals.frequency !== null ? totals.frequency.toFixed(2) : "—",
     },
     { label: "CTR", value: totals.ctr !== null ? formatPercent(totals.ctr, { decimals: 2 }) : "—" },
-    { label: "CPC", value: money(totals.cpc) },
     { label: "CPM", value: money(totals.cpm) },
   ];
 

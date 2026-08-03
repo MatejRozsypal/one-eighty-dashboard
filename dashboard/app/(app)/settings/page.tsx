@@ -31,14 +31,12 @@ import { CreateUserForm } from "@/app/(app)/admin/UserForms";
 import { PeopleList } from "@/components/settings/PeopleList";
 import { saveGoalsAction } from "./actions";
 import { Header } from "@/components/shell/Header";
-import { Eyebrow } from "@/components/ui/Eyebrow";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
-const CARD =
-  "flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]";
 const FIELD =
   "w-[120px] rounded-control border border-hairline-strong bg-paper px-2.5 py-1.5 text-right font-mono text-[12.5px]";
 const BUTTON =
@@ -102,34 +100,33 @@ export default async function SettingsPage({
         {header}
         <main className="flex max-w-[1080px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           {error}
-          <section className={CARD}>
-            <div className="flex flex-col gap-[5px]">
-              <Eyebrow>Team · {staff.length}</Eyebrow>
-              <span className="text-[12.5px] leading-[1.5] text-content-muted">
-                Admin and agency accounts see every client, so they belong to
-                none of them and are listed here rather than under a client.
-                Admin adds user management on top.
-              </span>
-            </div>
+          <SettingsSection
+            title="Team"
+            summary={
+              staff.length === 0
+                ? "Nobody yet"
+                : `${staff.length} account${staff.length === 1 ? "" : "s"} · ${
+                    staff.filter((u) => u.role === "admin").length
+                  } admin`
+            }
+            description="Admin and agency accounts see every client, so they belong to none of them and are listed here rather than under a client. Admin adds access management on top."
+          >
             <PeopleList
               users={staff}
               clients={clients}
               canManage={canManage}
               emptyMessage="No agency or admin accounts yet."
             />
-          </section>
+          </SettingsSection>
 
           {canManage && (
-            <section className={CARD}>
-              <div className="flex flex-col gap-[5px]">
-                <Eyebrow>Add someone to the team</Eyebrow>
-                <span className="text-[12.5px] leading-[1.5] text-content-muted">
-                  They sign in with the email and the temporary password you
-                  hand over, then pick their own.
-                </span>
-              </div>
+            <SettingsSection
+              title="Add someone to the team"
+              summary="Agency or admin access"
+              description="They sign in with the email and the temporary password you hand over, then pick their own."
+            >
               <CreateUserForm clients={clients} />
-            </section>
+            </SettingsSection>
           )}
         </main>
       </>
@@ -147,18 +144,16 @@ export default async function SettingsPage({
       <>
         {header}
         <main className="flex max-w-[1080px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-          <section className={CARD}>
-            <div className="flex flex-col gap-[5px]">
-              <Eyebrow>Access log</Eyebrow>
-              <span className="text-[12.5px] leading-[1.5] text-content-muted">
-                One row per data-page render: who was served which client, and
-                every time an account asked for a client that was not theirs.
-                Read this as evidence, not enforcement — a write failure is
-                swallowed so it cannot take the dashboard down, so a gap means
-                &ldquo;could not record&rdquo;, never &ldquo;nobody
-                accessed&rdquo;. Demo views are not recorded.
-              </span>
-            </div>
+          <SettingsSection
+            title="Access log"
+            defaultOpen
+            summary={
+              refusals > 0
+                ? `${refusals} refused in 30 days`
+                : `${entries.length} recent entries`
+            }
+            description="One row per data-page render: who was served which client, and every time an account asked for a client that was not theirs. Read this as evidence, not enforcement — a write failure is swallowed so it cannot take the dashboard down, so a gap means “could not record”, never “nobody accessed”. Demo views are not recorded."
+          >
 
             <div
               className={`rounded-card border p-[14px_16px] text-[13px] ${
@@ -235,7 +230,7 @@ export default async function SettingsPage({
                 </div>
               </div>
             )}
-          </section>
+          </SettingsSection>
         </main>
       </>
     );
@@ -250,6 +245,39 @@ export default async function SettingsPage({
     (u) => u.role === "client" && u.clientId === selected.clientId
   );
   const demo = isDemo(selected.clientId);
+
+  // What each collapsed section says about itself. "Not stated" is the useful
+  // answer where nothing is set — it is exactly what someone opening Settings
+  // is trying to find out.
+  const costSummary = (() => {
+    const parts: string[] = [];
+    if (current?.opexRate !== null && current?.opexRate !== undefined) {
+      parts.push(`OpEx ${(current.opexRate * 100).toFixed(0)}%`);
+    }
+    if (current?.fulfilmentPerOrder !== null && current?.fulfilmentPerOrder !== undefined) {
+      parts.push(`fulfilment ${current.fulfilmentPerOrder} ${selected.currency}`);
+    }
+    if (current?.otherCm1PerOrder !== null && current?.otherCm1PerOrder !== undefined) {
+      parts.push(`other ${current.otherCm1PerOrder} ${selected.currency}`);
+    }
+    return parts.length === 0 ? "Nothing stated" : parts.join(" · ");
+  })();
+
+  const monthsWithGoals = new Set(goals.map((g) => g.month)).size;
+  const goalSummary =
+    monthsWithGoals === 0
+      ? `No targets for ${year}`
+      : `${monthsWithGoals} of 12 months set`;
+
+  const activePeople = people.filter((u) => u.isActive).length;
+  const peopleSummary =
+    people.length === 0
+      ? "Nobody outside the agency"
+      : `${activePeople} with access${
+          people.length > activePeople
+            ? ` · ${people.length - activePeople} disabled`
+            : ""
+        }`;
 
   return (
     <>
@@ -281,16 +309,11 @@ export default async function SettingsPage({
           </div>
         )}
 
-        <section className={CARD}>
-          <div className="flex flex-col gap-[5px]">
-            <Eyebrow>Cost assumptions · {selected.name}</Eyebrow>
-            <span className="text-[12.5px] leading-[1.5] text-content-muted">
-              No connected source reports operating expenses, fulfilment or the
-              other CM1 costs, so they cannot be derived — they are your input.
-              Leave a field empty and the metric that depends on it is hidden
-              rather than guessed.
-            </span>
-          </div>
+        <SettingsSection
+          title="Cost assumptions"
+          summary={costSummary}
+          description="No connected source reports operating expenses, fulfilment or the other CM1 costs, so they cannot be derived — they are your input. Leave a field empty and the metric that depends on it is hidden rather than guessed."
+        >
 
           <form action={saveSettingsAction} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="clientId" value={selected.clientId} />
@@ -346,20 +369,13 @@ export default async function SettingsPage({
               </span>
             )}
           </form>
-        </section>
+        </SettingsSection>
 
-        <section className={CARD}>
-          <div className="flex flex-col gap-[5px]">
-            <Eyebrow>
-              Goals · {selected.name} · {year}
-            </Eyebrow>
-            <span className="text-[12.5px] leading-[1.5] text-content-muted">
-              Monthly targets. Quarters and the year are summed from these
-              rather than set separately, so there is only ever one answer to
-              what is being aimed at. An empty box is no target — which the
-              Goals page shows as unset, not as a miss.
-            </span>
-          </div>
+        <SettingsSection
+          title={`Goals · ${year}`}
+          summary={goalSummary}
+          description="Monthly targets. Quarters and the year are summed from these rather than set separately, so there is only ever one answer to what is being aimed at. An empty box is no target — which the Goals page shows as unset, not as a miss."
+        >
 
           <div className="overflow-x-auto">
             <div className="min-w-[680px] pb-1">
@@ -415,19 +431,13 @@ export default async function SettingsPage({
               ))}
             </div>
           </div>
-        </section>
+        </SettingsSection>
 
-        <section className={CARD}>
-          <div className="flex flex-col gap-[5px]">
-            <Eyebrow>
-              People with access · {selected.name} · {people.length}
-            </Eyebrow>
-            <span className="text-[12.5px] leading-[1.5] text-content-muted">
-              Client accounts confined to {selected.name}. Agency and admin
-              accounts see every client and are listed under Team.
-            </span>
-          </div>
-
+        <SettingsSection
+          title="People with access"
+          summary={peopleSummary}
+          description={`Client accounts confined to ${selected.name}. Agency and admin accounts see every client and are listed under Team.`}
+        >
           <PeopleList
             users={people}
             clients={clients}
@@ -442,20 +452,16 @@ export default async function SettingsPage({
               assumptions above are yours to edit.
             </p>
           )}
-        </section>
+        </SettingsSection>
 
         {canManage && !demo && (
-          <section className={CARD}>
-            <div className="flex flex-col gap-[5px]">
-              <Eyebrow>Invite someone to {selected.name}</Eyebrow>
-              <span className="text-[12.5px] leading-[1.5] text-content-muted">
-                They sign in with the email and the temporary password you hand
-                over, then pick their own. The account is confined to{" "}
-                {selected.name} and cannot reach any other client.
-              </span>
-            </div>
+          <SettingsSection
+            title={`Invite someone to ${selected.name}`}
+            summary="Creates a client account, this client only"
+            description={`They sign in with the email and the temporary password you hand over, then pick their own. The account is confined to ${selected.name} and cannot reach any other client.`}
+          >
             <CreateUserForm clients={[selected]} fixedClient={selected} />
-          </section>
+          </SettingsSection>
         )}
       </main>
     </>

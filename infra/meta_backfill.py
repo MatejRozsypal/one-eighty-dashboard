@@ -155,17 +155,18 @@ def main():
             url = payload.get("paging", {}).get("next")
 
         total += chunk_rows
-        print(f"# {since}..{until}  {chunk_rows} rows", file=sys.stderr)
-
-        # Meta returns empty windows both for "account did not exist yet" and for
-        # "nothing ran that month". Six empty chunks in a row -- half a year --
-        # is taken as the former, so a long-dormant account is not walked all the
-        # way to the wall for nothing.
         empty_streak = empty_streak + 1 if chunk_rows == 0 else 0
-        if empty_streak >= 6:
-            print(f"# stopping: 6 empty chunks, assuming account predates {until}",
-                  file=sys.stderr)
-            break
+        gap = f"   ({empty_streak} empty in a row)" if empty_streak else ""
+        print(f"# {since}..{until}  {chunk_rows} rows{gap}", file=sys.stderr)
+
+        # This walks the whole window rather than stopping at a run of empty
+        # chunks. An earlier version stopped after six -- half a year -- reading
+        # that as "the account did not exist yet". It fired on Venev's genuine
+        # pause in advertising (June-October 2025) and silently skipped 2024,
+        # which is inside Meta's window and does have spend. A business winding
+        # down pauses its ads; that is the normal shape of the very accounts a
+        # backfill is most needed for. Empty windows are cheap -- roughly 37
+        # requests for the full window -- and a missing year is not.
 
         until = since - timedelta(days=1)
         time.sleep(1)                                     # be kind to the API

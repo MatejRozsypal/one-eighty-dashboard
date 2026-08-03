@@ -258,11 +258,28 @@ Widening the window to 60 months is a one-line change repeated across
 The cost is scan volume: `mart_daily_kpis` already reads ~150 MB per query, and
 that grows roughly with the window.
 
-**Also inherited, affecting every client:** revenue includes orders in every
-`financial_status`. For Venev that is 346 VOIDED (€15.7k) and 742 PENDING
-(€32.5k) against 2,694 PAID (€113.9k) — roughly 10% of gross revenue is voided
-orders. Whether that is right is a modelling question older than this onboarding,
-but Venev's ratio makes it visible.
+**Two revenue bugs that Venev exposed — both now fixed (migrations 215, 216):**
+
+*Cancelled orders counted as revenue.* Migration 100 filtered on payment status;
+migration 203's rewrite dropped the filter, and every order has counted since,
+for every client. Filtering on payment status is not the fix — Venev sells on
+`Dobierka` (COD), where the courier takes the cash and Shopify leaves the order
+PENDING or PARTIALLY_PAID forever, so 268 fulfilled orders would be deleted as
+"unpaid". Cancellation is the criterion instead. Dobias −0.29%, Venev −€18,378.
+
+*VAT counted as revenue.* `shop.taxesIncluded = true` for Venev, so its
+`subtotal_price` already contained VAT while the project defines revenue as
+ex-tax. Dobias, adding tax at checkout, was always correct. Venev −€16,175
+(−9.9%); reconciles exactly: 146,697 + 16,175 = 162,872.
+
+*Still open, deliberately:* the 715 unfulfilled PENDING orders from 2022
+(~€31k) where a customer chose bank transfer and never paid. Almost certainly
+not revenue, but "unfulfilled and unpaid" is a judgement about intent and the
+conservative rule was chosen. Revisit if 2022 matters commercially.
+
+*Noticed, not chased:* Dobias's `revenue + tax_collected` misses
+`gross_revenue_incl_tax` by $12,125 (0.18%). Pre-existing and unrelated to these
+changes — his revenue figure is identical before and after.
 
 ---
 

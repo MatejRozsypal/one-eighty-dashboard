@@ -55,9 +55,13 @@ export default async function AppLayout({
 
   const allClients = await getClients();
 
-  // The single point where a client-role user is confined. Every page resolves
-  // its client from this list, so there is no page-by-page check to forget —
-  // and `?client=` naming somebody else's account simply finds nothing.
+  // This filtered list drives the switcher UI only — it is what a client-role
+  // user sees in the sidebar dropdown. It is NOT the confinement gate: pages
+  // fetch their own client list and resolve `?client=` themselves, so the real
+  // enforcement lives in `resolveClient`, which reads the role from the session
+  // and pins a client-role account to its own client no matter what the URL
+  // asks for. Keep both: this one stops the *names* of other clients showing in
+  // the switcher; `resolveClient` stops their *data* being loaded.
   const clients =
     session.user.role === "client"
       ? allClients.filter((c) => c.clientId === session.user.clientId)

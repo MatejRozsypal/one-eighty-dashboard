@@ -15,7 +15,9 @@
  * page, which surfaces drift rather than silently working around it.
  */
 
+import { getServerSession } from "next-auth";
 import { query, PROJECT_ID } from "@/lib/bigquery";
+import { authOptions } from "@/lib/auth";
 import { isoDate } from "@/lib/coerce";
 import { DEMO_CLIENT, DEMO_CLIENT_ID, isDemo } from "@/lib/demo/client";
 import { dataThrough as demoDataThrough } from "@/lib/demo/business";
@@ -153,7 +155,35 @@ export async function resolveClient(
       "ref.clients has no active rows — the dashboard has nothing to show."
     );
   }
-  return clients.find((c) => c.clientId === requested) ?? clients[0];
+
+  // ── Server-side confinement — the ONE gate that keeps clients apart ─────────
+  // Every data page calls this to turn `?client=` into the client it renders.
+  // The layout also filters the client list, but only to build the switcher UI;
+  // that filtered list never reaches the page components, so it cannot keep one
+  // client out of another's numbers. Enforcing it here — where the role is read
+  // from the server-verified session, not from anything the browser controls —
+  // means a `client`-role account gets its own client regardless of what the URL
+  // asks for. Change `?client=` to a different id and this still returns theirs.
+  const session = await getServerSession(authOptions);
+  const role = session?.user?.role ?? null;
+
+  if (role === "agency" || role === "admin") {
+    // Internal roles may view any client; an unknown/blank id falls back.
+    return clients.find((c) => c.clientId === requested) ?? clients[0];
+  }
+
+  // `client` role — and, fail-closed, anything else that reaches here — is
+  // pinned to its own assigned client. Never fall through to clients[0], which
+  // would hand back whichever client happens to sort first.
+  const ownId = session?.user?.clientId ?? null;
+  const own = ownId ? clients.find((c) => c.clientId === ownId) : null;
+  if (!own) {
+    throw new Error(
+      "This account is not permitted to view any client. Ask an admin to " +
+        "assign it a client under Admin → Users."
+    );
+  }
+  return own;
 }
 
 // ---------------------------------------------------------------------------

@@ -26,7 +26,69 @@ was switched on, so there is no period to filter to". That is untrue.
 `flow-series-reports` and `flow-values-reports` are both timeframe-scoped, and
 `mart_email_flow_daily` already exists to hold the former.
 
-## Root cause in the pipeline
+## RESOLVED 2026-08-03 — what the cause actually was
+
+The live workflow had **18 nodes; the repo export had 29.** Four whole branches
+had never been deployed to n8n:
+
+| branch | writes to | feeds |
+|---|---|---|
+| flow series | `raw_klaviyo_flow_series` | flow **volumes** |
+| conv flow | `raw_klaviyo_conversion_daily` (`dim_type='flow'`) | flow **revenue** |
+| conv channel | `raw_klaviyo_conversion_daily` (`dim_type='channel'`) | channel revenue |
+| subscriber series | `raw_klaviyo_subscriber_daily` | subscriber growth |
+
+So the node was never "erroring" — it was never there. The runbook-20 backfill
+ran by hand, filled history to 2026-06-20, and the ongoing branch was never
+added. The repo being *ahead* of production is precisely why nothing reported
+it.
+
+**Fixed via the n8n API:** flow series and both conv branches were spliced into
+the existing serial chain, after `BQ: insert campaign reports` and back to
+`Loop over clients`. 27 nodes now, all reachable, workflow still active. The
+repo export has been overwritten with the live definition so the two cannot
+drift apart again.
+
+Two things that had to be corrected mid-fix, worth knowing:
+
+- **Adding flow series alone would not have fixed revenue.**
+  `mart_email_flow_daily` reads *revenue* from `stg_klaviyo_conversion_daily`,
+  not from the flow series — the series only carries sends, opens and clicks.
+  Both conv branches were needed.
+- The BQ node from the export omits `authentication`, so it defaults to OAuth2
+  and n8n refuses to publish. Every BigQuery node here must carry
+  `authentication: "serviceAccount"` plus the `BQ Service Account` credential.
+
+**Subscriber series was deliberately left out.** It is blocked on a Klaviyo
+segment mirroring the master list that does not exist (runbook 21), so adding
+it would only add a failing node.
+
+### Double-counting: checked, not a risk
+
+The rolling 35-day window re-fetches days already stored, and the BigQuery nodes
+`insert` rather than upsert. That is safe here only because both staging views
+deduplicate:
+
+```sql
+ROW_NUMBER() OVER (PARTITION BY client_id, flow_id, flow_message_id, metric_date
+                   ORDER BY ingested_at DESC) = 1
+```
+
+If a future view reads `raw_klaviyo_*_series` or `raw_klaviyo_conversion_daily`
+directly and simply sums, it will double-count. Read the stg views.
+
+### Remaining gap: 2026-06-21 to 2026-06-28
+
+The window reaches back 35 days, so the first run covers from **2026-06-29**.
+Stored data ends **2026-06-20**. Seven days in late June will still be missing
+and any range spanning them will understate.
+
+The window was left at 35 days rather than widened: each run already re-inserts
+roughly 7,000 rows, and widening multiplies that four times a day forever to fix
+one week once. To close it, run the workflow manually from the n8n UI with the
+`Decode secrets` window temporarily set to 60 days, then set it back.
+
+## Original diagnosis — root cause in the pipeline
 
 `wf_klaviyo_to_bigquery` has two flow branches. Freshness for `dobias`:
 

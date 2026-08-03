@@ -347,6 +347,38 @@ Two options, and the choice depends on how soon Klaviyo replaces Ecomail:
 
 ---
 
+## §6.5 — GA4 and the domain map
+
+Venev is one Shopify store behind several domains, confirmed from the store's
+own Markets config rather than assumed:
+
+| Market | Web presence | Locales |
+|---|---|---|
+| Czech Republic *(primary market)* | **venev.cz** | cs |
+| United Kingdom | **venev.eu** | en, sl, hr, cs, **sk** |
+| Slovakia, EU, Croatia, Slovenia, International | none — served by the above | |
+
+So `venev.cz` and `venev.eu` are the same shop and their traffic sums. **`venev.sk`
+is not a domain of this store at all** — no market points at it — yet a GA4
+property exists for it. Until its hostname is checked against real data, its
+traffic must not be divided into Shopify orders; the conversion rate would come
+out nonsensically low.
+
+The commercial shape makes the priority obvious: **88.9% of orders ship to
+Slovakia** (3,706 of 4,167) and Slovak customers buy on **venev.eu**, the domain
+with no GA4 link yet. Czechia — the *primary* market in Shopify — is 4.3%.
+
+GA4 links created 2026-08-03 cover `venev.sk` (property `324879665`) and
+`venev.cz` (`325992935`). Together those are under 5% of the business. The
+property covering `venev.eu` is pending an access request.
+
+**A client can therefore have several GA4 properties**, which the registry's
+single `has_ga4` flag cannot express. Model it as `ref.ga4_properties`
+(`property_id → client_id`), the same shape as the Google Ads
+`customer_id → client_id` map, before wiring the first one up.
+
+---
+
 ## §7 — Still open
 
 | Item | Needed from |

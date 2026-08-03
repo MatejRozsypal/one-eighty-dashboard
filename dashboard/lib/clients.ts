@@ -17,6 +17,16 @@
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isoDate } from "@/lib/coerce";
+import { DEMO_CLIENT, DEMO_CLIENT_ID, isDemo } from "@/lib/demo/client";
+import { dataThrough as demoDataThrough } from "@/lib/demo/business";
+
+/**
+ * The demo client ships switched on. It is invisible to anyone with the
+ * `client` role unless they are assigned to it, so the only people who see it
+ * in the switcher are the agency — which is who presents with it. Set
+ * DEMO_CLIENT_DISABLED=1 to remove it entirely.
+ */
+const DEMO_ENABLED = process.env.DEMO_CLIENT_DISABLED !== "1";
 
 export interface ClientCapabilities {
   shopify: boolean;
@@ -109,7 +119,17 @@ export async function getClients(): Promise<Client[]> {
      WHERE status = 'active'
      ORDER BY name`
   );
-  return rows.map(toClient);
+
+  // Appended, never stored — the demo has no registry row precisely so that no
+  // warehouse query, n8n loop or freshness check has to know it exists. It is
+  // appended *last* so `resolveClient`'s fallback still lands on a real client.
+  //
+  // Note this deliberately does NOT catch a registry failure to keep the demo
+  // alive during an outage. Swallowing it would render a healthy-looking
+  // dashboard containing one fictional brand, which is a worse failure than an
+  // error page: the reader cannot tell that everything real is missing.
+  const real = rows.map(toClient);
+  return DEMO_ENABLED ? [...real, DEMO_CLIENT] : real;
 }
 
 export async function getClient(clientId: string): Promise<Client | null> {
@@ -186,6 +206,10 @@ export async function detectRegistryDrift(
   );
 
   for (const client of clients) {
+    // Nothing to drift from: the demo client has no registry row, so its
+    // "registry" and its data are the same declaration.
+    if (isDemo(client.clientId)) continue;
+
     const row = observed.find((o) => o.client_id === client.clientId);
     if (!row) continue;
 
@@ -225,5 +249,11 @@ export async function getDataThrough(): Promise<Map<string, string | null>> {
      WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
      GROUP BY client_id`
   );
-  return new Map(rows.map((r) => [r.client_id, isoDate(r.last_date)]));
+
+  const out = new Map<string, string | null>(
+    rows.map((r) => [r.client_id, isoDate(r.last_date)])
+  );
+  // The demo's stamp comes from its own generator; it has no mart rows.
+  if (DEMO_ENABLED) out.set(DEMO_CLIENT_ID, demoDataThrough());
+  return out;
 }

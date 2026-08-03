@@ -17,6 +17,8 @@ import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isMissingObject } from "@/lib/queries/errors";
 import { num, isoDate, safeDiv } from "@/lib/coerce";
 import type { DateRange } from "@/lib/period";
+import { isDemo } from "@/lib/demo/client";
+import { demoEmailSummary, demoFlows } from "@/lib/demo/media";
 
 export interface CampaignRow {
   campaignName: string;
@@ -50,6 +52,9 @@ export async function getEmailSummary(
   range: DateRange,
   limit = 30
 ): Promise<EmailSummary | null> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoEmailSummary(range, limit);
+
   try {
     const rows = await query<Record<string, unknown>>(
       `SELECT
@@ -164,6 +169,9 @@ export async function getFlows(
   clientId: string,
   currency: string
 ): Promise<FlowSummary | null> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoFlows();
+
   try {
     const rows = await query<Record<string, unknown>>(
       `SELECT flow_id, flow_name, platform, status, latest_snapshot_date,

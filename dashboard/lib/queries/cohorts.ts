@@ -19,6 +19,8 @@
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num, isoDate } from "@/lib/coerce";
+import { isDemo } from "@/lib/demo/client";
+import { demoCohorts } from "@/lib/demo/customers";
 
 export interface CohortRow {
   cohortMonth: string;
@@ -43,6 +45,9 @@ export async function getCohorts(
   currency: string,
   monthsBack = 24
 ): Promise<CohortRow[]> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoCohorts(monthsBack);
+
   const rows = await query<Record<string, unknown>>(
     `SELECT
        cohort_month, customer_count, y1_complete_customers,

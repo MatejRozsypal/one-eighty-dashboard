@@ -26,6 +26,8 @@ import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isMissingObject } from "@/lib/queries/errors";
 import { num, safeDiv } from "@/lib/coerce";
 import type { DateRange } from "@/lib/period";
+import { isDemo } from "@/lib/demo/client";
+import { demoUnitEconomics } from "@/lib/demo/commerce";
 
 export interface SegmentEconomics {
   orders: number | null;
@@ -62,6 +64,9 @@ export async function getUnitEconomics(
   currency: string,
   range: DateRange
 ): Promise<UnitEconomics | null> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoUnitEconomics(range);
+
   try {
     const [rows, spendRows] = await Promise.all([
       query<Record<string, unknown>>(

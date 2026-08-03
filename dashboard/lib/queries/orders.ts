@@ -26,6 +26,8 @@ import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isMissingObject } from "@/lib/queries/errors";
 import { num, isoDate, safeDiv } from "@/lib/coerce";
 import type { DateRange } from "@/lib/period";
+import { isDemo } from "@/lib/demo/client";
+import { demoOrdersSummary, demoRecentOrders } from "@/lib/demo/commerce";
 
 export type ShopPlatform = "shopify" | "shoptet";
 
@@ -80,6 +82,9 @@ export async function getOrdersSummary(
   clientId: string,
   range: DateRange
 ): Promise<OrdersSummary | null> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoOrdersSummary(range);
+
   try {
     const rows = await query<Record<string, unknown>>(
       `SELECT
@@ -157,6 +162,9 @@ export async function getRecentOrders(
   range: DateRange,
   limit = 50
 ): Promise<OrderRow[]> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoRecentOrders(range, limit);
+
   try {
     const rows = await query<Record<string, unknown>>(
       `SELECT

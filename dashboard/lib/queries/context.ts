@@ -6,6 +6,8 @@ import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isMissingObject } from "@/lib/queries/errors";
 import { isoDate, num } from "@/lib/coerce";
 import type { DateRange } from "@/lib/period";
+import { isDemo } from "@/lib/demo/client";
+import { demoDataThroughContext, demoDiscounts, demoExcludedCurrencies } from "@/lib/demo/commerce";
 
 export interface DataThrough {
   /** Last date the shop platform reported. Same-day when healthy. */
@@ -23,6 +25,9 @@ export interface DataThrough {
  * platform look permanently broken.
  */
 export async function getDataThrough(clientId: string): Promise<DataThrough> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoDataThroughContext();
+
   const [row] = await query<Record<string, unknown>>(
     `SELECT
        MAX(IF(revenue IS NOT NULL, date, NULL)) AS shop_last,
@@ -50,6 +55,9 @@ export async function getDiscounts(
   clientId: string,
   range: DateRange
 ): Promise<number | null> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoDiscounts(range);
+
   try {
     const [row] = await query<Record<string, unknown>>(
       `SELECT SUM(total_discounts) AS discounts
@@ -77,6 +85,9 @@ export async function getExcludedCurrencies(
   nativeCurrency: string,
   range: DateRange
 ): Promise<Array<{ currency: string; orders: number; revenue: number }>> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoExcludedCurrencies();
+
   // Summed here rather than in SQL: mart_daily_kpis' `orders` and `revenue` are
   // themselves aggregates, and BigQuery rejects SUM over them with
   // "Aggregations of aggregations are not allowed" once it inlines the view.

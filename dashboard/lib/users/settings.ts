@@ -15,6 +15,7 @@ import "server-only";
  */
 
 import { sql } from "@/lib/users/db";
+import { DEMO_SETTINGS, isDemo } from "@/lib/demo/client";
 
 export interface ClientSettings {
   clientId: string;
@@ -58,6 +59,11 @@ export async function listClientSettings(): Promise<ClientSettings[]> {
 export async function getClientSettings(
   clientId: string
 ): Promise<ClientSettings | null> {
+  // The demo states its own assumptions rather than storing them, so the margin
+  // stack runs all the way to EBITDA without a Postgres row — and without an
+  // admin being able to edit figures that are fiction anyway.
+  if (isDemo(clientId)) return DEMO_SETTINGS;
+
   const rows = await sql<Row>(
     `SELECT * FROM client_settings WHERE client_id = $1`,
     [clientId]
@@ -74,6 +80,13 @@ export async function saveClientSettings(
   },
   updatedBy: string
 ): Promise<void> {
+  // Nothing to store: the demo states its assumptions in code. Silently
+  // accepting a save would write a row that `getClientSettings` then ignores,
+  // so the admin screen would show a value that changes nothing.
+  if (isDemo(clientId)) {
+    throw new Error("The demo client's cost assumptions are fixed in code.");
+  }
+
   await sql(
     `INSERT INTO client_settings
        (client_id, opex_rate, fulfilment_per_order, other_cm1_per_order, updated_by)

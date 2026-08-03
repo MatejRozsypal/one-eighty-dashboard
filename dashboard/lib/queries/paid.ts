@@ -17,6 +17,8 @@
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num, safeDiv } from "@/lib/coerce";
 import type { DateRange } from "@/lib/period";
+import { isDemo } from "@/lib/demo/client";
+import { demoChannelTotals, demoMetaTotals, demoTopAds } from "@/lib/demo/media";
 
 export interface MetaTotals {
   spend: number | null;
@@ -66,6 +68,9 @@ export async function getMetaTotals(
   clientId: string,
   range: DateRange
 ): Promise<MetaTotals> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoMetaTotals(range);
+
   const [row] = await query<Record<string, unknown>>(
     `SELECT
        SUM(spend) AS spend, SUM(revenue) AS revenue, SUM(purchases) AS purchases,
@@ -111,6 +116,9 @@ export async function getTopAds(
   range: DateRange,
   limit = 10
 ): Promise<AdRow[]> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoTopAds(range, limit);
+
   // `mart_meta_ad_perf` carries campaign_id but not campaign_name — the name
   // only exists on the campaign view, so it's resolved by join. The inner
   // SELECT is again a block boundary: the mart columns are already aggregates,
@@ -184,6 +192,9 @@ export async function getChannelTotals(
   range: DateRange,
   hasGoogle: boolean
 ): Promise<ChannelTotal[]> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoChannelTotals(range, hasGoogle);
+
   const [row] = await query<Record<string, unknown>>(
     `SELECT SUM(meta_spend)     AS meta_spend,
             SUM(google_spend)   AS google_spend,

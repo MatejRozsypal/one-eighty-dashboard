@@ -22,6 +22,14 @@
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isoDate } from "@/lib/coerce";
 import type { Client } from "@/lib/clients";
+import { DEMO_CLIENT_ID, isDemo } from "@/lib/demo/client";
+import { addDays, dataThrough as demoDataThrough } from "@/lib/demo/business";
+
+/** Last demo campaign send — a few days back, so Klaviyo reads healthy. */
+function demoLastEmailSend(): string {
+  return addDays(demoDataThrough(), -3);
+}
+
 
 export type FreshnessStatus = "ok" | "late" | "stale" | "blocked";
 
@@ -88,7 +96,24 @@ export async function getSourceFreshness(
      FROM \`${PROJECT_ID}.mart.mart_email_campaign_message_perf\`
      WHERE send_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 120 DAY)
      GROUP BY client_id`
-  ).catch(() => []);
+  ).catch((): Array<{ client_id: string; last_send: { value: string } }> => []);
+
+  // The demo client has no mart rows, so it gets a synthesised one here rather
+  // than a branch inside the loop below — that way its sources are classified
+  // late, stale or healthy by exactly the same rules as everyone else's.
+  if (clients.some((c) => isDemo(c.clientId))) {
+    const through = { value: demoDataThrough() };
+    rows.push({
+      client_id: DEMO_CLIENT_ID,
+      shop_last: through,
+      meta_last: through,
+      google_last: through,
+    });
+    email.push({
+      client_id: DEMO_CLIENT_ID,
+      last_send: { value: demoLastEmailSend() },
+    });
+  }
 
   const out: SourceFreshness[] = [];
 

@@ -33,6 +33,8 @@
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num } from "@/lib/coerce";
+import { isDemo } from "@/lib/demo/client";
+import { demoYoyRows } from "@/lib/demo/trend";
 
 export interface YearRow {
   year: number;
@@ -93,7 +95,11 @@ export async function getYearOverYear(
   // aggregate, and re-aggregating a mart's aggregate columns is what BigQuery
   // rejects once it inlines the view — the same trap that broke three pages on
   // first deploy. The row count here is a few dozen.
-  const rows = await query<Record<string, unknown>>(
+  // Demo client: rows are synthesised, then run through the same year
+  // assembly and seasonal projection as a real client's.
+  const rows = isDemo(clientId)
+    ? demoYoyRows()
+    : await query<Record<string, unknown>>(
     `SELECT
        EXTRACT(YEAR  FROM month_start) AS yr,
        EXTRACT(MONTH FROM month_start) AS mo,

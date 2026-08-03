@@ -23,6 +23,8 @@
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num, isoDate, safeDiv } from "@/lib/coerce";
+import { isDemo } from "@/lib/demo/client";
+import { demoCohortGrid } from "@/lib/demo/customers";
 
 export type CohortMetric =
   | "retention"
@@ -175,6 +177,10 @@ export async function getCohortGrid(
     monthsBack?: number;
   } = {}
 ): Promise<CohortGrid> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId))
+    return demoCohortGrid({ metric, markets, maxOffset, monthsBack });
+
   const rows = await query<Record<string, unknown>>(
     `SELECT cohort_month, market, market_kind, month_offset,
             cohort_customers, active_customers, orders, revenue, gross_profit

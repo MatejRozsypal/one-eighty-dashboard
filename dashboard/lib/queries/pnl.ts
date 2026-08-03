@@ -30,6 +30,8 @@ import {
   delta,
 } from "@/lib/period";
 import { fxSql, fxParams, type DisplayCurrency } from "@/lib/currency";
+import { isDemo } from "@/lib/demo/client";
+import { demoPnlDays } from "@/lib/demo/pnl";
 
 /** One day of P&L, already converted into the display currency. */
 export interface PnlDay {
@@ -155,6 +157,11 @@ async function fetchDays(
   display: DisplayCurrency,
   nativeCurrency: string
 ): Promise<PnlDay[]> {
+  // The demo client is served entirely from memory: no SQL is built, no
+  // credentials are needed, and there is no path by which a real figure could
+  // reach a presentation. Everything below this line is the real client path.
+  if (isDemo(clientId)) return demoPnlDays(bounds, display);
+
   const fx = fxSql(display, "k");
   const m = fx.wrap; // money column → converted expression
 

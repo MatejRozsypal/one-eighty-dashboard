@@ -8,6 +8,7 @@
 
 import { BigQuery } from "@google-cloud/bigquery";
 import "server-only";
+import { DEMO_CLIENT_ID } from "@/lib/demo/business";
 
 let _client: BigQuery | null = null;
 
@@ -59,6 +60,20 @@ export async function query<T = Record<string, unknown>>(
   sql: string,
   params: Record<string, string | number | boolean | Date> = {}
 ): Promise<T[]> {
+  // The demo client is served entirely from `lib/demo`. If a query ever reaches
+  // here carrying its id, some code path was missed — and the failure mode that
+  // matters is not an error, it is a screen of *real* figures appearing under a
+  // fictional brand's name in front of a prospect. BigQuery would happily return
+  // zero rows for client_id = 'demo' and the page would render a plausible empty
+  // state, so nothing would look wrong. Fail loudly instead.
+  if (params.clientId === DEMO_CLIENT_ID) {
+    throw new Error(
+      `The demo client must never reach BigQuery. A query was issued with ` +
+        `clientId = "${DEMO_CLIENT_ID}"; it needs a branch in lib/demo. Query: ` +
+        sql.slice(0, 160).replace(/\s+/g, " ")
+    );
+  }
+
   const bq = getClient();
   const [rows] = await bq.query({ query: sql, params, location: "EU" });
   return rows as T[];

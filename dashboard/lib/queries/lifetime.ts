@@ -11,6 +11,8 @@
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num, safeDiv, isoDate } from "@/lib/coerce";
 import { isMissingObject } from "@/lib/queries/errors";
+import { isDemo } from "@/lib/demo/client";
+import { demoLifetimeSummary, demoPayback, demoTopCustomers } from "@/lib/demo/customers";
 
 export interface LifetimeSummary {
   currency: string;
@@ -43,6 +45,9 @@ export async function getLifetimeSummary(
   clientId: string,
   currency: string
 ): Promise<LifetimeSummary> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoLifetimeSummary();
+
   // The inner SELECT is not cosmetic. `mart_customer_lifetime` is a view whose
   // columns are themselves aggregates — `aov` is SAFE_DIVIDE(SUM(...), COUNT(*))
   // and `is_returning` is COUNT(*) > 1. Aggregating those directly makes
@@ -96,6 +101,9 @@ export async function getTopCustomers(
   currency: string,
   limit = 25
 ): Promise<CustomerRow[]> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoTopCustomers(limit);
+
   const rows = await query<Record<string, unknown>>(
     `SELECT
        CONCAT(
@@ -164,6 +172,9 @@ export async function getPayback(
   currency: string,
   monthsBack = 12
 ): Promise<Payback | null> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoPayback(monthsBack);
+
   try {
     const [rows, spend] = await Promise.all([
       query<Record<string, unknown>>(

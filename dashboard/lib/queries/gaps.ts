@@ -18,6 +18,8 @@
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isMissingObject } from "@/lib/queries/errors";
 import { num } from "@/lib/coerce";
+import { isDemo } from "@/lib/demo/client";
+import { demoGapStats } from "@/lib/demo/customers";
 
 export interface GapBucket {
   label: string;
@@ -58,6 +60,9 @@ export async function getGapStats(
   clientId: string,
   currency: string
 ): Promise<GapStats | null> {
+  // Demo client: served from memory, never from the warehouse.
+  if (isDemo(clientId)) return demoGapStats();
+
   try {
     const bucketCases = BUCKETS.map(
       (b, i) => `COUNTIF(gap_days BETWEEN ${b.min} AND ${b.max}) AS b${i}`

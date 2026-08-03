@@ -11,6 +11,8 @@
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num, isoDate } from "@/lib/coerce";
+import { isDemo } from "@/lib/demo/client";
+import { demoGrowthRows } from "@/lib/demo/trend";
 
 export interface GrowthMonth {
   monthStart: string;
@@ -38,7 +40,11 @@ export async function getGrowth(
   currency: string,
   monthsBack = 12
 ): Promise<GrowthSummary> {
-  const rows = await query<Record<string, unknown>>(
+  // Demo client: rows are synthesised, then run through exactly the same
+  // partial-month and averaging rules below as a real client's.
+  const rows = isDemo(clientId)
+    ? demoGrowthRows(monthsBack)
+    : await query<Record<string, unknown>>(
     `SELECT
        month_start, revenue, mom_revenue_pct,
        new_customer_orders, mom_new_customer_orders_pct,

@@ -4,7 +4,7 @@ shopify_bulk_transform.py — reshape a Shopify Bulk Operations JSONL export of
 orders into NEWLINE_DELIMITED_JSON matching the raw.raw_shopify_orders schema.
 
 Usage:
-    python3 shopify_bulk_transform.py <input.jsonl> <output.jsonl>
+    python3 shopify_bulk_transform.py <input.jsonl> <output.jsonl> <client_id>
 
 Input  : raw Shopify bulk JSONL. Order nodes and lineItem nodes are on separate
          lines; a child line item carries `__parentId` pointing at its order.
@@ -13,12 +13,17 @@ Input  : raw Shopify bulk JSONL. Order nodes and lineItem nodes are on separate
 Output : one JSON object per order, fields == columns of raw.raw_shopify_orders.
          Load with: bq load --source_format=NEWLINE_DELIMITED_JSON \\
                             oneeighty-warehouse:raw.raw_shopify_orders <output.jsonl>
+
+`client_id` is a required argument rather than a constant edited before each run.
+It used to be hardcoded to "dobias", which is fine while one client exists and
+silently catastrophic the moment a second one is backfilled — a forgotten edit
+tags every row with the wrong client, and nothing downstream can tell.
 """
 import json
 import sys
 from datetime import datetime, timezone
 
-CLIENT_ID = "dobias"
+CLIENT_ID = None  # set from argv in main(); see module docstring
 INGEST_SOURCE = "backfill"
 INGESTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -84,6 +89,10 @@ def build_row(order, line_items):
         "total_tax":             money(order, "totalTaxSet", "shopMoney", "amount"),
         "total_discounts":       money(order, "totalDiscountsSet", "shopMoney", "amount"),
         "total_price":           money(order, "totalPriceSet", "shopMoney", "amount"),
+        # NULL for exports taken before totalRefundedSet was added to the bulk
+        # query — which is every Dobias row. NULL means "never fetched", not
+        # "nothing was refunded", and the marts must keep treating it that way.
+        "total_refunded":        money(order, "totalRefundedSet", "shopMoney", "amount"),
         "customer_id":           gid(customer.get("id")),
         "customer_email":        order.get("email") or "",
         "is_returning_customer": returning,
@@ -99,9 +108,10 @@ def build_row(order, line_items):
 
 
 def main():
-    if len(sys.argv) != 3:
-        sys.exit("usage: python3 shopify_bulk_transform.py <input.jsonl> <output.jsonl>")
-    src, dst = sys.argv[1], sys.argv[2]
+    global CLIENT_ID
+    if len(sys.argv) != 4:
+        sys.exit("usage: python3 shopify_bulk_transform.py <input.jsonl> <output.jsonl> <client_id>")
+    src, dst, CLIENT_ID = sys.argv[1], sys.argv[2], sys.argv[3]
 
     stats = {"orders": 0, "line_items": 0, "skipped": 0}
     cur_order = None
@@ -132,6 +142,7 @@ def main():
                 cur_items = []
         flush()
 
+    print(f"client_id      : {CLIENT_ID}")
     print(f"orders written : {stats['orders']}")
     print(f"line items     : {stats['line_items']}")
     if stats["skipped"]:

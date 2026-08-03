@@ -105,6 +105,7 @@ export default async function AppLayout({
         ? "Agency"
         : `Client · ${clients[0]?.name ?? session.user.clientId}`;
   const isAdmin = session.user.role === "admin";
+  const isInternal = isAdmin || session.user.role === "agency";
 
   return (
     // The page background is light everywhere. The black at the top is painted
@@ -113,7 +114,13 @@ export default async function AppLayout({
     // on any page shorter than the viewport, and under Safari's bottom bar.
     <NavigationPendingProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
-      <Sidebar clients={clients} userName={name} userRole={role} isAdmin={isAdmin} />
+      <Sidebar
+        clients={clients}
+        userName={name}
+        userRole={role}
+        isAdmin={isAdmin}
+        isInternal={isInternal}
+      />
 
       {/*
         `min-h-screen` here, not just on the row: the row is `items-start` so

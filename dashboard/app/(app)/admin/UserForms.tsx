@@ -46,7 +46,22 @@ function TemporaryPassword({ result }: { result: ActionResult }) {
   );
 }
 
-export function CreateUserForm({ clients }: { clients: Client[] }) {
+/**
+ * `fixedClient` is the per-client variant.
+ *
+ * Invited from inside a client's settings, the only sensible account is a
+ * client-role one confined to that client — so the role and client pickers
+ * disappear rather than being pre-filled and editable. Leaving them editable
+ * would make it possible to create an agency account, which sees every client,
+ * from a screen whose whole framing is one client.
+ */
+export function CreateUserForm({
+  clients,
+  fixedClient,
+}: {
+  clients: Client[];
+  fixedClient?: Client;
+}) {
   const [result, action] = useFormState<ActionResult | null, FormData>(
     createUserAction,
     null
@@ -74,38 +89,55 @@ export function CreateUserForm({ clients }: { clients: Client[] }) {
             <input name="name" type="text" className={field} />
           </label>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-content-muted">
-              Role
-            </span>
-            <select
-              name="role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
-              className={field}
-            >
-              <option value="client">Client — one client only</option>
-              <option value="agency">Agency — every client</option>
-              <option value="admin">Admin — every client + user management</option>
-            </select>
-          </label>
+          {fixedClient ? (
+            <>
+              <input type="hidden" name="role" value="client" />
+              <input type="hidden" name="clientId" value={fixedClient.clientId} />
+              <div className="flex flex-col gap-1.5 sm:col-span-2">
+                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-content-muted">
+                  Access
+                </span>
+                <span className="text-[13px] text-content-body">
+                  {fixedClient.name} only — they will not see any other client.
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="flex flex-col gap-1.5">
+                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-content-muted">
+                  Role
+                </span>
+                <select
+                  name="role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as Role)}
+                  className={field}
+                >
+                  <option value="client">Client — one client only</option>
+                  <option value="agency">Agency — every client</option>
+                  <option value="admin">Admin — every client + user management</option>
+                </select>
+              </label>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-content-muted">
-              Client
-            </span>
-            <select
-              name="clientId"
-              disabled={role !== "client"}
-              className={`${field} disabled:bg-gray-50 disabled:text-gray-300`}
-            >
-              {clients.map((c) => (
-                <option key={c.clientId} value={c.clientId}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-content-muted">
+                  Client
+                </span>
+                <select
+                  name="clientId"
+                  disabled={role !== "client"}
+                  className={`${field} disabled:bg-gray-50 disabled:text-gray-300`}
+                >
+                  {clients.map((c) => (
+                    <option key={c.clientId} value={c.clientId}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-3">

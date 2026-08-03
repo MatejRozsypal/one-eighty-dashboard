@@ -20,6 +20,7 @@ import {
   type Role,
 } from "@/lib/users/store";
 import { saveClientSettings } from "@/lib/users/settings";
+import { requireInternalForConfig } from "@/lib/authz";
 
 async function requireAdmin(): Promise<string> {
   const session = await getServerSession(authOptions);
@@ -131,7 +132,11 @@ export async function deleteUserAction(formData: FormData): Promise<void> {
 }
 
 export async function saveSettingsAction(formData: FormData): Promise<void> {
-  const adminEmail = await requireAdmin();
+  // Agency, not admin. A cost assumption is the same class of thing as a
+  // target: a stated input about how the business runs, which is the agency's
+  // job. Access grants stay admin-only, because those are what reach other
+  // clients' data.
+  const { email: adminEmail } = await requireInternalForConfig();
 
   // Empty means "not stated" and must stay null. Coercing a blank field to 0
   // would silently assert that fulfilment costs nothing, which is exactly the

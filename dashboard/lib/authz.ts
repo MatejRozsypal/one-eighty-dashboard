@@ -64,3 +64,37 @@ export async function requireInternalRole(): Promise<Access> {
   }
   return access;
 }
+
+/**
+ * Gate an action that changes business configuration — targets, cost
+ * assumptions.
+ *
+ * Agency is enough here and deliberately so. These are stated inputs about how
+ * the business is run, which is the agency's actual job; requiring an admin to
+ * type a monthly target would put a security role in the way of routine work
+ * and, predictably, end with admin being handed out to people who only needed
+ * to edit a number.
+ *
+ * Access itself is a different question and stays with `requireAdminRole`.
+ */
+export async function requireInternalForConfig(): Promise<Access> {
+  const access = await currentAccess();
+  if (!access || !isInternal(access.role)) {
+    throw new Error("Not authorised.");
+  }
+  return access;
+}
+
+/**
+ * Gate an action that changes who can get in.
+ *
+ * Admin only, separate from config on purpose: granting access is the one
+ * operation whose blast radius is other clients' data.
+ */
+export async function requireAdminRole(): Promise<Access> {
+  const access = await currentAccess();
+  if (access?.role !== "admin") {
+    throw new Error("Not authorised.");
+  }
+  return access;
+}

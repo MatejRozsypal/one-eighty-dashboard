@@ -29,11 +29,14 @@ export function Sidebar({
   userName,
   userRole,
   isAdmin = false,
+  isInternal = false,
 }: {
   clients: Client[];
   userName: string;
   userRole: string;
   isAdmin?: boolean;
+  /** Agency or admin. Decides the gear — agency configures targets and costs. */
+  isInternal?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -131,10 +134,12 @@ export function Sidebar({
           Settings sits as an icon beside the account, not as a nav row. It
           configures the product rather than reporting on the business, so
           listing it among the analysis pages gave plumbing the same weight as
-          the numbers. Admin-only, and removed entirely rather than disabled —
-          a greyed row invites a request for access nobody needs.
+          the numbers. Shown to agency as well as admin: targets and cost
+          assumptions are the agency's job, while managing access inside it is
+          gated to admin separately. Hidden entirely from clients rather than
+          disabled — a greyed control invites a request for access nobody needs.
         */}
-        {isAdmin && (
+        {isInternal && (
           <Link
             href={SETTINGS_HREF}
             aria-label="Settings"

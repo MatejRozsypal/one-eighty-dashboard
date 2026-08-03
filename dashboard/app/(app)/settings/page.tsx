@@ -17,8 +17,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { currentAccess, isInternal } from "@/lib/authz";
 import { getClients, type Client } from "@/lib/clients";
 import { listUsers, type AppUser } from "@/lib/users/store";
 import { listClientSettings } from "@/lib/users/settings";
@@ -28,6 +27,8 @@ import { GOAL_METRICS } from "@/lib/goals/store";
 import { monthsOfYear } from "@/lib/goals/progress";
 import { isDemo } from "@/lib/demo/client";
 import { saveSettingsAction } from "@/app/(app)/admin/actions";
+import { CreateUserForm } from "@/app/(app)/admin/UserForms";
+import { PeopleList } from "@/components/settings/PeopleList";
 import { saveGoalsAction } from "./actions";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
@@ -56,9 +57,13 @@ export default async function SettingsPage({
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const session = await getServerSession(authOptions);
-  // The gear is hidden from non-admins; this is the check that actually holds.
-  if (session?.user?.role !== "admin") redirect("/snapshot");
+  // Agency reaches Settings too: targets and cost assumptions are their job.
+  // Managing *access* is not, so that is gated separately below and again in
+  // each server action. The gear is hidden from clients; this is the check that
+  // actually holds.
+  const access = await currentAccess();
+  if (!access || !isInternal(access.role)) redirect("/snapshot");
+  const canManage = access.role === "admin";
 
   const tab = (searchParams.tab as string) ?? "clients";
   const clients = await getClients();
@@ -106,35 +111,26 @@ export default async function SettingsPage({
                 Admin adds user management on top.
               </span>
             </div>
-            {staff.map((u) => (
-              <div
-                key={u.email}
-                className="flex flex-wrap items-center gap-3 border-b border-hairline pb-3 text-[13px] last:border-0"
-              >
-                <span className="min-w-[220px] flex-1 text-content-strong">
-                  {u.name ?? u.email}
-                  <span className="ml-2 font-mono text-[11px] text-content-muted">
-                    {u.email}
-                  </span>
-                </span>
-                <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-content-muted">
-                  {u.role}
-                </span>
-                {!u.isActive && (
-                  <span className="font-mono text-[11px] text-negative">
-                    deactivated
-                  </span>
-                )}
-              </div>
-            ))}
-            <p className="text-[12px] text-content-muted">
-              Adding, editing and deactivating accounts still lives on the{" "}
-              <Link href="/admin" className="underline">
-                user management screen
-              </Link>
-              . It has not moved here yet.
-            </p>
+            <PeopleList
+              users={staff}
+              clients={clients}
+              canManage={canManage}
+              emptyMessage="No agency or admin accounts yet."
+            />
           </section>
+
+          {canManage && (
+            <section className={CARD}>
+              <div className="flex flex-col gap-[5px]">
+                <Eyebrow>Add someone to the team</Eyebrow>
+                <span className="text-[12.5px] leading-[1.5] text-content-muted">
+                  They sign in with the email and the temporary password you
+                  hand over, then pick their own.
+                </span>
+              </div>
+              <CreateUserForm clients={clients} />
+            </section>
+          )}
         </main>
       </>
     );
@@ -432,44 +428,35 @@ export default async function SettingsPage({
             </span>
           </div>
 
-          {people.length === 0 ? (
-            <p className="text-[13px] text-content-muted">
-              Nobody outside the agency can open {selected.name} yet.
-            </p>
-          ) : (
-            people.map((u) => (
-              <div
-                key={u.email}
-                className="flex flex-wrap items-center gap-3 border-b border-hairline pb-3 text-[13px] last:border-0"
-              >
-                <span className="min-w-[220px] flex-1 text-content-strong">
-                  {u.name ?? u.email}
-                  <span className="ml-2 font-mono text-[11px] text-content-muted">
-                    {u.email}
-                  </span>
-                </span>
-                {!u.isActive && (
-                  <span className="font-mono text-[11px] text-negative">
-                    deactivated
-                  </span>
-                )}
-                {u.lastLoginAt && (
-                  <span className="font-mono text-[10.5px] text-content-muted">
-                    last in {u.lastLoginAt.slice(0, 10)}
-                  </span>
-                )}
-              </div>
-            ))
-          )}
+          <PeopleList
+            users={people}
+            clients={clients}
+            canManage={canManage}
+            fixedClient={selected}
+            emptyMessage={`Nobody outside the agency can open ${selected.name} yet.`}
+          />
 
-          <p className="text-[12px] text-content-muted">
-            Inviting and deactivating people still lives on the{" "}
-            <Link href="/admin" className="underline">
-              user management screen
-            </Link>
-            . It has not moved here yet.
-          </p>
+          {!canManage && (
+            <p className="text-[12px] text-content-muted">
+              Only an admin can change who has access. Targets and cost
+              assumptions above are yours to edit.
+            </p>
+          )}
         </section>
+
+        {canManage && !demo && (
+          <section className={CARD}>
+            <div className="flex flex-col gap-[5px]">
+              <Eyebrow>Invite someone to {selected.name}</Eyebrow>
+              <span className="text-[12.5px] leading-[1.5] text-content-muted">
+                They sign in with the email and the temporary password you hand
+                over, then pick their own. The account is confined to{" "}
+                {selected.name} and cannot reach any other client.
+              </span>
+            </div>
+            <CreateUserForm clients={[selected]} fixedClient={selected} />
+          </section>
+        )}
       </main>
     </>
   );

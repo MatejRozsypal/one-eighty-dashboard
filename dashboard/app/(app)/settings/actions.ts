@@ -10,18 +10,9 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { isGoalMetric, saveGoal } from "@/lib/goals/store";
 import { isDemo } from "@/lib/demo/client";
-
-async function requireAdmin(): Promise<string> {
-  const session = await getServerSession(authOptions);
-  if (session?.user?.role !== "admin") {
-    throw new Error("Not authorised.");
-  }
-  return session.user.email!.toLowerCase();
-}
+import { requireInternalForConfig } from "@/lib/authz";
 
 /**
  * Parse a target from a form field.
@@ -42,7 +33,7 @@ function parseTarget(value: FormDataEntryValue | null): number | null {
 }
 
 export async function saveGoalsAction(formData: FormData): Promise<void> {
-  const email = await requireAdmin();
+  const { email } = await requireInternalForConfig();
 
   const clientId = String(formData.get("clientId") ?? "");
   const month = String(formData.get("month") ?? "");

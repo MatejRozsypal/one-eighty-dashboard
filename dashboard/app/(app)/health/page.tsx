@@ -22,6 +22,7 @@ import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable } from "@/components/ui/DataTable";
 import { formatNumber } from "@/lib/currency";
+import { requireInternalRole } from "@/lib/authz";
 
 export const metadata: Metadata = { title: "Data Health" };
 // Rendered per request: every page is behind auth and parameterised by the URL,
@@ -56,6 +57,11 @@ function fmtDate(iso: string | null): string {
 }
 
 export default async function HealthPage() {
+  // Internal-only: this page names every client and shows the agency's own
+  // pipeline runs. A client-role account has no business reading either — under
+  // an NDA, even the roster of who else is a customer is not theirs to see.
+  await requireInternalRole();
+
   const clients = await getClients();
 
   const [freshness, drift, runs] = await Promise.all([

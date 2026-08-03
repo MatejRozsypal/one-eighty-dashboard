@@ -134,11 +134,6 @@ export async function getClients(): Promise<Client[]> {
   return DEMO_ENABLED ? [...real, DEMO_CLIENT] : real;
 }
 
-export async function getClient(clientId: string): Promise<Client | null> {
-  const clients = await getClients();
-  return clients.find((c) => c.clientId === clientId) ?? null;
-}
-
 /**
  * Resolve the client for a request, falling back to the first active one.
  *
@@ -183,6 +178,19 @@ export async function resolveClient(
         "assign it a client under Admin → Users."
     );
   }
+
+  // Record the refusal. Preventing the read is the security requirement;
+  // being able to say afterwards whether anyone tried is the compliance one,
+  // and an NDA conversation goes very differently when the answer is evidenced
+  // rather than assumed. Only genuine cross-client attempts are logged — a
+  // blank or already-correct `?client=` is ordinary navigation, not an attempt.
+  if (requested && requested !== ownId) {
+    console.warn(
+      `[authz] REFUSED cross-client access: ${session?.user?.email ?? "unknown"} ` +
+        `(client=${ownId}) requested client=${requested}`
+    );
+  }
+
   return own;
 }
 

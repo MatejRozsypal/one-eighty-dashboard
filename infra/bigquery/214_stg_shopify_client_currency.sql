@@ -54,7 +54,7 @@ deduped AS (
   FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, order_id ORDER BY ingested_at DESC) AS rn
     FROM `oneeighty-warehouse.raw.raw_shopify_orders`
-    WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 ),
 joined AS (

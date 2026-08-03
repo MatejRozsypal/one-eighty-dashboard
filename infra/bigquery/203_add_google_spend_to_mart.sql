@@ -35,13 +35,13 @@ WITH shopify_orders_daily AS (
     COUNTIF(is_returning_customer IS FALSE) AS new_customer_orders,
     COUNTIF(is_returning_customer IS TRUE)  AS returning_customer_orders
   FROM `oneeighty-warehouse.stg.stg_shopify_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_date, currency
 ),
 shopify_cogs_daily AS (
   SELECT client_id, order_date AS date, currency, SUM(line_cost) AS cogs
   FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_date, currency
 ),
 shop_daily AS (
@@ -78,7 +78,7 @@ shop_daily AS (
     COUNTIF(is_returning_customer IS FALSE) AS new_customer_orders,
     COUNTIF(is_returning_customer IS TRUE)  AS returning_customer_orders
   FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_date
 ),
 meta_daily AS (
@@ -94,7 +94,7 @@ meta_daily AS (
     SUM(clicks)         AS meta_clicks,
     SUM(reach)          AS meta_reach
   FROM `oneeighty-warehouse.stg.stg_meta_campaign_insights`
-  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, date_start
 ),
 google_daily AS (
@@ -109,7 +109,7 @@ google_daily AS (
     SUM(impressions)    AS google_impressions,
     SUM(clicks)         AS google_clicks
   FROM `oneeighty-warehouse.stg.stg_google_ads_campaign_insights`
-  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, date, currency
 ),
 paid_daily AS (

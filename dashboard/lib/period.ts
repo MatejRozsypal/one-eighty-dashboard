@@ -99,7 +99,7 @@ export function resolvePeriod(
  * The outer bounds a query must scan to cover both ranges in one pass.
  *
  * Both periods are fetched in a single query and bucketed in SQL rather than
- * issued as two round trips. mart_daily_kpis is a view over 36 months of orders
+ * issued as two round trips. mart_daily_kpis is a view over 60 months of orders
  * and scans ~1.5 MB per day of range, so halving the number of scans is a
  * direct halving of both cost and page latency.
  *

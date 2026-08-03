@@ -36,7 +36,7 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_customer_cohort_grid` AS
 WITH shopify_costs AS (
   SELECT client_id, order_id, SUM(line_cost) AS order_cogs
   FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_id
 ),
 
@@ -53,7 +53,7 @@ orders AS (
     currency                                 AS market,
     'currency'                               AS market_kind
   FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
     AND email IS NOT NULL AND TRIM(email) != ''
 
   UNION ALL
@@ -72,7 +72,7 @@ orders AS (
     'country'                                AS market_kind
   FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
   LEFT JOIN shopify_costs c USING (client_id, order_id)
-  WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
     AND o.customer_email IS NOT NULL AND TRIM(o.customer_email) != ''
 ),
 

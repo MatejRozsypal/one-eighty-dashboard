@@ -38,7 +38,7 @@ SELECT * EXCEPT(rn) FROM (
       PARTITION BY client_id, metric_date, dim_type, dim_value ORDER BY ingested_at DESC
     ) AS rn
   FROM `oneeighty-warehouse.raw.raw_klaviyo_conversion_daily`
-  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 -- mart_email_daily — Conversion Summary (campaign vs flow revenue/day) + emails sent/day.
@@ -84,7 +84,7 @@ WITH flow_names AS (
     SELECT client_id, flow_id, flow_name, status,
       ROW_NUMBER() OVER (PARTITION BY client_id, flow_id ORDER BY snapshot_date DESC, ingested_at DESC) AS rn
     FROM `oneeighty-warehouse.raw.raw_klaviyo_flows`
-    WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 ),
 rev AS (

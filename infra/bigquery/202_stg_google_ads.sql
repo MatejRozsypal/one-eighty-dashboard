@@ -58,7 +58,7 @@ stats AS (
     SUM(metrics_conversions)         AS purchases,
     SUM(metrics_conversions_value)   AS purchase_value
   FROM `oneeighty-warehouse.raw_google_ads.ads_CampaignBasicStats_5865960448`
-  WHERE segments_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE segments_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY date, customer_id, campaign_id
 ),
 campaigns AS (

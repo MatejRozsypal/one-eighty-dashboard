@@ -26,7 +26,7 @@ SELECT * EXCEPT(rn) FROM (
       ORDER BY ingested_at DESC
     ) AS rn
   FROM `oneeighty-warehouse.raw.raw_klaviyo_campaign_series`
-  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_klaviyo_flow_series` AS
@@ -48,7 +48,7 @@ SELECT * EXCEPT(rn) FROM (
       ORDER BY ingested_at DESC
     ) AS rn
   FROM `oneeighty-warehouse.raw.raw_klaviyo_flow_series`
-  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 -- Flow name lookup (latest metadata snapshot per flow).
@@ -86,7 +86,7 @@ WITH flow_names AS (
     SELECT client_id, flow_id, flow_name, status,
       ROW_NUMBER() OVER (PARTITION BY client_id, flow_id ORDER BY snapshot_date DESC, ingested_at DESC) AS rn
     FROM `oneeighty-warehouse.raw.raw_klaviyo_flows`
-    WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 )
 SELECT
@@ -116,5 +116,5 @@ SELECT * EXCEPT(rn) FROM (
       PARTITION BY client_id, channel, metric_date ORDER BY ingested_at DESC
     ) AS rn
   FROM `oneeighty-warehouse.raw.raw_klaviyo_subscriber_daily`
-  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;

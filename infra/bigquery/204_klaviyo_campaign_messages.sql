@@ -18,7 +18,7 @@ WITH metadata AS (
   SELECT * EXCEPT(rn) FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, campaign_id ORDER BY ingested_at DESC) AS rn
     FROM `oneeighty-warehouse.raw.raw_klaviyo_campaigns`
-    WHERE DATE(send_time) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE DATE(send_time) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 ),
 reports AS (
@@ -27,7 +27,7 @@ reports AS (
       PARTITION BY client_id, campaign_id, campaign_message_id ORDER BY ingested_at DESC
     ) AS rn
     FROM `oneeighty-warehouse.raw.raw_klaviyo_campaign_reports`
-    WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 )
 SELECT

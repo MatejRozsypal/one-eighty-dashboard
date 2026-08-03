@@ -43,7 +43,7 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_orders` AS
 WITH shopify_order_costs AS (
   SELECT client_id, order_id, SUM(line_cost) AS order_cogs
   FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_id
 )
 
@@ -76,7 +76,7 @@ SELECT
   o.processed_at
 FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
 LEFT JOIN shopify_order_costs c USING (client_id, order_id)
-WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 
 UNION ALL
 
@@ -109,4 +109,4 @@ SELECT
   CAST(NULL AS TIMESTAMP)      AS cancelled_at,
   CAST(NULL AS TIMESTAMP)      AS processed_at
 FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
-WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH);
+WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH);

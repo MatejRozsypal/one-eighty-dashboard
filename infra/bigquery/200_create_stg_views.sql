@@ -20,14 +20,14 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_meta_campaign_insights` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, campaign_id, date_start ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_meta_campaign_insights`
-  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_meta_ad_insights` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, ad_id, date_start ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_meta_ad_insights`
-  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 -- =============================================================================
@@ -38,21 +38,21 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_ecomail_campaigns` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, campaign_id ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_ecomail_campaigns`
-  WHERE DATE(sent_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE DATE(sent_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_ecomail_automations` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, pipeline_id, snapshot_date ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_ecomail_automations`
-  WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_ecomail_lists` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, list_id, snapshot_date ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_ecomail_lists`
-  WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 -- =============================================================================
@@ -75,14 +75,14 @@ WITH metadata AS (
   SELECT * EXCEPT(rn) FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, campaign_id ORDER BY ingested_at DESC) AS rn
     FROM `oneeighty-warehouse.raw.raw_klaviyo_campaigns`
-    WHERE DATE(send_time) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE DATE(send_time) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 ),
 reports AS (
   SELECT * EXCEPT(rn) FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, campaign_id ORDER BY ingested_at DESC) AS rn
     FROM `oneeighty-warehouse.raw.raw_klaviyo_campaign_reports`
-    WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 )
 SELECT
@@ -134,7 +134,7 @@ WITH latest_per_period AS (
         ORDER BY ingested_at DESC
       ) AS rn
     FROM `oneeighty-warehouse.raw.raw_klaviyo_flow_reports`
-    WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 ),
 flow_totals AS (
@@ -160,7 +160,7 @@ metadata AS (
   SELECT * EXCEPT(rn) FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, flow_id, snapshot_date ORDER BY ingested_at DESC) AS rn
     FROM `oneeighty-warehouse.raw.raw_klaviyo_flows`
-    WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 ),
 metadata_latest AS (
@@ -195,7 +195,7 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_klaviyo_forms` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, form_id, snapshot_date ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_klaviyo_forms`
-  WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 -- =============================================================================
@@ -205,14 +205,14 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_instagram_media` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, media_id ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_instagram_media`
-  WHERE DATE(posted_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE DATE(posted_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_instagram_account_insights` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, ig_business_id, metric_date, metric_name ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_instagram_account_insights`
-  WHERE metric_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE metric_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 -- =============================================================================
@@ -240,7 +240,7 @@ WITH deduped AS (
   FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, order_id ORDER BY ingested_at DESC) AS rn
     FROM `oneeighty-warehouse.raw.raw_shopify_orders`
-    WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+    WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   ) WHERE rn = 1
 ),
 joined AS (
@@ -294,14 +294,14 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_shopify_products` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, product_id, variant_id ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_shopify_products`
-  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_shopify_customers` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, customer_id ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_shopify_customers`
-  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE DATE(ingested_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;
 
 -- stg_shopify_order_items — one row per Shopify order line item, with cost of
@@ -377,5 +377,5 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_facebook_posts` AS
 SELECT * EXCEPT(rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id, post_id ORDER BY ingested_at DESC) AS rn
   FROM `oneeighty-warehouse.raw.raw_facebook_posts`
-  WHERE DATE(created_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE DATE(created_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ) WHERE rn = 1;

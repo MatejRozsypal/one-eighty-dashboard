@@ -4,7 +4,7 @@
  * ── One scan, everything ────────────────────────────────────────────────────
  * A snapshot needs, per metric: the current-period total, the comparison-period
  * total, and a daily series for the sparkline. The naive shape is one query per
- * metric per period. `mart.mart_daily_kpis` is a *view* over 36 months of orders
+ * metric per period. `mart.mart_daily_kpis` is a *view* over 60 months of orders
  * joined to ads data, so every query against it scans on the order of 1.5 MB per
  * day of range — measured 138 MB for a 90-day, two-client read. Twenty small
  * queries would be twenty full scans.

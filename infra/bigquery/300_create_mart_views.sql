@@ -61,7 +61,7 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_customer_lifetime` AS
 WITH shopify_order_costs AS (
   SELECT client_id, order_id, SUM(line_cost) AS order_cogs
   FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_id
 ),
 all_orders AS (
@@ -74,7 +74,7 @@ all_orders AS (
     margin_czk         AS order_margin,
     'CZK'              AS currency
   FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
     AND email IS NOT NULL AND email != ''
   UNION ALL
   -- Dobias via Shopify
@@ -88,7 +88,7 @@ all_orders AS (
     o.currency
   FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
   LEFT JOIN shopify_order_costs c USING (client_id, order_id)
-  WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
     AND o.customer_email IS NOT NULL AND o.customer_email != ''
 ),
 with_first_date AS (
@@ -225,7 +225,7 @@ WITH shopify_orders_daily AS (
     COUNTIF(is_returning_customer IS FALSE) AS new_customer_orders,
     COUNTIF(is_returning_customer IS TRUE)  AS returning_customer_orders
   FROM `oneeighty-warehouse.stg.stg_shopify_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_date, currency
 ),
 shopify_cogs_daily AS (
@@ -233,7 +233,7 @@ shopify_cogs_daily AS (
   -- bug in stg_shopify_order_items revenue field from contaminating gross_profit.
   SELECT client_id, order_date AS date, currency, SUM(line_cost) AS cogs
   FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_date, currency
 ),
 shop_daily AS (
@@ -271,7 +271,7 @@ shop_daily AS (
     COUNTIF(is_returning_customer IS FALSE) AS new_customer_orders,
     COUNTIF(is_returning_customer IS TRUE)  AS returning_customer_orders
   FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_date
 ),
 meta_daily AS (
@@ -288,7 +288,7 @@ meta_daily AS (
     SUM(clicks)         AS meta_clicks,
     SUM(reach)          AS meta_reach
   FROM `oneeighty-warehouse.stg.stg_meta_campaign_insights`
-  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, date_start
 )
 SELECT
@@ -354,7 +354,7 @@ SELECT
   SAFE_DIVIDE(SUM(margin_czk), SUM(revenue_czk)) * 100 AS margin_pct,
   'CZK' AS currency
 FROM `oneeighty-warehouse.stg.stg_shoptet_order_items`
-WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 GROUP BY client_id, order_date, item_name, variant
 
 UNION ALL
@@ -372,7 +372,7 @@ SELECT
   SAFE_DIVIDE(SUM(margin), SUM(revenue)) * 100 AS margin_pct,
   currency
 FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
-WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 GROUP BY client_id, order_date, item_name, sku, product_line, currency;
 
 -- =============================================================================
@@ -390,7 +390,7 @@ SELECT
   SUM(margin_czk)  AS margin,
   'CZK' AS currency
 FROM `oneeighty-warehouse.stg.stg_shoptet_order_items`
-WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 GROUP BY client_id, order_date, item_name
 
 UNION ALL
@@ -405,7 +405,7 @@ SELECT
   SUM(margin)   AS margin,
   currency
 FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
-WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 GROUP BY client_id, order_date, item_name, product_line, currency;
 
 -- =============================================================================
@@ -438,7 +438,7 @@ SELECT
   cancelled_at,
   processed_at
 FROM `oneeighty-warehouse.stg.stg_shopify_orders`
-WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH);
+WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH);
 
 -- =============================================================================
 -- mart_meta_campaign_perf — Facebook Ads campaign table.
@@ -465,7 +465,7 @@ SELECT
   SAFE_DIVIDE(purchase_value, purchases) AS aov_meta_per_day,
   CASE WHEN client_id='manami' THEN 'CZK' WHEN client_id='dobias' THEN 'USD' ELSE 'UNKNOWN' END AS currency
 FROM `oneeighty-warehouse.stg.stg_meta_campaign_insights`
-WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH);
+WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH);
 
 -- =============================================================================
 -- mart_meta_ad_perf — Facebook Ads ad table. Same _per_day convention.
@@ -485,7 +485,7 @@ SELECT
   SAFE_DIVIDE(purchase_value, spend) AS roas_per_day,
   CASE WHEN client_id='manami' THEN 'CZK' WHEN client_id='dobias' THEN 'USD' ELSE 'UNKNOWN' END AS currency
 FROM `oneeighty-warehouse.stg.stg_meta_ad_insights`
-WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH);
+WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH);
 
 -- =============================================================================
 -- mart_email_campaign_perf — unified Ecomail + Klaviyo campaigns.

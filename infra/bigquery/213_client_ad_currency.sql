@@ -100,13 +100,13 @@ shopify_orders_daily AS (
     COUNTIF(is_returning_customer IS FALSE) AS new_customer_orders,
     COUNTIF(is_returning_customer IS TRUE)  AS returning_customer_orders
   FROM `oneeighty-warehouse.stg.stg_shopify_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_date, currency
 ),
 shopify_cogs_daily AS (
   SELECT client_id, order_date AS date, currency, SUM(line_cost) AS cogs
   FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_date, currency
 ),
 shop_daily AS (
@@ -143,7 +143,7 @@ shop_daily AS (
     COUNTIF(is_returning_customer IS FALSE) AS new_customer_orders,
     COUNTIF(is_returning_customer IS TRUE)  AS returning_customer_orders
   FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
   GROUP BY client_id, order_date
 ),
 
@@ -165,7 +165,7 @@ meta_rows AS (
     ON  r.month_start   = DATE_TRUNC(m.date_start, MONTH)
     AND r.from_currency = c.meta_currency
     AND r.to_currency   = c.client_currency
-  WHERE m.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE m.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ),
 meta_daily AS (
   SELECT
@@ -194,7 +194,7 @@ google_rows AS (
     ON  r.month_start   = DATE_TRUNC(g.date_start, MONTH)
     AND r.from_currency = c.gads_currency
     AND r.to_currency   = c.client_currency
-  WHERE g.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)
+  WHERE g.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 ),
 google_daily AS (
   SELECT
@@ -292,7 +292,7 @@ SELECT
   c.meta_currency AS currency
 FROM `oneeighty-warehouse.stg.stg_meta_campaign_insights` i
 JOIN `oneeighty-warehouse.ref.clients` c USING (client_id)
-WHERE i.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH);
+WHERE i.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH);
 
 -- =============================================================================
 -- mart_meta_ad_perf — same change.
@@ -313,4 +313,4 @@ SELECT
   c.meta_currency AS currency
 FROM `oneeighty-warehouse.stg.stg_meta_ad_insights` i
 JOIN `oneeighty-warehouse.ref.clients` c USING (client_id)
-WHERE i.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH);
+WHERE i.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH);

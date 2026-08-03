@@ -5,19 +5,23 @@ into NEWLINE_DELIMITED_JSON matching the raw.raw_shopify_products schema
 (one row per variant, carrying the variant's cost of goods).
 
 Usage:
-    python3 shopify_products_transform.py <input.jsonl> <output.jsonl>
+    python3 shopify_products_transform.py <input.jsonl> <output.jsonl> <client_id>
 
 Input  : raw Shopify bulk JSONL. Product nodes and variant nodes on separate
          lines; a variant carries `__parentId` pointing at its product.
 Output : one JSON object per variant, fields == columns of raw.raw_shopify_products.
          Load with: bq load --source_format=NEWLINE_DELIMITED_JSON \\
                            oneeighty-warehouse:raw.raw_shopify_products <output.jsonl>
+
+`client_id` is a required argument for the same reason as in
+shopify_bulk_transform.py: it was a constant reading "dobias", which is fine
+with one client and mislabels every row of the second one.
 """
 import json
 import sys
 from datetime import datetime, timezone
 
-CLIENT_ID = "dobias"
+CLIENT_ID = None  # set from argv in main()
 INGEST_SOURCE = "backfill"
 INGESTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -62,9 +66,10 @@ def build_variant_row(product, variant):
 
 
 def main():
-    if len(sys.argv) != 3:
-        sys.exit("usage: python3 shopify_products_transform.py <input.jsonl> <output.jsonl>")
-    src, dst = sys.argv[1], sys.argv[2]
+    global CLIENT_ID
+    if len(sys.argv) != 4:
+        sys.exit("usage: python3 shopify_products_transform.py <input.jsonl> <output.jsonl> <client_id>")
+    src, dst, CLIENT_ID = sys.argv[1], sys.argv[2], sys.argv[3]
 
     stats = {"products": 0, "variants": 0, "with_cost": 0, "skipped": 0}
     cur_product = None

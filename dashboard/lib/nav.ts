@@ -49,9 +49,7 @@ export const NAV: NavGroup[] = [
       { label: "Customers", href: "/customers" },
       { label: "Time between orders", href: "/gaps" },
       { label: "Cohorts", href: "/cohorts" },
-      // Repurchase-by-first-product needs a warehouse view that doesn't exist
-      // yet; cohort repeat rate is already on the Cohorts page.
-      { label: "Repurchase breakdown", note: NOT_BUILT },
+      { label: "Repurchase", href: "/repurchase" },
     ],
   },
 ];

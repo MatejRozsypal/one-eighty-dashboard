@@ -45,3 +45,34 @@ CREATE TABLE IF NOT EXISTS app_users (
 
 CREATE UNIQUE INDEX IF NOT EXISTS app_users_email_key
   ON app_users (LOWER(email));
+
+
+-- Who saw whose data, and who tried to.
+--
+-- resolveClient() writes one row per data-page render: it is the single point
+-- every page funnels through to turn ?client= into the client it renders, so it
+-- is the only place that sees the identity, the role, what the URL asked for
+-- and what was actually served.
+--
+-- Read this as evidence, not as enforcement. A write failure is swallowed so
+-- that an unreachable database cannot take the dashboard down, which means a
+-- gap here says "we could not record", never "nobody accessed".
+CREATE TABLE IF NOT EXISTS access_log (
+  id                  BIGSERIAL PRIMARY KEY,
+  at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  email               TEXT NOT NULL,
+  role                TEXT NOT NULL,
+
+  -- 'view'    -- data for client_id was served to this account
+  -- 'refused' -- the account asked for requested_client_id and was denied
+  event               TEXT NOT NULL CHECK (event IN ('view', 'refused')),
+
+  client_id           TEXT,
+  requested_client_id TEXT,
+  detail              TEXT
+);
+
+CREATE INDEX IF NOT EXISTS access_log_at_idx ON access_log (at DESC);
+CREATE INDEX IF NOT EXISTS access_log_client_idx ON access_log (client_id, at DESC);
+CREATE INDEX IF NOT EXISTS access_log_email_idx ON access_log (LOWER(email), at DESC);
+CREATE INDEX IF NOT EXISTS access_log_refused_idx ON access_log (at DESC) WHERE event = 'refused';

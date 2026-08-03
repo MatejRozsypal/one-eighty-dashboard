@@ -21,6 +21,7 @@ import { authOptions } from "@/lib/auth";
 import { isoDate } from "@/lib/coerce";
 import { DEMO_CLIENT, DEMO_CLIENT_ID, isDemo } from "@/lib/demo/client";
 import { dataThrough as demoDataThrough } from "@/lib/demo/business";
+import { recordAccess } from "@/lib/users/accessLog";
 
 /**
  * The demo client ships switched on. It is invisible to anyone with the
@@ -161,10 +162,13 @@ export async function resolveClient(
   // asks for. Change `?client=` to a different id and this still returns theirs.
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? null;
+  const email = session?.user?.email ?? "unknown";
 
   if (role === "agency" || role === "admin") {
     // Internal roles may view any client; an unknown/blank id falls back.
-    return clients.find((c) => c.clientId === requested) ?? clients[0];
+    const served = clients.find((c) => c.clientId === requested) ?? clients[0];
+    await audit({ email, role, event: "view", clientId: served.clientId });
+    return served;
   }
 
   // `client` role — and, fail-closed, anything else that reaches here — is
@@ -179,19 +183,46 @@ export async function resolveClient(
     );
   }
 
-  // Record the refusal. Preventing the read is the security requirement;
-  // being able to say afterwards whether anyone tried is the compliance one,
-  // and an NDA conversation goes very differently when the answer is evidenced
-  // rather than assumed. Only genuine cross-client attempts are logged — a
-  // blank or already-correct `?client=` is ordinary navigation, not an attempt.
-  if (requested && requested !== ownId) {
+  // A `?client=` naming somebody else is the event worth keeping. Preventing
+  // the read is the security requirement; being able to say afterwards whether
+  // anyone tried is the compliance one, and an NDA conversation goes very
+  // differently when the answer is evidenced rather than assumed. A blank or
+  // already-correct id is ordinary navigation, not an attempt.
+  const attempted = Boolean(requested && requested !== ownId);
+  if (attempted) {
     console.warn(
-      `[authz] REFUSED cross-client access: ${session?.user?.email ?? "unknown"} ` +
+      `[authz] REFUSED cross-client access: ${email} ` +
         `(client=${ownId}) requested client=${requested}`
     );
   }
 
+  await audit({
+    email,
+    role: role ?? "none",
+    event: attempted ? "refused" : "view",
+    clientId: own.clientId,
+    requestedClientId: attempted ? requested : null,
+  });
+
   return own;
+}
+
+/**
+ * Write one access-log row, never letting it break the page.
+ *
+ * The demo client is skipped: its figures are invented, so a record of who
+ * looked at them is noise in a table whose whole value is that every row in it
+ * concerns real client data.
+ */
+async function audit(entry: {
+  email: string;
+  role: string;
+  event: "view" | "refused";
+  clientId: string;
+  requestedClientId?: string | null;
+}): Promise<void> {
+  if (isDemo(entry.clientId)) return;
+  await recordAccess(entry);
 }
 
 // ---------------------------------------------------------------------------

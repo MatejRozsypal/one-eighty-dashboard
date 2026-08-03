@@ -31,7 +31,7 @@ export default async function EmailPage({
   const client = await resolveClient(params.clientId, clients);
   const [summary, flows] = await Promise.all([
     getEmailSummary(client.clientId, params.range, 30),
-    getFlows(client.clientId, client.currency),
+    getFlows(client.clientId, client.currency, params.range),
   ]);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
@@ -232,14 +232,34 @@ export default async function EmailPage({
           <section className="flex flex-col gap-4 overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
             <div className="flex flex-col gap-4 px-5 pt-5">
               <div className="flex flex-col gap-[5px]">
-                <Eyebrow>Flows · mart_email_flow_perf</Eyebrow>
+                <Eyebrow>Flows · mart_email_flow_daily</Eyebrow>
                 <span className="text-[12.5px] leading-[1.5] text-content-muted">
-                  Automated flows, <b>lifetime to date</b> — not the selected
-                  range. Klaviyo and Ecomail both report a flow&apos;s totals
-                  since it was switched on, so there is no period to filter to.
-                  {flows.snapshotDate && ` Snapshot ${flows.snapshotDate}.`}
+                  Automated flows over the selected range, on the same basis as
+                  the campaigns above, so the two can be compared.
                 </span>
               </div>
+
+              {/*
+                The figures are withheld rather than approximated when the daily
+                series does not reach the range. This panel previously showed
+                each flow's total since switch-on, which read as a period figure
+                and was out by 13x — the honest answer to "what did flows earn
+                in July" is that this pipeline cannot currently say.
+              */}
+              {!flows.coverage.covered && (
+                <div className="rounded-card border border-warning/40 bg-[#FFFBF2] p-[14px_16px] text-[12.5px] leading-relaxed text-content-strong">
+                  <b>No flow data for this range.</b> The daily flow series
+                  stops at{" "}
+                  <b>{flows.coverage.lastAvailable ?? "no data at all"}</b>,
+                  and you asked for {flows.coverage.requestedFrom} to{" "}
+                  {flows.coverage.requestedTo}. Klaviyo&apos;s snapshot of each
+                  flow&apos;s <i>lifetime</i> totals is still arriving, but
+                  showing that here would put two years of flow history beside
+                  one month of campaigns. Pick a range ending on or before{" "}
+                  {flows.coverage.lastAvailable ?? "—"}, or fix the ingest —
+                  runbook 25.
+                </div>
+              )}
 
               <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4">
                 {[

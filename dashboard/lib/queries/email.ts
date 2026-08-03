@@ -154,6 +154,16 @@ export interface FlowRow {
   revenuePerEmail: number | null;
 }
 
+/** Whether the daily flow series actually reaches the range being asked about. */
+export interface FlowCoverage {
+  requestedFrom: string;
+  requestedTo: string;
+  /** Last day the daily series holds for this client. Null when it holds none. */
+  lastAvailable: string | null;
+  /** True when the series covers the requested range. */
+  covered: boolean;
+}
+
 export interface FlowSummary {
   flows: FlowRow[];
   totalRevenue: number | null;
@@ -163,31 +173,99 @@ export interface FlowSummary {
   openRate: number | null;
   clickRate: number | null;
   snapshotDate: string | null;
+  coverage: FlowCoverage;
 }
 
+/**
+ * Flow performance for the selected range.
+ *
+ * ── Why this reads the daily series, not the flow snapshot ──────────────────
+ * `mart_email_flow_perf` holds each flow's totals *since it was switched on*,
+ * snapshotted whenever the sync last ran. Reading it for a page that carries a
+ * date range produced the failure this function exists to prevent: Dobias
+ * showed $253k of "flow revenue" for 4 Jul – 2 Aug beside $76k of campaign
+ * revenue for the same window. Checked against Klaviyo's own flow-values report
+ * for those dates, the true figure is **$19.2k** — the dashboard was over by
+ * 13x, and had the ranking backwards, because it was comparing two years of
+ * flow history against one month of campaigns.
+ *
+ * It was worse than a stale number. Two of the largest rows were snapshotted on
+ * 2026-06-12 and carried `manual` and `draft` status — flows that are not even
+ * running contributed roughly $101k of that total.
+ *
+ * The page used to explain this away with "Klaviyo reports a flow's totals
+ * since it was switched on, so there is no period to filter to". That is simply
+ * untrue: Klaviyo's flow-series and flow-values-report endpoints are both
+ * timeframe-scoped, and `mart_email_flow_daily` already exists to hold the
+ * former.
+ *
+ * ── Why an uncovered range returns nulls rather than a fallback ─────────────
+ * The daily series is currently only fed to 2026-06-20 — its n8n node stopped
+ * writing while the snapshot node kept running. When the requested range is not
+ * covered, this returns the coverage window and no figures, so the page can say
+ * what it does not know. Falling back to the snapshot is exactly the bug; and
+ * zero would claim the flows earned nothing, which is a different lie.
+ */
 export async function getFlows(
   clientId: string,
-  currency: string
+  currency: string,
+  range: DateRange
 ): Promise<FlowSummary | null> {
   // Demo client: served from memory, never from the warehouse.
-  if (isDemo(clientId)) return demoFlows();
+  if (isDemo(clientId)) return demoFlows(range);
 
   try {
-    const rows = await query<Record<string, unknown>>(
-      `SELECT flow_id, flow_name, platform, status, latest_snapshot_date,
-              emails_sent, delivered_approx, unique_opens, unique_clicks,
-              conversions, revenue
-       FROM \`${PROJECT_ID}.mart.mart_email_flow_perf\`
-       WHERE client_id = @clientId AND currency = @currency
-       ORDER BY revenue DESC NULLS LAST`,
+    const coverageRows = await query<Record<string, unknown>>(
+      `SELECT CAST(MAX(metric_date) AS STRING) AS last_available
+       FROM \`${PROJECT_ID}.mart.mart_email_flow_daily\`
+       WHERE client_id = @clientId AND currency = @currency`,
       { clientId, currency }
     );
+    const lastAvailable =
+      (coverageRows[0]?.last_available as string | null) ?? null;
 
-    if (rows.length === 0) return null;
+    const coverage: FlowCoverage = {
+      requestedFrom: range.from,
+      requestedTo: range.to,
+      lastAvailable,
+      // Partial cover is treated as no cover on purpose. A range half-filled
+      // with real days and half with silence sums to a number that looks like
+      // a period total and is not one.
+      covered: lastAvailable !== null && lastAvailable >= range.to,
+    };
+
+    if (!coverage.covered) {
+      return {
+        flows: [],
+        totalRevenue: null,
+        totalConversions: null,
+        totalEmails: null,
+        openRate: null,
+        clickRate: null,
+        snapshotDate: lastAvailable,
+        coverage,
+      };
+    }
+
+    const rows = await query<Record<string, unknown>>(
+      `SELECT flow_id,
+              ANY_VALUE(flow_name)  AS flow_name,
+              ANY_VALUE(status)     AS status,
+              SUM(emails_sent)      AS emails_sent,
+              SUM(unique_opens)     AS unique_opens,
+              SUM(unique_clicks)    AS unique_clicks,
+              SUM(conversions)      AS conversions,
+              SUM(revenue)          AS revenue
+       FROM \`${PROJECT_ID}.mart.mart_email_flow_daily\`
+       WHERE client_id = @clientId AND currency = @currency
+         AND metric_date BETWEEN @from AND @to
+       GROUP BY flow_id
+       ORDER BY revenue DESC NULLS LAST`,
+      { clientId, currency, from: range.from, to: range.to }
+    );
 
     const flows: FlowRow[] = rows.map((r) => {
       const sent = num(r.emails_sent);
-      const delivered = num(r.delivered_approx);
       const opens = num(r.unique_opens);
       const clicks = num(r.unique_clicks);
       const conversions = num(r.conversions);
@@ -196,19 +274,18 @@ export async function getFlows(
       return {
         flowId: String(r.flow_id ?? ""),
         flowName: String(r.flow_name ?? "—"),
-        platform: String(r.platform ?? ""),
+        platform: "klaviyo",
         status: r.status === null ? null : String(r.status),
         emailsSent: sent,
-        delivered,
+        // The daily series carries sends, not deliveries. Rates are therefore
+        // against sends and named as such rather than quietly relabelled.
+        delivered: sent,
         uniqueOpens: opens,
         uniqueClicks: clicks,
-        // Rates are recomputed from the counts. The view carries its own
-        // *_pct columns, but those are per-flow ratios and averaging them
-        // across flows weights a 2-send flow like a 40,000-send one.
-        openRate: safeDiv(opens, delivered),
-        clickRate: safeDiv(clicks, delivered),
+        openRate: safeDiv(opens, sent),
+        clickRate: safeDiv(clicks, sent),
         conversions,
-        conversionRate: safeDiv(conversions, delivered),
+        conversionRate: safeDiv(conversions, sent),
         revenue,
         revenuePerEmail: safeDiv(revenue, sent),
       };
@@ -220,16 +297,17 @@ export async function getFlows(
         null
       );
 
-    const delivered = sum((f) => f.delivered);
+    const sent = sum((f) => f.emailsSent);
 
     return {
       flows,
       totalRevenue: sum((f) => f.revenue),
       totalConversions: sum((f) => f.conversions),
-      totalEmails: sum((f) => f.emailsSent),
-      openRate: safeDiv(sum((f) => f.uniqueOpens), delivered),
-      clickRate: safeDiv(sum((f) => f.uniqueClicks), delivered),
-      snapshotDate: isoDate(rows[0]?.latest_snapshot_date as never),
+      totalEmails: sent,
+      openRate: safeDiv(sum((f) => f.uniqueOpens), sent),
+      clickRate: safeDiv(sum((f) => f.uniqueClicks), sent),
+      snapshotDate: lastAvailable,
+      coverage,
     };
   } catch (error) {
     if (!isMissingObject(error)) throw error;

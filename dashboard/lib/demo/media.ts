@@ -246,8 +246,10 @@ export function demoEmailSummary(
  * Flows are cumulative and not range-bound, matching the real page: Klaviyo's
  * flow series is a lifetime snapshot, so a date filter would misrepresent it.
  */
-export function demoFlows(): FlowSummary | null {
-  const rows = days(addDays(dataThrough(), -364), dataThrough());
+export function demoFlows(range: DateRange): FlowSummary | null {
+  // Range-filtered like the real path now is — the demo has a daily spine, so
+  // it can answer for a period rather than reporting life-to-date.
+  const rows = days(range.from, range.to);
   const revenue = sum(rows, (d) => d.revenue);
   const flowRevenue = revenue * EMAIL_REVENUE_SHARE * FLOW_SHARE_OF_EMAIL;
 
@@ -291,5 +293,11 @@ export function demoFlows(): FlowSummary | null {
     openRate: div(totalOpens, totalDelivered),
     clickRate: div(totalClicks, totalDelivered),
     snapshotDate: dataThrough(),
+    coverage: {
+      requestedFrom: range.from,
+      requestedTo: range.to,
+      lastAvailable: dataThrough(),
+      covered: true,
+    },
   };
 }

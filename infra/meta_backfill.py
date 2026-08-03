@@ -57,7 +57,17 @@ def secret(name):
 
 
 def num(v):
+    """NUMERIC columns: spend, frequency, ctr, cpc, purchase_value, purchase_roas."""
     return None if v in (None, "") else float(v)
+
+
+def intg(v):
+    """INT64 columns. Must not emit 18234.0 -- BigQuery rejects a decimal point
+    in an INT64 load and the job fails *after* `bq load` prints 'Upload
+    complete', so the failure is easy to read as success. The workflow this
+    mirrors is JavaScript, where Number() serialises integers without a decimal
+    part and the distinction never arises."""
+    return None if v in (None, "") else int(float(v))
 
 
 def pick(arr, action_type):
@@ -68,6 +78,11 @@ def pick(arr, action_type):
         if row.get("action_type") == action_type:
             return float(row["value"])
     return None
+
+
+def as_int(v):
+    """Action counts come back through pick() as floats; the columns are INT64."""
+    return None if v is None else int(v)
 
 
 def fetch(url):
@@ -86,23 +101,23 @@ def build_row(r, client_id, ad_account, ingested_at):
         "date_start":        r.get("date_start"),
         "date_stop":         r.get("date_stop"),
         "spend":             num(r.get("spend")),
-        "impressions":       num(r.get("impressions")),
-        "reach":             num(r.get("reach")),
+        "impressions":       intg(r.get("impressions")),
+        "reach":             intg(r.get("reach")),
         "frequency":         num(r.get("frequency")),
-        "clicks":            num(r.get("clicks")),
+        "clicks":            intg(r.get("clicks")),
         "ctr":               num(r.get("ctr")),
         "cpc":               num(r.get("cpc")),
-        "purchases":         pick(r.get("actions"), "omni_purchase")
-                             if pick(r.get("actions"), "omni_purchase") is not None
-                             else pick(r.get("actions"), "purchase"),
+        "purchases":         as_int(pick(r.get("actions"), "omni_purchase")
+                                    if pick(r.get("actions"), "omni_purchase") is not None
+                                    else pick(r.get("actions"), "purchase")),
         "purchase_value":    pick(r.get("action_values"), "omni_purchase")
                              if pick(r.get("action_values"), "omni_purchase") is not None
                              else pick(r.get("action_values"), "purchase"),
-        "add_to_cart":       pick(r.get("actions"), "add_to_cart"),
-        "initiate_checkout": pick(r.get("actions"), "initiate_checkout"),
-        "landing_page_views": pick(r.get("actions"), "landing_page_view"),
-        "link_clicks":       pick(r.get("actions"), "link_click"),
-        "video_views":       pick(r.get("actions"), "video_view"),
+        "add_to_cart":       as_int(pick(r.get("actions"), "add_to_cart")),
+        "initiate_checkout": as_int(pick(r.get("actions"), "initiate_checkout")),
+        "landing_page_views": as_int(pick(r.get("actions"), "landing_page_view")),
+        "link_clicks":       as_int(pick(r.get("actions"), "link_click")),
+        "video_views":       as_int(pick(r.get("actions"), "video_view")),
         "purchase_roas":     pick(r.get("purchase_roas"), "omni_purchase"),
         "actions":           json.dumps(r.get("actions") or []),
         "action_values":     json.dumps(r.get("action_values") or []),

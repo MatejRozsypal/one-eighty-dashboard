@@ -13,7 +13,7 @@
  */
 
 import type { Metadata } from "next";
-import { getClients, detectRegistryDrift } from "@/lib/clients";
+import { getClientsIncludingInactive, detectRegistryDrift } from "@/lib/clients";
 import { getSourceFreshness, getPipelineRuns } from "@/lib/queries/health";
 import { KNOWN_CAVEATS } from "@/lib/metrics";
 import { optional } from "@/lib/queries/errors";
@@ -45,6 +45,10 @@ const STATUS_BADGE = {
   late: { variant: "neutral" as const, label: "Late" },
   stale: { variant: "negative" as const, label: "Stale" },
   blocked: { variant: "outline" as const, label: "Blocked" },
+  // Not a fault: no workflow fetches for a client that is not active, so the
+  // data is frozen deliberately. It still has to be visible — a client parked
+  // mid-onboarding was previously seen by nothing at all.
+  paused: { variant: "outline" as const, label: "Not live" },
 };
 
 function fmtDate(iso: string | null): string {
@@ -63,11 +67,14 @@ export default async function HealthPage() {
   // an NDA, even the roster of who else is a customer is not theirs to see.
   await requireInternalRole();
 
-  const clients = await getClients();
+  const clients = await getClientsIncludingInactive();
 
   const [freshness, drift, runs] = await Promise.all([
     getSourceFreshness(clients),
-    optional(() => detectRegistryDrift(clients), []),
+    optional(
+      () => detectRegistryDrift(clients.filter((c) => c.status === "active")),
+      []
+    ),
     getPipelineRuns(12),
   ]);
 
@@ -138,13 +145,27 @@ export default async function HealthPage() {
                   const badge = STATUS_BADGE[s.status];
                   // Worst first when sorted descending — the point of sorting
                   // this column is to find what is broken, not to alphabetise.
-                  const severity = { blocked: 3, stale: 2, late: 1, ok: 0 }[s.status];
+                  // Worst first, with "not live" below OK: it is information,
+                  // not a defect, and sorting it to the top would bury the rows
+                  // that actually need attention.
+                  const severity = {
+                    blocked: 3,
+                    stale: 2,
+                    late: 1,
+                    ok: 0,
+                    paused: -1,
+                  }[s.status];
                   return {
                     key: `${s.clientId}-${s.source}`,
                     sort: [s.clientName, s.source, s.lastDate, s.expected, severity],
                     cells: [
                       <span className="text-[13px] text-content-body">
                         {s.clientName}
+                        {s.clientStatus !== "active" && (
+                          <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.08em] text-content-muted">
+                            {s.clientStatus}
+                          </span>
+                        )}
                       </span>,
                       <span className="inline-flex items-center gap-2 font-mono text-[11.5px] uppercase tracking-[0.04em] text-content-strong">
                         <span

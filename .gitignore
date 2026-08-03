@@ -52,3 +52,10 @@ venv/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Compiled JS must never sit beside the TypeScript in lib/. Webpack resolves
+# .js before .ts, so a leftover build artifact shadows the real module and the
+# app silently runs stale code — the import simply "disappears" from a module
+# that plainly exports it.
+dashboard/lib/**/*.js
+dashboard/components/**/*.js

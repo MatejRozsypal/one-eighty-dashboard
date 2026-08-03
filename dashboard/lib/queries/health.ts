@@ -31,7 +31,7 @@ function demoLastEmailSend(): string {
 }
 
 
-export type FreshnessStatus = "ok" | "late" | "stale" | "blocked";
+export type FreshnessStatus = "ok" | "late" | "stale" | "blocked" | "paused";
 
 export interface SourceFreshness {
   clientId: string;
@@ -45,6 +45,12 @@ export interface SourceFreshness {
   toleranceDays: number;
   status: FreshnessStatus;
   note?: string;
+  /**
+   * Registry status of the client this row belongs to. Anything other than
+   * "active" means no workflow is fetching for them, so a stale date here is
+   * expected rather than a fault — and the page has to say which it is.
+   */
+  clientStatus: string;
 }
 
 interface FreshnessRow {
@@ -63,8 +69,16 @@ function daysBehind(lastDate: string | null, today: string): number | null {
 function classify(
   lastDate: string | null,
   toleranceDays: number,
-  today: string
+  today: string,
+  /**
+   * Non-active clients are skipped by every ingest workflow, so their data is
+   * frozen on purpose. Reporting that as "stale" would put a red row on the
+   * board for something nobody needs to fix, and real faults would learn to be
+   * ignored beside it.
+   */
+  clientActive = true
 ): FreshnessStatus {
+  if (!clientActive) return "paused";
   if (!lastDate) return "blocked";
   const behind = daysBehind(lastDate, today);
   if (behind === null) return "blocked";
@@ -74,7 +88,7 @@ function classify(
 }
 
 export async function getSourceFreshness(
-  clients: Client[]
+  clients: Array<Client & { status?: string }>
 ): Promise<SourceFreshness[]> {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -119,7 +133,12 @@ export async function getSourceFreshness(
 
   for (const client of clients) {
     const row = rows.find((r) => r.client_id === client.clientId);
-    const base = { clientId: client.clientId, clientName: client.name };
+    const active = (client.status ?? "active") === "active";
+    const base = {
+      clientId: client.clientId,
+      clientName: client.name,
+      clientStatus: client.status ?? "active",
+    };
 
     if (client.capabilities.shopify || client.capabilities.shoptet) {
       const platform = client.capabilities.shopify ? "Shopify" : "Shoptet";
@@ -131,7 +150,7 @@ export async function getSourceFreshness(
         lastDate: last,
         expected: "Same day",
         toleranceDays: 1,
-        status: classify(last, 1, today),
+        status: classify(last, 1, today, active),
       });
     }
 
@@ -144,7 +163,7 @@ export async function getSourceFreshness(
         lastDate: last,
         expected: "D-1",
         toleranceDays: 2,
-        status: classify(last, 2, today),
+        status: classify(last, 2, today, active),
       });
     }
 
@@ -160,7 +179,7 @@ export async function getSourceFreshness(
         lastDate: googleLast,
         expected: "D-1",
         toleranceDays: 2,
-        status: classify(googleLast, 2, today),
+        status: classify(googleLast, 2, today, active),
       });
     }
 
@@ -175,7 +194,7 @@ export async function getSourceFreshness(
         lastDate: last,
         expected: "On send",
         toleranceDays: 21,
-        status: classify(last, 21, today),
+        status: classify(last, 21, today, active),
       });
 
       // Subscriber series has never landed — the backfill is blocked on a

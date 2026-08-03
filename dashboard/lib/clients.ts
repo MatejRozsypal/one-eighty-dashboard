@@ -105,11 +105,41 @@ function toClient(row: ClientRow): Client {
 }
 
 /**
+ * Every client the registry holds, including ones not yet live.
+ *
+ * ── Why this is separate, and who may call it ───────────────────────────────
+ * `getClients()` returns only `status = 'active'`, which is correct: an
+ * onboarding client must not appear in the switcher or be resolvable from a
+ * URL. But every ingest workflow filters on the same flag, so a client parked
+ * at 'onboarding' is skipped by the pipelines *and* invisible to the page whose
+ * entire job is noticing that data stopped arriving. Venev sat 41 days stale
+ * that way, seen by nothing.
+ *
+ * This is therefore for the Data Health page only — an internal-only screen —
+ * and it deliberately does NOT append the demo client or feed `resolveClient`.
+ * Widening the confinement gate is not what this is for.
+ */
+export async function getClientsIncludingInactive(): Promise<
+  Array<Client & { status: string }>
+> {
+  const rows = await query<ClientRow>(
+    `SELECT client_id, name, currency, timezone, country,
+            shop_platform, email_platform, status,
+            has_shopify, has_shoptet, has_klaviyo, has_ecomail,
+            has_meta, has_gads, has_ga4, has_instagram,
+            klaviyo_conversion_metric_id, klaviyo_subscriber_segment_id
+     FROM \`${PROJECT_ID}.ref.clients\`
+     ORDER BY name`
+  );
+  return rows.map((r) => ({ ...toClient(r), status: r.status }));
+}
+
+/**
  * Every active client, ordered for the switcher.
  *
- * Tiny table (2 rows today), queried on nearly every request. Cached for an hour
- * because a client's currency or platform changes roughly never, and a stale
- * hour on that is harmless where a stale hour on revenue would not be.
+ * Tiny table, queried on nearly every request. A client's currency or platform
+ * changes roughly never, so a stale minute on this is harmless where a stale
+ * minute on revenue would not be.
  */
 export async function getClients(): Promise<Client[]> {
   const rows = await query<ClientRow>(

@@ -108,31 +108,7 @@ CREATE TABLE IF NOT EXISTS client_settings (
   updated_by            TEXT
 );
 
--- Who saw whose data, and who tried to.
---
--- Preventing a cross-client read is the security requirement; being able to
--- answer "did anyone ever reach our numbers" months later is the compliance
--- one, and under an NDA that question gets asked. Console logs live in Vercel's
--- retention window and cannot be queried, so the record goes here.
-CREATE TABLE IF NOT EXISTS access_log (
-  id                  BIGSERIAL PRIMARY KEY,
-  at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  email               TEXT NOT NULL,
-  role                TEXT NOT NULL,
-  -- 'view'    -- data for client_id was served to this account
-  -- 'refused' -- the account asked for requested_client_id and was denied
-  event               TEXT NOT NULL CHECK (event IN ('view', 'refused')),
-  -- The client actually served. NULL only when nothing was.
-  client_id           TEXT,
-  -- What the URL asked for, recorded only when it differs from what was served.
-  requested_client_id TEXT,
-  detail              TEXT
-);
-CREATE INDEX IF NOT EXISTS access_log_at_idx ON access_log (at DESC);
-CREATE INDEX IF NOT EXISTS access_log_client_idx ON access_log (client_id, at DESC);
-CREATE INDEX IF NOT EXISTS access_log_email_idx ON access_log (LOWER(email), at DESC);
--- Refusals are the rows anyone will actually go looking for.
-CREATE INDEX IF NOT EXISTS access_log_refused_idx ON access_log (at DESC) WHERE event = 'refused';
+
 `;
 
 const globalForSchema = globalThis as unknown as { oeSchemaReady?: Promise<void> };

@@ -30,8 +30,54 @@ import "server-only";
  * accessed". Anyone reading it for an audit needs to know that.
  */
 
-import { sql } from "@/lib/users/db";
-import { userStoreConfigured } from "@/lib/users/db";
+import { sql, userStoreConfigured } from "@/lib/users/db";
+
+/**
+ * This table's DDL is deliberately NOT in `db.ts`'s shared schema.
+ *
+ * That schema is applied before every single Postgres query, including the one
+ * that authenticates a sign-in. A mistake in DDL living there takes the whole
+ * application down — nobody can log in — which is a wildly disproportionate
+ * blast radius for an audit table. Created here instead, behind its own
+ * try/catch, the worst case is that logging is unavailable while the dashboard
+ * carries on working.
+ */
+const DDL = `
+CREATE TABLE IF NOT EXISTS access_log (
+  id                  BIGSERIAL PRIMARY KEY,
+  at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  email               TEXT NOT NULL,
+  role                TEXT NOT NULL,
+  event               TEXT NOT NULL CHECK (event IN ('view', 'refused')),
+  client_id           TEXT,
+  requested_client_id TEXT,
+  detail              TEXT
+);
+CREATE INDEX IF NOT EXISTS access_log_at_idx ON access_log (at DESC);
+CREATE INDEX IF NOT EXISTS access_log_client_idx ON access_log (client_id, at DESC);
+CREATE INDEX IF NOT EXISTS access_log_email_idx ON access_log (LOWER(email), at DESC);
+CREATE INDEX IF NOT EXISTS access_log_refused_idx ON access_log (at DESC) WHERE event = 'refused';
+`;
+
+const globalForLog = globalThis as unknown as { oeAccessLogReady?: Promise<boolean> };
+
+/** Ensure the table exists. Resolves false when it could not be created. */
+function ensureTable(): Promise<boolean> {
+  if (!globalForLog.oeAccessLogReady) {
+    globalForLog.oeAccessLogReady = sql(DDL)
+      .then(() => true)
+      .catch((error: unknown) => {
+        const code = (error as { code?: string })?.code;
+        // Two lambdas racing on CREATE ... IF NOT EXISTS: the loser sees a
+        // duplicate-object error, which is the race resolving correctly.
+        if (code === "23505" || code === "42P07" || code === "42710") return true;
+        console.error("[accessLog] could not create access_log", error);
+        globalForLog.oeAccessLogReady = undefined;
+        return false;
+      });
+  }
+  return globalForLog.oeAccessLogReady;
+}
 
 export type AccessEvent = "view" | "refused";
 
@@ -48,6 +94,7 @@ export interface AccessEntry {
 
 export async function recordAccess(entry: AccessEntry): Promise<void> {
   if (!userStoreConfigured()) return;
+  if (!(await ensureTable())) return;
 
   try {
     await sql(
@@ -116,6 +163,8 @@ export async function listAccessLog(options: {
 
   params.push(Math.min(limit, 500));
 
+  if (!(await ensureTable())) return [];
+
   const rows = await sql<Row>(
     `SELECT id, at, email, role, event, client_id, requested_client_id, detail
        FROM access_log
@@ -139,6 +188,8 @@ export async function listAccessLog(options: {
 
 /** Count of refusals in the last N days — the number worth alerting on. */
 export async function countRecentRefusals(days = 30): Promise<number> {
+  if (!(await ensureTable())) return 0;
+
   const rows = await sql<{ n: string }>(
     `SELECT COUNT(*)::text AS n FROM access_log
       WHERE event = 'refused' AND at >= NOW() - ($1 || ' days')::interval`,

@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/Badge";
 import { DataTable } from "@/components/ui/DataTable";
 import { formatNumber } from "@/lib/currency";
 import { requireInternalRole } from "@/lib/authz";
+import { SettingsTabs } from "@/components/settings/SettingsTabs";
 
 export const metadata: Metadata = { title: "Data Health" };
 // Rendered per request: every page is behind auth and parameterised by the URL,
@@ -77,7 +78,8 @@ export default async function HealthPage() {
 
   return (
     <>
-      <Header eyebrow="Admin" title="Data Health" />
+      <Header eyebrow="Settings" title="Data Health" />
+      <SettingsTabs />
 
       <main className="flex max-w-[1240px] flex-col gap-[22px] px-5 pb-14 pt-6 lg:px-8">
         {drift.length > 0 && (

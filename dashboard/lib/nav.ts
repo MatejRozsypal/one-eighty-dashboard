@@ -28,6 +28,7 @@ export const NAV: NavGroup[] = [
     label: "Profitability",
     items: [
       { label: "Snapshot", href: "/snapshot" },
+      { label: "Goals", href: "/goals" },
       { label: "Growth (MoM)", href: "/growth" },
       { label: "Orders", href: "/orders" },
       { label: "Products", href: "/products" },
@@ -53,14 +54,17 @@ export const NAV: NavGroup[] = [
       { label: "Repurchase breakdown", note: NOT_BUILT },
     ],
   },
-  {
-    label: "Admin",
-    items: [
-      { label: "Data Health", href: "/health", adminOnly: true },
-      { label: "Users & access", href: "/admin", adminOnly: true },
-    ],
-  },
 ];
+
+/**
+ * Settings lives behind the gear in the sidebar footer, not in this tree.
+ *
+ * It was two rows in an "Admin" group — Data Health and Users & access — which
+ * put internal plumbing in the same list as the pages a client reads, and gave
+ * the flat all-users screen equal billing with the analysis. Everything
+ * configurable now hangs off one icon and is organised by client inside it.
+ */
+export const SETTINGS_HREF = "/settings";
 
 /** Eyebrow shown above the page title, e.g. "Profitability · Dr. Dobias". */
 export function pageEyebrow(pathname: string, clientName: string): string {

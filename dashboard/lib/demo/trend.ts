@@ -25,6 +25,7 @@ interface DemoMonth {
   year: number;
   month: number;
   revenue: number;
+  orders: number;
   newCustomerOrders: number;
   newCustomerRevenue: number;
   cm3: number;
@@ -49,6 +50,7 @@ export function demoMonths(): DemoMonth[] {
         year,
         month,
         revenue: r2(list.reduce((a, d) => a + d.revenue, 0)),
+        orders: list.reduce((a, d) => a + d.orders, 0),
         newCustomerOrders: list.reduce((a, d) => a + d.newCustomerOrders, 0),
         newCustomerRevenue: r2(list.reduce((a, d) => a + d.newCustomerRevenue, 0)),
         cm3: r2(list.reduce((a, d) => a + d.cm3, 0)),

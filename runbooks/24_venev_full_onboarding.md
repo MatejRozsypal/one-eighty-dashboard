@@ -232,6 +232,40 @@ missing and the export is a two-month sample wearing a four-year label.
 
 ---
 
+## §3.5 — What the loaded data actually says
+
+4,167 orders landed, all EUR, **2022-07-08 → 2026-06-25**, every one carrying
+refund data. Two things in it need a decision rather than a fix:
+
+**The store is close to dormant.** Orders by year: 2022 → 1,669 (€70k), 2023 →
+2,010 (€86k), 2024 → 400 (€20k), 2025 → 59 (€2.9k), 2026 → 29 (€1.9k). The last
+order is 25 June 2026. AOV ≈ €42. Meanwhile the Meta ad account is ACTIVE. An
+active advertiser with five orders a month is either a business that has wound
+down, or — more likely — **the wrong store**: `venevcosmetics.myshopify.com` may
+be a legacy shop while the live one sits elsewhere. Confirm before building
+anything on these numbers.
+
+**70% of the history cannot reach the dashboard.** Every `stg` and `mart` view
+filters `WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 36 MONTH)`. Of
+Venev's 4,167 orders, **2,936 (€119,375 of €181,250) fall outside that window** —
+they are in `raw`, correct and complete, and invisible to everything downstream.
+For Venev specifically the cut removes 2022 and most of 2023, which are its two
+best years; the dashboard would show a brand that was always small rather than
+one that shrank.
+
+Widening the window to 60 months is a one-line change repeated across
+`200_create_stg_views.sql`, `203`, `213`, `214` and `300_create_mart_views.sql`.
+The cost is scan volume: `mart_daily_kpis` already reads ~150 MB per query, and
+that grows roughly with the window.
+
+**Also inherited, affecting every client:** revenue includes orders in every
+`financial_status`. For Venev that is 346 VOIDED (€15.7k) and 742 PENDING
+(€32.5k) against 2,694 PAID (€113.9k) — roughly 10% of gross revenue is voided
+orders. Whether that is right is a modelling question older than this onboarding,
+but Venev's ratio makes it visible.
+
+---
+
 ## §4 — The currency split (NOT yet built)
 
 Shopify bills Venev in EUR, Meta in CZK, and `mart_daily_kpis` carries **one**

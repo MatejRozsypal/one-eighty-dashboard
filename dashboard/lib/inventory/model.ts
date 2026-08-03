@@ -126,6 +126,25 @@ export function assignGrades(rows: InventoryRow[]): void {
   }
 }
 
+/**
+ * Days of cover, written so a human can read it.
+ *
+ * Cover is stock ÷ velocity, and on a nearly-dead SKU the denominator collapses:
+ * Venev's "VENEV set" holds 1,012 units against 5 sold in a quarter, which is
+ * 91,080 days. Printing that verbatim is technically honest and practically
+ * useless — six digits of false precision that make the page look broken.
+ *
+ * Past two years the exact figure carries no information anyway: everything up
+ * there means "this will not sell through in any planning horizon", and for a
+ * cosmetics SKU it means "this expires first".
+ */
+export function formatCover(days: number | null): string {
+  if (days === null) return "—";
+  if (days < 730) return `${Math.round(days)} days`;
+  const years = days / 365;
+  return years >= 100 ? "100+ years" : `${Math.round(years)} years`;
+}
+
 export interface Exception {
   sku: string;
   itemName: string;
@@ -163,14 +182,14 @@ export function buildExceptions(rows: InventoryRow[]): Exception[] {
         abc: row.abc,
         action: cover <= 0 ? "Out of stock" : "Reorder",
         severity: row.abc === "A" ? "high" : "normal",
-        stake: row.margin ?? 0,
+        stake: annualisedContribution(row),
         evidence:
           cover <= 0
             ? `Nothing on hand, but it sold ${n(row.unitsSold)} units and made ` +
               `${n(row.margin)} in margin over the 90 days to the count. Either it ` +
               `stocked out or inventory tracking is off for it — worth confirming ` +
               `which, because only one of those is an emergency.`
-            : `${n(cover)} days of cover at ${row.velocityPerDay.toFixed(1)} ` +
+            : `${formatCover(cover)} of cover at ${row.velocityPerDay.toFixed(1)} ` +
               `units/day. Any supplier lead time longer than that means the ` +
               `stockout is already unavoidable — and advertising into it spends ` +
               `CAC on an empty shelf.`,
@@ -178,22 +197,24 @@ export function buildExceptions(rows: InventoryRow[]): Exception[] {
     }
 
     if (state === "overstocked" || state === "dead") {
-      const value = row.stockValueAtCost ?? 0;
-      if (value <= 0) continue;
+      const releasable = releasableCash(row);
+      if (releasable <= 0) continue;
       candidates.push({
         sku: row.sku,
         itemName: row.itemName,
         abc: row.abc,
         action: state === "dead" ? "Dead stock" : "Mark down",
         severity: "normal",
-        stake: value,
+        stake: releasable,
         evidence:
           state === "dead"
             ? `${n(row.onHand)} units on hand and nothing sold in 90 days — ` +
-              `roughly ${n(value)} at cost, doing nothing. For a cosmetics SKU ` +
-              `this is also an expiry clock, not just idle cash.`
-            : `${n(row.daysCover)} days of cover — about ${n(value)} at cost ` +
-              `tied up in a SKU selling ${row.velocityPerDay.toFixed(1)} units/day.`,
+              `roughly ${n(releasable)} at cost, doing nothing. For a cosmetics ` +
+              `SKU this is also an expiry clock, not just idle cash.`
+            : `${formatCover(row.daysCover)} of cover at ` +
+              `${row.velocityPerDay.toFixed(2)} units/day. Clearing back to ` +
+              `${COVER_OVERSTOCK_DAYS} days would release about ${n(releasable)} ` +
+              `of the ${n(row.stockValueAtCost)} tied up here.`,
       });
     }
   }
@@ -207,4 +228,52 @@ export function buildExceptions(rows: InventoryRow[]): Exception[] {
     })
     .slice(0, 5)
     .map(({ stake: _stake, ...rest }) => rest);
+}
+
+/**
+ * Contribution that stops arriving if this SKU goes to zero, annualised.
+ *
+ * ── Why annualised, and why this function exists at all ─────────────────────
+ * The exception list ranks stockouts against overstock in one sort, so the two
+ * stakes have to be the same kind of quantity. They were not: a stockout was
+ * scored on one quarter of margin and an overstock on the entire value of the
+ * pile. A margin is a recurring flow and stock value is a one-off balance, and
+ * scoring a quarter of the flow against all of the balance pushed both errors
+ * the same way — slow stock outranked genuinely empty shelves.
+ *
+ * On real Dobias data that put two overstocked SKUs above TickHex and
+ * LiverTune H+, both of which were at zero. Exactly backwards from what the
+ * page is for.
+ *
+ * Four quarters is a ranking device, not a forecast: it does not claim the
+ * stockout lasts a year, only that a recurring loss and a one-off release
+ * belong on the same axis before they are compared.
+ */
+function annualisedContribution(row: InventoryRow): number {
+  return (row.margin ?? 0) * 4;
+}
+
+/**
+ * Cash a markdown could actually free — the excess over a healthy cover level,
+ * not the whole pile.
+ *
+ * Nobody clears an overstocked SKU to zero; they clear it back to a sensible
+ * cover. Ranking on total stock value therefore overstates every overstock by
+ * whatever the SKU legitimately needs to hold, and overstates it most for the
+ * fast movers that need the most.
+ *
+ * Dead stock has no velocity and so no legitimate holding — the whole value is
+ * releasable, which is what makes it dead rather than merely slow.
+ */
+function releasableCash(row: InventoryRow): number {
+  const value = row.stockValueAtCost ?? 0;
+  if (value <= 0) return 0;
+  if (row.velocityPerDay <= 0) return value;
+
+  const onHand = row.onHand ?? 0;
+  if (onHand <= 0) return 0;
+
+  const healthyUnits = row.velocityPerDay * COVER_OVERSTOCK_DAYS;
+  const excessUnits = Math.max(onHand - healthyUnits, 0);
+  return (excessUnits / onHand) * value;
 }

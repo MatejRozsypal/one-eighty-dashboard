@@ -25,6 +25,7 @@ import { parseViewParams, type SearchParams } from "@/lib/params";
 import { getInventory } from "@/lib/queries/inventory";
 import {
   buildExceptions,
+  formatCover,
   stockState,
   COVER_AT_RISK_DAYS,
   COVER_OVERSTOCK_DAYS,
@@ -386,7 +387,7 @@ function CoverCell({ row }: { row: InventoryRow }) {
         : "text-content-body";
   return (
     <span className={`font-mono text-[12.5px] font-semibold tabular ${tone}`}>
-      {formatNumber(Math.round(row.daysCover))}
+      {formatCover(row.daysCover)}
     </span>
   );
 }

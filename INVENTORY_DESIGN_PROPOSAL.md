@@ -1,8 +1,11 @@
 # Inventory & Fulfillment — Design Proposal
 
-**Status:** proposal, not yet approved. Written 2026-08-03.
-**Scope:** three screens in `dashboard/`, plus one column that lives on the existing
-performance pages. Read-only in v1 — no writes back to Shopify.
+**Status:** partly built and live. Written 2026-08-03; reconciled against what shipped
+2026-08-04. Sections 1–2 of §3 are deployed as one page at `/inventory`; §3 section 3
+and the media flag are not built. Everything in §4–§7 that is not marked otherwise is
+implemented.
+**Scope:** originally three screens in `dashboard/` plus one column on the existing
+performance pages; currently one page. Read-only — no writes back to Shopify.
 **Clients in v1:** `dobias`, `venev`. `manami` deferred — see §8.
 
 ---
@@ -83,9 +86,22 @@ inventory data reach the media buyer instead of sitting in an ops tab.
 
 ---
 
-## 3. The three screens
+## 3. The screens
 
-### Screen 1 — Stock Health (the exception screen)
+> **What was actually built, 2026-08-03.** Sections 1 and 2 below ship as a
+> *single* page at `/inventory`, in that order down one scroll. Section 3 is not
+> built. The media flag is not built.
+>
+> They were merged because splitting them puts the evidence for a recommendation
+> on a different page from the recommendation, and checking the five items is the
+> main thing anyone does with them. The table underneath *is* the check.
+>
+> The Buying Plan is deferred on missing inputs, not on effort: without supplier
+> lead times and MOQs it cannot compute either a date or a quantity, so it would
+> ship as a form with four empty columns. That is worse than an absent page —
+> see §10, items 1–2.
+
+### Section 1 — Stock Health (the exception screen)
 
 Answers: *what do I do today?*
 
@@ -128,12 +144,16 @@ data. The five-item budget is the main defence against that.
 
 **Trust bar, always visible.** See §6.
 
-### Screen 2 — Catalog
+### Section 2 — Catalog (same page, below the list)
 
 Answers: *what is the state of everything?*
 
-One row per SKU (per SKU × batch once we have batch data — see §5). Sortable, with saved
-views, which both Inventory Planner and Prediko converged on independently.
+One row per SKU (per SKU × batch once we have batch data — see §5). Sortable.
+
+**Saved views are specified here but NOT built** — the shipped table sorts by any column
+and nothing more. Inventory Planner and Prediko both converged on saved views as
+first-class navigation, so they are worth adding; they are not load-bearing for the
+five decisions above, which is why they were cut from the first pass.
 
 | Column | Note |
 |---|---|
@@ -148,10 +168,10 @@ views, which both Inventory Planner and Prediko converged on independently.
 | Days aged / expiry risk | §5 |
 | Media flag | 🟢 scale / 🟡 hold / 🔴 don't scale — §4.5 |
 
-Default saved views: `Stockout risk`, `Overstock`, `Dead stock`, `Expiring`,
-`No cost data`, `Negative stock`.
+Intended saved views, when built: `Stockout risk`, `Overstock`, `Dead stock`,
+`Expiring`, `No cost data`, `Negative stock`.
 
-### Screen 3 — Buying Plan
+### Section 3 — Buying Plan — NOT BUILT (blocked on lead times and MOQs)
 
 Answers: *what do I order, how much, and what will it cost me?*
 
@@ -178,10 +198,10 @@ Footer: **total cash required, and when.** This is the screen that connects to t
 page — a buying plan is a cash-flow event, and it is the number that decides whether the
 plan is executable at all.
 
-**v1 ends in a CSV/PDF export.** Not a PO in Shopify. We should be honest that this makes
-screen 3 the weakest of the three until phase 3.
+**When built, v1 ends in a CSV/PDF export.** Not a PO in Shopify — which makes this
+the weakest of the three until phase 3, and is part of why it was not first.
 
-### Not a fourth screen — the media flag
+### The media flag — NOT BUILT (blocked on the same lead times)
 
 The requirement "must feed back into media buying" is met by putting **days of cover and a
 three-state flag as a column on the existing performance pages**, not by building a

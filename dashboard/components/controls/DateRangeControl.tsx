@@ -26,7 +26,7 @@ import {
   addDays,
 } from "@/lib/period";
 
-const PRESETS: PresetKey[] = ["today", "7d", "28d", "30d", "90d", "mtd", "ytd", "12m"];
+const PRESETS: PresetKey[] = ["today", "7d", "28d", "30d", "90d", "mtd", "ytd", "12m", "all"];
 
 function fmt(date: string): string {
   const [y, m, d] = date.split("-").map(Number);

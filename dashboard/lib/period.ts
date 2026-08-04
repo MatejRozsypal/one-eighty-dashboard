@@ -144,7 +144,15 @@ export type PresetKey =
   | "90d"
   | "mtd"
   | "ytd"
-  | "12m";
+  | "12m"
+  | "all";
+
+/**
+ * How far back the mart views reach. `mart_daily_kpis` and the staging views it
+ * reads are all built over a rolling 60-month window, so nothing older than
+ * this is queryable however wide a range is asked for.
+ */
+const WAREHOUSE_MONTHS = 60;
 
 /**
  * Named ranges for the date picker.
@@ -180,6 +188,15 @@ export function presetRange(preset: PresetKey, today = todayUtc()): DateRange {
       return { from: `${yesterday.slice(0, 4)}-01-01`, to: yesterday };
     case "12m":
       return { from: addDays(yesterday, -364), to: yesterday };
+    // "Everything the warehouse holds", not "since the shop opened". The marts
+    // are built over a rolling 60-month window, so anchoring here means the
+    // preset promises exactly what it can deliver. A client with less history
+    // than that simply has no rows in the earlier part of the range.
+    case "all": {
+      const start = new Date(`${yesterday}T00:00:00Z`);
+      start.setUTCMonth(start.getUTCMonth() - WAREHOUSE_MONTHS);
+      return { from: start.toISOString().slice(0, 10), to: yesterday };
+    }
   }
 }
 
@@ -200,4 +217,5 @@ export const PRESET_LABELS: Record<PresetKey, string> = {
   mtd: "Month to date",
   ytd: "Year to date",
   "12m": "Last 12 months",
+  all: "All time",
 };

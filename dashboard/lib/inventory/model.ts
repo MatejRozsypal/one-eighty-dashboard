@@ -71,6 +71,19 @@ export interface InventoryData {
 export const COVER_AT_RISK_DAYS = 45;
 export const COVER_OVERSTOCK_DAYS = 180;
 
+/**
+ * Cover a reorder aims to restore, in days.
+ *
+ * Sits between the two thresholds on purpose: ordering back to the overstock
+ * line would immediately classify the SKU as overstocked, and ordering to the
+ * at-risk line would leave it one bad week from empty.
+ *
+ * The proper target is `lead time + review period + safety stock`, all of which
+ * are per-supplier facts we do not have. 90 days is a stated assumption, not a
+ * measurement, and the page says so.
+ */
+export const COVER_TARGET_DAYS = 90;
+
 export type StockState = "at-risk" | "healthy" | "overstocked" | "dead";
 
 /**
@@ -276,4 +289,71 @@ function releasableCash(row: InventoryRow): number {
   const healthyUnits = row.velocityPerDay * COVER_OVERSTOCK_DAYS;
   const excessUnits = Math.max(onHand - healthyUnits, 0);
   return (excessUnits / onHand) * value;
+}
+
+// ---------------------------------------------------------------------------
+// Buying plan
+// ---------------------------------------------------------------------------
+
+export interface ReorderLine {
+  row: InventoryRow;
+  /** Units that would restore COVER_TARGET_DAYS of cover. */
+  suggestedUnits: number;
+  /** What those units cost at the last known unit cost. */
+  cost: number;
+  /** Cover today, in days — the ordering key. Null means nothing sold. */
+  daysCover: number | null;
+}
+
+/**
+ * What to order, how much, and what it costs.
+ *
+ * ── What this can and cannot answer without supplier data ───────────────────
+ * Quantity and cash need only velocity, current stock and a target cover, all
+ * of which we have. **When to place the order** needs the supplier's lead time,
+ * and **what quantity is actually orderable** needs the MOQ and case pack.
+ * Neither exists yet, so this returns the raw recommendation only.
+ *
+ * That split is the one every serious tool makes — Inventory Planner separates
+ * `Replenishment` from `To order`, Prediko separates `To Buy (Live)` from
+ * `Units to Order (Next PO)` — because the gap between them is the MOQ tax and
+ * the buyer should see it rather than have it folded in silently.
+ *
+ * SKUs with no cost are excluded: an order line whose cash cost is unknown
+ * cannot be added to the total, and a plan with a partial total is worse than
+ * one that names what it left out.
+ *
+ * Dead SKUs fall out naturally — zero velocity gives a zero target, so nothing
+ * is suggested for stock that is not moving. That is correct: the answer for a
+ * dead SKU is a markdown, not a purchase order.
+ */
+export function buildReorderPlan(
+  rows: InventoryRow[],
+  targetDays: number = COVER_TARGET_DAYS
+): ReorderLine[] {
+  const lines: ReorderLine[] = [];
+
+  for (const row of rows) {
+    if (!row.hasCost || row.unitCost === null) continue;
+    if (row.velocityPerDay <= 0) continue;
+
+    const targetUnits = row.velocityPerDay * targetDays;
+    const onHand = Math.max(row.onHand ?? 0, 0);
+    const suggestedUnits = Math.ceil(targetUnits - onHand);
+    if (suggestedUnits <= 0) continue;
+
+    lines.push({
+      row,
+      suggestedUnits,
+      cost: suggestedUnits * row.unitCost,
+      daysCover: row.daysCover,
+    });
+  }
+
+  // Soonest to run out first — the order in which the decisions actually bind.
+  // Nulls cannot occur here (velocity > 0 implies a cover), but sort defensively
+  // rather than trust that invariant from a caller we do not control.
+  return lines.sort(
+    (a, b) => (a.daysCover ?? Infinity) - (b.daysCover ?? Infinity)
+  );
 }

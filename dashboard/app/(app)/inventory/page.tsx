@@ -1,48 +1,47 @@
 /**
- * Inventory — cash on the shelf, and what is about to go wrong.
+ * Stock health — cash on the shelf, and what is about to go wrong.
  *
- * ── Why this page is shaped as an exception list, not a report ───────────────
+ * ── Why this page is an exception list, not a report ────────────────────────
  * The published base rate for BI adoption is bad, and the diagnosed cause is
  * dashboards that show what data is *available* rather than what a decision
- * needs. So the top of this page is one number with its decomposition, then at
- * most five things to actually do. The full catalogue is below, for checking the
- * five — not for browsing.
+ * needs. So this is one number with its decomposition, then at most five things
+ * to actually do. The catalogue that proves them is one click away, on its own
+ * page.
  *
- * The five is a budget, not a coincidence: process-industry alarm standards
+ * Five is a budget, not a coincidence: process-industry alarm standards
  * (EEMUA 191 / ISA-18.2) are the only body of work with measured limits on how
  * many alerts a human absorbs, and scaled to a weekly review they land at about
- * five, of which one may be urgent. See INVENTORY_DESIGN_PROPOSAL.md §3.
+ * five. See INVENTORY_DESIGN_PROPOSAL.md §3.
  *
  * ── Why there are no date controls ──────────────────────────────────────────
  * The window is fixed at the 90 days ending on the stock snapshot, because
  * days-of-cover is only meaningful when stock and velocity describe the same
- * moment. A date picker here would imply a freedom the number does not have.
+ * moment. A date picker would imply a freedom the number does not have.
  */
 
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { getInventory } from "@/lib/queries/inventory";
 import {
   buildExceptions,
-  formatCover,
-  stockState,
   COVER_AT_RISK_DAYS,
   COVER_OVERSTOCK_DAYS,
-  type InventoryRow,
 } from "@/lib/inventory/model";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { safeDiv } from "@/lib/coerce";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
-import { DataTable } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
+import { TrustBar } from "@/components/inventory/TrustBar";
+import { NoStockData } from "@/components/inventory/NoStockData";
 import { pageEyebrow } from "@/lib/nav";
 
-export const metadata: Metadata = { title: "Inventory" };
+export const metadata: Metadata = { title: "Stock health" };
 export const dynamic = "force-dynamic";
 
-export default async function InventoryPage({
+export default async function StockHealthPage({
   searchParams,
 }: {
   searchParams: SearchParams;
@@ -55,11 +54,12 @@ export default async function InventoryPage({
   const { rows, summary } = await getInventory(client.clientId);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
+  const qs = params.clientId ? `?client=${params.clientId}` : "";
 
   const header = (
     <Header
       eyebrow={pageEyebrow("/inventory", client.name)}
-      title="Inventory"
+      title="Stock health"
     />
   );
 
@@ -67,36 +67,21 @@ export default async function InventoryPage({
     return (
       <>
         {header}
-        <main className="flex max-w-[1240px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-          <div className="flex max-w-[640px] flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[32px_24px]">
-            <span className="self-start">
-              <Badge variant="outline" size="sm">
-                No data
-              </Badge>
-            </span>
-            <span className="text-[15px] font-semibold text-content-strong">
-              No stock data for {client.name}.
-            </span>
-            <span className="text-[13px] leading-[1.6] text-content-body">
-              This page reads{" "}
-              <code className="font-mono text-[12px]">mart.mart_sku_inventory</code>,
-              which is fed from the Shopify products snapshot. A client on
-              Shoptet has no snapshot at all yet — the current workflow pulls
-              orders only.
-            </span>
-          </div>
-        </main>
+        <NoStockData clientName={client.name} />
       </>
     );
   }
 
   const exceptions = buildExceptions(rows);
-  const costCoverage = safeDiv(summary.skusWithCost, summary.skuCount);
 
   const buckets = [
     { label: "Healthy", value: summary.valueHealthy, tone: "text-growth-700" },
     { label: "At risk", value: summary.valueAtRisk, tone: "text-negative" },
-    { label: "Overstocked", value: summary.valueOverstocked, tone: "text-content-strong" },
+    {
+      label: "Overstocked",
+      value: summary.valueOverstocked,
+      tone: "text-content-strong",
+    },
     { label: "Dead", value: summary.valueDead, tone: "text-content-strong" },
   ];
 
@@ -104,58 +89,7 @@ export default async function InventoryPage({
     <>
       {header}
       <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-        {/* ── Trust bar ───────────────────────────────────────────────────
-            Persistent, not a footnote. The published literature puts inventory
-            record inaccuracy at 65%, and this warehouse already shows a stale
-            snapshot, missing costs and negative stock. A reader who discovers
-            one wrong number unaided stops believing the right ones. */}
-        <section className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border border-hairline bg-paper px-5 py-3.5 text-[12px] text-content-body">
-          <span>
-            Stock counted{" "}
-            <strong className="font-semibold text-content-strong">
-              {summary.snapshotDate ?? "—"}
-            </strong>
-            {summary.snapshotAgeDays !== null && (
-              <span
-                className={
-                  summary.snapshotAgeDays > 7
-                    ? "text-negative"
-                    : "text-content-muted"
-                }
-              >
-                {" "}
-                · {formatNumber(summary.snapshotAgeDays)} days ago
-              </span>
-            )}
-          </span>
-          <span className="text-hairline-strong">·</span>
-          <span>
-            Cost known for{" "}
-            <strong
-              className={
-                (costCoverage ?? 0) < 0.8
-                  ? "font-semibold text-negative"
-                  : "font-semibold text-content-strong"
-              }
-            >
-              {formatPercent(costCoverage, { decimals: 0 })}
-            </strong>{" "}
-            of SKUs
-          </span>
-          {summary.negativeStockCount > 0 && (
-            <>
-              <span className="text-hairline-strong">·</span>
-              <span className="text-negative">
-                {formatNumber(summary.negativeStockCount)} SKUs with negative
-                stock
-              </span>
-            </>
-          )}
-          <span className="text-hairline-strong">·</span>
-          <span className="text-content-muted">
-            Velocity on calendar days — stockout days not yet excluded
-          </span>
-        </section>
+        <TrustBar summary={summary} />
 
         {/* ── The one number ──────────────────────────────────────────────── */}
         <section className="flex flex-col gap-5 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[26px]">
@@ -248,146 +182,26 @@ export default async function InventoryPage({
               ))}
             </ul>
           )}
-        </section>
 
-        {/* ── The catalogue ───────────────────────────────────────────────── */}
-        <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
-          <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
-            <Eyebrow>Catalogue · mart_sku_inventory</Eyebrow>
-            <span className="text-[12px] text-content-muted">
-              Click a heading to sort
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <div className="min-w-[960px]">
-              <DataTable
-                gridClass="grid grid-cols-[2fr_0.5fr_0.7fr_0.7fr_0.8fr_0.8fr_0.8fr_0.9fr] items-center gap-2"
-                columns={[
-                  { key: "product", label: "Product" },
-                  { key: "abc", label: "ABCD" },
-                  { key: "units", label: "Units 90d", align: "right" },
-                  { key: "perDay", label: "Per day", align: "right" },
-                  { key: "onHand", label: "On hand", align: "right" },
-                  { key: "cover", label: "Days cover", align: "right" },
-                  { key: "str", label: "Sell-thr.", align: "right" },
-                  { key: "value", label: "Stock value", align: "right" },
-                ]}
-                rows={rows.map((r) => ({
-                  key: r.sku + r.itemName,
-                  sort: [
-                    r.itemName,
-                    r.abc,
-                    r.unitsSold,
-                    r.velocityPerDay,
-                    r.onHand,
-                    r.daysCover,
-                    r.sellThrough,
-                    r.stockValueAtCost,
-                  ],
-                  cells: [
-                    <span className="flex min-w-0 flex-col">
-                      <span
-                        className="truncate text-[13px] text-content-strong"
-                        title={r.itemName}
-                      >
-                        {r.itemName}
-                      </span>
-                      <span className="truncate font-mono text-[10.5px] text-content-muted">
-                        {r.sku}
-                        {!r.inCatalogue && " · not in catalogue"}
-                        {!r.hasCost && " · no cost"}
-                      </span>
-                    </span>,
-                    <GradeChip grade={r.abc} />,
-                    <span className="font-mono text-[12.5px] tabular text-content-body">
-                      {formatNumber(r.unitsSold)}
-                    </span>,
-                    <span className="font-mono text-[12.5px] tabular text-content-muted">
-                      {r.velocityPerDay > 0
-                        ? r.velocityPerDay.toFixed(2)
-                        : "—"}
-                    </span>,
-                    <span
-                      className={`font-mono text-[12.5px] tabular ${
-                        r.negativeStock
-                          ? "text-negative"
-                          : "text-content-body"
-                      }`}
-                    >
-                      {r.onHand === null ? "—" : formatNumber(r.onHand)}
-                    </span>,
-                    <CoverCell row={r} />,
-                    <span className="font-mono text-[12.5px] tabular text-content-muted">
-                      {r.sellThrough === null
-                        ? "—"
-                        : formatPercent(r.sellThrough, { decimals: 0 })}
-                    </span>,
-                    <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {r.hasCost ? money(r.stockValueAtCost) : "—"}
-                    </span>,
-                  ],
-                }))}
-              />
-            </div>
-          </div>
-
-          <div className="px-5 py-3.5 text-[12px] leading-[1.6] text-content-muted">
-            <strong className="font-semibold text-content-body">ABCD</strong> is
-            ours, not Shopify&apos;s: it ranks on contribution margin over 90
-            days, where Shopify ranks on revenue over a fixed 28 and has no D
-            grade at all. A/B/C are cumulative — first 80% of contribution, next
-            15%, the rest. <strong className="font-semibold text-content-body">D</strong>{" "}
-            sold nothing in the window;{" "}
-            <strong className="font-semibold text-content-body">U</strong> has
-            under 8 weeks of history and is too new to grade.{" "}
-            <strong className="font-semibold text-content-body">Sell-through</strong>{" "}
-            is units sold ÷ (sold + still on hand) over the same 90 days — one of
-            five definitions in circulation, so compare it only with itself.
+          <div className="border-t border-hairline px-5 py-3.5 text-[12px] text-content-muted">
+            Check any of these against the{" "}
+            <Link
+              href={`/inventory/catalogue${qs}`}
+              className="font-semibold text-content-body underline underline-offset-2"
+            >
+              full catalogue
+            </Link>
+            , or turn the reorders into quantities on the{" "}
+            <Link
+              href={`/inventory/buying${qs}`}
+              className="font-semibold text-content-body underline underline-offset-2"
+            >
+              buying plan
+            </Link>
+            .
           </div>
         </section>
       </main>
     </>
-  );
-}
-
-function GradeChip({ grade }: { grade: InventoryRow["abc"] }) {
-  if (!grade) {
-    return <span className="font-mono text-[11px] text-content-muted">—</span>;
-  }
-  const tone =
-    grade === "A"
-      ? "bg-accent-soft text-growth-700"
-      : grade === "D"
-        ? "bg-negative/10 text-negative"
-        : "bg-gray-100 text-content-body";
-  return (
-    <span
-      className={`inline-flex h-[21px] w-[21px] items-center justify-center rounded-pill font-mono text-[11px] font-semibold ${tone}`}
-    >
-      {grade}
-    </span>
-  );
-}
-
-function CoverCell({ row }: { row: InventoryRow }) {
-  if (row.daysCover === null) {
-    return (
-      <span className="font-mono text-[12.5px] tabular text-content-muted">
-        —
-      </span>
-    );
-  }
-  const state = stockState(row);
-  const tone =
-    state === "at-risk"
-      ? "text-negative"
-      : state === "overstocked"
-        ? "text-content-muted"
-        : "text-content-body";
-  return (
-    <span className={`font-mono text-[12.5px] font-semibold tabular ${tone}`}>
-      {formatCover(row.daysCover)}
-    </span>
   );
 }

@@ -116,7 +116,7 @@ export default async function BuyingPlanPage({
           <>
             <section className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
               {[
-                { label: "SKUs to order", value: formatNumber(plan.length) },
+                { label: "Products to order", value: formatNumber(plan.length) },
                 { label: "Units", value: formatNumber(totalUnits) },
                 { label: "Cash required", value: money(totalCash), accent: true },
                 {
@@ -144,7 +144,7 @@ export default async function BuyingPlanPage({
 
             <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
               <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
-                <Eyebrow>Suggested order · soonest to run out first</Eyebrow>
+                <Eyebrow>Suggested order · largest cash first</Eyebrow>
                 <span className="text-[12px] text-content-muted">
                   Click a heading to sort
                 </span>
@@ -164,13 +164,13 @@ export default async function BuyingPlanPage({
                       { key: "cost", label: "Cost", align: "right" },
                     ]}
                     rows={plan.map((l) => ({
-                      key: l.row.sku + l.row.itemName,
+                      key: l.itemName,
                       sort: [
-                        l.row.itemName,
-                        l.row.abc,
+                        l.itemName,
+                        l.abc,
                         l.daysCover,
-                        l.row.velocityPerDay,
-                        l.row.onHand,
+                        l.velocityPerDay,
+                        l.onHand,
                         l.suggestedUnits,
                         l.cost,
                       ],
@@ -178,16 +178,18 @@ export default async function BuyingPlanPage({
                         <span className="flex min-w-0 flex-col">
                           <span
                             className="truncate text-[13px] text-content-strong"
-                            title={l.row.itemName}
+                            title={l.itemName}
                           >
-                            {l.row.itemName}
+                            {l.itemName}
                           </span>
-                          <span className="truncate font-mono text-[10.5px] text-content-muted">
-                            {l.row.sku}
-                          </span>
+                          {l.variantCount > 1 && (
+                            <span className="truncate font-mono text-[10.5px] text-content-muted">
+                              {l.variantCount} variants
+                            </span>
+                          )}
                         </span>,
                         <span className="font-mono text-[11px] font-semibold text-content-muted">
-                          {l.row.abc ?? "—"}
+                          {l.abc ?? "—"}
                         </span>,
                         <span
                           className={`font-mono text-[12.5px] font-semibold tabular ${
@@ -199,10 +201,10 @@ export default async function BuyingPlanPage({
                           {formatCover(l.daysCover)}
                         </span>,
                         <span className="font-mono text-[12.5px] tabular text-content-muted">
-                          {l.row.velocityPerDay.toFixed(2)}
+                          {l.velocityPerDay.toFixed(2)}
                         </span>,
                         <span className="font-mono text-[12.5px] tabular text-content-body">
-                          {formatNumber(l.row.onHand ?? 0)}
+                          {formatNumber(l.onHand)}
                         </span>,
                         <span className="font-mono text-[13px] font-semibold tabular text-content-strong">
                           {formatNumber(l.suggestedUnits)}
@@ -218,7 +220,7 @@ export default async function BuyingPlanPage({
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline px-5 py-4">
                 <span className="text-[12.5px] text-content-body">
-                  {formatNumber(plan.length)} SKUs ·{" "}
+                  {formatNumber(plan.length)} products ·{" "}
                   {formatNumber(totalUnits)} units
                 </span>
                 <span className="font-mono text-[18px] font-semibold tracking-heading tabular text-content-strong">
@@ -230,7 +232,11 @@ export default async function BuyingPlanPage({
         )}
 
         <p className="max-w-[860px] text-[12px] leading-[1.6] text-content-muted">
-          Order quantity is{" "}
+          One line per product, not per variant SKU — Dobias sells one leash in
+          twelve colours, and per-SKU that filled two thirds of this plan with
+          one-to-seven-unit lines worth under 2% of the bill. Sorted by cash,
+          because a purchase order is a cash decision; the cover column carries
+          the urgency and Stock health ranks by it. Order quantity is{" "}
           <code className="font-mono text-[11.5px]">
             velocity × {COVER_TARGET_DAYS} days − on hand
           </code>

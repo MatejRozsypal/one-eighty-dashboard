@@ -296,13 +296,20 @@ function releasableCash(row: InventoryRow): number {
 // ---------------------------------------------------------------------------
 
 export interface ReorderLine {
-  row: InventoryRow;
-  /** Units that would restore COVER_TARGET_DAYS of cover. */
+  /** Product name — the grain a purchase order is actually written at. */
+  itemName: string;
+  abc: AbcGrade;
+  /** How many variant SKUs fold into this line. 1 for most products. */
+  variantCount: number;
+  /** Units that would restore COVER_TARGET_DAYS across every variant. */
   suggestedUnits: number;
   /** What those units cost at the last known unit cost. */
   cost: number;
-  /** Cover today, in days — the ordering key. Null means nothing sold. */
+  /** Cover of the *worst* variant, in days — the one that runs out first. */
   daysCover: number | null;
+  /** Combined sales rate across the variants. */
+  velocityPerDay: number;
+  onHand: number;
 }
 
 /**
@@ -319,6 +326,20 @@ export interface ReorderLine {
  * `Units to Order (Next PO)` — because the gap between them is the MOQ tax and
  * the buyer should see it rather than have it folded in silently.
  *
+ * ── Why lines are products, not SKUs ────────────────────────────────────────
+ * Dobias sells one leash in twelve colours. Per-SKU, that is twelve order lines
+ * of one to seven units and twelve to ninety dollars each — fifteen of the
+ * twenty-two lines in the plan, carrying 1.7% of the cash. Nobody writes a
+ * purchase order that way; they order leashes, then split by colour. Grouping
+ * on the product title turns the plan back into something a buyer can read,
+ * and the per-variant detail is one click away in the catalogue.
+ *
+ * ── Why the sort is cash, not urgency ───────────────────────────────────────
+ * A buying plan is a cash-flow document; the question it answers is "what am I
+ * spending money on". Sorting by days-of-cover put a $12 leash variant above a
+ * $21,617 reorder of the best-selling product, because both were at zero.
+ * Urgency has its own column here and its own page in Stock health.
+ *
  * SKUs with no cost are excluded: an order line whose cash cost is unknown
  * cannot be added to the total, and a plan with a partial total is worse than
  * one that names what it left out.
@@ -331,7 +352,7 @@ export function buildReorderPlan(
   rows: InventoryRow[],
   targetDays: number = COVER_TARGET_DAYS
 ): ReorderLine[] {
-  const lines: ReorderLine[] = [];
+  const byProduct = new Map<string, ReorderLine>();
 
   for (const row of rows) {
     if (!row.hasCost || row.unitCost === null) continue;
@@ -342,18 +363,51 @@ export function buildReorderPlan(
     const suggestedUnits = Math.ceil(targetUnits - onHand);
     if (suggestedUnits <= 0) continue;
 
-    lines.push({
-      row,
-      suggestedUnits,
-      cost: suggestedUnits * row.unitCost,
-      daysCover: row.daysCover,
-    });
+    const existing = byProduct.get(row.itemName);
+    if (!existing) {
+      byProduct.set(row.itemName, {
+        itemName: row.itemName,
+        abc: row.abc,
+        variantCount: 1,
+        suggestedUnits,
+        cost: suggestedUnits * row.unitCost,
+        daysCover: row.daysCover,
+        velocityPerDay: row.velocityPerDay,
+        onHand,
+      });
+      continue;
+    }
+
+    existing.variantCount += 1;
+    existing.suggestedUnits += suggestedUnits;
+    existing.cost += suggestedUnits * row.unitCost;
+    existing.velocityPerDay += row.velocityPerDay;
+    existing.onHand += onHand;
+    // The line inherits the worst variant's cover and the best variant's grade:
+    // the first is when it starts hurting, the second is how much it matters.
+    if ((row.daysCover ?? Infinity) < (existing.daysCover ?? Infinity)) {
+      existing.daysCover = row.daysCover;
+    }
+    if (gradeRank(row.abc) < gradeRank(existing.abc)) existing.abc = row.abc;
   }
 
-  // Soonest to run out first — the order in which the decisions actually bind.
-  // Nulls cannot occur here (velocity > 0 implies a cover), but sort defensively
-  // rather than trust that invariant from a caller we do not control.
-  return lines.sort(
-    (a, b) => (a.daysCover ?? Infinity) - (b.daysCover ?? Infinity)
-  );
+  return [...byProduct.values()].sort((a, b) => b.cost - a.cost);
+}
+
+/** A < B < C < U < D < none, for picking the most significant of a group. */
+function gradeRank(grade: AbcGrade): number {
+  switch (grade) {
+    case "A":
+      return 0;
+    case "B":
+      return 1;
+    case "C":
+      return 2;
+    case "U":
+      return 3;
+    case "D":
+      return 4;
+    default:
+      return 5;
+  }
 }

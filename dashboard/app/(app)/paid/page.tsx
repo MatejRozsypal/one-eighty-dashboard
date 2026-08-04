@@ -65,17 +65,34 @@ export default async function PaidPage({
 
   const livePlatforms = channels.filter((c) => c.connected && c.spend !== null);
 
-  const kpis = [
-    { label: "Spend", value: money(totals.spend) },
+  // ── Scope is part of the metric, not a footnote ────────────────────────────
+  // This row used to mix two of them silently: Spend was Meta-only while
+  // Revenue and ROAS covered every platform. With Google spending CZK 13,008
+  // against Meta's 75,904, the tile understated paid spend by 15% — and because
+  // ROAS was (correctly) computed on the combined figure, the ROAS shown could
+  // not be reproduced from the two numbers next to it. A row of numbers you
+  // cannot check against each other is how a dashboard quietly loses its
+  // reader.
+  //
+  // Spend now matches Revenue and ROAS. Reach, Frequency, CTR and CPM stay
+  // Meta-only because they genuinely are — Google reports no comparable reach
+  // or frequency — so they carry the platform on the tile instead.
+  const kpis: Array<{ label: string; value: string; scope?: string }> = [
+    { label: "Spend", value: money(paidSpend) },
     { label: "Revenue", value: money(paidRevenue) },
     { label: "ROAS", value: paidRoas !== null ? formatRatio(paidRoas) : "—" },
-    { label: "Reach", value: formatNumber(totals.reach) },
+    { label: "Reach", value: formatNumber(totals.reach), scope: "meta" },
     {
       label: "Frequency",
       value: totals.frequency !== null ? totals.frequency.toFixed(2) : "—",
+      scope: "meta",
     },
-    { label: "CTR", value: totals.ctr !== null ? formatPercent(totals.ctr, { decimals: 2 }) : "—" },
-    { label: "CPM", value: money(totals.cpm) },
+    {
+      label: "CTR",
+      value: totals.ctr !== null ? formatPercent(totals.ctr, { decimals: 2 }) : "—",
+      scope: "meta",
+    },
+    { label: "CPM", value: money(totals.cpm), scope: "meta" },
   ];
 
   return (
@@ -88,43 +105,23 @@ export default async function PaidPage({
       <PageControls client={client} params={params} />
 
       <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-        {funnel.length > 1 ? (
-          <section className="flex flex-col gap-[18px] rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <div className="flex flex-col gap-1.5">
-                <Eyebrow>Meta funnel</Eyebrow>
-                <h2 className="m-0 text-[20px] font-bold tracking-heading text-content-strong">
-                  Impressions to purchases, <i className="font-medium">step by step.</i>
-                </h2>
-              </div>
-              <span className="inline-flex items-center gap-[7px] font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                <span aria-hidden="true" className="h-[9px] w-[9px] rounded-[3px] bg-platform-meta" />
-                Meta · platform-reported
-              </span>
-            </div>
-
-            <Funnel steps={funnel} />
-          </section>
-        ) : (
-          <div className="flex flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[24px]">
-            <span className="text-[15px] font-semibold text-content-strong">
-              No Meta data in this range.
-            </span>
-            <span className="text-[13px] text-content-body">
-              Either no campaigns ran, or Meta hasn&apos;t reported yet for these
-              dates.
-            </span>
-          </div>
-        )}
-
         <section className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
           {kpis.map((k) => (
             <div
               key={k.label}
               className="flex flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm"
             >
-              <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                {k.label}
+              <span className="flex items-center justify-between gap-2">
+                <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+                  {k.label}
+                </span>
+                {k.scope === "meta" && (
+                  <span
+                    aria-label="Meta only"
+                    title="Meta only — Google reports no comparable figure"
+                    className="h-[7px] w-[7px] flex-none rounded-[2px] bg-platform-meta"
+                  />
+                )}
               </span>
               <span className="font-mono text-[22px] font-semibold leading-none tracking-heading tabular text-content-strong">
                 {k.value}
@@ -192,6 +189,41 @@ export default async function PaidPage({
               })}
             </div>
           </section>
+        )}
+
+        {funnel.length > 1 ? (
+          <section className="flex flex-col gap-[18px] rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
+            <div className="flex flex-wrap items-start justify-between gap-6">
+              <div className="flex flex-col gap-1.5">
+                <Eyebrow>Meta funnel</Eyebrow>
+                <h2 className="m-0 text-[20px] font-bold tracking-heading text-content-strong">
+                  Impressions to purchases, <i className="font-medium">step by step.</i>
+                </h2>
+              </div>
+              <span className="inline-flex items-center gap-[7px] font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+                <span aria-hidden="true" className="h-[9px] w-[9px] rounded-[3px] bg-platform-meta" />
+                Meta · platform-reported
+              </span>
+            </div>
+
+            <Funnel steps={funnel} />
+
+            <p className="text-[12px] leading-[1.6] text-content-muted">
+              Meta only, and last on the page on purpose. Leading with it framed
+              everything above as Meta&apos;s numbers, which is wrong for the
+              three totals at the top — those cover every connected platform.
+            </p>
+          </section>
+        ) : (
+          <div className="flex flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[24px]">
+            <span className="text-[15px] font-semibold text-content-strong">
+              No Meta data in this range.
+            </span>
+            <span className="text-[13px] text-content-body">
+              Either no campaigns ran, or Meta hasn&apos;t reported yet for these
+              dates.
+            </span>
+          </div>
         )}
 
         <div className="flex items-start gap-3 rounded-card border border-warning/[0.38] bg-[#FFFBF4] p-[14px_18px]">

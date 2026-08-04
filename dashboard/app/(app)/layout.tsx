@@ -24,6 +24,7 @@ import { authOptions } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
+import { AccountMenu } from "@/components/shell/AccountMenu";
 import {
   NavigationPendingProvider,
   PendingRegion,
@@ -114,12 +115,20 @@ export default async function AppLayout({
     // on any page shorter than the viewport, and under Safari's bottom bar.
     <NavigationPendingProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
-      <Sidebar
+      <Sidebar clients={clients} isAdmin={isAdmin} />
+
+      {/*
+        Fixed to the header's right-hand side rather than rendered inside it:
+        `Header` is called by every page with only a title, and threading the
+        client list and session through fifteen screens to reach one corner
+        control would be a poor trade.
+      */}
+      <AccountMenu
         clients={clients}
         userName={name}
-        userRole={role}
-        isAdmin={isAdmin}
-        isInternal={isInternal}
+        userEmail={session.user.email ?? ""}
+        roleLabel={session.user.role === "admin" ? "Admin" : session.user.role === "agency" ? "Agency" : "Client"}
+        showSettings={isInternal}
       />
 
       {/*

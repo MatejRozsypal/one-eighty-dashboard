@@ -10,13 +10,26 @@
  * matching the product the day either one changed.
  */
 
-import type { PnlDay } from "@/lib/queries/pnl";
+import type { CostRates, PnlDay } from "@/lib/queries/pnl";
 import type { DateRange } from "@/lib/period";
 import { convertMoney, days, DEMO_CURRENCY } from "./business";
 
-export function demoPnlDays(bounds: DateRange, display: string): PnlDay[] {
+export function demoPnlDays(
+  bounds: DateRange,
+  display: string,
+  costs: CostRates
+): PnlDay[] {
   const currency = display === "native" ? DEMO_CURRENCY : display;
   const money = (v: number) => convertMoney(v, display);
+
+  // The stated rates are applied here, in display currency, exactly as the SQL
+  // does it for a real client — orders x native rate, then converted. The
+  // subtraction itself happens in the shared caller, so demo and production
+  // cannot drift on which margin each cost comes out of.
+  const perOrder = (rate: number | null) =>
+    rate === null ? null : (orders: number) => money(orders * rate);
+  const fulfilmentOf = perOrder(costs.fulfilmentPerOrder);
+  const otherOf = perOrder(costs.otherCm1PerOrder);
 
   return days(bounds.from, bounds.to).map((d) => ({
     date: d.date,
@@ -36,6 +49,8 @@ export function demoPnlDays(bounds: DateRange, display: string): PnlDay[] {
     googleSpend: money(d.googleSpend),
     paidSpend: money(d.paidSpend),
     // Counts never convert — an order is an order in any currency.
+    fulfilmentCost: fulfilmentOf ? fulfilmentOf(d.orders) : null,
+    otherCm1Cost: otherOf ? otherOf(d.orders) : null,
     orders: d.orders,
     uniqueCustomers: d.uniqueCustomers,
     newCustomerOrders: d.newCustomerOrders,

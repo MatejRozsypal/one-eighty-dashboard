@@ -33,6 +33,19 @@ import { fxSql, fxParams, type DisplayCurrency } from "@/lib/currency";
 import { isDemo } from "@/lib/demo/client";
 import { demoPnlDays } from "@/lib/demo/pnl";
 
+/**
+ * Per-order costs the warehouse cannot measure, stated by the client.
+ *
+ * `mart_daily_kpis` hardcodes `cm1_other_costs` and `fulfillment_cost` to zero,
+ * so CM1 and CM2 arrive from BigQuery as though neither cost exists. These
+ * rates are what turns them into real numbers. Null means nobody has stated
+ * one — which is rendered as an admitted gap, never as zero.
+ */
+export interface CostRates {
+  fulfilmentPerOrder: number | null;
+  otherCm1PerOrder: number | null;
+}
+
 /** One day of P&L, already converted into the display currency. */
 export interface PnlDay {
   date: string;
@@ -55,6 +68,9 @@ export interface PnlDay {
   uniqueCustomers: number | null;
   newCustomerOrders: number | null;
   returningCustomerOrders: number | null;
+  /** orders x the stated rate, in display currency. Null when unstated. */
+  fulfilmentCost: number | null;
+  otherCm1Cost: number | null;
 }
 
 /** Aggregated totals plus every rate derived from them. */
@@ -71,6 +87,9 @@ export interface PnlTotals {
 
   // Costs and margin stack (monotonic: revenue ≥ cm1 ≥ cm2 ≥ cm3)
   cogs: number | null;
+  /** Stated per-order costs, totalled. Null when nobody has stated a rate. */
+  fulfilmentCost: number | null;
+  otherCm1Cost: number | null;
   cm1: number | null;
   cm2: number | null;
   cm3: number | null;
@@ -143,6 +162,8 @@ interface PnlRow {
   unique_customers: unknown;
   new_customer_orders: unknown;
   returning_customer_orders: unknown;
+  fulfilment_cost: unknown;
+  other_cm1_cost: unknown;
 }
 
 /**
@@ -155,12 +176,13 @@ async function fetchDays(
   clientId: string,
   bounds: DateRange,
   display: DisplayCurrency,
-  nativeCurrency: string
+  nativeCurrency: string,
+  costs: CostRates
 ): Promise<PnlDay[]> {
   // The demo client is served entirely from memory: no SQL is built, no
   // credentials are needed, and there is no path by which a real figure could
   // reach a presentation. Everything below this line is the real client path.
-  if (isDemo(clientId)) return demoPnlDays(bounds, display);
+  if (isDemo(clientId)) return demoPnlDays(bounds, display, costs);
 
   const fx = fxSql(display, "k");
   const m = fx.wrap; // money column → converted expression
@@ -193,7 +215,13 @@ async function fetchDays(
        k.orders,
        k.unique_customers,
        k.new_customer_orders,
-       k.returning_customer_orders
+       k.returning_customer_orders,
+       -- Stated per-order costs are money in the client's trading currency, so
+       -- they go through the same FX wrapper as every other money column. A
+       -- count times a native rate is a native amount; converting after the
+       -- multiplication is what keeps the CZK view internally consistent.
+       ${m("(k.orders * @fulfilmentRate)")}   AS fulfilment_cost,
+       ${m("(k.orders * @otherCm1Rate)")}     AS other_cm1_cost
      FROM \`${PROJECT_ID}.mart.mart_daily_kpis\` k
      ${fx.join}
      WHERE k.client_id = @clientId
@@ -205,11 +233,28 @@ async function fetchDays(
       scanFrom: bounds.from,
       scanTo: bounds.to,
       nativeCurrency,
+      fulfilmentRate: costs.fulfilmentPerOrder ?? 0,
+      otherCm1Rate: costs.otherCm1PerOrder ?? 0,
       ...fxParams(display),
     }
   );
 
-  return rows.map((r) => ({
+  // Null rate means "nobody stated one" and must stay null all the way to the
+  // screen; zero would assert the cost does not exist.
+  const statedFulfilment = costs.fulfilmentPerOrder !== null;
+  const statedOther = costs.otherCm1PerOrder !== null;
+
+  return rows.map((r) => {
+    const fulfilmentCost = statedFulfilment ? (num(r.fulfilment_cost) ?? 0) : null;
+    const otherCm1Cost = statedOther ? (num(r.other_cm1_cost) ?? 0) : null;
+    // The warehouse builds CM1 and CM2 with both costs pinned at zero, so the
+    // deductions happen here and cascade downward exactly as the SQL comment
+    // says they should: cm1 -= other, cm2 -= other + fulfilment, cm3 likewise.
+    const drop1 = otherCm1Cost ?? 0;
+    const drop2 = drop1 + (fulfilmentCost ?? 0);
+    const less = (v: number | null, by: number) => (v === null ? null : v - by);
+
+    return ({
     date: r.date.value,
     currency: r.currency,
     revenue: num(r.revenue),
@@ -220,9 +265,11 @@ async function fetchDays(
     newCustomerRevenue: num(r.new_customer_revenue),
     returningCustomerRevenue: num(r.returning_customer_revenue),
     cogs: num(r.cogs),
-    cm1: num(r.cm1),
-    cm2: num(r.cm2),
-    cm3: num(r.cm3),
+    fulfilmentCost,
+    otherCm1Cost,
+    cm1: less(num(r.cm1), drop1),
+    cm2: less(num(r.cm2), drop2),
+    cm3: less(num(r.cm3), drop2),
     metaSpend: num(r.meta_spend),
     googleSpend: num(r.google_spend),
     paidSpend: num(r.paid_spend),
@@ -230,7 +277,8 @@ async function fetchDays(
     uniqueCustomers: num(r.unique_customers),
     newCustomerOrders: num(r.new_customer_orders),
     returningCustomerOrders: num(r.returning_customer_orders),
-  }));
+  });
+  });
 }
 
 /**
@@ -276,6 +324,8 @@ function aggregate(rows: PnlDay[]): PnlTotals {
     returningCustomerRevenue,
 
     cogs: sum(rows, (r) => r.cogs),
+    fulfilmentCost: sum(rows, (r) => r.fulfilmentCost),
+    otherCm1Cost: sum(rows, (r) => r.otherCm1Cost),
     cm1,
     cm2,
     cm3,
@@ -311,13 +361,15 @@ export async function getPnlSnapshot(
   clientId: string,
   nativeCurrency: string,
   period: ResolvedPeriod,
-  display: DisplayCurrency = "native"
+  display: DisplayCurrency = "native",
+  costs: CostRates = { fulfilmentPerOrder: null, otherCm1PerOrder: null }
 ): Promise<PnlSnapshot> {
   const rows = await fetchDays(
     clientId,
     scanBounds(period),
     display,
-    nativeCurrency
+    nativeCurrency,
+    costs
   );
 
   const currentRows = rows.filter((r) => inRange(r.date, period.current));

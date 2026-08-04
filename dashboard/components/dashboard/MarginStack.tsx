@@ -5,14 +5,18 @@
  * a retention tool. Retention platforms can't show contribution margin because
  * they can't see cost of goods or ad spend; this warehouse can.
  *
- * ── The two empty steps are the honest part ─────────────────────────────────
+ * ── Unstated steps are the honest part ──────────────────────────────────────
  * `cm1_other_costs` (inbound freight, duties, packaging, payment fees) and
- * `fulfilment_cost` (outbound shipping, warehousing, returns) is hardcoded
- * to zero in `mart_daily_kpis`. They are drawn as hatched placeholders labelled
- * "not measured yet" rather than as zero-height steps, because a zero-height
- * step reads as "this business has no fulfilment costs" — which is false, and a
- * more dangerous kind of wrong than an admitted gap. When the data lands, the
- * steps fill in and nothing else on the page moves.
+ * `fulfillment_cost` (outbound shipping, warehousing, returns) are hardcoded to
+ * zero in `mart_daily_kpis` — no connected source reports either. They become
+ * real once someone states a per-order rate under Settings, which the P&L then
+ * multiplies by orders and deducts.
+ *
+ * Until a rate is stated, the step is drawn hatched and labelled "not stated"
+ * rather than as a zero-height bar, because a zero-height step reads as "this
+ * business has no fulfilment costs" — false, and a more dangerous kind of wrong
+ * than an admitted gap. Stating a rate fills the step in and nothing else on
+ * the page moves.
  *
  * Rendered as a waterfall on desktop and a vertical stepped list on mobile: a
  * horizontal waterfall does not survive a 375pt viewport.
@@ -79,11 +83,20 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
       goodWhen: "up",
     },
     {
-      label: "− Fulfilment",
-      value: null,
+      label: "− Other CM1",
+      value: t.otherCm1Cost === null ? null : -t.otherCm1Cost,
       base: cm1,
-      magnitude: 0,
-      kind: "placeholder",
+      magnitude: t.otherCm1Cost ?? 0,
+      kind: t.otherCm1Cost === null ? "placeholder" : "cost",
+      goodWhen: "down",
+    },
+    {
+      label: "− Fulfilment",
+      value: t.fulfilmentCost === null ? null : -t.fulfilmentCost,
+      base: cm2,
+      magnitude: t.fulfilmentCost ?? 0,
+      kind: t.fulfilmentCost === null ? "placeholder" : "cost",
+      goodWhen: "down",
     },
     {
       label: "CM2",
@@ -176,7 +189,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
                   className="absolute inset-x-0 text-center font-mono text-[9.5px] uppercase tracking-[0.06em] text-gray-400"
                   style={{ bottom: `${px(step.base) + 40}px` }}
                 >
-                  Not measured yet
+                  Not stated
                 </span>
               )}
             </div>
@@ -198,7 +211,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
                   step.kind === "placeholder" ? "text-gray-400" : "text-content-strong"
                 }`}
               >
-                {step.kind === "placeholder" ? "No data" : money(step.value)}
+                {step.kind === "placeholder" ? "Not stated" : money(step.value)}
               </span>
               <span className="h-[17px]">
                 {step.delta !== undefined && (
@@ -235,7 +248,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
                     step.kind === "placeholder" ? "text-gray-400" : "text-content-strong"
                   }`}
                 >
-                  {step.kind === "placeholder" ? "No data" : money(step.value)}
+                  {step.kind === "placeholder" ? "Not stated" : money(step.value)}
                 </span>
               </div>
               <div
@@ -256,7 +269,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
               />
               {step.kind === "placeholder" && (
                 <span className="font-mono text-[9.5px] uppercase tracking-[0.06em] text-gray-400">
-                  Not measured yet
+                  Not stated
                 </span>
               )}
             </div>

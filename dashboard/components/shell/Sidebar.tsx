@@ -14,54 +14,38 @@
  * On mobile the sidebar collapses out of flow entirely and navigation moves to
  * the bottom tab bar — the four live destinations sit one level deep, so a
  * drawer would add a tap for nothing.
+ *
+ * Navigation only. The client switcher and the account both moved to
+ * `AccountMenu` in the top-right corner: they answer the same question — whose
+ * numbers am I looking at, and as whom — and were split across opposite ends of
+ * this column.
  */
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { navFor, SETTINGS_HREF } from "@/lib/nav";
+import { navFor } from "@/lib/nav";
 import { Logo } from "@/components/ui/Logo";
 import { Badge } from "@/components/ui/Badge";
-import { ClientSwitcher } from "@/components/shell/ClientSwitcher";
 import type { Client } from "@/lib/clients";
 
 export function Sidebar({
   clients,
-  userName,
-  userRole,
   isAdmin = false,
-  isInternal = false,
 }: {
+  /** Unused for rendering; kept so the shell passes one shape everywhere. */
   clients: Client[];
-  userName: string;
-  userRole: string;
   isAdmin?: boolean;
-  /** Agency or admin. Decides the gear — agency configures targets and costs. */
-  isInternal?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
   const nav = navFor(isAdmin);
 
-  // Resolved here rather than passed in: `layout.tsx` has no access to
-  // searchParams in the App Router, and the selected client lives in the URL.
-  const active =
-    clients.find((c) => c.clientId === searchParams.get("client")) ?? clients[0];
-
-  const initials = userName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
-
   return (
     <aside className="sticky top-0 hidden h-screen w-[252px] flex-none flex-col gap-[22px] bg-bg-inverse px-4 pb-[18px] pt-[22px] lg:flex">
       <div className="flex items-center px-2">
         <Logo tone="inverse" />
       </div>
-
-      <ClientSwitcher clients={clients} active={active} />
 
       <nav className="scrollbar-inverse flex flex-1 flex-col gap-[18px] overflow-auto">
         {nav.map((group) => (
@@ -120,55 +104,6 @@ export function Sidebar({
         ))}
       </nav>
 
-      <div className="flex items-center gap-2.5 border-t border-hairline-inverse px-2 pt-3.5">
-        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-accent font-mono text-[11px] font-semibold text-accent-contrast">
-          {initials}
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[12.5px] text-content-inverse">
-            {userName}
-          </span>
-          <span className="font-mono text-[10px] text-gray-400">{userRole}</span>
-        </span>
-        {/*
-          Settings sits as an icon beside the account, not as a nav row. It
-          configures the product rather than reporting on the business, so
-          listing it among the analysis pages gave plumbing the same weight as
-          the numbers. Shown to agency as well as admin: targets and cost
-          assumptions are the agency's job, while managing access inside it is
-          gated to admin separately. Hidden entirely from clients rather than
-          disabled — a greyed control invites a request for access nobody needs.
-        */}
-        {isInternal && (
-          <Link
-            href={SETTINGS_HREF}
-            aria-label="Settings"
-            title="Settings"
-            className="flex h-7 w-7 flex-none items-center justify-center rounded-sm text-gray-300 transition-colors duration-fast hover:bg-white/[0.06] hover:text-content-inverse"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </Link>
-        )}
-        <a
-          href="/api/auth/signout"
-          className="rounded-sm px-2.5 py-[7px] text-[12px] text-gray-300 transition-colors duration-fast hover:bg-white/[0.06] hover:text-content-inverse"
-        >
-          Sign out
-        </a>
-      </div>
     </aside>
   );
 }

@@ -48,12 +48,21 @@ export default async function SnapshotPage({
   const display =
     params.displayCurrency === ROLLUP_CURRENCY ? ROLLUP_CURRENCY : "native";
 
-  const [snapshot, lifetime, payback, settings, discounts, excluded] =
+  // Settings are fetched first, not alongside: the P&L needs the stated
+  // per-order rates to build CM1 and CM2 at all. The warehouse pins both cost
+  // steps to zero, so without these the margin stack silently reports a
+  // business with no fulfilment cost.
+  const settings = await optional(() => getClientSettings(client.clientId), null);
+  const costs = {
+    fulfilmentPerOrder: settings?.fulfilmentPerOrder ?? null,
+    otherCm1PerOrder: settings?.otherCm1PerOrder ?? null,
+  };
+
+  const [snapshot, lifetime, payback, discounts, excluded] =
     await Promise.all([
-      getPnlSnapshot(client.clientId, client.currency, params.period, display),
+      getPnlSnapshot(client.clientId, client.currency, params.period, display, costs),
       optional(() => getLifetimeSummary(client.clientId, client.currency), null),
       optional(() => getPayback(client.clientId, client.currency), null),
-      optional(() => getClientSettings(client.clientId), null),
       getDiscounts(client.clientId, params.range),
       optional(
         () => getExcludedCurrencies(client.clientId, client.currency, params.range),

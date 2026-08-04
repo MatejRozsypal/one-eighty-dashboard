@@ -20,11 +20,14 @@
  *
  * Its height is `--header-h` (globals.css), status-bar inset included, because
  * ControlBar sticks beneath it and needs to know.
+ *
+ * The right padding reserves the corner for `AccountMenu`, which is positioned
+ * fixed and would otherwise sit on top of a long eyebrow rather than push it.
  */
 
 export function Header({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
-    <header className="sticky top-0 z-30 hidden h-[var(--header-h)] items-center gap-3 border-b border-hairline bg-paper/[0.86] px-5 pt-[var(--safe-top)] backdrop-blur-[12px] lg:flex lg:px-8">
+    <header className="sticky top-0 z-30 hidden h-[var(--header-h)] items-center gap-3 border-b border-hairline bg-paper/[0.86] px-5 pt-[var(--safe-top)] backdrop-blur-[12px] lg:flex lg:px-8 lg:pr-[336px]">
       <div className="flex min-w-0 items-baseline gap-2.5">
         <h1 className="m-0 shrink-0 text-[17px] font-bold tracking-heading text-content-strong">
           {title}

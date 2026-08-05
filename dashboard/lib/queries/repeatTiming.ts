@@ -171,8 +171,8 @@ export async function getRepeatTiming(
 
   const totals = await query<{
     cohort: unknown;
-    within: unknown;
-    beyond: unknown;
+    within_horizon: unknown;
+    beyond_horizon: unknown;
   }>(
     `WITH pairs AS (
        SELECT customer_key,
@@ -184,8 +184,10 @@ export async function getRepeatTiming(
      )
      SELECT
        COUNT(*)                                                          AS cohort,
-       COUNTIF(DATE_DIFF(second_date, first_date, DAY) BETWEEN 0 AND @horizon) AS within,
-       COUNTIF(DATE_DIFF(second_date, first_date, DAY) > @horizon)        AS beyond
+       -- Not "within"/"beyond": WITHIN is a reserved word in BigQuery and the
+       -- query fails to parse. Cost a 500 on the live page.
+       COUNTIF(DATE_DIFF(second_date, first_date, DAY) BETWEEN 0 AND @horizon) AS within_horizon,
+       COUNTIF(DATE_DIFF(second_date, first_date, DAY) > @horizon)             AS beyond_horizon
      FROM pairs
      WHERE first_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL @lookback DAY)
                           AND DATE_SUB(CURRENT_DATE(), INTERVAL @horizon DAY)`,
@@ -222,6 +224,6 @@ export async function getRepeatTiming(
     counts,
     horizon,
     cohort,
-    Number(num(totals[0]?.beyond) ?? 0)
+    Number(num(totals[0]?.beyond_horizon) ?? 0)
   );
 }

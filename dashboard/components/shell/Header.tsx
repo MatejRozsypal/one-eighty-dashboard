@@ -27,14 +27,18 @@
 
 export function Header({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
-    <header className="sticky top-0 z-30 hidden h-[var(--header-h)] items-center gap-3 border-b border-hairline bg-paper/[0.86] px-5 pt-[var(--safe-top)] backdrop-blur-[12px] lg:flex lg:px-8 lg:pr-[336px]">
-      <div className="flex min-w-0 items-baseline gap-2.5">
-        <h1 className="m-0 shrink-0 text-[17px] font-bold tracking-heading text-content-strong">
-          {title}
-        </h1>
-        <span className="truncate font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-          {eyebrow}
-        </span>
+    // Full-bleed bar, centred contents: the border and blur run edge to edge
+    // while the title sits on the same left edge as the cards below it.
+    <header className="sticky top-0 z-30 hidden h-[var(--header-h)] items-center border-b border-hairline bg-paper/[0.86] pt-[var(--safe-top)] backdrop-blur-[12px] lg:flex">
+      <div className="page-frame flex items-center gap-3 px-5 lg:px-8 lg:pr-[336px]">
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <h1 className="m-0 shrink-0 text-[17px] font-bold tracking-heading text-content-strong">
+            {title}
+          </h1>
+          <span className="truncate font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
+            {eyebrow}
+          </span>
+        </div>
       </div>
     </header>
   );

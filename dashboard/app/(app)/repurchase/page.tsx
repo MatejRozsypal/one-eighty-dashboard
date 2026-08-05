@@ -61,7 +61,7 @@ export default async function RepurchasePage({
         title="Repurchase"
       />
 
-      <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {/*
           Deliberately not range-filtered. A repurchase rate is a property of a
           customer's whole life, not of a date window — clipping it to "last 30

@@ -88,7 +88,7 @@ export default async function HealthPage() {
       <Header eyebrow="Settings" title="Data Health" />
       <SettingsTabs />
 
-      <main className="flex max-w-[1240px] flex-col gap-[22px] px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-[22px] px-5 pb-14 pt-6 lg:px-8">
         {drift.length > 0 && (
           <section className="flex flex-col gap-3">
             <Eyebrow>Registry drift — {drift.length} open</Eyebrow>

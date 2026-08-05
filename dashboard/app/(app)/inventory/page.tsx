@@ -88,7 +88,7 @@ export default async function StockHealthPage({
   return (
     <>
       {header}
-      <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <TrustBar summary={summary} />
 
         {/* ── The one number ──────────────────────────────────────────────── */}

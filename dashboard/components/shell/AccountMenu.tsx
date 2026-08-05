@@ -125,10 +125,9 @@ export function AccountMenu({
   );
 
   return (
-    <div
-      ref={rootRef}
-      className="fixed right-5 top-0 z-40 hidden h-[var(--header-h)] items-center pt-[var(--safe-top)] lg:flex lg:right-8"
-    >
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-40 hidden h-[var(--header-h)] pt-[var(--safe-top)] lg:block lg:pl-[252px]">
+      <div className="page-frame flex h-full items-center justify-end px-5 lg:px-8">
+        <div ref={rootRef} className="pointer-events-auto relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -166,7 +165,7 @@ export function AccountMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(var(--header-h)-8px)] w-[320px] overflow-hidden rounded-card border border-hairline bg-paper shadow-lg"
+          className="absolute right-0 top-[calc(100%+10px)] w-[320px] overflow-hidden rounded-card border border-hairline bg-paper shadow-lg"
         >
           <div className="flex flex-col p-1.5">
             {clients.map((c, i) => {
@@ -262,8 +261,10 @@ export function AccountMenu({
               Sign out
             </a>
           </div>
+          </div>
+        )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -97,7 +97,7 @@ export default async function SettingsPage({
     return (
       <>
         {header}
-        <main className="flex max-w-[1080px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           {error}
           <SettingsSection
             title="Team"
@@ -142,7 +142,7 @@ export default async function SettingsPage({
     return (
       <>
         {header}
-        <main className="flex max-w-[1080px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           <SettingsSection
             title="Access log"
             defaultOpen
@@ -281,7 +281,7 @@ export default async function SettingsPage({
   return (
     <>
       {header}
-      <main className="flex max-w-[1080px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {error}
 
         <div className="flex flex-wrap items-center gap-2">

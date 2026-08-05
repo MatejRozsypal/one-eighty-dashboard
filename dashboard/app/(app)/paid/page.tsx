@@ -104,7 +104,7 @@ export default async function PaidPage({
 
       <PageControls client={client} params={params} />
 
-      <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <section className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
           {kpis.map((k) => (
             <div

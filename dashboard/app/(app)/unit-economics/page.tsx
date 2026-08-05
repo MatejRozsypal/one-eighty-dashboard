@@ -49,7 +49,7 @@ export default async function UnitEconomicsPage({
     return (
       <>
         {header}
-        <main className="flex max-w-[980px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           <div className="flex max-w-[640px] flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[32px_24px]">
             <span className="self-start">
               <Badge variant="outline" size="sm">No data</Badge>
@@ -114,7 +114,7 @@ export default async function UnitEconomicsPage({
   return (
     <>
       {header}
-      <main className="flex max-w-[980px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
           <div className="flex flex-col gap-[5px]">
             <h2 className="m-0 text-[17px] font-bold tracking-heading text-content-strong">

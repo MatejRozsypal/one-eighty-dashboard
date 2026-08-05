@@ -95,7 +95,7 @@ export default async function SnapshotPage({
 
       <PageControls client={client} params={params} />
 
-      <main className="flex max-w-[1440px] flex-col gap-6 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-6 lg:px-8">
         {excluded.length > 0 && display === "native" && (
           <div className="flex items-start gap-3 rounded-card border border-warning/40 bg-[#FFF9EE] p-[14px_18px]">
             <span

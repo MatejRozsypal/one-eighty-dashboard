@@ -1,0 +1,446 @@
+{
+  "name": "wf_clickup_to_bigquery",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtMinute": 45
+            }
+          ]
+        }
+      },
+      "id": "Hourly :45",
+      "name": "Hourly :45",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/clickup-api-token/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "id": "Get ClickUp token",
+      "name": "Get ClickUp token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One workspace-wide personal token. ClickUp personal tokens are prefixed `pk_`\n// and do not expire.\n//\n// The header is `Authorization: pk_...` with NO `Bearer` prefix. Adding one\n// returns OAUTH_019 rather than a clear 401, which reads like a scope problem\n// and sends you looking in the wrong place for an afternoon.\nconst token = Buffer.from($json.payload.data, 'base64').toString('utf8').trim();\nreturn [{ json: { clickup_token: token } }];\n"
+      },
+      "id": "Decode ClickUp token",
+      "name": "Decode ClickUp token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "sqlQuery": "SELECT l.client_id, l.list_kind, l.list_id\nFROM `oneeighty-warehouse.ref.clickup_lists` l\nJOIN `oneeighty-warehouse.ref.clients` c USING (client_id)\nWHERE l.active AND c.status = 'active'\nORDER BY l.client_id, l.list_kind",
+        "options": {}
+      },
+      "id": "Read list registry",
+      "name": "Read list registry",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        -60,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "Loop over lists",
+      "name": "Loop over lists",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.clickup.com/api/v2/list/{{ $json.list_id }}/field",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Decode ClickUp token').first().json.clickup_token }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "retry": {
+              "maxTries": 4,
+              "waitBetweenTries": 3000
+            }
+          }
+        }
+      },
+      "id": "Fetch field defs",
+      "name": "Fetch field defs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        360,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Field definitions. Landed for two reasons: dropdowns arrive as an orderindex\n// integer and need their options to become labels, and comparing what ClickUp\n// actually has against ref.clickup_field_map is the drift check that catches a\n// relationship field pointing at the wrong client's list.\nconst ctx = $('Loop over lists').first().json;\nconst INGESTED_AT = new Date().toISOString();\nconst today = INGESTED_AT.slice(0, 10);\n\nconst fields = ($input.first().json.fields) || [];\nreturn fields.map(f => {\n  const cfg = f.type_config || {};\n  return { json: {\n    client_id: ctx.client_id,\n    ingested_at: INGESTED_AT,\n    snapshot_date: today,\n    list_kind: ctx.list_kind,\n    list_id: String(ctx.list_id),\n    field_id: f.id,\n    name: f.name,\n    type: f.type,\n    // Present only on list_relationship fields. This is the column that shows\n    // Venev's `Concept` field aiming at Manami's list.\n    target_list_id: cfg.subcategory_id ? String(cfg.subcategory_id) : null,\n    options_json: JSON.stringify(cfg.options || []),\n    payload_json: JSON.stringify(f)\n  }};\n});\n"
+      },
+      "id": "Transform field defs",
+      "name": "Transform field defs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_clickup_fields",
+          "mode": "list"
+        },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "BQ: insert field defs",
+      "name": "BQ: insert field defs",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        760,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "=https://api.clickup.com/api/v2/list/{{ $('Loop over lists').first().json.list_id }}/task",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Decode ClickUp token').first().json.clickup_token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "include_closed",
+              "value": "true"
+            },
+            {
+              "name": "subtasks",
+              "value": "false"
+            },
+            {
+              "name": "page",
+              "value": "0"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "retry": {
+              "maxTries": 4,
+              "waitBetweenTries": 3000
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.last_page === true || ($response.body.tasks || []).length === 0 }}",
+              "limitPagesFetched": true,
+              "maxRequests": 40
+            }
+          }
+        }
+      },
+      "id": "Fetch tasks",
+      "name": "Fetch tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tasks, with every custom field resolved to something a human can read six\n// months from now.\n//\n// ── Dropdowns ──────────────────────────────────────────────────────────────\n// ClickUp returns the option's ORDERINDEX, an integer. Storing 2 is storing\n// nothing: reorder the options and the meaning of every historical row changes\n// underneath you. Resolved here against the definitions fetched a moment ago.\n//\n// ── The `Creative ID` placeholder ──────────────────────────────────────────\n// That field holds the literal string \"Creative ID\" on all 65 Manami tasks. It\n// is a field name that leaked into the data. It is nulled here AND in\n// stg_clickup_tasks — twice on purpose, because a value that looks like an ad\n// id but is not would create a phantom ad joining to nothing, and it would\n// appear in every breakdown as an untagged row that no one could find.\nconst ctx = $('Loop over lists').first().json;\nconst INGESTED_AT = new Date().toISOString();\nconst today = INGESTED_AT.slice(0, 10);\n\n// `.first()`, never `.item`: paired-item resolution across a chain this wide\n// pegs a CPU core with no network activity at all.\nconst defs = new Map();\nfor (const it of $('Transform field defs').all()) {\n  const j = it.json;\n  defs.set(j.field_id, { name: j.name, type: j.type, options: JSON.parse(j.options_json || '[]') });\n}\n\nconst label = (def, value) => {\n  if (value === null || value === undefined || value === '') return null;\n  const opts = def?.options || [];\n  const byIndex = opts.find(o => String(o.orderindex) === String(value));\n  const byId = opts.find(o => String(o.id) === String(value));\n  return (byIndex || byId)?.name ?? null;\n};\n\nconst tasks = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.tasks)) tasks.push(...j.tasks);\n  else if (j.id) tasks.push(j);\n}\n\nconst ts = v => (v ? new Date(Number(v)).toISOString() : null);\n\nreturn tasks.map(t => {\n  const custom = (t.custom_fields || []).map(f => {\n    const def = defs.get(f.id) || { name: f.name, type: f.type, options: (f.type_config || {}).options || [] };\n    const v = f.value;\n    let value_text = null, value_num = null, value_ids = [];\n\n    if (f.type === 'drop_down') {\n      value_text = label(def, v);\n    } else if (f.type === 'list_relationship' || f.type === 'tasks') {\n      value_ids = Array.isArray(v) ? v.map(x => String(x.id ?? x)) : [];\n      value_text = Array.isArray(v) ? v.map(x => x.name).filter(Boolean).join(', ') || null : null;\n    } else if (f.type === 'number' || f.type === 'currency') {\n      value_num = (v === null || v === undefined || v === '') ? null : Number(v);\n    } else if (f.type === 'date') {\n      value_text = v ? new Date(Number(v)).toISOString().slice(0, 10) : null;\n    } else if (f.type === 'labels') {\n      const opts = def.options || [];\n      value_text = Array.isArray(v)\n        ? v.map(id => opts.find(o => o.id === id)?.label ?? null).filter(Boolean).join(', ') || null\n        : null;\n    } else {\n      value_text = (v === null || v === undefined || v === '') ? null : String(v);\n    }\n\n    // A value identical to its own field's name is a placeholder somebody typed\n    // over, not data.\n    if (value_text !== null && value_text.trim() === (f.name || '').trim()) value_text = null;\n\n    return { field_id: f.id, name: f.name, type: f.type, value_text, value_num, value_ids };\n  });\n\n  return { json: {\n    client_id: ctx.client_id,\n    ingested_at: INGESTED_AT,\n    snapshot_date: today,\n    list_kind: ctx.list_kind,\n    list_id: String(ctx.list_id),\n    task_id: String(t.id),\n    task_name: t.name ?? '',\n    task_url: t.url ?? null,\n    status: t.status?.status ?? null,\n    status_type: t.status?.type ?? null,\n    date_created: ts(t.date_created),\n    date_updated: ts(t.date_updated),\n    date_closed: ts(t.date_closed),\n    assignees: (t.assignees || []).map(a => a.username || a.email).filter(Boolean),\n    custom_fields: custom,\n    payload_json: JSON.stringify(t)\n  }};\n});\n"
+      },
+      "id": "Transform tasks",
+      "name": "Transform tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_clickup_tasks",
+          "mode": "list"
+        },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "BQ: insert tasks",
+      "name": "BQ: insert tasks",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1360,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "sqlQuery": "CALL `oneeighty-warehouse.ref.sp_rebuild_creative_tags`();",
+        "options": {}
+      },
+      "id": "Rebuild tag spine",
+      "name": "Rebuild tag spine",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        360,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "sqlQuery": "-- Matches ops.pipeline_log exactly (008_create_ops.sql). A run that\n-- logged the wrong column names would fail here and leave the sync\n-- looking broken when the data had in fact landed.\nINSERT INTO `oneeighty-warehouse.ops.pipeline_log`\n  (run_id, workflow, source, started_at, finished_at, status, rows_loaded, error_msg, trigger)\nSELECT\n  GENERATE_UUID(), 'wf_clickup_to_bigquery', 'clickup',\n  CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(),\n  IF(COUNTIF(severity = 'error') > 0, 'partial', 'success'),\n  (SELECT COUNT(*) FROM `oneeighty-warehouse.ref.creative_tags`),\n  IF(COUNT(*) = 0, NULL,\n     CONCAT(CAST(COUNT(*) AS STRING), ' sync issues; see ops.clickup_sync_issues')),\n  'cron'\nFROM `oneeighty-warehouse.ops.clickup_sync_issues`\nWHERE DATE(synced_at) = CURRENT_DATE();",
+        "options": {}
+      },
+      "id": "Log to pipeline_log",
+      "name": "Log to pipeline_log",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        560,
+        180
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Hourly :45": {
+      "main": [
+        [
+          {
+            "node": "Get ClickUp token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get ClickUp token": {
+      "main": [
+        [
+          {
+            "node": "Decode ClickUp token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode ClickUp token": {
+      "main": [
+        [
+          {
+            "node": "Read list registry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read list registry": {
+      "main": [
+        [
+          {
+            "node": "Loop over lists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop over lists": {
+      "main": [
+        [
+          {
+            "node": "Rebuild tag spine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch field defs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rebuild tag spine": {
+      "main": [
+        [
+          {
+            "node": "Log to pipeline_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch field defs": {
+      "main": [
+        [
+          {
+            "node": "Transform field defs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform field defs": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert field defs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert field defs": {
+      "main": [
+        [
+          {
+            "node": "Fetch tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch tasks": {
+      "main": [
+        [
+          {
+            "node": "Transform tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform tasks": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert tasks": {
+      "main": [
+        [
+          {
+            "node": "Loop over lists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

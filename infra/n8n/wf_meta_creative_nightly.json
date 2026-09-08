@@ -1,0 +1,627 @@
+{
+  "name": "wf_meta_creative_nightly",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 2,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "id": "Nightly 02:30",
+      "name": "Nightly 02:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "sqlQuery": "SELECT client_id, slug, currency\nFROM `oneeighty-warehouse.ref.clients`\nWHERE status = 'active' AND has_meta = TRUE\nORDER BY client_id",
+        "options": {}
+      },
+      "id": "Read Meta clients",
+      "name": "Read Meta clients",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        -260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Emit one item per Meta-active client, carrying two windows.\n//\n// ── Why two windows, and why neither is \"yesterday\" ───────────────────────\n// The hourly ad workflow once fetched yesterday only, with no catch-up. A\n// single failed run left a permanent hole, and by the time anyone looked, 58%\n// of Meta spend was missing from the warehouse with nothing alerting on it. A\n// rolling re-fetch self-heals: every run rewrites the window, and stg dedupes\n// on (client, entity, date) keeping the newest row, so overlap is free.\n//\n// Ad-set grain gets 35 days. Meta restates conversions for roughly a month, so\n// anything shorter locks in figures that were still moving.\n//\n// Breakdowns get 7. The row multiplier is ~12x for age x gender and ~8x for\n// placement, and they exist for delivery diagnosis on current delivery, not as\n// a history to trend. Older rows already in the table are kept, not deleted —\n// the window governs what is re-fetched, not what is retained.\nconst ADSET_DAYS = 35;\nconst BREAKDOWN_DAYS = 7;\n\nconst ymd = d => d.toISOString().slice(0, 10);\nconst back = n => { const d = new Date(); d.setUTCDate(d.getUTCDate() - n); return ymd(d); };\nconst until = back(1);   // yesterday: today is always partial\n\nreturn $input.all().map(item => ({ json: {\n  client_id: item.json.client_id,\n  slug: item.json.slug,\n  currency: item.json.currency,\n  adset_range:     `{\"since\":\"${back(ADSET_DAYS)}\",\"until\":\"${until}\"}`,\n  breakdown_range: `{\"since\":\"${back(BREAKDOWN_DAYS)}\",\"until\":\"${until}\"}`\n}}));\n"
+      },
+      "id": "Plan windows",
+      "name": "Plan windows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -60,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "Loop over clients",
+      "name": "Loop over clients",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/meta-{{ $json.slug }}-access-token/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "id": "Get access_token",
+      "name": "Get access_token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        360,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/meta-{{ $json.slug }}-ad-account-id/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "id": "Get ad_account_id",
+      "name": "Get ad_account_id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Secrets, decoded once per client. `.first()` deliberately, never `.item`:\n// resolving a paired item across a chain this wide makes n8n walk the whole\n// execution graph per row and peg a CPU core with zero network activity.\nconst decode = b64 => Buffer.from(b64, 'base64').toString('utf8').trim();\nconst item = $('Loop over clients').first().json;\n\nreturn [{ json: {\n  client_id: item.client_id,\n  slug: item.slug,\n  currency: item.currency,\n  adset_range: item.adset_range,\n  breakdown_range: item.breakdown_range,\n  access_token: decode($('Get access_token').first().json.payload.data),\n  ad_account_id: decode($('Get ad_account_id').first().json.payload.data),\n  api_version: 'v22.0'\n}}];\n"
+      },
+      "id": "Decode secrets",
+      "name": "Decode secrets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{ $('Decode secrets').first().json.api_version }}/{{ $('Decode secrets').first().json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "level",
+              "value": "adset"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ $('Decode secrets').first().json.adset_range }}"
+            },
+            {
+              "name": "fields",
+              "value": "adset_id,adset_name,campaign_id,campaign_name,spend,impressions,reach,clicks,ctr,cpc,actions,action_values,frequency,outbound_clicks"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Decode secrets').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "retry": {
+              "maxTries": 5,
+              "waitBetweenTries": 3000
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 60
+            }
+          }
+        }
+      },
+      "id": "Fetch adset insights",
+      "name": "Fetch adset insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst AD_ACCOUNT = ctx.ad_account_id;\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n// INT64 columns must not receive 18234.0 — BigQuery rejects a decimal point in\n// an INT64 load and reports it after the insert appears to have succeeded.\nconst int = v => (v === null || v === undefined || v === '' ? null : Math.round(Number(v)));\nconst pick = (arr, type) => {\n  if (!Array.isArray(arr)) return null;\n  const row = arr.find(a => a.action_type === type);\n  return row ? Number(row.value) : null;\n};\nconst rows = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.data)) { for (const r of j.data) rows.push(r); }\n  else if (j.ad_id || j.adset_id) { rows.push(j); }\n}\n\nreturn rows.map(r => ({ json: {\n  client_id: CLIENT_ID,\n  ingested_at: INGESTED_AT,\n  ingest_source: 'cron',\n  ad_account_id: AD_ACCOUNT,\n  campaign_id: String(r.campaign_id ?? ''),\n  campaign_name: r.campaign_name ?? '',\n  adset_id: String(r.adset_id ?? ''),\n  adset_name: r.adset_name ?? '',\n  date_start: r.date_start,\n  date_stop: r.date_stop,\n  spend: num(r.spend),\n  impressions: int(r.impressions),\n  reach: int(r.reach),\n  frequency: num(r.frequency),\n  clicks: int(r.clicks),\n  ctr: num(r.ctr),\n  cpc: num(r.cpc),\n  purchases:          int(pick(r.actions, 'omni_purchase') ?? pick(r.actions, 'purchase')),\n  purchase_value:     num(pick(r.action_values, 'omni_purchase') ?? pick(r.action_values, 'purchase')),\n  add_to_cart:        int(pick(r.actions, 'add_to_cart')),\n  initiate_checkout:  int(pick(r.actions, 'initiate_checkout')),\n  landing_page_views: int(pick(r.actions, 'landing_page_view')),\n  link_clicks:        int(pick(r.actions, 'link_click')),\n  outbound_clicks:    int(pick(r.outbound_clicks, 'outbound_click')),\n  actions:       JSON.stringify(r.actions ?? []),\n  action_values: JSON.stringify(r.action_values ?? []),\n  payload_json:  JSON.stringify(r)\n}}));\n"
+      },
+      "id": "Transform adset insights",
+      "name": "Transform adset insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_meta_adset_insights",
+          "mode": "list"
+        },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "BQ: insert adset insights",
+      "name": "BQ: insert adset insights",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1360,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{ $('Decode secrets').first().json.api_version }}/{{ $('Decode secrets').first().json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "level",
+              "value": "ad"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ $('Decode secrets').first().json.breakdown_range }}"
+            },
+            {
+              "name": "breakdowns",
+              "value": "age,gender"
+            },
+            {
+              "name": "fields",
+              "value": "ad_id,spend,impressions,reach,clicks,ctr,cpc,actions,action_values"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Decode secrets').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "retry": {
+              "maxTries": 5,
+              "waitBetweenTries": 3000
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 60
+            }
+          }
+        }
+      },
+      "id": "Fetch demo breakdown",
+      "name": "Fetch demo breakdown",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst AD_ACCOUNT = ctx.ad_account_id;\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n// INT64 columns must not receive 18234.0 — BigQuery rejects a decimal point in\n// an INT64 load and reports it after the insert appears to have succeeded.\nconst int = v => (v === null || v === undefined || v === '' ? null : Math.round(Number(v)));\nconst pick = (arr, type) => {\n  if (!Array.isArray(arr)) return null;\n  const row = arr.find(a => a.action_type === type);\n  return row ? Number(row.value) : null;\n};\nconst rows = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.data)) { for (const r of j.data) rows.push(r); }\n  else if (j.ad_id || j.adset_id) { rows.push(j); }\n}\n\n// A breakdown row with no impressions is a bucket Meta had nothing to say\n// about. Keeping it would inflate every \"which age group\" denominator with\n// zeroes.\nreturn rows.filter(r => Number(r.impressions) > 0).map(r => ({ json: {\n  client_id: CLIENT_ID,\n  ingested_at: INGESTED_AT,\n  ad_account_id: AD_ACCOUNT,\n  ad_id: String(r.ad_id),\n  date_start: r.date_start,\n  date_stop: r.date_stop,\n  age: r.age ?? 'unknown',\n  gender: r.gender ?? 'unknown',\n  spend: num(r.spend),\n  impressions: int(r.impressions),\n  reach: int(r.reach),\n  clicks: int(r.clicks),\n  purchases:      int(pick(r.actions, 'omni_purchase') ?? pick(r.actions, 'purchase')),\n  purchase_value: num(pick(r.action_values, 'omni_purchase') ?? pick(r.action_values, 'purchase')),\n  payload_json: JSON.stringify(r)\n}}));\n"
+      },
+      "id": "Transform demo breakdown",
+      "name": "Transform demo breakdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_meta_ad_breakdown_demo",
+          "mode": "list"
+        },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "BQ: insert demo breakdown",
+      "name": "BQ: insert demo breakdown",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1960,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{ $('Decode secrets').first().json.api_version }}/{{ $('Decode secrets').first().json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "level",
+              "value": "ad"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ $('Decode secrets').first().json.breakdown_range }}"
+            },
+            {
+              "name": "breakdowns",
+              "value": "publisher_platform,platform_position,impression_device"
+            },
+            {
+              "name": "fields",
+              "value": "ad_id,spend,impressions,reach,clicks,ctr,cpc,actions,action_values"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Decode secrets').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "retry": {
+              "maxTries": 5,
+              "waitBetweenTries": 3000
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging?.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging?.next }}",
+              "limitPagesFetched": true,
+              "maxRequests": 60
+            }
+          }
+        }
+      },
+      "id": "Fetch placement breakdown",
+      "name": "Fetch placement breakdown",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Decode secrets').first().json;\nconst CLIENT_ID = ctx.client_id;\nconst AD_ACCOUNT = ctx.ad_account_id;\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n// INT64 columns must not receive 18234.0 — BigQuery rejects a decimal point in\n// an INT64 load and reports it after the insert appears to have succeeded.\nconst int = v => (v === null || v === undefined || v === '' ? null : Math.round(Number(v)));\nconst pick = (arr, type) => {\n  if (!Array.isArray(arr)) return null;\n  const row = arr.find(a => a.action_type === type);\n  return row ? Number(row.value) : null;\n};\nconst rows = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.data)) { for (const r of j.data) rows.push(r); }\n  else if (j.ad_id || j.adset_id) { rows.push(j); }\n}\n\nreturn rows.filter(r => Number(r.impressions) > 0).map(r => ({ json: {\n  client_id: CLIENT_ID,\n  ingested_at: INGESTED_AT,\n  ad_account_id: AD_ACCOUNT,\n  ad_id: String(r.ad_id),\n  date_start: r.date_start,\n  date_stop: r.date_stop,\n  publisher_platform: r.publisher_platform ?? 'unknown',\n  platform_position:  r.platform_position ?? 'unknown',\n  impression_device:  r.impression_device ?? null,\n  spend: num(r.spend),\n  impressions: int(r.impressions),\n  reach: int(r.reach),\n  clicks: int(r.clicks),\n  purchases:      int(pick(r.actions, 'omni_purchase') ?? pick(r.actions, 'purchase')),\n  purchase_value: num(pick(r.action_values, 'omni_purchase') ?? pick(r.action_values, 'purchase')),\n  payload_json: JSON.stringify(r)\n}}));\n"
+      },
+      "id": "Transform placement breakdown",
+      "name": "Transform placement breakdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2360,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_meta_ad_breakdown_placement",
+          "mode": "list"
+        },
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "BQ: insert placement breakdown",
+      "name": "BQ: insert placement breakdown",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        2560,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Nightly 02:30": {
+      "main": [
+        [
+          {
+            "node": "Read Meta clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Meta clients": {
+      "main": [
+        [
+          {
+            "node": "Plan windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan windows": {
+      "main": [
+        [
+          {
+            "node": "Loop over clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop over clients": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get access_token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get access_token": {
+      "main": [
+        [
+          {
+            "node": "Get ad_account_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get ad_account_id": {
+      "main": [
+        [
+          {
+            "node": "Decode secrets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode secrets": {
+      "main": [
+        [
+          {
+            "node": "Fetch adset insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch adset insights": {
+      "main": [
+        [
+          {
+            "node": "Transform adset insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform adset insights": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert adset insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert adset insights": {
+      "main": [
+        [
+          {
+            "node": "Fetch demo breakdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch demo breakdown": {
+      "main": [
+        [
+          {
+            "node": "Transform demo breakdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform demo breakdown": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert demo breakdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert demo breakdown": {
+      "main": [
+        [
+          {
+            "node": "Fetch placement breakdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch placement breakdown": {
+      "main": [
+        [
+          {
+            "node": "Transform placement breakdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform placement breakdown": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert placement breakdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert placement breakdown": {
+      "main": [
+        [
+          {
+            "node": "Loop over clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

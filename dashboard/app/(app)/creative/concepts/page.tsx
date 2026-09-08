@@ -16,6 +16,7 @@ import { CreativeBar } from "@/components/creative/CreativeBar";
 import { WindowToggle } from "@/components/creative/WindowToggle";
 import { AngleCoverage } from "@/components/creative/AngleCoverage";
 import { ConceptCard, type ConceptCardData } from "@/components/creative/ConceptCard";
+import { DecisionLog, type LoggedDecision, type ReviewRow } from "@/components/creative/DecisionLog";
 import {
   NotIngested,
   Scorecard,
@@ -27,7 +28,8 @@ import { buildAdViews, loadCreativeContext } from "@/lib/creative/page";
 import { getPersonas } from "@/lib/queries/creative";
 import { groupBy, read, sum, UNTAGGED } from "@/lib/creative/model";
 import { moneyVerdict } from "@/lib/creative/verdict";
-import { toVerdictView, type AdView } from "@/lib/creative/view";
+import { toAdsetView, toVerdictView, type AdView } from "@/lib/creative/view";
+import { listDecisions } from "@/lib/creative/store";
 import { ANGLES } from "@/lib/creative/vocabulary";
 import { personaCapacity } from "@/lib/creative/velocity";
 import { purchasesForPrecision } from "@/lib/creative/stats";
@@ -151,6 +153,46 @@ export default async function ConceptsPage({
     data.ads.map((a) => `${a.tags.conceptId ?? a.adId}|${a.tags.bodyCode ?? "b?"}`)
   ).size;
 
+  // ── The weekly review ───────────────────────────────────────────────────
+  // Ad-set level, because that is where the budget lives, where the no-touch
+  // window applies, and what the SOP names as the decision grain. Ordered by
+  // spend like everything else here.
+  const reviewRows: ReviewRow[] = ctx.data.adsets.map((set) => {
+    const v = toAdsetView(
+      set,
+      data.ads.filter((a) => a.adsetId === set.adsetId).length,
+      account.meanRoas,
+      account.spend,
+      thresholds
+    );
+    return {
+      adsetId: v.adsetId,
+      adsetName: v.adsetName,
+      campaignName: v.campaignName,
+      spend: v.spend,
+      purchases: v.purchases,
+      roas: v.roas,
+      ciLow: v.ciLow,
+      ciHigh: v.ciHigh,
+      ageDays: v.ageDays,
+      verdictCode: v.verdict.code,
+      verdictLabel: v.verdict.label,
+      verdictSay: v.verdict.say,
+      undecided: v.verdict.undecided,
+    };
+  });
+
+  const recent: LoggedDecision[] = (await listDecisions(client.clientId, 40)).map((d) => ({
+    id: d.id,
+    entityName: d.entityName,
+    computedVerdict: d.computedVerdict,
+    finalVerdict: d.finalVerdict,
+    overridden: d.overridden,
+    learningNote: d.learningNote,
+    decidedBy: d.decidedBy,
+    decidedAt: d.decidedAt,
+  }));
+
   return (
     <Shell ctx={ctx}>
       <Scorecard
@@ -197,6 +239,21 @@ export default async function ConceptsPage({
           currency={currency}
         />
       </section>
+
+      {reviewRows.length > 0 && (
+        <section>
+          <SectionHead
+            title="This week's decisions"
+            eyebrow="ad set level · where money verdicts are taken"
+          />
+          <DecisionLog
+            rows={reviewRows}
+            recent={recent}
+            clientId={client.clientId}
+            currency={currency}
+          />
+        </section>
+      )}
 
       <section>
         <SectionHead title="Live concepts" eyebrow="sorted by spend" />

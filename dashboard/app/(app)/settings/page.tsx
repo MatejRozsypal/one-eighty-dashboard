@@ -29,11 +29,13 @@ import { isDemo } from "@/lib/demo/client";
 import { saveSettingsAction } from "@/app/(app)/admin/actions";
 import { CreateUserForm } from "@/app/(app)/admin/UserForms";
 import { PeopleList } from "@/components/settings/PeopleList";
-import { saveGoalsAction } from "./actions";
+import { saveGoalsAction, saveCreativeSettingsAction } from "./actions";
 import { Header } from "@/components/shell/Header";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { SaveButton } from "@/components/settings/SaveButton";
+import { CreativeThresholds } from "@/components/settings/CreativeThresholds";
+import { getCreativeSettings } from "@/lib/creative/store";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -240,6 +242,7 @@ export default async function SettingsPage({
   const current = settings.find((s) => s.clientId === selected.clientId);
   const year = new Date().getUTCFullYear();
   const goals = await getGoals(selected.clientId, year).catch(() => []);
+  const creative = await getCreativeSettings(selected.clientId);
   const people = users.filter(
     (u) => u.role === "client" && u.clientId === selected.clientId
   );
@@ -260,6 +263,19 @@ export default async function SettingsPage({
       parts.push(`other ${current.otherCm1PerOrder} ${selected.currency}`);
     }
     return parts.length === 0 ? "Nothing stated" : parts.join(" · ");
+  })();
+
+  // The Creative section is unusable until the three money lines are set, so
+  // the collapsed summary says which of them are missing rather than reporting
+  // a count. "Nothing set" and "no CPA" need different actions.
+  const creativeSummary = (() => {
+    const missing: string[] = [];
+    if (creative.killRoas === null) missing.push("kill line");
+    if (creative.targetRoas === null) missing.push("target");
+    if (creative.targetCpa === null) missing.push("CPA");
+    if (missing.length === 3) return "No thresholds set — verdicts are off";
+    if (missing.length > 0) return `Missing ${missing.join(", ")} — verdicts are off`;
+    return `Kill ${creative.killRoas!.toFixed(2)} · target ${creative.targetRoas!.toFixed(2)} · CPA ${creative.targetCpa} ${selected.currency}`;
   })();
 
   const monthsWithGoals = new Set(goals.map((g) => g.month)).size;
@@ -366,6 +382,19 @@ export default async function SettingsPage({
               </span>
             )}
           </form>
+        </SettingsSection>
+
+        <SettingsSection
+          title="Creative Engine"
+          summary={creativeSummary}
+          description="What the Creative section judges against. The three money lines have no defaults on purpose — without them every creative screen shows delivery and refuses to issue a verdict, which is better than issuing one against a number nobody chose."
+        >
+          <CreativeThresholds
+            clientId={selected.clientId}
+            currency={selected.currency}
+            settings={creative}
+            action={saveCreativeSettingsAction}
+          />
         </SettingsSection>
 
         <SettingsSection

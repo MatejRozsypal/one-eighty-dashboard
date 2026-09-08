@@ -60,7 +60,24 @@ export function ProductRail({ isInternal }: { isInternal: boolean }) {
   const products = productsFor(isInternal);
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[var(--rail-w)] flex-none flex-col items-center gap-1 border-r border-white/[0.07] bg-bg-inverse pb-[18px] pt-[18px] lg:flex">
+    <aside className="sticky top-0 hidden h-screen w-[var(--rail-w)] flex-none flex-col items-center border-r border-white/[0.07] bg-bg-inverse pb-[18px] pt-[22px] lg:flex">
+      {/*
+        The collapse control lives in one of two places and the rail reserves
+        the top slot for it either way. Open, it sits at the panel's right edge
+        beside the logo; closed, the panel is gone and it lands here, at the
+        same height, on the other side of where the panel was — so it crosses a
+        short gap rather than jumping to the far bottom corner, which is where
+        it used to go and why it read as a different control.
+
+        The slot keeps its height when empty so the icons below never move.
+      */}
+      <div className="flex h-7 w-full items-center justify-center">
+        <span className="nav-when-collapsed">
+          <NavCollapseToggle variant="rail" />
+        </span>
+      </div>
+
+      <div className="mt-[22px] flex flex-col items-center gap-1">
       {products.map((p) => {
         const isActive = p.id === active;
         return (
@@ -83,14 +100,6 @@ export function ProductRail({ isInternal }: { isInternal: boolean }) {
           </Link>
         );
       })}
-
-      {/*
-        The expand control when the panel is closed. The matching collapse
-        control lives at the top of the panel itself; only one of the two is
-        ever on screen, gated by CSS on the same data attribute.
-      */}
-      <div className="nav-when-collapsed mt-auto">
-        <NavCollapseToggle variant="rail" />
       </div>
     </aside>
   );

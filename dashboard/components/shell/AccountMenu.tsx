@@ -28,6 +28,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import { SETTINGS_HREF } from "@/lib/nav";
+import { productFor } from "@/lib/products";
 import type { Client } from "@/lib/clients";
 
 function initials(name: string): string {
@@ -92,6 +93,12 @@ export function AccountMenu({
   }, [isPending]);
   const shown = optimistic ?? active;
 
+  // The assistant reads no warehouse data, so there is no "whose numbers am I
+  // looking at" for it to answer. Leaving the switcher visible there offered a
+  // choice that changed nothing, and put a client's name above a conversation
+  // that had no connection to them.
+  const onChat = productFor(pathname) === "chat";
+
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
@@ -139,12 +146,16 @@ export function AccountMenu({
         }`}
       >
         <span
-          className={`flex h-7 w-7 flex-none items-center justify-center rounded-lg font-mono text-[11px] font-semibold ${tintFor(activeIndex)}`}
+          className={`flex h-7 w-7 flex-none items-center justify-center font-mono text-[11px] font-semibold ${
+            onChat
+              ? "rounded-full bg-accent text-accent-contrast"
+              : `rounded-lg ${tintFor(activeIndex)}`
+          }`}
         >
-          {initials(shown.name)}
+          {initials(onChat ? userName : shown.name)}
         </span>
         <span className="max-w-[190px] truncate text-[13px] font-semibold tracking-[-0.01em] text-content-strong">
-          {shown.name}
+          {onChat ? userName : shown.name}
         </span>
         <svg
           aria-hidden="true"
@@ -167,6 +178,7 @@ export function AccountMenu({
           role="menu"
           className="absolute right-0 top-[calc(100%+10px)] w-[320px] overflow-hidden rounded-card border border-hairline bg-paper shadow-lg"
         >
+          {!onChat && (
           <div className="flex flex-col p-1.5">
             {clients.map((c, i) => {
               const isActive = c.clientId === shown.clientId;
@@ -195,6 +207,7 @@ export function AccountMenu({
               );
             })}
           </div>
+          )}
 
           <div className="flex items-center gap-2.5 border-t border-hairline px-3 py-3">
             <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-accent font-mono text-[11px] font-semibold text-accent-contrast">

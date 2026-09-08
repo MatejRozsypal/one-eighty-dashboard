@@ -24,6 +24,7 @@ import { authOptions } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { ProductRail } from "@/components/shell/ProductRail";
+import { ProductTransition } from "@/components/shell/ProductTransition";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
 import { AccountMenu } from "@/components/shell/AccountMenu";
 import {
@@ -158,7 +159,9 @@ export default async function AppLayout({
             navigation is in flight, so a stale number never sits there looking
             like the answer.
           */}
-          <PendingRegion>{children}</PendingRegion>
+          <ProductTransition>
+            <PendingRegion>{children}</PendingRegion>
+          </ProductTransition>
         </div>
       </div>
 

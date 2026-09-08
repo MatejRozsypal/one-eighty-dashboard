@@ -17,16 +17,20 @@
 import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/ui/Logo";
 import { Composer } from "@/components/chat/Composer";
+import type { Attachment } from "@/lib/image";
 
 interface Message {
   id: number;
   role: "user" | "assistant";
   text: string;
+  /** Kept on the message so the transcript shows what was actually sent. */
+  images?: Attachment[];
 }
 
 export function Conversation() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tail = useRef<HTMLDivElement>(null);
@@ -38,18 +42,28 @@ export function Conversation() {
 
   async function send() {
     const text = draft.trim();
-    if (!text || pending) return;
+    const images = attachments;
+    // An image on its own is a question — "what is wrong with this ad?" — so
+    // the send is allowed with no text at all.
+    if ((!text && images.length === 0) || pending) return;
 
     setDraft("");
+    setAttachments([]);
     setError(null);
-    setMessages((m) => [...m, { id: nextId.current++, role: "user", text }]);
+    setMessages((m) => [
+      ...m,
+      { id: nextId.current++, role: "user", text, images },
+    ]);
     setPending(true);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          message: text,
+          images: images.map((a) => ({ mime: a.mime, dataUrl: a.dataUrl })),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -75,6 +89,9 @@ export function Conversation() {
       onChange={setDraft}
       onSend={() => void send()}
       pending={pending}
+      attachments={attachments}
+      onAttach={(added) => setAttachments((a) => [...a, ...added])}
+      onRemove={(id) => setAttachments((a) => a.filter((x) => x.id !== id))}
       autoFocus
     />
   );
@@ -101,10 +118,25 @@ export function Conversation() {
         <div className="mx-auto flex w-full max-w-[760px] flex-col gap-5 px-5 pb-8 pt-8 lg:px-8">
           {messages.map((m) =>
             m.role === "user" ? (
-              <div key={m.id} className="flex justify-end">
-                <div className="max-w-[84%] whitespace-pre-wrap rounded-card bg-surface-card px-[16px] py-[11px] text-[14.5px] leading-[1.6] text-content-strong shadow-sm">
-                  {m.text}
-                </div>
+              <div key={m.id} className="flex flex-col items-end gap-2">
+                {m.images && m.images.length > 0 && (
+                  <div className="flex max-w-[84%] flex-wrap justify-end gap-2">
+                    {m.images.map((img) => (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        key={img.id}
+                        src={img.dataUrl}
+                        alt={img.name}
+                        className="max-h-[220px] rounded-card border border-hairline object-cover"
+                      />
+                    ))}
+                  </div>
+                )}
+                {m.text && (
+                  <div className="max-w-[84%] whitespace-pre-wrap rounded-card bg-surface-card px-[16px] py-[11px] text-[14.5px] leading-[1.6] text-content-strong shadow-sm">
+                    {m.text}
+                  </div>
+                )}
               </div>
             ) : (
               <div key={m.id} className="flex items-start gap-3">

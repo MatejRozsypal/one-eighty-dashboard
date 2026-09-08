@@ -56,7 +56,7 @@ export function NavCollapseToggle({
       title={label}
       aria-label={label}
       className={`flex items-center justify-center rounded-sm text-gray-400 transition-colors duration-fast hover:bg-white/[0.06] hover:text-gray-250 ${
-        variant === "panel" ? "h-7 w-7" : "h-9 w-9"
+        "h-7 w-7"
       }`}
     >
       <svg

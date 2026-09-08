@@ -17,7 +17,10 @@ export default function ChatPage() {
   // composer is pinned to the bottom of the viewport, unlike every Analytics
   // page which scrolls as one document.
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col">
+    // The corner account menu is position-fixed over the top `--header-h`, and
+    // this page draws no Header of its own to reserve that space, so the first
+    // message was sliding underneath it.
+    <div className="flex h-[100dvh] min-h-0 flex-col lg:pt-[var(--header-h)]">
       <Conversation />
     </div>
   );

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
+import { NAV_COLLAPSE_BOOT } from "@/components/shell/NavCollapseToggle";
 
 export const metadata: Metadata = {
   title: {
@@ -51,7 +52,15 @@ export default function RootLayout({
       className={`${GeistSans.variable} ${GeistMono.variable}`}
       suppressHydrationWarning
     >
-      <body>{children}</body>
+      <body>
+        {/*
+          Applies a remembered collapse before the first paint. Without it the
+          panel renders open and snaps shut on hydration, which reads as a bug
+          rather than as a preference being restored.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: NAV_COLLAPSE_BOOT }} />
+        {children}
+      </body>
     </html>
   );
 }

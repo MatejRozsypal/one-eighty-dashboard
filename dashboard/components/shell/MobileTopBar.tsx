@@ -32,15 +32,18 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { navFor, pageTitle } from "@/lib/nav";
+import { productsFor, productFor } from "@/lib/products";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import type { Client } from "@/lib/clients";
 
 export function MobileTopBar({
   clients = [],
   isAdmin = false,
+  isInternal = false,
 }: {
   clients?: Client[];
   isAdmin?: boolean;
+  isInternal?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [clientOpen, setClientOpen] = useState(false);
@@ -49,6 +52,8 @@ export function MobileTopBar({
   const qs = searchParams.toString();
   const title = pageTitle(pathname);
   const nav = navFor(isAdmin);
+  const products = productsFor(isInternal);
+  const activeProduct = productFor(pathname);
 
   // Same resolution the sidebar uses: the selection lives in the URL, so both
   // switchers agree without any shared state.
@@ -217,7 +222,37 @@ export function MobileTopBar({
             aria-label="Pages"
             className="absolute left-3 top-[calc(var(--header-bar-h)+var(--safe-top))] z-[50] max-h-[70vh] w-[64%] min-w-[228px] max-w-[300px] overflow-y-auto rounded-lg bg-paper p-2 shadow-lg"
           >
-            {nav.map((group) => (
+            {/*
+              The rail has no mobile equivalent — there is no room for a second
+              column — so the products it holds lead this sheet instead. Putting
+              them among the page groups would have made a product look like a
+              page, which is the one distinction the rail exists to draw.
+            */}
+            <div className="flex flex-col">
+              <span className="px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
+                Sections
+              </span>
+              <div className="flex gap-1 px-1.5 pb-1">
+                {products.map((p) => (
+                  <Link
+                    key={p.id}
+                    href={qs ? `${p.href}?${qs}` : p.href}
+                    onClick={() => setOpen(false)}
+                    aria-current={p.id === activeProduct ? "page" : undefined}
+                    className={`flex-1 rounded-sm px-2 py-[7px] text-center text-[12.5px] tracking-[-0.01em] ${
+                      p.id === activeProduct
+                        ? "bg-growth-500/[0.14] font-semibold text-growth-700"
+                        : "text-content-body"
+                    }`}
+                  >
+                    {p.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {activeProduct === "analytics" &&
+              nav.map((group) => (
               <div key={group.label} className="flex flex-col">
                 <span className="px-3 pb-1 pt-3 font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
                   {group.label}
@@ -259,7 +294,7 @@ export function MobileTopBar({
                   );
                 })}
               </div>
-            ))}
+              ))}
           </nav>
         </>
       )}

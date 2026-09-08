@@ -19,11 +19,18 @@
  * `AccountMenu` in the top-right corner: they answer the same question — whose
  * numbers am I looking at, and as whom — and were split across opposite ends of
  * this column.
+ *
+ * This panel belongs to whichever product the rail has selected, so its
+ * contents change with the section. It is also the half that collapses: the
+ * rail beside it never does, because it is the only route back to the other
+ * products.
  */
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { navFor } from "@/lib/nav";
+import { productFor } from "@/lib/products";
+import { NavCollapseToggle } from "@/components/shell/NavCollapseToggle";
 import { Logo } from "@/components/ui/Logo";
 import { Badge } from "@/components/ui/Badge";
 import type { Client } from "@/lib/clients";
@@ -40,15 +47,20 @@ export function Sidebar({
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
   const nav = navFor(isAdmin);
+  const product = productFor(pathname);
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[252px] flex-none flex-col gap-[22px] bg-bg-inverse px-4 pb-[18px] pt-[22px] lg:flex">
-      <div className="flex items-center px-2">
+    <aside className="nav-panel sticky top-0 hidden h-screen w-[var(--nav-w)] flex-none flex-col gap-[22px] bg-bg-inverse px-4 pb-[18px] pt-[22px] lg:flex">
+      <div className="flex items-center justify-between gap-2 px-2">
         <Logo tone="inverse" />
+        <NavCollapseToggle variant="panel" />
       </div>
 
       <nav className="scrollbar-inverse flex flex-1 flex-col gap-[18px] overflow-auto">
-        {nav.map((group) => (
+        {product === "creative" ? (
+          <CreativePanel />
+        ) : (
+          nav.map((group) => (
           <div key={group.label} className="flex flex-col gap-[3px]">
             <span className="px-2.5 pb-1.5 font-mono text-[10px] uppercase tracking-eyebrow text-gray-400">
               {group.label}
@@ -100,10 +112,37 @@ export function Sidebar({
                 </span>
               );
             })}
-          </div>
-        ))}
+            </div>
+          ))
+        )}
       </nav>
 
     </aside>
+  );
+}
+
+/**
+ * The Creative section's own list. Chat deliberately has no panel of its own —
+ * it keeps the Analytics page list, so choosing the assistant never puts the
+ * numbers a section away.
+ */
+function CreativePanel() {
+  return (
+    <div className="flex flex-col gap-[3px]">
+      <span className="px-2.5 pb-1.5 font-mono text-[10px] uppercase tracking-eyebrow text-gray-400">
+        Creative
+      </span>
+      {["Top creatives", "Copy analysis", "Iterations needed"].map((label) => (
+        <span
+          key={label}
+          className="flex items-center justify-between gap-2 rounded-sm px-2.5 py-[9px] text-[13.5px] tracking-[-0.01em] text-gray-400"
+        >
+          {label}
+          <Badge variant="inverse" size="sm">
+            Soon
+          </Badge>
+        </span>
+      ))}
+    </div>
   );
 }

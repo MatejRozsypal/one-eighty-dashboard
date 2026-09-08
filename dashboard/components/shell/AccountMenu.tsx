@@ -125,7 +125,7 @@ export function AccountMenu({
   );
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-40 hidden h-[var(--header-h)] pt-[var(--safe-top)] lg:block lg:pl-[252px]">
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-40 hidden h-[var(--header-h)] pt-[var(--safe-top)] lg:block lg:pl-[calc(var(--rail-w)+var(--nav-w))]">
       <div className="page-frame flex h-full items-center justify-end px-5 lg:px-8">
         <div ref={rootRef} className="pointer-events-auto relative">
       <button

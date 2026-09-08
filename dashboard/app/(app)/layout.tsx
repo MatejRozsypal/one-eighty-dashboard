@@ -23,6 +23,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
+import { ProductRail } from "@/components/shell/ProductRail";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
 import { AccountMenu } from "@/components/shell/AccountMenu";
 import {
@@ -115,6 +116,7 @@ export default async function AppLayout({
     // on any page shorter than the viewport, and under Safari's bottom bar.
     <NavigationPendingProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
+      <ProductRail isInternal={isInternal} />
       <Sidebar clients={clients} isAdmin={isAdmin} />
 
       {/*
@@ -138,7 +140,7 @@ export default async function AppLayout({
         underneath it.
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <MobileTopBar clients={clients} isAdmin={isAdmin} />
+        <MobileTopBar clients={clients} isAdmin={isAdmin} isInternal={isInternal} />
 
         {/*
           One continuous surface for everything under the bar — which is why the

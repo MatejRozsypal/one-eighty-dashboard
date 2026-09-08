@@ -79,6 +79,19 @@
   --page-max: 1400px;
 
   /*
+   * The two left columns.
+   *
+   * Both are zero below `lg`, where there is no sidebar at all and navigation
+   * is the mobile top bar instead. Expressing them as variables rather than as
+   * literals is what lets the account menu in the top-right corner stay aligned
+   * with the content column: it is position-fixed, so it has to be told how
+   * much chrome sits to its left, and it used to be told `252px` in a hardcoded
+   * class that knew nothing about a rail existing.
+   */
+  --rail-w: 0px;
+  --nav-w: 0px;
+
+  /*
    * Platform colors for the two Czech-market sources. The handoff ships
    * Shopify / Meta / Klaviyo / Google, but our warehouse also carries Shoptet
    * and Ecomail, and every metric card is tagged with the system it came from.
@@ -211,4 +224,38 @@ html {
 
 body {
   background-color: var(--bg-subtle);
+}
+
+/* ==========================================================================
+   Navigation chrome: the icon rail, the collapsible panel beside it
+   ========================================================================== */
+
+@media (min-width: 1024px) {
+  :root {
+    --rail-w: 56px;
+    --nav-w: 252px;
+  }
+
+  /* Collapsing sets the panel's width to zero rather than hiding it alone, so
+     the account menu's left offset follows in the same rule. */
+  :root[data-nav="collapsed"] {
+    --nav-w: 0px;
+  }
+
+  :root[data-nav="collapsed"] .nav-panel {
+    display: none;
+  }
+}
+
+/* Paired visibility for the collapse and expand affordances: exactly one of
+   the two is on screen, and neither exists below `lg` where nothing collapses.
+   Declared outside the media query so the default (hidden) holds on mobile. */
+.nav-when-collapsed {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  :root[data-nav="collapsed"] .nav-when-collapsed {
+    display: block;
+  }
 }

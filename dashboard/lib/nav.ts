@@ -85,6 +85,11 @@ export function pageTitle(pathname: string): string {
     const item = group.items.find((i) => i.href === pathname);
     if (item) return item.label;
   }
+  // The rail's products are not in NAV — they are sections that *contain* a
+  // nav, not entries in one — so they are named here rather than by adding a
+  // phantom group that the sidebar would then have to filter back out.
+  if (pathname.startsWith("/chat")) return "Assistant";
+  if (pathname.startsWith("/creative")) return "Creative";
   return "Dashboard";
 }
 

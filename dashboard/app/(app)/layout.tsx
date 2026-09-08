@@ -25,6 +25,7 @@ import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { ProductRail } from "@/components/shell/ProductRail";
 import { ProductTransition } from "@/components/shell/ProductTransition";
+import { HistoryProvider } from "@/components/chat/HistoryProvider";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
 import { AccountMenu } from "@/components/shell/AccountMenu";
 import {
@@ -116,6 +117,7 @@ export default async function AppLayout({
     // making the whole shell black instead left a black band under the content
     // on any page shorter than the viewport, and under Safari's bottom bar.
     <NavigationPendingProvider>
+    <HistoryProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
       <ProductRail isInternal={isInternal} />
       <Sidebar clients={clients} isAdmin={isAdmin} />
@@ -166,6 +168,7 @@ export default async function AppLayout({
       </div>
 
     </div>
+    </HistoryProvider>
     </NavigationPendingProvider>
   );
 }

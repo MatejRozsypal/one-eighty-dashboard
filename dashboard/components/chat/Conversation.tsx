@@ -18,23 +18,17 @@ import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/ui/Logo";
 import { Composer } from "@/components/chat/Composer";
 import type { Attachment } from "@/lib/image";
-
-interface Message {
-  id: number;
-  role: "user" | "assistant";
-  text: string;
-  /** Kept on the message so the transcript shows what was actually sent. */
-  images?: Attachment[];
-}
+import { useChatHistory } from "@/components/chat/HistoryProvider";
 
 export function Conversation() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { conversations, activeId, append } = useChatHistory();
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tail = useRef<HTMLDivElement>(null);
-  const nextId = useRef(0);
+  const active = conversations?.find((c) => c.id === activeId) ?? null;
+  const messages = active?.messages ?? [];
 
   useEffect(() => {
     tail.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -50,10 +44,7 @@ export function Conversation() {
     setDraft("");
     setAttachments([]);
     setError(null);
-    setMessages((m) => [
-      ...m,
-      { id: nextId.current++, role: "user", text, images },
-    ]);
+    append({ id: Date.now(), role: "user", text, images });
     setPending(true);
 
     try {
@@ -70,10 +61,7 @@ export function Conversation() {
         throw new Error(body?.error ?? `Request failed (${res.status}).`);
       }
       const { reply } = await res.json();
-      setMessages((m) => [
-        ...m,
-        { id: nextId.current++, role: "assistant", text: reply },
-      ]);
+      append({ id: Date.now() + 1, role: "assistant", text: reply });
     } catch (e) {
       // Surfaced, never swallowed into a fake answer: a chat that invents a
       // reply when the server is down is worse than one that says it is down.

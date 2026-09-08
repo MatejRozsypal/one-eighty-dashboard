@@ -31,6 +31,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { navFor } from "@/lib/nav";
 import { productFor } from "@/lib/products";
 import { NavCollapseToggle } from "@/components/shell/NavCollapseToggle";
+import { HistoryList } from "@/components/chat/HistoryList";
 import { Logo } from "@/components/ui/Logo";
 import { Badge } from "@/components/ui/Badge";
 import type { Client } from "@/lib/clients";
@@ -57,7 +58,9 @@ export function Sidebar({
       </div>
 
       <nav className="scrollbar-inverse flex flex-1 flex-col gap-[18px] overflow-auto">
-        {product === "creative" ? (
+        {product === "chat" ? (
+          <HistoryList />
+        ) : product === "creative" ? (
           <CreativePanel />
         ) : (
           nav.map((group) => (
@@ -122,9 +125,7 @@ export function Sidebar({
 }
 
 /**
- * The Creative section's own list. Chat deliberately has no panel of its own —
- * it keeps the Analytics page list, so choosing the assistant never puts the
- * numbers a section away.
+ * The Creative section's own list.
  */
 function CreativePanel() {
   return (

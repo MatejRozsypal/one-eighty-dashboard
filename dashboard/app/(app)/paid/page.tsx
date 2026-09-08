@@ -16,6 +16,7 @@ import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Funnel } from "@/components/dashboard/Funnel";
+import { KpiTile, type Kpi } from "@/components/dashboard/KpiTile";
 import { DataTable } from "@/components/ui/DataTable";
 import { pageEyebrow } from "@/lib/nav";
 
@@ -77,7 +78,7 @@ export default async function PaidPage({
   // Spend now matches Revenue and ROAS. Reach, Frequency, CTR and CPM stay
   // Meta-only because they genuinely are — Google reports no comparable reach
   // or frequency — so they carry the platform on the tile instead.
-  const kpis: Array<{ label: string; value: string; scope?: string }> = [
+  const kpis: Kpi[] = [
     { label: "Spend", value: money(paidSpend) },
     { label: "Revenue", value: money(paidRevenue) },
     { label: "ROAS", value: paidRoas !== null ? formatRatio(paidRoas) : "—" },
@@ -95,6 +96,19 @@ export default async function PaidPage({
     { label: "CPM", value: money(totals.cpm), scope: "meta" },
   ];
 
+  // ── Two rows, split on the seam that already exists ────────────────────────
+  // Seven tiles in one auto-fit row left each a 130px content box, and
+  // `CZK 108,357` measures 140px at 22px mono — so the two money tiles drew
+  // their numbers outside their own cards. Wrapping on the scope boundary
+  // rather than wherever the grid happened to run out gives the widest tiles to
+  // the widest numbers, and puts the four Meta-only rates on a line of their
+  // own where the platform dots read as a set instead of as four exceptions.
+  //
+  // The money row goes full-width on phones rather than two-up: at 390px, two
+  // columns leave a 123px content box, which is the same overflow moved.
+  const outcomeKpis = kpis.filter((k) => !k.scope);
+  const metaKpis = kpis.filter((k) => k.scope === "meta");
+
   return (
     <>
       <Header
@@ -105,29 +119,19 @@ export default async function PaidPage({
       <PageControls client={client} params={params} />
 
       <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-        <section className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
-          {kpis.map((k) => (
-            <div
-              key={k.label}
-              className="flex flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm"
-            >
-              <span className="flex items-center justify-between gap-2">
-                <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                  {k.label}
-                </span>
-                {k.scope === "meta" && (
-                  <span
-                    aria-label="Meta only"
-                    title="Meta only — Google reports no comparable figure"
-                    className="h-[7px] w-[7px] flex-none rounded-[2px] bg-platform-meta"
-                  />
-                )}
-              </span>
-              <span className="font-mono text-[22px] font-semibold leading-none tracking-heading tabular text-content-strong">
-                {k.value}
-              </span>
+        <section className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {outcomeKpis.map((k) => (
+              <KpiTile key={k.label} {...k} />
+            ))}
+          </div>
+          {metaKpis.length > 0 && (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {metaKpis.map((k) => (
+                <KpiTile key={k.label} {...k} />
+              ))}
             </div>
-          ))}
+          )}
         </section>
 
         {livePlatforms.length > 1 && (

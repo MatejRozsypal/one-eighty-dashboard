@@ -61,7 +61,7 @@ const CONCEPTS: Record<string, { name: string; persona: string; angle: string; o
   C05: { name: "The story behind the label", persona: "HeadacheFromSynthetics", angle: "Founder / origin story", offer: "Discovery set" },
   C07: { name: "Does perfume give you a headache?", persona: "HeadacheFromSynthetics", angle: "Problem agitation", offer: "Discovery set" },
   C09: { name: "Swap the chemistry", persona: "SensitiveSkinSwitcher", angle: "Contrarian truth", offer: "Discovery set" },
-  C11: { name: "Risk-free tester", persona: "BlindBuySkeptic", angle: "Comparison / objection", offer: "Discovery set" },
+  C11: { name: "Risk-free tester", persona: "BlindBuySkeptic", angle: "Comparison / objection handling", offer: "Discovery set" },
   C14: { name: "Summer ritual", persona: "AromatherapyRitual", angle: "Scarcity / urgency", offer: "Promo -20%" },
 };
 

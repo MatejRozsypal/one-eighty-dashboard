@@ -21,6 +21,8 @@
 
 import { shrink, interval, purchasesToClear, purchasesForPrecision, spendToDecide, separation, Z } from "@/lib/creative/stats";
 import { propose, tokenise, type Candidate } from "@/lib/creative/matching";
+import { ANGLES } from "@/lib/creative/vocabulary";
+import { demoCreative } from "@/lib/demo/creative";
 import { packSpec, horizons, personaCapacity } from "@/lib/creative/velocity";
 import { moneyVerdict, diagnose } from "@/lib/creative/verdict";
 import { ZERO, type Components } from "@/lib/creative/model";
@@ -141,6 +143,22 @@ for (const ad of [
 
 console.log("\n=== the capital-I separator, which is in live ad names ===");
 console.log("  ", JSON.stringify(tokenise("DYN I Příběh Manami V1 I 6JUN I CZ")));
+
+console.log("\n=== every angle in use is in the vocabulary ===");
+// The angle strings are a join key, not labels: an angle spelled differently
+// from the ClickUp option shows as "never run" on the coverage grid while
+// quietly holding budget. That already happened once — five of the eighteen
+// were paraphrased — so it is checked rather than remembered.
+{
+  const valid = new Set<string>(ANGLES);
+  const used = new Set(
+    demoCreative("lifetime").ads.map((a) => a.tags.angle).filter(Boolean) as string[]
+  );
+  const stray = [...used].filter((a) => !valid.has(a));
+  eq("demo angles all present in the vocabulary", stray.length, 0);
+  if (stray.length) console.log("   stray:", stray);
+  eq("vocabulary length", ANGLES.length, 18);
+}
 
 console.log(fails ? `\n${fails} assertion(s) differ from the brief — see above.` : "\nAll assertions match the brief.");
 if (fails) process.exit(1);

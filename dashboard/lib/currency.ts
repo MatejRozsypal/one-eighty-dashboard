@@ -171,53 +171,16 @@ export async function getSupportedPairs(): Promise<
 // ---------------------------------------------------------------------------
 
 /**
- * Format money. UI copy is English throughout, so `en-US` grouping is used for
- * every currency — the symbol changes, the separators don't.
+ * Formatting lives in `lib/format.ts` and is re-exported here.
+ *
+ * This module imports the BigQuery client for its FX SQL helpers, which makes
+ * it `server-only` by association. The formatters are pure and are needed on
+ * the client too, so they were moved somewhere a client component can reach
+ * without dragging a database client into the browser bundle.
  */
-export function formatMoney(
-  value: number | null,
-  currency: string,
-  { compact = false }: { compact?: boolean } = {}
-): string {
-  if (value === null) return "—";
-
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    notation: compact ? "compact" : "standard",
-    maximumFractionDigits: compact ? 1 : 0,
-  }).format(value);
-}
-
-export function formatNumber(
-  value: number | null,
-  { compact = false, decimals = 0 }: { compact?: boolean; decimals?: number } = {}
-): string {
-  if (value === null) return "—";
-  return new Intl.NumberFormat("en-US", {
-    notation: compact ? "compact" : "standard",
-    maximumFractionDigits: decimals,
-  }).format(value);
-}
-
-/** Percentages arrive as fractions (0.35), render as "35.0%". */
-export function formatPercent(
-  value: number | null,
-  { decimals = 1 }: { decimals?: number } = {}
-): string {
-  if (value === null) return "—";
-  return new Intl.NumberFormat("en-US", {
-    style: "percent",
-    maximumFractionDigits: decimals,
-    minimumFractionDigits: decimals,
-  }).format(value);
-}
-
-/** Ratios like MER / aMER: "4.2×". */
-export function formatRatio(
-  value: number | null,
-  { decimals = 2 }: { decimals?: number } = {}
-): string {
-  if (value === null) return "—";
-  return `${value.toFixed(decimals)}×`;
-}
+export {
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatRatio,
+} from "@/lib/format";

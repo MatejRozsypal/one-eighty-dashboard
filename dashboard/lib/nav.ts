@@ -64,6 +64,27 @@ export const NAV: NavGroup[] = [
 ];
 
 /**
+ * The Creative section's own navigation.
+ *
+ * A separate tree rather than a group inside NAV: Creative is a product behind
+ * the rail, not a category of Analytics pages, and its five screens answer a
+ * different question from everything in NAV. Mixing them would put "Velocity"
+ * one row below "Cohorts" in the same list, which is the shape of a menu nobody
+ * can find anything in.
+ *
+ * The order is the build order and the reading order: what ran, what it
+ * belonged to, how it compares, whether enough of it is being made, and what it
+ * cost. `note` explains a screen that is present but not yet answerable.
+ */
+export const CREATIVE_NAV: NavItem[] = [
+  { label: "Creatives", href: "/creative" },
+  { label: "Concepts", href: "/creative/concepts" },
+  { label: "Breakdown", href: "/creative/breakdown" },
+  { label: "Velocity", href: "/creative/velocity" },
+  { label: "Production ROI", href: "/creative/production" },
+];
+
+/**
  * Settings lives behind the gear in the sidebar footer, not in this tree.
  *
  * It was two rows in an "Admin" group — Data Health and Users & access — which
@@ -89,6 +110,8 @@ export function pageTitle(pathname: string): string {
   // nav, not entries in one — so they are named here rather than by adding a
   // phantom group that the sidebar would then have to filter back out.
   if (pathname.startsWith("/chat")) return "Assistant";
+  const creative = CREATIVE_NAV.find((i) => i.href === pathname);
+  if (creative) return creative.label;
   if (pathname.startsWith("/creative")) return "Creative";
   return "Dashboard";
 }

@@ -28,7 +28,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { navFor } from "@/lib/nav";
+import { navFor, CREATIVE_NAV } from "@/lib/nav";
 import { productFor } from "@/lib/products";
 import { NavCollapseToggle } from "@/components/shell/NavCollapseToggle";
 import { HistoryList } from "@/components/chat/HistoryList";
@@ -126,24 +126,47 @@ export function Sidebar({
 
 /**
  * The Creative section's own list.
+ *
+ * Breakdown is shown greyed until roughly 60% of spend carries a concept tag.
+ * That is not a build gate — the screen exists and works — it is an honesty
+ * one: below that threshold it reads less than half the account, and the rows
+ * it does show are whatever happened to get filed rather than a sample of
+ * anything. The tooltip says so, and the page itself says so again on arrival.
  */
 function CreativePanel() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const qs = searchParams.toString();
+
   return (
     <div className="flex flex-col gap-[3px]">
       <span className="px-2.5 pb-1.5 font-mono text-[10px] uppercase tracking-eyebrow text-gray-400">
         Creative
       </span>
-      {["Top creatives", "Copy analysis", "Iterations needed"].map((label) => (
-        <span
-          key={label}
-          className="flex items-center justify-between gap-2 rounded-sm px-2.5 py-[9px] text-[13.5px] tracking-[-0.01em] text-gray-400"
-        >
-          {label}
-          <Badge variant="inverse" size="sm">
-            Soon
-          </Badge>
-        </span>
-      ))}
+      {CREATIVE_NAV.map((item) => {
+        const isActive = item.href === pathname;
+        return (
+          <Link
+            key={item.label}
+            href={qs ? `${item.href}?${qs}` : item.href!}
+            className={`flex w-full items-center justify-between gap-2 rounded-sm px-2.5 py-[9px] text-left text-[13.5px] tracking-[-0.01em] transition-colors duration-fast ${
+              isActive
+                ? "bg-growth-500/[0.14] font-semibold text-growth-300"
+                : "text-gray-250 hover:bg-white/[0.06]"
+            }`}
+          >
+            <span className="flex items-center gap-[9px]">
+              <span
+                aria-hidden="true"
+                className={`h-4 w-[5px] rounded-[3px] ${
+                  isActive ? "bg-accent" : "bg-transparent"
+                }`}
+              />
+              {item.label}
+            </span>
+          </Link>
+        );
+      })}
     </div>
   );
 }

@@ -277,3 +277,114 @@ body {
 .product-enter {
   animation: product-enter 200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
+
+/* ==========================================================================
+   Creative Engine — the liquid-glass surface
+   ==========================================================================
+
+   Scoped under `.creative-ground` rather than applied globally on purpose. The
+   Analytics section is a P&L view whose whole job is legibility of dense
+   figures on a flat, calm surface, and translucency there would cost reading
+   speed for nothing. Creative is a visual product — a wall of thumbnails — and
+   the glass gives the tiles somewhere to sit.
+
+   Geist and the growth-green accent are unchanged. Everything below is
+   surface treatment over the same tokens; no new colour is introduced.
+*/
+
+.creative-ground {
+  position: relative;
+  /* Fixed attachment so the ground stays put while the grid scrolls over it.
+     A scrolling gradient reads as a moving background and pulls the eye away
+     from the tiles, which are the subject. */
+  background:
+    radial-gradient(1100px 560px at 10% -10%, color-mix(in srgb, var(--growth-500) 18%, transparent), transparent 62%),
+    radial-gradient(880px 460px at 94% -4%, color-mix(in srgb, var(--info) 8%, transparent), transparent 58%);
+  background-attachment: fixed;
+}
+
+.creative-ground {
+  --glass: color-mix(in srgb, var(--paper) 62%, transparent);
+  --glass-2: color-mix(in srgb, var(--paper) 78%, transparent);
+  --glass-solid: color-mix(in srgb, var(--paper) 94%, transparent);
+  --glass-brd: color-mix(in srgb, var(--paper) 72%, transparent);
+  --glass-line: color-mix(in srgb, var(--ink-950) 7%, transparent);
+  --glass-blur: saturate(180%) blur(22px);
+  --glass-hi: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--paper) 90%, transparent),
+    transparent 42%
+  );
+  --glass-sh-1: 0 1px 1px rgb(10 10 11 / 4%), 0 6px 18px -8px rgb(10 10 11 / 10%);
+  --glass-sh-2: 0 1px 1px rgb(10 10 11 / 5%), 0 14px 36px -12px rgb(10 10 11 / 16%);
+  --glass-sh-3: 0 30px 80px -20px rgb(10 10 11 / 34%), 0 2px 6px rgb(10 10 11 / 8%);
+}
+
+/* The base pane. `::before` paints the top-edge highlight that makes the
+   surface read as glass rather than as a translucent rectangle. */
+.glass {
+  position: relative;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-brd);
+  box-shadow: var(--glass-sh-1);
+  border-radius: var(--radius-lg);
+}
+
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--glass-hi);
+  pointer-events: none;
+}
+
+/* Tables stay markedly more opaque than everything else. Dense figures on a
+   translucent surface become genuinely hard to read — the text competes with
+   whatever is scrolling underneath it — and this product's tables are its most
+   information-dense element. */
+.glass-solid {
+  background: var(--glass-2);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-brd);
+  box-shadow: var(--glass-sh-1);
+  border-radius: var(--radius-lg);
+}
+
+.glass-lift {
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms,
+    border-color 180ms;
+}
+
+.glass-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glass-sh-2);
+  border-color: color-mix(in srgb, var(--growth-500) 34%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-lift:hover {
+    transform: none;
+  }
+}
+
+/* Rows the engine cannot read: under the directional purchase threshold, the
+   interval is wider than the gap between the kill line and the target, so the
+   row cannot support a decision.
+
+   Hatched and greyed rather than hidden. Hiding them would quietly rebase every
+   share-of-spend percentage on a denominator that excludes them, and every
+   remaining figure would still look completely reasonable. */
+.row-unreadable {
+  color: var(--text-muted);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--ink-950) 3%, transparent) 6px 7px
+  );
+}

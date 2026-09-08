@@ -67,6 +67,11 @@ export interface Verdict {
 }
 
 export interface VerdictInput {
+  /**
+   * Which grain this is. Only `adset` is subject to Meta's learning phase —
+   * see the gate below.
+   */
+  level?: "adset" | "concept";
   components: Components;
   /** The shrunk ROAS. Verdicts are taken on the defensible number, not the raw one. */
   roas: number | null;
@@ -77,6 +82,14 @@ export interface VerdictInput {
 }
 
 const money = (v: number) => Math.round(v).toLocaleString("en-US");
+
+/**
+ * How many times its own spend a row may need before "spend more to find out"
+ * stops being advice. Ten is a judgement: it keeps "this cost 6x what it has
+ * already spent to settle" — a real decision somebody might take — and drops
+ * the ones that would cost hundreds of times the entity's whole history.
+ */
+const UNRESOLVABLE_MULTIPLE = 10;
 
 /**
  * Judge one ad set or concept.
@@ -140,14 +153,20 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     };
   }
 
-  // Meta's learning phase. Past the spend gate but still under 50 conversion
-  // events, the algorithm is exploring and the numbers describe the exploration
-  // rather than the creative.
-  if (c.purchases < 50) {
+  // Meta's learning phase — AD SET LEVEL ONLY.
+  //
+  // The 50-conversion threshold is a property of an ad set's delivery
+  // optimisation, not of a creative idea. A concept running across a mature ad
+  // set and a fresh one is not "in learning": part of it is, and the mature
+  // part is perfectly readable. Applying this gate at concept level produced
+  // the contradiction it was meant to prevent — a row labelled Read confidence
+  // on 40 purchases, sitting next to a verdict saying nothing about it was
+  // stable yet.
+  if (input.level !== "concept" && c.purchases < 50) {
     return v(
       "too-early",
       "Learning",
-      `${c.purchases} purchase events. Meta leaves learning at 50; nothing here is stable yet.`,
+      `${c.purchases} purchase events. Meta leaves an ad set's learning phase at 50; delivery is still being explored.`,
       true
     );
   }
@@ -183,17 +202,32 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     // Above the aggressive-scale line the point estimate is far enough clear
     // that waiting costs more than acting. Fall through to the verdict.
     if (roas < t.targetRoas * t.scaleMultiplier) {
+      // ── When the price is not a price ──────────────────────────────────
+      // The closer an estimate sits to the line, the more data separating them
+      // takes, and the cost runs to infinity as the two converge. A row at 1.83
+      // against a 1.80 kill line needs about twenty thousand more purchases —
+      // arithmetically correct, and useless as an instruction. Printing
+      // "$524,498 settles it" next to a concept that has spent $884 turns the
+      // most useful number on the screen into an obviously silly one, and a
+      // reader who sees one silly number stops trusting the others.
+      //
+      // So past a point the honest answer changes shape: it is not that we need
+      // more data, it is that this thing is sitting ON the line and no amount
+      // of spend anybody would authorise will move it off.
+      const unresolvable = cost === null || cost > c.spend * UNRESOLVABLE_MULTIPLE;
+
       return {
         code: "not-separable",
         label: "Not separable",
-        say:
-          `${fmt(roas)}, but the true value is between ${fmt(lo)} and ${fmt(hi)}. ` +
-          `Cannot separate it from the ${fmt(t.killRoas)} kill line` +
-          (short !== null && cost !== null
-            ? `. ${short} more purchases, about ${money(cost)}, settles it.`
-            : "."),
-        costToDecide: cost,
-        purchasesShort: short,
+        say: unresolvable
+          ? `${fmt(roas)} (${fmt(lo)}–${fmt(hi)}) sits on the ${fmt(t.killRoas)} kill line. ` +
+            `No realistic amount of further spend separates the two. Treat it as break-even ` +
+            `and decide on the ad set it runs in, not on this number.`
+          : `${fmt(roas)}, but the true value is between ${fmt(lo)} and ${fmt(hi)}. ` +
+            `Cannot separate it from the ${fmt(t.killRoas)} kill line. ` +
+            `${short} more purchases, about ${money(cost!)}, settles it.`,
+        costToDecide: unresolvable ? null : cost,
+        purchasesShort: unresolvable ? null : short,
         undecided: true,
       };
     }

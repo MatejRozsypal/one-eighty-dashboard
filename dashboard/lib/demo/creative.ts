@@ -153,18 +153,52 @@ function componentsOf(seed: Seed): Components {
     linkClicks: clicks,
     outboundClicks: Math.round(clicks * 0.86),
     uniqueOutboundClicks: Math.round(clicks * 0.72),
-    videoViews: isVideo ? Math.round(impressions * (seed.hookRate ?? 0)) : 0,
-    videoPlays: isVideo ? Math.round(impressions * (seed.hookRate ?? 0)) : 0,
-    videoThruplays: isVideo ? Math.round(impressions * (seed.holdRate ?? 0)) : 0,
-    // A real retention curve needs monotonically falling quartiles. These are
-    // interpolated between the seeded hook and hold rates so the curve the ad
-    // detail panel draws is shaped like a real one rather than sawtoothed.
-    videoP25: isVideo ? Math.round(impressions * (seed.hookRate ?? 0) * 0.66) : 0,
-    videoP50: isVideo ? Math.round(impressions * (seed.hookRate ?? 0) * 0.41) : 0,
-    videoP75: isVideo ? Math.round(impressions * (seed.holdRate ?? 0) * 0.84) : 0,
-    videoP95: isVideo ? Math.round(impressions * (seed.holdRate ?? 0) * 0.56) : 0,
-    videoP100: isVideo ? Math.round(impressions * (seed.holdRate ?? 0) * 0.51) : 0,
-    video30s: isVideo ? Math.round(impressions * (seed.holdRate ?? 0) * 0.7) : 0,
+    ...(isVideo ? videoCurve(seed, impressions) : {}),
+  };
+}
+
+/**
+ * The eight video points, from a decay fitted through the two seeded rates.
+ *
+ * ── Why they are not scaled independently ──────────────────────────────────
+ * The first version multiplied the hook rate by one factor for the quartiles
+ * and the hold rate by another. On a 33-second video that put the 50% quartile
+ * at 16.5 seconds ABOVE the ThruPlay figure at 15 seconds — a curve that rises
+ * — which is not a rendering artefact but an impossible claim: more people
+ * cannot reach 16.5 seconds than reached 15.
+ *
+ * (The approved mockup has the same inconsistency in its illustrative numbers.
+ * It does not matter in a mockup and it matters here, because this dataset is
+ * what anyone demonstrating the product is looking at.)
+ *
+ * Fitting an exponential through y(0) = hook rate and y(15) = hold rate makes
+ * every point fall out of one function, so the ordering is correct by
+ * construction at any duration.
+ *
+ * y(0) is the HOOK RATE rather than a separate "started" figure, because the
+ * brief defines hook rate as video_play_actions / impressions and that is what
+ * the tile and the curve's first point both read. Seeding them from two
+ * different numbers would put one hook rate on the tile and a different one at
+ * the left edge of the chart beside it.
+ */
+function videoCurve(seed: Seed, impressions: number): Partial<Components> {
+  const hook = seed.hookRate ?? 0.2;
+  const hold = seed.holdRate ?? 0.05;
+  const len = 32 + Math.round(unit(`len:${seed.id}`) * 12);
+  const k = Math.log(hook / hold) / 15;
+  const y = (t: number) => hook * Math.exp(-k * t);
+  const at = (t: number) => Math.round(impressions * y(t));
+
+  return {
+    videoPlays: at(0),        // hook rate numerator
+    videoViews: at(3),        // the 3-second definition
+    videoP25: at(len * 0.25),
+    videoThruplays: at(15),   // ThruPlay: 15 seconds, or complete if shorter
+    videoP50: at(len * 0.5),
+    videoP75: at(len * 0.75),
+    videoP95: at(len * 0.95),
+    videoP100: at(len),
+    video30s: len > 30 ? at(30) : 0,
   };
 }
 
@@ -310,6 +344,9 @@ export function demoAssets(): Map<string, CreativeAsset> {
           thumbUri: null,
           assetKind: s.format === "DYN" ? "video" : "image",
           objectType: s.format === "DYN" ? "VIDEO" : "PHOTO",
+          // Same expression as `videoCurve`, from the same seed: the curve is fitted
+          // to this duration, and a different one here would plot the points
+          // against the wrong clock.
           videoLengthSec: s.format === "DYN" ? 32 + Math.round(unit(`len:${s.id}`) * 12) : null,
           title: c?.title ?? null,
           body: c?.body ?? null,

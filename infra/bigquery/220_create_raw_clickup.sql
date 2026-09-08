@@ -151,12 +151,12 @@ USING (
     -- Space-level, shared across every client
     STRUCT('manami' AS client_id, 'ad_pipeline' AS list_kind, 'creative_id' AS logical, 'a80bdd5a-b4e5-4e70-81ce-0be80d57b768' AS field_id, 'short_text' AS field_type),
     STRUCT('manami', 'ad_pipeline', 'content_format', '4bac144c-3d1f-465f-b8e8-0b8d6903297c', 'drop_down'),
-    STRUCT('manami', 'ad_pipeline', 'content_purpose','27534262-67e8-4dfd-b669-1e62618de015', 'drop_down'),
+    STRUCT('manami', 'ad_pipeline', 'production_type','27534262-67e8-4dfd-b669-1e62618de015', 'drop_down'),
     STRUCT('manami', 'ad_pipeline', 'market',         '4ec43059-4de0-410c-a097-b1496acc25bf', 'drop_down'),
     STRUCT('manami', 'ad_pipeline', 'visual_type',    'db1172b8-0b1a-4d47-84e4-ab627937ac77', 'drop_down'),
     STRUCT('venev',  'ad_pipeline', 'creative_id',    'a80bdd5a-b4e5-4e70-81ce-0be80d57b768', 'short_text'),
     STRUCT('venev',  'ad_pipeline', 'content_format', '4bac144c-3d1f-465f-b8e8-0b8d6903297c', 'drop_down'),
-    STRUCT('venev',  'ad_pipeline', 'content_purpose','27534262-67e8-4dfd-b669-1e62618de015', 'drop_down'),
+    STRUCT('venev',  'ad_pipeline', 'production_type','27534262-67e8-4dfd-b669-1e62618de015', 'drop_down'),
     STRUCT('venev',  'ad_pipeline', 'market',         '4ec43059-4de0-410c-a097-b1496acc25bf', 'drop_down'),
     STRUCT('venev',  'ad_pipeline', 'visual_type',    'db1172b8-0b1a-4d47-84e4-ab627937ac77', 'drop_down'),
     -- Relationship fields: per-client, and the ONLY concept field each client

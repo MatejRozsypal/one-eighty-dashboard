@@ -89,6 +89,8 @@ export interface Tags {
   angle: string | null;
   offer: string | null;
   stage: string | null;
+  /** ClickUp `Content Purpose`: Net-new | Offer-Promo | Winner Variant. */
+  productionType: string | null;
   format: string | null;
   bodyCode: string | null;
   hookCode: string | null;
@@ -108,7 +110,7 @@ export interface Tags {
 export const NO_TAGS: Tags = {
   clickupTaskId: null, clickupUrl: null, conceptId: null, conceptName: null,
   personaId: null, personaName: null, angle: null, offer: null, stage: null,
-  format: null, bodyCode: null, hookCode: null, productionMethod: null,
+  productionType: null, format: null, bodyCode: null, hookCode: null, productionMethod: null,
   creatorId: null, creatorName: null, creatorType: null, productionCost: null,
   productionCostSource: null, briefUrl: null, market: null, launchedAt: null,
   matchMethod: null, matchConfidence: null,

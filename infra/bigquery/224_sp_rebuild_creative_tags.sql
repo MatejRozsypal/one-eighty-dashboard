@@ -39,7 +39,7 @@ BEGIN
       CASE f.name
         WHEN 'Creative ID'       THEN 'creative_id'
         WHEN 'Content Format'    THEN 'content_format'
-        WHEN 'Content Purpose'   THEN 'content_purpose'
+        WHEN 'Content Purpose'   THEN 'production_type'
         WHEN 'Market'            THEN 'market'
         WHEN 'Visual Type'       THEN 'visual_type'
         WHEN 'Offer'             THEN 'offer'
@@ -211,16 +211,35 @@ BEGIN
     cn.persona_id,
     cn.angle,
     cn.offer,
-    -- TOF / MOF / BOF only. `RT` was removed from the SOP; anything else is
-    -- left NULL rather than mapped to a guess.
-    CASE UPPER(IFNULL(e.content_purpose, ''))
-      WHEN 'TOF' THEN 'TOF' WHEN 'MOF' THEN 'MOF' WHEN 'BOF' THEN 'BOF'
-      ELSE NULL END                                 AS stage,
-    CASE UPPER(IFNULL(e.content_format, ''))
-      WHEN 'STAT' THEN 'STAT' WHEN 'STATIC' THEN 'STAT'
-      WHEN 'DYN'  THEN 'DYN'  WHEN 'VIDEO'  THEN 'DYN'
-      WHEN 'CAR'  THEN 'CAR'  WHEN 'CAROUSEL' THEN 'CAR'
-      WHEN 'DPA'  THEN 'DPA'
+    -- ── Funnel stage ────────────────────────────────────────────────────
+    -- NO CLICKUP FIELD HOLDS THIS. `Content Purpose` looks like it should and
+    -- does not: verified against the live list on 9 Sep 2026, its options are
+    -- Net-new / Offer-Promo / Winner Variant. Mapping it to TOF/MOF/BOF would
+    -- have set stage NULL on every ad in the account while looking like it
+    -- worked.
+    --
+    -- So stage is parsed out of the ad NAME, which does carry it by convention
+    -- (`... | TOF | STAT | b1h3 | ...`), and is left NULL where the name does
+    -- not. A guessed stage is worse than an absent one: the Breakdown screen
+    -- would then compare three funnel positions that nobody assigned.
+    REGEXP_EXTRACT(UPPER(IFNULL(e.task_name, '')), r'\b(TOF|MOF|BOF)\b') AS stage,
+
+    -- ── Production type ─────────────────────────────────────────────────
+    -- What `Content Purpose` actually is, kept under its real meaning. This is
+    -- the better signal for the 80/20 rule than any naming heuristic: Net-new
+    -- against Winner Variant is exactly the split the rule is about, stated by
+    -- whoever briefed the ad.
+    NULLIF(TRIM(IFNULL(e.content_purpose, '')), '')  AS production_type,
+
+    -- ── Format ──────────────────────────────────────────────────────────
+    -- The live options are `DYN | Video`, `STAT | Static`, `CAR | Carousel` —
+    -- the code and the label in one string. Matching on the leading token
+    -- survives a rename of the human half.
+    CASE
+      WHEN STARTS_WITH(UPPER(IFNULL(e.content_format, '')), 'STAT') THEN 'STAT'
+      WHEN STARTS_WITH(UPPER(IFNULL(e.content_format, '')), 'DYN')  THEN 'DYN'
+      WHEN STARTS_WITH(UPPER(IFNULL(e.content_format, '')), 'CAR')  THEN 'CAR'
+      WHEN STARTS_WITH(UPPER(IFNULL(e.content_format, '')), 'DPA')  THEN 'DPA'
       ELSE NULL END                                 AS format,
     e.body_code,
     e.hook_code,
@@ -230,7 +249,14 @@ BEGIN
     e.production_cost,
     IF(e.production_cost IS NULL, 'settings', 'manual')  AS production_cost_source,
     e.brief_url,
-    e.market,
+    -- Market options are emoji-prefixed in ClickUp (`🇨🇿 CZ`, `🇸🇰 SK`,
+    -- `🇨🇿+🇸🇰 Both`). The two-letter code is what everything downstream
+    -- filters on, so the flag is stripped here rather than in five places.
+    CASE
+      WHEN e.market IS NULL THEN NULL
+      WHEN CONTAINS_SUBSTR(e.market, 'Both') THEN 'CZ+SK'
+      ELSE NULLIF(TRIM(REGEXP_REPLACE(e.market, r'[^A-Za-z+]', '')), '')
+    END                                             AS market,
     e.created_date                                  AS launched_at,
     'creative_id'                                   AS match_method,
     CAST(1.0 AS NUMERIC)                            AS match_confidence,

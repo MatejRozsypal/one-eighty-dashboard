@@ -178,13 +178,22 @@ export function gauges(input: VelocityInput): Gauge[] {
   ).size;
   const hooksPerBody = bodies > 0 ? ads.length / bodies : 0;
 
-  // Net-new share: an ad at b1h1 is the first hook on the first body of its
-  // concept, i.e. a fresh idea rather than an iteration of a proven one. The
-  // 80/20 rule says at most a fifth of production should be here.
-  const netNew = ads.length
-    ? ads.filter((a) => (a.tags.hookCode ?? "h1") === "h1" && (a.tags.bodyCode ?? "b1") === "b1")
-        .length / ads.length
-    : 0;
+  // Net-new share, for the 80/20 rule.
+  //
+  // ClickUp's `Content Purpose` states this directly — Net-new against Winner
+  // Variant is exactly the split the rule is about — so it is used wherever it
+  // is filled in. The b1h1 reading is the fallback for the ads that predate the
+  // field: first hook on the first body of a concept is a fresh idea rather
+  // than an iteration of a proven one. Inference only where nobody stated it.
+  const stated = ads.filter((a) => a.tags.productionType !== null);
+  const netNew =
+    stated.length > 0
+      ? stated.filter((a) => a.tags.productionType === "Net-new").length / stated.length
+      : ads.length
+        ? ads.filter(
+            (a) => (a.tags.hookCode ?? "h1") === "h1" && (a.tags.bodyCode ?? "b1") === "b1"
+          ).length / ads.length
+        : 0;
 
   const testShare = s.monthlyBudget > 0 ? (s.minPackDaily * 30) / s.monthlyBudget : 0;
 

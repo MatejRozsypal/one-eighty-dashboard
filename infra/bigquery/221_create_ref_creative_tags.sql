@@ -111,7 +111,11 @@ CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.ref.creative_tags` (
   angle           STRING,                         -- FROM THE CONCEPT. Never per-ad.
   offer           STRING,                         -- FROM THE CONCEPT. Never per-ad.
 
-  stage           STRING,                         -- TOF | MOF | BOF
+  stage           STRING,                         -- TOF | MOF | BOF, parsed from the ad name
+  -- ClickUp's `Content Purpose`: Net-new | Offer-Promo | Winner Variant. This
+  -- is the stated net-new-versus-iteration split the 80/20 rule turns on, and
+  -- it is NOT the funnel stage however much the field name suggests otherwise.
+  production_type STRING,
   format          STRING,                         -- STAT | DYN | CAR | DPA
   body_code       STRING,                         -- 'b1'
   hook_code       STRING,                         -- 'h3'

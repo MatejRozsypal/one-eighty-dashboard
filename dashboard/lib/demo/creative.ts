@@ -212,6 +212,9 @@ function tagsOf(seed: Seed): Tags {
       ...NO_TAGS,
       format: seed.format,
       stage: seed.stage,
+      // Null on purpose: the untagged ads predate `Content Purpose`, which is
+      // what makes the velocity gauge exercise its inference fallback.
+      productionType: null,
       market: seed.market,
       productionMethod: seed.method,
       creatorName: seed.creator,
@@ -232,6 +235,10 @@ function tagsOf(seed: Seed): Tags {
     angle: c.angle,
     offer: c.offer,
     stage: seed.stage,
+    // A mix, so the 80/20 gauge has something to read: a second body or a
+    // second hook on a concept is an iteration of it, not a new idea.
+    productionType:
+      seed.body === "b1" && seed.hook === "h1" ? "Net-new" : "Winner Variant",
     format: seed.format,
     bodyCode: seed.body,
     hookCode: seed.hook,

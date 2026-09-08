@@ -14,26 +14,40 @@
  * visible rather than silent.
  */
 
-/** The full angle vocabulary. Order is the ClickUp option order. */
+/**
+ * The full angle vocabulary, verbatim from the ClickUp dropdown.
+ *
+ * ── These strings are a join key, not labels ───────────────────────────────
+ * The coverage grid marks an angle "never run" by looking for its exact string
+ * among the angles that have taken spend. Five of these were paraphrased in an
+ * earlier draft — "Comparison / objection" for "Comparison / objection
+ * handling", "Disqualification" for "Disqualification / reverse psychology" —
+ * and every one of those angles would have shown as never run while quietly
+ * holding budget, which is the exact opposite of what this screen is for.
+ *
+ * Read from the live field (`4fe4240c-94cb-4eb5-bbc5-1a29dbcf6e77` on the
+ * concept list) on 9 Sep 2026, in its own order. If somebody renames an option
+ * in ClickUp, this has to change with it and the sync's issue log will say so.
+ */
 export const ANGLES = [
-  "Problem agitation",
   "Contrarian truth",
+  "Problem agitation",
   "Curiosity gap",
   "Social proof",
-  "Comparison / objection",
+  "Comparison / objection handling",
   "Transformation before/after",
   "Truth bomb",
   "Unique mechanism",
   "Myth list",
-  "Category villain",
+  "Category villain / common enemy",
   "Cost of inaction",
   "Reframe the cost",
   "Founder / origin story",
-  "Demonstration / proof",
-  "Disqualification",
+  "Demonstration / proof-in-action",
+  "Disqualification / reverse psychology",
   "Scarcity / urgency",
   "FOMO / momentum",
-  "Qualification if-then",
+  'Qualification / "if-then" callout',
 ] as const;
 
 export type Angle = (typeof ANGLES)[number];
@@ -42,9 +56,27 @@ export type Angle = (typeof ANGLES)[number];
  * Funnel stage. TOF / MOF / BOF only — `RT` was removed from the SOP because
  * retargeting is a property of the campaign the ad runs in, not of the
  * creative.
+ *
+ * ⚠ NO CLICKUP FIELD HOLDS THIS TODAY. `Content Purpose` looks like it should
+ * and does not — its options are Net-new / Offer-Promo / Winner Variant, which
+ * is production type, not funnel position. Until a `Funnel stage` field exists,
+ * stage is parsed out of the ad name and is null wherever the name does not
+ * carry it. See runbooks/29.
  */
 export const STAGES = ["TOF", "MOF", "BOF"] as const;
 export type Stage = (typeof STAGES)[number];
+
+/**
+ * `Content Purpose` on the ad pipeline — what the ad is FOR, not where in the
+ * funnel it sits.
+ *
+ * This turns out to be the better signal for the 80/20 rule than anything
+ * derived from naming: "Net-new" against "Winner Variant" is precisely the
+ * split the rule is about, stated by the person who briefed the ad rather than
+ * inferred from whether its name ends in b1h1.
+ */
+export const PRODUCTION_TYPES = ["Net-new", "Offer-Promo", "Winner Variant"] as const;
+export type ProductionType = (typeof PRODUCTION_TYPES)[number];
 
 export const FORMATS = ["STAT", "DYN", "CAR", "DPA"] as const;
 export type Format = (typeof FORMATS)[number];

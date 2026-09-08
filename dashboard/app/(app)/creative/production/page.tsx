@@ -117,9 +117,16 @@ export default async function ProductionPage({
 
   const totalProduction = rows.reduce((a, r) => a + (r.production ?? 0), 0);
   const totalWinners = rows.reduce((a, r) => a + r.winners, 0);
-  const netNew = data.ads.filter(
-    (a) => (a.tags.hookCode ?? "h1") === "h1" && (a.tags.bodyCode ?? "b1") === "b1"
-  );
+  // Stated where ClickUp says so, inferred from b1h1 only for the ads that
+  // predate the field — the same precedence the velocity gauge uses, so the two
+  // screens cannot report different net-new hit rates.
+  const stated = data.ads.filter((a) => a.tags.productionType !== null);
+  const netNew =
+    stated.length > 0
+      ? stated.filter((a) => a.tags.productionType === "Net-new")
+      : data.ads.filter(
+          (a) => (a.tags.hookCode ?? "h1") === "h1" && (a.tags.bodyCode ?? "b1") === "b1"
+        );
   const netNewWinners = netNew.filter(
     (a) => classify(a.components, account.meanRoas, thresholds) === "winner"
   ).length;

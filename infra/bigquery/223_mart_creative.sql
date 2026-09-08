@@ -44,6 +44,7 @@ SELECT
   t.angle,
   t.offer,
   t.stage,
+  t.production_type,
   t.format,
   t.body_code,
   t.hook_code,

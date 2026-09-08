@@ -103,7 +103,7 @@ export default async function CohortsPage({
     return (
       <>
         {header}
-        <main className="flex max-w-[1240px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           <div className="flex max-w-[640px] flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[32px_24px]">
             <span className="self-start">
               <Badge variant="outline" size="sm">
@@ -122,7 +122,7 @@ export default async function CohortsPage({
   return (
     <>
       {header}
-      <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {/*
           This page ignores the date picker: cohorts are cut by the month of a
           customer's FIRST order, not by the selected range. Saying so here

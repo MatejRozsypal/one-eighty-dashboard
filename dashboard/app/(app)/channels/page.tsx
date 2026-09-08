@@ -73,7 +73,7 @@ export default async function ChannelsPage({
         title="Channels (GA4)"
       />
 
-      <main className="flex max-w-[1180px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <div className="flex flex-col items-start gap-3.5 rounded-card border border-dashed border-hairline-strong bg-paper p-[20px] lg:flex-row lg:p-[20px_24px]">
           <Badge variant="outline" size="sm">
             Not connected

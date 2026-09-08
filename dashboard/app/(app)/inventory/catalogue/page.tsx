@@ -78,7 +78,7 @@ export default async function CataloguePage({
   return (
     <>
       {header}
-      <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <TrustBar summary={summary} />
 
         <section className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-4">

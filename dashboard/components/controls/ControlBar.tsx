@@ -76,7 +76,10 @@ export function ControlBar({
       bar directly above. Sticky and papered from `lg` up, where it sits under
       a light header and has a curve-free corner to occupy.
     */
-    <div className="z-20 flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline lg:bg-paper lg:px-8">
+    // Sticky bar spans the viewport; its controls ride the shared column so
+    // they line up with the header above and the cards below.
+    <div className="z-20 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline lg:bg-paper">
+      <div className="page-frame flex flex-wrap items-center gap-x-4 gap-y-2 px-5 lg:px-8">
       <DateRangeControl range={range} presetKey={presetKey} />
 
       <span aria-hidden="true" className="hidden h-5 w-px bg-hairline lg:block" />
@@ -136,6 +139,7 @@ export function ControlBar({
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

@@ -48,12 +48,21 @@ export default async function SnapshotPage({
   const display =
     params.displayCurrency === ROLLUP_CURRENCY ? ROLLUP_CURRENCY : "native";
 
-  const [snapshot, lifetime, payback, settings, discounts, excluded] =
+  // Settings are fetched first, not alongside: the P&L needs the stated
+  // per-order rates to build CM1 and CM2 at all. The warehouse pins both cost
+  // steps to zero, so without these the margin stack silently reports a
+  // business with no fulfilment cost.
+  const settings = await optional(() => getClientSettings(client.clientId), null);
+  const costs = {
+    fulfilmentPerOrder: settings?.fulfilmentPerOrder ?? null,
+    otherCm1PerOrder: settings?.otherCm1PerOrder ?? null,
+  };
+
+  const [snapshot, lifetime, payback, discounts, excluded] =
     await Promise.all([
-      getPnlSnapshot(client.clientId, client.currency, params.period, display),
+      getPnlSnapshot(client.clientId, client.currency, params.period, display, costs),
       optional(() => getLifetimeSummary(client.clientId, client.currency), null),
       optional(() => getPayback(client.clientId, client.currency), null),
-      optional(() => getClientSettings(client.clientId), null),
       getDiscounts(client.clientId, params.range),
       optional(
         () => getExcludedCurrencies(client.clientId, client.currency, params.range),
@@ -86,7 +95,7 @@ export default async function SnapshotPage({
 
       <PageControls client={client} params={params} />
 
-      <main className="flex max-w-[1440px] flex-col gap-6 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-6 lg:px-8">
         {excluded.length > 0 && display === "native" && (
           <div className="flex items-start gap-3 rounded-card border border-warning/40 bg-[#FFF9EE] p-[14px_18px]">
             <span

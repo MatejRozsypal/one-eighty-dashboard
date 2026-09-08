@@ -11,8 +11,15 @@
  *     revenue        = new revenue + returning revenue
  *     revenue        = net sales + shipping
  *     cm1            = revenue − cogs
- *     cm2            = cm1 − paid spend
- *     cm3            = cm2 − fulfilment
+ *     cm2            = cm1                  (see below)
+ *     cm3            = cm2 − paid spend
+ *
+ * The margin order mirrors `mart_daily_kpis` exactly, including the part that
+ * looks odd: CM2 equals CM1 because the warehouse pins `fulfillment_cost` and
+ * `cm1_other_costs` to zero. Those are stated per-order rates, and they are
+ * applied by the query layer for every client alike — so the demo hands over
+ * rows in the same shape BigQuery does and goes through the identical
+ * deduction. Baking them in here instead would double-count them.
  *
  * ── Why a day is a pure function of its date ────────────────────────────────
  * Every page renders on its own server request. A generator holding state, or
@@ -173,7 +180,6 @@ export interface DemoDay {
   googleSpend: number;
   paidSpend: number;
   cm2: number;
-  fulfilment: number;
   cm3: number;
 }
 
@@ -220,18 +226,15 @@ export function day(date: string): DemoDay {
 
   const cogs = round2(revenue * (1 - MERCHANDISE_MARGIN));
   const cm1 = round2(revenue - cogs);
+  // Warehouse-equivalent: both stated cost steps are zero at this layer.
+  const cm2 = cm1;
 
   // Spend follows revenue through a target MER, so the ratio stays sane while
   // individual days still have good and bad ones.
   const paidSpend = round2((revenue / TARGET_MER) * jitter(`mer:${date}`, 0.22));
   const googleSpend = round2(paidSpend * GOOGLE_SHARE * jitter(`gshare:${date}`, 0.12));
   const metaSpend = round2(paidSpend - googleSpend);
-  const cm2 = round2(cm1 - paidSpend);
-
-  const fulfilment = round2(
-    orders * (DEMO_FULFILMENT_PER_ORDER + DEMO_OTHER_CM1_PER_ORDER)
-  );
-  const cm3 = round2(cm2 - fulfilment);
+  const cm3 = round2(cm2 - paidSpend);
 
   return {
     date,
@@ -252,7 +255,6 @@ export function day(date: string): DemoDay {
     googleSpend,
     paidSpend,
     cm2,
-    fulfilment,
     cm3,
   };
 }

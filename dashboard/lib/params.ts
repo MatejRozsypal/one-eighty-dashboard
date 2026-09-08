@@ -22,7 +22,7 @@ import { ROLLUP_CURRENCY } from "@/lib/currency";
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
-const PRESETS: PresetKey[] = ["7d", "28d", "30d", "90d", "mtd", "ytd", "12m"];
+const PRESETS: PresetKey[] = ["7d", "28d", "30d", "90d", "mtd", "ytd", "12m", "all"];
 const MODES: ComparisonMode[] = ["previous_period", "previous_year", "none"];
 
 const DEFAULT_PRESET: PresetKey = "30d";

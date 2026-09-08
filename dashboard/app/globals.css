@@ -19,6 +19,15 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  /* The shared centred column. Applied to the header, the control bar and
+     every page <main> so all three stay on the same vertical edges. */
+  .page-frame {
+    @apply mx-auto w-full;
+    max-width: var(--page-max);
+  }
+}
+
 /* ==========================================================================
    Local extensions — NOT part of the design system handoff
    ========================================================================== */
@@ -57,6 +66,17 @@
    */
   --header-bar-h: 52px;
   --header-h: calc(var(--header-bar-h) + var(--safe-top));
+
+  /*
+   * The content column.
+   *
+   * Pages used to cap themselves at six different widths and all hug the left,
+   * so on a wide monitor the whole app sat in the left two-thirds with a dead
+   * gutter beside it. One shared width, centred, means the structure never
+   * reflows as the window grows -- only the margins do, which is the behaviour
+   * Shopify's admin has and the reason it survives a 27-inch screen.
+   */
+  --page-max: 1400px;
 
   /*
    * Platform colors for the two Czech-market sources. The handoff ships

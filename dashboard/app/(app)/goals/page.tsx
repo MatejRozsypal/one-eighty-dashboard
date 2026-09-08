@@ -155,7 +155,7 @@ export default async function GoalsPage({
         title="Goals"
       />
 
-      <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {!anyTarget && (
           <section className="rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
             <Eyebrow>No targets yet</Eyebrow>

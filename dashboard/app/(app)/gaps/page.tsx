@@ -47,7 +47,7 @@ export default async function GapsPage({
     return (
       <>
         {header}
-        <main className="flex max-w-[1240px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           <div className="flex max-w-[640px] flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[32px_24px] lg:p-[32px_34px]">
             <span className="self-start">
               <Badge variant="outline" size="sm">
@@ -75,7 +75,7 @@ export default async function GapsPage({
   return (
     <>
       {header}
-      <main className="flex max-w-[1240px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-3.5 rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
             <Eyebrow>Median gap between orders</Eyebrow>

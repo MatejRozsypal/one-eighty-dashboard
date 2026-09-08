@@ -58,6 +58,7 @@ export const NAV: NavGroup[] = [
       { label: "Time between orders", href: "/gaps" },
       { label: "Cohorts", href: "/cohorts" },
       { label: "Repurchase", href: "/repurchase" },
+      { label: "Repeat timing", href: "/repurchase/timing" },
     ],
   },
 ];

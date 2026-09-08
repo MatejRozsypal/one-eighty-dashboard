@@ -210,9 +210,19 @@ const config: Config = {
           "70%": { transform: "scale(2.2)", opacity: "0" },
           "100%": { opacity: "0" },
         },
+        // Save confirmation. Draws itself on rather than popping in, so the
+        // eye reads it as "that just happened" instead of "that was always
+        // there" — the whole point is confirming an action, not labelling a
+        // state.
+        tick: {
+          "0%": { transform: "scale(0.4)", opacity: "0" },
+          "60%": { transform: "scale(1.15)", opacity: "1" },
+          "100%": { transform: "scale(1)", opacity: "1" },
+        },
       },
       animation: {
         "live-pulse": "live-pulse 1.6s var(--ease-out) infinite",
+        tick: "tick 260ms var(--ease-out) both",
       },
     },
   },

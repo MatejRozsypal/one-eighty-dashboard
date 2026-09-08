@@ -33,14 +33,13 @@ import { saveGoalsAction } from "./actions";
 import { Header } from "@/components/shell/Header";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { SaveButton } from "@/components/settings/SaveButton";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
 const FIELD =
   "w-[120px] rounded-control border border-hairline-strong bg-paper px-2.5 py-1.5 text-right font-mono text-[12.5px]";
-const BUTTON =
-  "rounded-control border border-hairline-strong px-3 py-2 font-mono text-[11px] text-content-body transition-colors duration-fast hover:bg-gray-50";
 
 function monthName(month: string): string {
   const [y, m] = month.split("-").map(Number);
@@ -98,7 +97,7 @@ export default async function SettingsPage({
     return (
       <>
         {header}
-        <main className="flex max-w-[1080px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           {error}
           <SettingsSection
             title="Team"
@@ -143,7 +142,7 @@ export default async function SettingsPage({
     return (
       <>
         {header}
-        <main className="flex max-w-[1080px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           <SettingsSection
             title="Access log"
             defaultOpen
@@ -282,7 +281,7 @@ export default async function SettingsPage({
   return (
     <>
       {header}
-      <main className="flex max-w-[1080px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {error}
 
         <div className="flex flex-wrap items-center gap-2">
@@ -360,9 +359,7 @@ export default async function SettingsPage({
                 className={FIELD}
               />
             </label>
-            <button type="submit" className={BUTTON}>
-              Save
-            </button>
+            <SaveButton />
             {current?.updatedAt && (
               <span className="font-mono text-[10.5px] text-content-muted">
                 {current.updatedAt.slice(0, 10)} · {current.updatedBy}
@@ -424,9 +421,7 @@ export default async function SettingsPage({
                       />
                     );
                   })}
-                  <button type="submit" disabled={demo} className={`${BUTTON} disabled:opacity-40`}>
-                    Save
-                  </button>
+                  <SaveButton disabled={demo} />
                 </form>
               ))}
             </div>

@@ -84,7 +84,7 @@ export default async function CustomersPage({
         title="Customers"
       />
 
-      <main className="flex max-w-[1320px] flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {/*
           Lifetime figures are cumulative over everything we hold, so this page
           is not filtered by the date picker. Stated next to the numbers rather

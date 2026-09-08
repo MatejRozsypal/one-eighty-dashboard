@@ -82,7 +82,7 @@ export function Conversation() {
   if (messages.length === 0 && !pending && !error) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-16 lg:px-8">
-        <div className="flex w-full max-w-[720px] flex-col gap-7">
+        <div className="flex w-full max-w-[680px] flex-col gap-7">
           <div className="flex items-center justify-center gap-3">
             <Logo markOnly size={34} />
             <h1 className="m-0 text-center text-[30px] font-bold leading-[1.15] tracking-heading text-content-strong lg:text-[34px]">

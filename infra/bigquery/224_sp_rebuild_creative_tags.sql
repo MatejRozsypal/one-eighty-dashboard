@@ -14,6 +14,36 @@
 --
 -- Run order: AFTER 222.
 
+-- =============================================================================
+-- NAME KEY — the one normalisation both sides of the name match go through
+-- =============================================================================
+-- An ad name and a ClickUp task name are written by the same person under the
+-- same convention, and are meant to be the same string. In practice they differ
+-- by a doubled space, a stray trailing colon, a `|` typed as an `I`, or a
+-- diacritic dropped on one side. None of those are differences of meaning, and
+-- every one of them costs a whole ad's worth of tagging.
+--
+-- So the key is the name reduced to what a person reads it as: lower case,
+-- diacritics stripped, punctuation gone, and the bare token `i` removed —
+-- because in this account `I` is used as a pipe (`Testery I TOF I STAT I CZ`)
+-- and the two spellings must land on the same key.
+--
+-- Deliberately NOT normalised away: dates, stage tokens, version numbers and
+-- market codes. `... | 13AUG | ...` and `... | 4SEP | ...` are two different
+-- creatives and must stay two different keys — collapsing them would attach one
+-- ad's spend to another ad's concept, which no figure on any screen would look
+-- wrong enough to reveal.
+CREATE OR REPLACE FUNCTION `oneeighty-warehouse.ref.creative_name_key`(s STRING)
+RETURNS STRING AS ((
+  ARRAY_TO_STRING(ARRAY(
+    SELECT tok
+    FROM UNNEST(SPLIT(
+      REGEXP_REPLACE(
+        LOWER(REGEXP_REPLACE(NORMALIZE(IFNULL(s, ''), NFD), r'\p{Mn}', '')),
+        r'[^a-z0-9]+', ' '), ' ')) AS tok
+    WHERE tok != '' AND tok != 'i'), ' ')
+));
+
 CREATE OR REPLACE PROCEDURE `oneeighty-warehouse.ref.sp_rebuild_creative_tags`()
 BEGIN
   DECLARE run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
@@ -204,6 +234,90 @@ BEGIN
     -- Meta ad ids are long numerics. Anything else in this field is a note
     -- somebody typed, and must not become a phantom ad id.
     WHERE REGEXP_CONTAINS(TRIM(ad), r'^\d{6,}$')
+  ),
+
+  -- ── The second way in: the ad's own name ────────────────────────────────
+  -- `Creative ID` is filled in by hand after an ad goes live, and on a real
+  -- account it mostly is not: on Manami it carried an id on 15 of 65 tasks,
+  -- which left half the account's spend untagged while the pipeline knew
+  -- perfectly well what every one of those ads was.
+  --
+  -- The ad name is the other half of the same convention. A brief is written as
+  -- `Persona - Description | STAGE | FORMAT | DATE | vN | MKT` and the ad is
+  -- launched under that name, so an exact match on the normalised name is not a
+  -- guess about which creative this is — it is the same string, typed once.
+  --
+  -- Two guards, because this is the arm that could do damage:
+  --   · a name that resolves to more than one task is skipped and recorded.
+  --     Two briefs sharing a name is a data-entry error, and picking one of
+  --     them would attribute an ad to a coin flip.
+  --   · `creative_id` always wins. Where somebody has stated the id, that
+  --     statement is the answer and the name is not consulted.
+  -- Anything short of an exact match — a date that moved, `V1` against `V2` —
+  -- stays out and goes to the unmapped queue for a person to confirm. Those
+  -- near-misses are usually genuinely different creatives.
+  ad_names AS (
+    SELECT
+      client_id,
+      ad_id,
+      -- Ads get renamed. The most recent name is the one the pipeline's task
+      -- was named after, or was renamed to match.
+      MAX_BY(ad_name, date_start) AS ad_name
+    FROM `oneeighty-warehouse.stg.stg_meta_ad_insights`
+    WHERE ad_name IS NOT NULL
+    GROUP BY client_id, ad_id
+  ),
+  named_tasks AS (
+    SELECT
+      a.*,
+      `oneeighty-warehouse.ref.creative_name_key`(a.task_name) AS name_key
+    FROM `oneeighty-warehouse.mart.mart_clickup_ad_tasks` a
+    WHERE a.task_name IS NOT NULL
+  ),
+  unique_names AS (
+    SELECT client_id, name_key
+    FROM named_tasks
+    WHERE name_key != ''
+    GROUP BY client_id, name_key
+    HAVING COUNT(DISTINCT task_id) = 1
+  ),
+  by_name AS (
+    SELECT
+      n.client_id,
+      n.ad_id,
+      t.task_id,
+      t.task_name,
+      t.task_url,
+      t.concept_task_id,
+      t.content_format,
+      t.content_purpose,
+      t.market,
+      t.body_code,
+      t.hook_code,
+      t.production_method,
+      t.creator_name,
+      t.creator_type,
+      t.production_cost,
+      t.brief_url,
+      t.created_date
+    FROM ad_names n
+    JOIN named_tasks t
+      ON t.client_id = n.client_id
+     AND t.name_key = `oneeighty-warehouse.ref.creative_name_key`(n.ad_name)
+    JOIN unique_names u
+      ON u.client_id = t.client_id AND u.name_key = t.name_key
+    LEFT JOIN exploded e
+      ON e.client_id = n.client_id AND e.ad_id = n.ad_id
+    WHERE e.ad_id IS NULL
+  ),
+  matched AS (
+    SELECT *, 'creative_id' AS match_method, CAST(1.0 AS NUMERIC) AS match_confidence
+    FROM exploded
+    UNION ALL
+    -- Not 1.0. The id is a statement; the name is an agreement, and an
+    -- agreement can be broken by a rename nobody carried across.
+    SELECT *, 'name_exact' AS match_method, CAST(0.95 AS NUMERIC) AS match_confidence
+    FROM by_name
   )
   SELECT
     e.client_id,
@@ -261,12 +375,28 @@ BEGIN
       ELSE NULLIF(TRIM(REGEXP_REPLACE(e.market, r'[^A-Za-z+]', '')), '')
     END                                             AS market,
     e.created_date                                  AS launched_at,
-    'creative_id'                                   AS match_method,
-    CAST(1.0 AS NUMERIC)                            AS match_confidence,
+    e.match_method,
+    e.match_confidence,
     run_at                                          AS synced_at
-  FROM exploded e
+  FROM matched e
   LEFT JOIN `oneeighty-warehouse.ref.concepts` cn
-    ON cn.client_id = e.client_id AND cn.clickup_task_id = e.concept_task_id;
+    ON cn.client_id = e.client_id AND cn.clickup_task_id = e.concept_task_id
+  -- ── One row per ad, enforced here rather than assumed ────────────────────
+  -- `mart_creative_perf` LEFT JOINs this table onto daily ad insights, so a
+  -- second row for one ad does not read as a duplicate tag — it silently
+  -- DOUBLES that ad's spend, revenue and impressions on every Creative screen.
+  -- Manami has one today: two pipeline tasks carry the same id in `Creative
+  -- ID`, which is what happens when a task is duplicated to make a variant and
+  -- the field is copied with it.
+  --
+  -- The strongest claim wins: a stated id over a matched name, then the most
+  -- recently briefed task, then the id, so the choice is stable between runs
+  -- rather than whatever the shuffle returned first. The collision itself is
+  -- recorded below; this only stops it from corrupting the numbers meanwhile.
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY e.client_id, e.ad_id
+    ORDER BY e.match_confidence DESC, e.created_date DESC, e.task_id
+  ) = 1;
 
   -- ===========================================================================
   -- ISSUES — what was refused rather than guessed
@@ -302,6 +432,39 @@ BEGIN
          CONCAT('Ad ', t.ad_id, ' carries a ClickUp task but resolved to no concept.')
   FROM `oneeighty-warehouse.ref.creative_tags` t
   WHERE t.concept_id IS NULL
+
+  UNION ALL
+
+  -- Two pipeline tasks claiming the same ad id in `Creative ID`. One of them is
+  -- being used and the other ignored, and which one is arbitrary from the
+  -- outside — so it is named here rather than left to look like agreement.
+  SELECT run_at, client_id, 'warn', 'duplicate_creative_id', ad_id,
+         CONCAT('Ad ', ad_id, ' is claimed by ', CAST(COUNT(DISTINCT task_id) AS STRING),
+                ' pipeline tasks (', STRING_AGG(DISTINCT task_id, ', '),
+                '). One was used; clear the Creative ID on the others.')
+  FROM (
+    SELECT a.client_id, TRIM(ad) AS ad_id, a.task_id
+    FROM `oneeighty-warehouse.mart.mart_clickup_ad_tasks` a,
+    UNNEST(SPLIT(IFNULL(a.creative_id_raw, ''), ',')) AS ad
+    WHERE REGEXP_CONTAINS(TRIM(ad), r'^\d{6,}$')
+  )
+  GROUP BY client_id, ad_id
+  HAVING COUNT(DISTINCT task_id) > 1
+
+  UNION ALL
+
+  -- Two pipeline tasks whose names normalise to the same key. The name match
+  -- refuses both rather than picking one, so any ad launched under that name is
+  -- left untagged and shows up in the unmapped queue. Renaming one of the two
+  -- tasks fixes it.
+  SELECT run_at, client_id, 'warn', 'ambiguous_task_name', ANY_VALUE(task_id),
+         CONCAT(CAST(COUNT(DISTINCT task_id) AS STRING),
+                ' pipeline tasks share the name "', ANY_VALUE(task_name),
+                '". Name matching skipped all of them.')
+  FROM `oneeighty-warehouse.mart.mart_clickup_ad_tasks`
+  WHERE task_name IS NOT NULL
+  GROUP BY client_id, `oneeighty-warehouse.ref.creative_name_key`(task_name)
+  HAVING COUNT(DISTINCT task_id) > 1
 
   UNION ALL
 

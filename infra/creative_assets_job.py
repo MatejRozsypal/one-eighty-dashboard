@@ -76,7 +76,8 @@ TIMEOUT = 90
 CREATIVE_FIELDS = (
     "creative{id,object_type,object_story_spec,asset_feed_spec,title,body,"
     "call_to_action_type,image_hash,image_url,video_id,thumbnail_url,"
-    "effective_object_story_id}"
+    "effective_object_story_id,effective_instagram_media_id,"
+    "source_instagram_media_id,instagram_permalink_url}"
 )
 
 # ---------------------------------------------------------------------------
@@ -196,6 +197,88 @@ def fetch_ad_videos(account: str, token: str) -> dict[str, dict]:
             break
         url, params = nxt, None
     return out
+
+
+def ig_media(media_id: str, token: str) -> dict | None:
+    """
+    A video's mp4 by way of the Instagram post it was published as.
+
+    ── Why this exists ───────────────────────────────────────────────────────
+    `/act_X/advideos` lists what was uploaded *to the ad account*. On Manami it
+    lists 124 videos and **not one of the 46 the ads actually run**: the videos
+    were published to Instagram first and promoted from there, so they live on
+    the IG media object and are merely referenced by the ad. The account edge
+    cannot see them, `/{video_id}` answers `(#10)`, and the page post behind
+    `effective_object_story_id` needs `pages_read_engagement` at Advanced
+    Access — which this app, in Development mode, does not have.
+
+    `effective_instagram_media_id` is the way through. `media_url` on an IG
+    media object is the full mp4 and comes back for the same system-user token
+    that was refused everywhere else, because `instagram_basic` already covers
+    the business account's own media. Sixty-one of Manami's sixty-nine video
+    ads resolve this way, and the mp4 is the real thing — not a preview, not a
+    poster frame.
+
+    The eight that remain are Facebook page posts with no Instagram twin. They
+    keep their poster and say so; there is no permission to add that fixes them
+    short of Advanced Access review.
+    """
+    url = f"https://graph.facebook.com/{API_VERSION}/{media_id}"
+    try:
+        d = get_json(url, {"fields": "id,media_type,media_url,thumbnail_url",
+                           "access_token": token})
+    except (urllib.error.HTTPError, urllib.error.URLError) as e:
+        print(f"    ! instagram media {media_id} unreadable: {e}", file=sys.stderr)
+        return None
+    if not d.get("media_url"):
+        return None
+    return {"source": d["media_url"], "poster": d.get("thumbnail_url")}
+
+
+def mp4_duration(blob: bytes) -> float | None:
+    """
+    Seconds, read out of the file's own `mvhd` box.
+
+    The ad account's video catalogue carries `length`; an Instagram media
+    object does not, and the retention curve and the scrub bar both need it —
+    without a length the panel silently drops the one chart that says whether
+    people watched. The header is enough to find it: walk the top-level boxes
+    to `moov`, then its first child `mvhd`, and divide duration by timescale.
+    No decoding, no dependency.
+    """
+    def walk(buf: bytes, start: int, end: int, want: bytes) -> int | None:
+        i = start
+        while i + 8 <= end:
+            size = int.from_bytes(buf[i:i + 4], "big")
+            kind = buf[i + 4:i + 8]
+            if size == 1:                       # 64-bit extended size
+                size = int.from_bytes(buf[i + 8:i + 16], "big")
+            if size < 8:
+                return None
+            if kind == want:
+                return i
+            i += size
+        return None
+
+    try:
+        moov = walk(blob, 0, len(blob), b"moov")
+        if moov is None:
+            return None
+        head = moov + 8
+        mvhd = walk(blob, head, len(blob), b"mvhd")
+        if mvhd is None:
+            return None
+        version = blob[mvhd + 8]
+        off = mvhd + 12 + (16 if version == 1 else 8)
+        if version == 1:
+            timescale = int.from_bytes(blob[off:off + 4], "big")
+            duration = int.from_bytes(blob[off + 4:off + 12], "big")
+        else:
+            timescale = int.from_bytes(blob[off:off + 4], "big")
+            duration = int.from_bytes(blob[off + 4:off + 8], "big")
+        return round(duration / timescale, 2) if timescale else None
+    except (IndexError, ValueError, ZeroDivisionError):
+        return None
 
 
 def resolve_image_hashes(account: str, token: str, hashes: list[str]) -> dict[str, str]:
@@ -441,6 +524,10 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
 
     # ── Pass two: mirror ────────────────────────────────────────────────────
     rows: list[dict] = []
+    # One video often backs several ads. Remember its length so the second ad
+    # to reference it is not left without a retention curve just because the
+    # first one already put the file in the bucket.
+    lengths: dict[str, float] = {}
     for ad_id, c in creatives.items():
         kind, video_id, image_ref = pick_asset(c)
         asset_uri = thumb_uri = None
@@ -462,15 +549,30 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
 
         if kind == "video" and video_id:
             meta = videos.get(video_id, {})
-            video_len = meta.get("length")
+            video_len = meta.get("length") or lengths.get(video_id)
             key = f"{client_id}/video/{video_id}.mp4"
+            source = meta.get("source")
+            # Not on the ad account: promoted from Instagram, so ask Instagram.
+            # See ig_media() — this is the path that makes most video ads
+            # playable at all.
+            if not source:
+                ig_id = (c.get("effective_instagram_media_id")
+                         or c.get("source_instagram_media_id"))
+                if ig_id:
+                    found = ig_media(str(ig_id), token)
+                    if found:
+                        source = found["source"]
+                        meta = {**meta, "poster": meta.get("poster") or found["poster"]}
             if key in have:
                 asset_uri = f"gs://{BUCKET}/{key}"
-            elif meta.get("source"):
-                blob = get_bytes(meta["source"])
+            elif source:
+                blob = get_bytes(source)
                 if blob:
                     asset_uri = upload(storage, key, blob, "video/mp4")
                     asset_bytes = len(blob)
+                    video_len = video_len or mp4_duration(blob)
+                    if video_len:
+                        lengths[video_id] = float(video_len)
                     have.add(key)
             else:
                 print(f"    · {ad_id}: no source for video {video_id}")

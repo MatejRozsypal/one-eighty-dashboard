@@ -62,6 +62,8 @@ export interface AdView {
   hookRate: number | null;
   holdRate: number | null;
   outboundCtr: number | null;
+  /** link_clicks / impressions. See `Derived.linkCtr` — not the same as `ctr`. */
+  linkCtr: number | null;
   addToCart: number;
 
   format: string | null;
@@ -205,6 +207,7 @@ export function toAdView(
     hookRate: format === "DYN" ? d.hookRate : null,
     holdRate: format === "DYN" ? d.holdRate : null,
     outboundCtr: d.outboundCtr,
+    linkCtr: d.linkCtr,
     addToCart: ad.components.addToCart,
 
     format,

@@ -1157,13 +1157,27 @@ function Metrics({
 
     { k: "Reach", f: csCount(ad.reach), s: "people reached" },
     {
-      k: "CTR (all)",
-      f: csRate(ad.ctr),
-      // 1.5% is the account-level reference the learnings file uses for a
-      // static; it is a benchmark, not a threshold anybody set, and it is
-      // labelled as one.
-      s: "benchmark 1,50 %",
-      verdict: ad.ctr === null ? null : ad.ctr >= 0.015 ? "good" : ad.ctr >= 0.01 ? "warn" : "bad",
+      k: "CTR (link)",
+      // ── Link clicks over impressions, NOT all clicks ──────────────────
+      // `ad.ctr` counts every click Meta records against the ad: likes,
+      // comments, shares, photo expands, profile taps. On these accounts that
+      // is about 1.6x the link CTR (Manami, 180 days: 2.72% all vs 1.69%
+      // link), and the gap is entirely engagement that never went anywhere.
+      // This card is read to decide whether the creative sends people to the
+      // site, so it is the link figure.
+      f: csRate(ad.linkCtr),
+      // ── Where 1,00 % comes from ────────────────────────────────────────
+      // Measured, not borrowed. The 1.5% that used to sit here is the
+      // all-clicks reference and applying it to link CTR would mark most of
+      // the account red for no reason. Across all three accounts, 159 ads with
+      // at least 1,000 impressions over 180 days, the per-ad median link CTR
+      // is 1.02-1.34% and the lower quartile 0.65-1.07%. So: median is the
+      // line, lower quartile is the warning, and it is labelled "median"
+      // rather than "target" because nobody set it — it is what this book of
+      // business actually does. Re-measure it when the account mix changes.
+      s: "median 1,00 %",
+      verdict:
+        ad.linkCtr === null ? null : ad.linkCtr >= 0.01 ? "good" : ad.linkCtr >= 0.0065 ? "warn" : "bad",
     },
     {
       k: "Outbound CTR",
@@ -1427,8 +1441,11 @@ function Breakdowns({
             const share = placeTotal > 0 ? p.impressions / placeTotal : null;
             const cpm = p.impressions > 0 ? (p.spend / p.impressions) * 1000 : null;
             const ctr = p.impressions > 0 ? p.clicks / p.impressions : null;
-            // Against the same 1.5% reference the CTR card uses, so a reader
-            // does not have to hold two different benchmarks in their head.
+            // 1.5%, the ALL-clicks reference — `p.clicks` here is every click,
+            // the same figure the CTR card used to show. It is deliberately
+            // not the card's 1,00 % link median: these two rows measure
+            // different clicks, and sharing a threshold between them would
+            // make one of them wrong.
             const verdict = ctr === null ? null : ctr >= 0.015 ? "good" : ctr >= 0.01 ? "warn" : "bad";
             return (
               <div

@@ -172,6 +172,15 @@ export interface Derived {
   /** video_thruplays / impressions. */
   holdRate: number | null;
   outboundCtr: number | null;
+  /**
+   * link_clicks / impressions.
+   *
+   * Distinct from `ctr`, which is ALL clicks — likes, comments, shares, photo
+   * expands and profile taps included. On these accounts all-CTR runs about
+   * 1.6x link CTR (2.72% vs 1.69% on Manami over 180 days), so the two are not
+   * interchangeable and a threshold written for one is wrong for the other.
+   */
+  linkCtr: number | null;
   atcRate: number | null;
 }
 
@@ -185,6 +194,7 @@ export function derive(c: Components): Derived {
     hookRate: div(c.videoPlays, c.impressions),
     holdRate: div(c.videoThruplays, c.impressions),
     outboundCtr: div(c.outboundClicks, c.impressions),
+    linkCtr: div(c.linkClicks, c.impressions),
     atcRate: div(c.addToCart, c.clicks),
   };
 }

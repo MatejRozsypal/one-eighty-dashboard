@@ -4,6 +4,119 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-09-09 — Creative Engine: built, deployed, and fed with real data
+
+The whole product from `CREATIVE_ENGINE_BRIEF.md`, plus the rollout. It is live
+at dashboard.oneeighty.cz behind the rail's Creative icon, agency and admin
+only, reading real Manami data. Branch `claude/creative-engine-build-a58ad8`,
+merged into `venev-onboarding`.
+
+### What exists now
+
+| Layer | State |
+|---|---|
+| Warehouse | migrations 219–224 applied. 11 mart views, 7 raw/ref tables, 1 stored procedure |
+| Assets | `gs://oneeighty-creatives` — Manami 195/195 thumbnails, 102 full assets |
+| Tagging | 26 personas, 37 concepts, 15 ads joined, **50% of 90-day spend tagged** |
+| App | 5 screens + ad detail + unmapped queue + decisions log + Settings section |
+| Ingestion | `creative_assets_job.py` and `clickup_backfill.py` run BY HAND. Nothing is scheduled |
+
+### Read these before changing anything
+
+- `runbooks/29_creative_engine_rollout.md` — the rollout, and §8 lists the
+  decisions that are Matt's, not the code's.
+- `runbooks/28` and `27` — corrected against the live APIs on 9 Sep. Several
+  statements in `CREATIVE_ENGINE_BRIEF.md` are now known wrong; the runbooks
+  carry the corrections and say so.
+- `npm run check:creative` — asserts the engine's arithmetic against figures
+  stated independently in the brief and in the Manami learnings file.
+
+### Five things the brief got wrong, proven against live systems
+
+Each of these shipped looking correct and was caught only by running against
+the real account. They are recorded because the same assumptions will be made
+again for the next client.
+
+1. **`GET /{ad_id}/adcreative` is not a valid endpoint.** Returns
+   `Unknown path components`. The creative is a nested FIELD on the ad;
+   `adcreatives` is an ad ACCOUNT edge. `link_description` is not a field of
+   adcreative either and 400s the whole request.
+2. **`Content Purpose` is not the funnel stage.** Its options are
+   Net-new / Offer-Promo / Winner Variant. No ClickUp field holds TOF/MOF/BOF,
+   so stage is parsed from the ad name. `Content Purpose` turns out to be the
+   better signal for the 80/20 rule than any naming heuristic.
+3. **Five of the eighteen angle names were paraphrased** in the vocabulary.
+   Those strings are a join key: each mismatch showed an angle as "never run"
+   while it held budget. `check:creative` now guards this.
+4. **`images[0]` is usually the wrong creative.** A placement-customised ad
+   lists one asset per placement plus an unordered catch-all. Follow
+   `asset_customization_rules` to the feed placement. On the account's
+   highest-spend ad, `images[0]` was a different product with a different offer.
+5. **Video needs no extra Meta permission.** `/{video_id}` is refused for a
+   system user with View Performance; `/act_X/advideos` returns the same fields
+   and is already covered. The error message points the wrong way.
+
+### Two bugs the first production request found
+
+`HAVING SUM(spend) > 0` where the query also aliased `SUM(spend) AS spend`:
+BigQuery resolves the bare name against the SELECT aliases first, making it
+`SUM(SUM(spend))`. And `stg_clickup_ad_tasks` joined `ref.clickup_field_map`
+inside a correlated UNNEST subquery, which BigQuery refuses. Both were
+invisible to TypeScript and to `next build`; all ten of the app's queries are
+now dry-run against the warehouse.
+
+### One UI bug worth remembering
+
+The ad detail panel is portalled to `<body>`. It has to be: `position: fixed`
+is only relative to the viewport while no ancestor establishes a containing
+block, and `ProductTransition` carries `animation: … both` on a transform. The
+panel was being positioned against that box. The glass custom properties moved
+from `.creative-ground` to `:root` for the same reason — a portalled element
+sits outside it and every variable resolved to nothing.
+
+### Where it stands, and what is next
+
+**Working now:** thumbnails and full-resolution creative in the grid and the
+detail panel, ad copy for all 195 ads, personas, concepts, angle coverage,
+the unmapped queue with ClickUp write-back, the decisions log with the
+kill-needs-a-learning-note constraint enforced in Postgres.
+
+**Not done, in the order it matters:**
+
+1. **179 ads unmapped**, holding half the spend. The queue writes back; it is
+   a person pressing Confirm, sorted by spend so the first few matter most.
+   Breakdown stops warning about itself above 60% tagged.
+2. **Six of nine Manami concepts are blank in ClickUp** — Angle, Offer,
+   Persona and Concept ID all empty on `Vůně nemusí křičet`, `Risk-free
+   tester`, `Syntetika vs. přírodní — reveal` and three others. Verified
+   against the raw API, not inferred. Filling them takes angle coverage from
+   three of eighteen to nine.
+3. **Nothing is scheduled.** New ads appear with no thumbnail until somebody
+   runs `python3 infra/creative_assets_job.py manami`. Runbook 29 has it as a
+   Cloud Run job; `wf_clickup_to_bigquery.json` is written but not imported
+   into n8n. `clickup_backfill.py` does the same job by hand meanwhile.
+4. **69 videos have no reachable source** even through the account edge — they
+   are not listed on the ad account. They show a poster frame. Worth deciding
+   whether that is acceptable.
+5. **Thresholds are per client.** Manami is set (kill 1.80 / target 2.50 /
+   CPA 527). Venev and Dobias are not, so their Creative screens show delivery
+   and no verdicts.
+
+### Unrelated finding, still open
+
+**`ref.fx_rates` stops at 2026-08-01.** A missing rate yields NULL rather than
+an unconverted number, so Venev — the only client needing conversion, EUR shop
+against a CZK ad account — has **8 of 8 September days with null spend on
+`mart_daily_kpis`**. Its September is invisible on the live dashboard. This
+predates the Creative Engine and is `runbooks/23`.
+
+Venev also spent 27 327 CZK in August against six shop orders worth €199, and
+15 389 CZK so far in September against one €65 order. Meta records two
+purchases where the shop saw six, so attribution under-reports — but the spend
+dwarfs the return either way.
+
+---
+
 ## 2026-07-31 (evening) — Dashboard iteration: auth, cohorts, unit economics, mobile
 
 Long working session on the live dashboard. Recorded because several of these

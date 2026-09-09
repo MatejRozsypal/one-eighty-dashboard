@@ -61,7 +61,15 @@ in runbook 22 if any of the new views 403.
 -- every object exists
 SELECT table_name FROM `oneeighty-warehouse.mart.INFORMATION_SCHEMA.TABLES`
 WHERE table_name LIKE 'mart_creative%' OR table_name = 'mart_clickup_ad_tasks';
--- expect 9 rows
+-- expect 11 rows
+
+-- and that the mart actually returns delivery, which is the real check:
+-- a view that exists and returns nothing looks identical to one that works.
+SELECT client_id, COUNT(DISTINCT ad_id) AS ads, ROUND(SUM(spend)) AS spend,
+       SUM(purchases) AS purchases, MAX(date) AS through
+FROM `oneeighty-warehouse.mart.mart_creative_perf`
+WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 24 MONTH)
+GROUP BY 1 ORDER BY spend DESC;
 ```
 
 ---

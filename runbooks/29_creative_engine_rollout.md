@@ -300,10 +300,27 @@ ClickUp fields and the n8n workflows are all *applied* somewhere else, and none
 of them go through Vercel.
 
 ```bash
-# The Vercel project is linked from dashboard/, not the repo root.
-cd dashboard
+# From the REPO ROOT. Not from dashboard/.
 npx vercel --prod
 ```
+
+**Why the repo root, when the app lives in `dashboard/`.** The Vercel project's
+*Root Directory* setting is already `dashboard`, so Vercel descends into it
+itself. Deploy from inside `dashboard/` and the CLI uploads that folder as the
+root, Vercel then looks for `dashboard/` inside it, and you get:
+
+```
+Error: The specified Root Directory "dashboard" does not exist.
+```
+
+`runbooks/22` says `cd dashboard`, and that is not a contradiction — it is the
+*initial linking* step, written before the Root Directory was set. It has been
+wrong for deploys ever since. `CLAUDE_CODE_BRIEF_V4.md` is the authority here
+and says repo root.
+
+There should be exactly one `.vercel` link file, at the repo root. A second one
+inside `dashboard/` is what you get from linking in the wrong place, and it
+will silently take precedence next time somebody deploys from there.
 
 Two things worth repeating from `runbooks/22`: **a `git push` does not deploy** —
 production only moves on this command — and the authorized-datasets step is what

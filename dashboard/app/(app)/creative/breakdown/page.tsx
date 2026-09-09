@@ -20,6 +20,7 @@
 import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
+import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { WindowToggle } from "@/components/creative/WindowToggle";
 import { DimensionPicker } from "@/components/creative/DimensionPicker";
 import {
@@ -317,10 +318,11 @@ function Shell({
   return (
     <>
       <Header eyebrow={`Creative · ${ctx.client.name}`} title="Breakdown" />
-      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-0 lg:px-8">
+        <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CreativeBar
-            unmapped={ctx.unmappedCount}
+            unmapped={0}
             window={ctx.window}
             through={ctx.data.through}
             currency={ctx.currency}

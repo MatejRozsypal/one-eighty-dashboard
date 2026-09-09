@@ -18,6 +18,7 @@
 import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
+import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { NotIngested, Scorecard, SectionHead, ThresholdsMissing } from "@/components/creative/primitives";
 import { loadCreativeContext } from "@/lib/creative/page";
 import { gauges, horizons, packSpec, type PackSettings } from "@/lib/creative/velocity";
@@ -250,9 +251,10 @@ function Shell({
   return (
     <>
       <Header eyebrow={`Creative · ${ctx.client.name}`} title="Velocity" />
-      <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-0 lg:px-8">
+        <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
         <CreativeBar
-          unmapped={ctx.unmappedCount}
+          unmapped={0}
           window={ctx.window}
           through={ctx.data.through}
           currency={ctx.currency}

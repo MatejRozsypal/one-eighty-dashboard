@@ -28,7 +28,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { navFor, CREATIVE_NAV } from "@/lib/nav";
+import { navFor } from "@/lib/nav";
 import { productFor } from "@/lib/products";
 import { NavCollapseToggle } from "@/components/shell/NavCollapseToggle";
 import { HistoryList } from "@/components/chat/HistoryList";
@@ -50,6 +50,12 @@ export function Sidebar({
   const nav = navFor(isAdmin);
   const product = productFor(pathname);
 
+  // Creative navigates with a top tab bar, matching its approved design: it is
+  // a wall of thumbnails, and 252px of dark chrome down the left is 252px not
+  // spent on them. Returning null rather than rendering an empty panel means
+  // the column collapses instead of leaving a dark gutter.
+  if (product === "creative") return null;
+
   return (
     <aside className="nav-panel sticky top-0 hidden h-screen w-[var(--nav-w)] flex-none flex-col gap-[22px] bg-bg-inverse px-4 pb-[18px] pt-[22px] lg:flex">
       <div className="flex items-center justify-between gap-2 px-2">
@@ -60,8 +66,6 @@ export function Sidebar({
       <nav className="scrollbar-inverse flex flex-1 flex-col gap-[18px] overflow-auto">
         {product === "chat" ? (
           <HistoryList />
-        ) : product === "creative" ? (
-          <CreativePanel />
         ) : (
           nav.map((group) => (
           <div key={group.label} className="flex flex-col gap-[3px]">
@@ -121,52 +125,5 @@ export function Sidebar({
       </nav>
 
     </aside>
-  );
-}
-
-/**
- * The Creative section's own list.
- *
- * Breakdown is shown greyed until roughly 60% of spend carries a concept tag.
- * That is not a build gate — the screen exists and works — it is an honesty
- * one: below that threshold it reads less than half the account, and the rows
- * it does show are whatever happened to get filed rather than a sample of
- * anything. The tooltip says so, and the page itself says so again on arrival.
- */
-function CreativePanel() {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const qs = searchParams.toString();
-
-  return (
-    <div className="flex flex-col gap-[3px]">
-      <span className="px-2.5 pb-1.5 font-mono text-[10px] uppercase tracking-eyebrow text-gray-400">
-        Creative
-      </span>
-      {CREATIVE_NAV.map((item) => {
-        const isActive = item.href === pathname;
-        return (
-          <Link
-            key={item.label}
-            href={qs ? `${item.href}?${qs}` : item.href!}
-            className={`flex w-full items-center justify-between gap-2 rounded-sm px-2.5 py-[9px] text-left text-[13.5px] tracking-[-0.01em] transition-colors duration-fast ${
-              isActive
-                ? "bg-growth-500/[0.14] font-semibold text-growth-300"
-                : "text-gray-250 hover:bg-white/[0.06]"
-            }`}
-          >
-            <span className="flex items-center gap-[9px]">
-              <span
-                aria-hidden="true"
-                className={`h-4 w-[5px] rounded-[3px] ${
-                  isActive ? "bg-accent" : "bg-transparent"
-                }`}
-              />
-              {item.label}
-            </span>
-          </Link>
-        );
-      })}
-    </div>
   );
 }

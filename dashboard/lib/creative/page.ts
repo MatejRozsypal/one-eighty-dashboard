@@ -20,7 +20,7 @@ import {
   type CreativeWindow,
   type UnmappedData,
 } from "@/lib/queries/creative";
-import { getCreativeSettings, listConfirmedMappings, toThresholds, type StoredCreativeSettings } from "@/lib/creative/store";
+import { getCreativeSettings, listConfirmedMappings, toDisplayThresholds, toThresholds, type StoredCreativeSettings } from "@/lib/creative/store";
 import { accountContext, type AccountContext } from "@/lib/creative/model";
 import { signMany } from "@/lib/creative/assets";
 import { toAdView, type AdView } from "@/lib/creative/view";
@@ -33,6 +33,11 @@ export interface CreativeContext {
   settings: StoredCreativeSettings;
   /** Null when the client has no kill line, target or CPA on file. */
   thresholds: CreativeThresholds | null;
+  /**
+   * Always present. Equal to `thresholds` when they are set; otherwise a
+   * judgement-free stand-in so the screens can still render delivery.
+   */
+  display: CreativeThresholds;
   data: CreativeData;
   assets: Map<string, CreativeAsset>;
   account: AccountContext;
@@ -74,6 +79,7 @@ export async function loadCreativeContext(searchParams: {
     window,
     settings,
     thresholds: toThresholds(settings),
+    display: toThresholds(settings) ?? toDisplayThresholds(settings),
     data,
     assets,
     // The shrinkage anchor. Computed from summed revenue over summed spend, so

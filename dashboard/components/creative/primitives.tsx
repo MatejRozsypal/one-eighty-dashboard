@@ -259,26 +259,25 @@ export function NotIngested({
 /**
  * Shown when a client has no kill line, target or CPA on file.
  *
- * The engine refuses to run rather than substituting a plausible default,
- * because a verdict computed against an invented target is indistinguishable on
- * screen from one computed against the client's real one — and it is the screen
- * somebody quotes in a meeting.
+ * ── Why this is one line and not a card ────────────────────────────────────
+ * It was a card. On a real account it filled the top third of the screen and
+ * pushed the wall of creative — the entire point of the page — below the fold,
+ * so the first impression of the product was a warning about a setting. The
+ * message has not changed; its share of the screen has. A notice that crowds
+ * out the thing it is annotating is worse at its job, not better.
  */
 export function ThresholdsMissing({ clientName }: { clientName: string }) {
   return (
-    <div className="glass flex flex-col gap-2 border border-warning/40 p-6">
+    <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-md border border-warning/30 bg-warning/[0.07] px-4 py-2.5 text-[13px] leading-[1.6] text-content-body">
       <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-warning">
-        No thresholds set
+        No verdicts
       </span>
-      <h3 className="m-0 text-[16px] font-bold tracking-heading text-content-strong">
-        {clientName} has no kill line, target ROAS or CPA on file.
-      </h3>
-      <p className="m-0 max-w-[62ch] text-[13px] leading-[1.7] text-content-body">
-        Delivery figures are below and are real. Verdicts are not shown, because
-        one computed against a guessed target looks exactly like one computed
-        against yours. Set the three lines under Settings and everything here
-        starts answering.
-      </p>
-    </div>
+      <span>
+        {clientName} has no kill line, target ROAS or CPA on file, so nothing
+        below is judged — the delivery figures are real, the colour coding and
+        the winner counts are switched off. Set the three under Settings →
+        Creative Engine.
+      </span>
+    </p>
   );
 }

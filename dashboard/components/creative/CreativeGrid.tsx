@@ -209,6 +209,19 @@ function Tile({
             {ad.bodyHook}
           </span>
         )}
+        {/* Video reads as video at a glance, whether or not the file has been
+            mirrored yet — format is one of the few things Meta tells us before
+            the asset job has ever run. */}
+        {ad.format === "DYN" && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 m-auto flex h-9 w-9 items-center justify-center rounded-full bg-paper/90 shadow-sm"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" className="ml-0.5 text-content-strong">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </span>
+        )}
       </div>
 
       <div className="relative flex flex-1 flex-col gap-2.5 p-3">
@@ -268,10 +281,14 @@ function Tile({
 /**
  * The tile image.
  *
- * A placeholder rather than a broken image when nothing has been mirrored. The
- * asset job may not have run, the video permission may be missing, or the ad
- * may predate the bucket — all of which are states a real account passes
- * through, and none of which should render as a broken-image icon.
+ * ── Why a drawn placeholder and not a broken-image icon ────────────────────
+ * Nothing is mirrored until the GCS job has run, and a real account passes
+ * through that state for days: the job may not have run, the video permission
+ * may be missing, or the ad may predate the bucket. A grey box with a broken
+ * icon reads as a failure; a tinted placeholder reads as "not here yet", which
+ * is what it is. The tint is by format, so a wall of unmirrored creative still
+ * shows you the shape of the account — how much of it is video, how much
+ * static — which is worth something on its own.
  */
 function Thumb({ ad }: { ad: AdView }) {
   if (ad.thumbUrl) {
@@ -288,18 +305,41 @@ function Thumb({ ad }: { ad: AdView }) {
     );
   }
 
-  const hue = [...ad.adId].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+  const tint =
+    ad.format === "DYN"
+      ? { from: "var(--info)", to: "var(--info)" }
+      : ad.format === "CAR"
+        ? { from: "var(--warning)", to: "var(--warning)" }
+        : { from: "var(--growth-500)", to: "var(--growth-400)" };
+
+  // Deterministic from the ad id, so a tile keeps its shape between renders.
+  const seed = [...ad.adId].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const cx = 60 + (seed % 70);
+  const cy = 92 + (seed % 40);
+  const r = 34 + (seed % 22);
+  const w1 = 86 + (seed % 60);
+  const w2 = 52 + (seed % 44);
+  const id = `t${ad.adId}`;
+
   return (
-    <div
-      aria-hidden="true"
-      className="flex h-full w-full items-center justify-center"
-      style={{
-        background: `linear-gradient(150deg, hsl(${hue} 42% 92%), hsl(${(hue + 40) % 360} 38% 96%))`,
-      }}
+    <svg
+      viewBox="0 0 200 250"
+      preserveAspectRatio="xMidYMid slice"
+      className="h-full w-full"
+      role="img"
+      aria-label={`No mirrored asset, ${ad.format ?? "unknown format"}`}
     >
-      <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-        no asset
-      </span>
-    </div>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0.6" y2="1">
+          <stop offset="0" stopColor={tint.from} stopOpacity="0.2" />
+          <stop offset="1" stopColor={tint.to} stopOpacity="0.07" />
+        </linearGradient>
+      </defs>
+      <rect width="200" height="250" fill={`url(#${id})`} />
+      <circle cx={cx} cy={cy} r={r} fill={tint.from} opacity="0.14" />
+      <rect x="26" y="180" width={w1} height="7" rx="3.5" fill={tint.from} opacity="0.26" />
+      <rect x="26" y="195" width={w2} height="7" rx="3.5" fill={tint.from} opacity="0.16" />
+      <rect x="26" y="210" width="40" height="7" rx="3.5" fill={tint.from} opacity="0.1" />
+    </svg>
   );
 }

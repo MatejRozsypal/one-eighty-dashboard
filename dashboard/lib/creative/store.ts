@@ -289,6 +289,45 @@ export async function getCreativeSettings(
  * correct behaviour, because "SCALE" computed against an invented target is
  * indistinguishable on screen from one computed against the client's real one.
  */
+/**
+ * Thresholds good enough to RENDER with, when the money lines are missing.
+ *
+ * The kill line sits at 0 and the target at infinity, so nothing is ever
+ * coloured as winning or losing and no verdict can fire. Everything that does
+ * not depend on the money lines — shrinkage, the confidence classes, the
+ * attention-metric floors — keeps working, which is what lets the creative
+ * wall render before anybody has been to Settings.
+ *
+ * The alternative, and what shipped first, was to render no grid at all until
+ * the three lines existed. That turned the main screen of the product into a
+ * warning box: 195 ads and 585 607 Kc of real delivery sat behind it, invisible.
+ * Refusing to *judge* without a target is right. Refusing to *show* is not.
+ */
+export function toDisplayThresholds(s: StoredCreativeSettings): CreativeThresholds {
+  return {
+    killRoas: 0,
+    targetRoas: Number.POSITIVE_INFINITY,
+    targetCpa: s.targetCpa ?? 0,
+    grossMargin: s.grossMargin,
+    scaleMultiplier: s.scaleMultiplier,
+    aggressiveMultiplier: s.aggressiveMultiplier,
+    holdGateX: s.holdGateX,
+    iterateGateX: s.iterateGateX,
+    killGateX: s.killGateX,
+    readPurchases: s.readPurchases,
+    directionalPurchases: s.directionalPurchases,
+    maxCiHalfWidth: s.maxCiHalfWidth,
+    hookRateFloor: s.hookRateFloor,
+    holdRateFloor: s.holdRateFloor,
+    frequencyWarn: s.frequencyWarn,
+    frequencyAct: s.frequencyAct,
+    noTouchDays: s.noTouchDays,
+    minAdsetBudgetDaily: s.minAdsetBudgetDaily,
+    perAdFloorDaily: s.perAdFloorDaily,
+    tier: s.tier,
+  };
+}
+
 export function toThresholds(s: StoredCreativeSettings): CreativeThresholds | null {
   if (s.killRoas === null || s.targetRoas === null || s.targetCpa === null) return null;
   return {

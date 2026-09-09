@@ -18,6 +18,7 @@
 import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
+import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { CreativeGrid } from "@/components/creative/CreativeGrid";
 import { UnmappedQueue } from "@/components/creative/UnmappedQueue";
 import { toQueueProposal, type QueueRow } from "@/lib/creative/view";
@@ -38,16 +39,66 @@ export default async function CreativesPage({
   searchParams: { [k: string]: string | string[] | undefined };
 }) {
   const ctx = await loadCreativeContext(searchParams);
-  const { client, currency, data, thresholds, account } = ctx;
+  const { client, currency, data, thresholds, display, account } = ctx;
+
+  // Rendered against `display`, which equals `thresholds` when they are set and
+  // is a judgement-free stand-in when they are not. The wall of creative is the
+  // product; it does not wait for anybody to visit Settings.
+  const views = data.available ? await buildAdViews(ctx, display) : [];
+  const w = thresholds ? winnerEconomics(data.ads, account.meanRoas, thresholds) : null;
+
+  const tiles = [
+    { label: "Spend", value: money(account.spend, currency), sub: `${account.ads} creatives` },
+    {
+      label: "Blended ROAS",
+      value: roas(account.meanRoas),
+      sub: thresholds ? `target ${thresholds.targetRoas.toFixed(2)}` : "no target set",
+    },
+    {
+      label: "CPA",
+      value: money(account.cpa, currency),
+      sub: thresholds ? `target ${formatMoney(thresholds.targetCpa, currency)}` : "no target set",
+    },
+    {
+      label: "Purchases",
+      value: account.purchases.toLocaleString("en-US"),
+      sub: ctx.window === "lifetime" ? "lifetime" : "last 30 days",
+    },
+    // The four that judge the rest. They need a kill line and a target to mean
+    // anything, so without them they read as absent rather than as zero — a
+    // "0 winners" on an account with no target set is a claim, and a false one.
+    {
+      label: "Winners",
+      value: w ? String(w.winners) : "—",
+      sub: w ? `${w.decided} decided` : "needs a target",
+    },
+    {
+      label: "Carriers",
+      value: w ? String(w.carriers) : "—",
+      sub: w ? "above kill, under target" : "needs a kill line",
+    },
+    {
+      label: "Losers",
+      value: w ? String(w.losers) : "—",
+      sub: w ? "below the kill line" : "needs a kill line",
+    },
+    {
+      label: "Hit rate",
+      value: w ? pct(w.hitRate) : "—",
+      sub: "reference 5%",
+    },
+  ];
 
   return (
     <>
       <Header eyebrow={`Creative · ${client.name}`} title="Creatives" />
 
-      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-0 lg:px-8">
+        <CreativeTabs unmapped={ctx.unmappedCount} href="#unmapped" />
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CreativeBar
-            unmapped={ctx.unmappedCount}
+            unmapped={0}
             window={ctx.window}
             through={data.through}
             currency={currency}
@@ -55,6 +106,10 @@ export default async function CreativesPage({
           />
           <WindowToggle current={ctx.window} />
         </div>
+
+        {!thresholds && data.available && data.ads.length > 0 && (
+          <ThresholdsMissing clientName={client.name} />
+        )}
 
         {!data.available ? (
           <NotIngested
@@ -67,38 +122,23 @@ export default async function CreativesPage({
             what={`No Meta delivery for ${client.name} in this window.`}
             hint="Widen the window, or check that the Meta workflow is running for this client."
           />
-        ) : !thresholds ? (
-          <>
-            <ThresholdsMissing clientName={client.name} />
-            <Delivery account={account} currency={currency} />
-          </>
         ) : (
           <>
-            <Scorecard
-              tiles={(() => {
-                const w = winnerEconomics(data.ads, account.meanRoas, thresholds);
-                return [
-                  { label: "Spend", value: money(account.spend, currency), sub: `${account.ads} creatives` },
-                  { label: "Blended ROAS", value: roas(account.meanRoas), sub: `target ${thresholds.targetRoas.toFixed(2)}` },
-                  { label: "CPA", value: money(account.cpa, currency), sub: `target ${formatMoney(thresholds.targetCpa, currency)}` },
-                  { label: "Purchases", value: account.purchases.toLocaleString("en-US"), sub: ctx.window === "lifetime" ? "lifetime" : "last 30 days" },
-                  { label: "Winners", value: String(w.winners), sub: `${w.decided} decided` },
-                  { label: "Carriers", value: String(w.carriers), sub: "above kill, under target" },
-                  { label: "Losers", value: String(w.losers), sub: "below the kill line" },
-                  { label: "Hit rate", value: pct(w.hitRate), sub: "reference 5%" },
-                ];
-              })()}
-            />
+            <Scorecard tiles={tiles} />
 
             <SectionHead title="Every creative" eyebrow="ranked by spend" />
 
             <CreativeGrid
-              ads={await buildAdViews(ctx, thresholds)}
+              ads={views}
               currency={currency}
               clientId={client.clientId}
-              killRoas={thresholds.killRoas}
-              targetRoas={thresholds.targetRoas}
-              directionalPurchases={thresholds.directionalPurchases}
+              // Without real lines nothing is coloured as winning or losing:
+              // a kill line of 0 and a target of infinity mean every readable
+              // row renders neutral, which is the honest rendering of "no
+              // judgement available".
+              killRoas={display.killRoas}
+              targetRoas={display.targetRoas}
+              directionalPurchases={display.directionalPurchases}
             />
           </>
         )}
@@ -111,10 +151,6 @@ export default async function CreativesPage({
                 adName: ad.adName,
                 spend: ad.spend,
                 purchases: ad.purchases,
-                // Scored on the server: the candidate list is the whole ad
-                // pipeline, and shipping it to the browser to run string
-                // similarity in a component would be both slower and a
-                // needless disclosure of every task name.
                 proposal: toQueueProposal(propose(ad.adName, ctx.unmapped.candidates)),
               }))}
               candidates={ctx.unmapped.candidates}
@@ -126,31 +162,5 @@ export default async function CreativesPage({
         </div>
       </main>
     </>
-  );
-}
-
-/**
- * Delivery without verdicts.
- *
- * Rendered when a client has no thresholds on file. The spend is real and worth
- * seeing; the judgement is not available, and inventing a target so the screen
- * looks complete would produce verdicts indistinguishable from real ones.
- */
-function Delivery({
-  account,
-  currency,
-}: {
-  account: { spend: number; revenue: number; purchases: number; meanRoas: number; cpa: number | null; ads: number };
-  currency: string;
-}) {
-  return (
-    <Scorecard
-      tiles={[
-        { label: "Spend", value: money(account.spend, currency), sub: `${account.ads} creatives` },
-        { label: "Revenue", value: money(account.revenue, currency), sub: "Meta reported" },
-        { label: "Blended ROAS", value: roas(account.meanRoas), sub: "no target set" },
-        { label: "Purchases", value: account.purchases.toLocaleString("en-US"), sub: "in window" },
-      ]}
-    />
   );
 }

@@ -139,6 +139,41 @@ export interface Tile {
 }
 
 /**
+ * The same figures as a Scorecard, on one line.
+ *
+ * ── Why a screen would want this instead ───────────────────────────────────
+ * Six tiles at 21px each is a screen's worth of chrome for six small integers,
+ * and on Concepts it pushed the concept roster — the thing the page is for —
+ * below the fold. None of these six is a headline: "3 of 18 angles in use" is
+ * context you read once on the way past, not a number you come to the page to
+ * check.
+ *
+ * So the label and the value sit on the same baseline, separated down the row,
+ * and the row wraps. Nothing is lost but the boxes.
+ */
+export function StatLine({ tiles }: { tiles: Tile[] }) {
+  return (
+    <dl className="m-0 flex flex-wrap items-baseline gap-x-7 gap-y-2.5 border-y border-hairline py-3">
+      {tiles.map((t) => (
+        <div key={t.label} className="flex items-baseline gap-2">
+          <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
+            {t.label}
+          </dt>
+          <dd className="m-0 whitespace-nowrap font-mono text-[13.5px] font-medium tabular text-content-strong">
+            {t.value}
+          </dd>
+          {t.sub && (
+            <dd className="m-0 whitespace-nowrap text-[11.5px] text-content-muted">
+              {t.sub}
+            </dd>
+          )}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
  * The scorecard strip.
  *
  * Symmetric by contract: eight tiles render 4 x 2, six render 3 x 2. A ragged

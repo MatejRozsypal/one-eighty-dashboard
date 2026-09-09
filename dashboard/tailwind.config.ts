@@ -74,7 +74,10 @@ const config: Config = {
         // Semantic status — red/amber/blue exist ONLY as status, never decoration
         positive: token("--positive"),
         negative: token("--negative"),
-        warning: token("--warning"),
+        warning: {
+          DEFAULT: token("--warning"),
+          700: token("--warning-700"),
+        },
         info: token("--info"),
 
         // Platform colors. Per the brand guide these appear *only* inside

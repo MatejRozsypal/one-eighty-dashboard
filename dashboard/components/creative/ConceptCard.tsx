@@ -19,7 +19,6 @@ import type { AdView, VerdictView } from "@/lib/creative/view";
 import type { Confidence } from "@/lib/creative/stats";
 import {
   ConfidenceChip,
-  Tag,
   VerdictChip,
   money,
   pct,
@@ -70,8 +69,11 @@ export function ConceptCard({
 
   return (
     <article
-      className={`glass mb-[11px] flex flex-wrap items-start gap-[18px] px-[18px] py-[15px] ${
-        data.verdict.code === "kill" ? "border-negative/30" : ""
+      /* A plain white card, not `glass`. The glass utility paints a highlight
+         gradient across the top through `::before`, which on a stack of cards
+         reads as a grey band above every concept rather than as a material. */
+      className={`mb-[11px] flex flex-wrap items-start gap-[18px] rounded-card border bg-surface-card px-[18px] py-[15px] shadow-sm ${
+        data.verdict.code === "kill" ? "border-negative/30" : "border-hairline"
       }`}
     >
       <div className="flex flex-shrink-0 gap-1">
@@ -135,10 +137,17 @@ export function ConceptCard({
           )}
           {data.name}
         </span>
-        <span className="flex flex-wrap gap-1.5">
-          <Tag value={data.persona} missing="persona" />
-          <Tag value={data.angle} missing="angle" />
-          <Tag value={data.offer} missing="offer" />
+        {/* ── One per line, each labelled, each its own colour ───────────
+            These three ARE the concept — persona x angle x offer is the
+            definition the whole screen is built on — and as an unlabelled row
+            of identical grey chips they read as a list of tags, which is
+            exactly the misreading the page header warns about. Naming the
+            field on every chip removes the guess, and the three colours make
+            the triplet scannable down a stack of twenty cards. */}
+        <span className="flex flex-col items-start gap-1">
+          <Facet field="Persona" value={data.persona} tone="persona" />
+          <Facet field="Angle" value={data.angle} tone="angle" />
+          <Facet field="Offer" value={data.offer} tone="offer" />
         </span>
         <span className="text-[12px] text-content-muted">
           {data.ads.length} {data.ads.length === 1 ? "ad" : "ads"} ·{" "}
@@ -202,5 +211,46 @@ export function ConceptCard({
         </span>
       </div>
     </article>
+  );
+}
+
+/**
+ * One of the three fields that define a concept.
+ *
+ * The colours are the app's blue, green and amber. The token file reserves
+ * red/amber/blue for status and this is not status, which is a real tension —
+ * it is resolved by the label: a chip that begins "Offer:" is not read as a
+ * warning, and no verdict on this screen is ever rendered as a soft tint.
+ * An unset field goes dashed and grey, which is how every other gap in the
+ * product is drawn.
+ */
+const FACET: Record<"persona" | "angle" | "offer", string> = {
+  persona: "bg-info/10 text-info",
+  angle: "bg-accent-soft text-growth-700",
+  offer: "bg-warning/[0.14] text-warning-700",
+};
+
+function Facet({
+  field,
+  value,
+  tone,
+}: {
+  field: string;
+  value: string | null;
+  tone: "persona" | "angle" | "offer";
+}) {
+  if (!value) {
+    return (
+      <span className="max-w-full rounded-pill border border-dashed border-hairline-strong px-2.5 py-1 text-[11.5px] text-content-muted">
+        {field}: not set
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`max-w-full rounded-pill px-2.5 py-1 text-[11.5px] leading-[1.5] ${FACET[tone]}`}
+    >
+      <span className="font-medium">{field}:</span> {value}
+    </span>
   );
 }

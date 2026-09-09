@@ -12,7 +12,6 @@
 
 import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
-import { CreativeBar } from "@/components/creative/CreativeBar";
 import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { PageControls } from "@/components/controls/PageControls";
 import { AngleCoverage } from "@/components/creative/AngleCoverage";
@@ -21,10 +20,9 @@ import type { ConceptCardData } from "@/components/creative/ConceptCard";
 import { DecisionLog, type LoggedDecision, type ReviewRow } from "@/components/creative/DecisionLog";
 import {
   NotIngested,
-  Scorecard,
+  StatLine,
   SectionHead,
   Tag,
-  ThresholdsMissing,
   pct,
 } from "@/components/creative/primitives";
 import { buildAdViews, loadCreativeContext } from "@/lib/creative/page";
@@ -261,9 +259,7 @@ export default async function ConceptsPage({
 
   return (
     <Shell ctx={ctx}>
-      {!judged && <ThresholdsMissing clientName={client.name} />}
-
-      <Scorecard
+      <StatLine
         tiles={[
           { label: "Live concepts", value: String(tagged.length), sub: "minimum 3" },
           {
@@ -300,6 +296,16 @@ export default async function ConceptsPage({
       />
 
       <section>
+        <SectionHead title="Live concepts" eyebrow="sorted by spend · click a creative to open it" />
+        <ConceptList
+          cards={cards}
+          currency={currency}
+          clientId={client.clientId}
+          rangeLabel={rangeLabel(ctx.params)}
+        />
+      </section>
+
+      <section>
         <SectionHead
           title="Angle coverage"
           eyebrow={`${spendByAngle.size} of ${ANGLES.length} in use`}
@@ -308,16 +314,6 @@ export default async function ConceptsPage({
           spendByAngle={spendByAngle}
           totalSpend={account.spend}
           currency={currency}
-        />
-      </section>
-
-      <section>
-        <SectionHead title="Live concepts" eyebrow="sorted by spend · click a creative to open it" />
-        <ConceptList
-          cards={cards}
-          currency={currency}
-          clientId={client.clientId}
-          rangeLabel={rangeLabel(ctx.params)}
         />
       </section>
 
@@ -449,19 +445,13 @@ function Shell({
       <PageControls client={ctx.client} params={ctx.params} />
       <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-4 lg:px-8">
         <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
-        <CreativeBar
-          unmapped={0}
-          through={ctx.data.through}
-          currency={ctx.currency}
-          href="/creative#unmapped"
-        />
         {/* The definition, where the design puts it: beside the screen's name.
             The app shell owns that line and spends it on the client, so it sits
             here instead. It is load-bearing on this screen — every card below
             is exactly one persona, one angle and one offer, and a reader who
             does not know that reads the three chips as a list of attributes. */}
         <p className="-mt-1 m-0 font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
-          persona × angle × offer · one concept, one ad set
+          persona × angle × offer · one concept
         </p>
         {children}
       </main>

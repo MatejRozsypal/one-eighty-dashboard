@@ -33,6 +33,10 @@
   --positive: #12B76A;
   --negative: #E5484D;
   --warning:  #F5A623;
+  /* Amber is legible as a dot or a border at #F5A623 and is not legible as
+     text on its own tint — roughly 2:1. This is the step that is, and it
+     exists for the same reason --growth-700 does. */
+  --warning-700: #8A5B0A;
   --info:     #0866FF;
 
   /* ---- Platform (product/dashboard UI kit only) ---- */

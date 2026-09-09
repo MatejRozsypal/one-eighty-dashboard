@@ -21,7 +21,9 @@ import { CreativeBar } from "@/components/creative/CreativeBar";
 import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { NotIngested, Scorecard, SectionHead, ThresholdsMissing } from "@/components/creative/primitives";
 import { loadCreativeContext } from "@/lib/creative/page";
-import { gauges, horizons, packSpec, type PackSettings } from "@/lib/creative/velocity";
+import { getAdsetLaunchDates } from "@/lib/queries/creative";
+import { gauges, horizons, launchCadence, packSpec, type PackSettings } from "@/lib/creative/velocity";
+import { LaunchCadence } from "@/components/creative/LaunchCadence";
 import { formatMoney } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Velocity" };
@@ -33,25 +35,28 @@ export default async function VelocityPage({
   searchParams: { [k: string]: string | string[] | undefined };
 }) {
   const ctx = await loadCreativeContext(searchParams);
-  const { client, currency, data, thresholds, settings } = ctx;
+  const { client, currency, data, thresholds, display, settings } = ctx;
 
-  if (!thresholds) {
-    return (
-      <Shell ctx={ctx}>
-        <ThresholdsMissing clientName={client.name} />
-      </Shell>
-    );
-  }
+  // ── What survives without a target CPA, and what does not ───────────────
+  // The pack model is CPA all the way down: the pack's daily budget is 2× CPA,
+  // the ads it can feed follow from that, and the horizon and the testing share
+  // follow from those. None of it means anything without the number.
+  //
+  // The cadence does. How many packs shipped in each of the last six months is
+  // counted off the ad sets, and it is the single most useful thing on this
+  // screen for an account that has not been configured yet — a team that
+  // stopped shipping looks exactly like a team that is fine, until you draw it.
+  const judged = thresholds !== null;
 
   // The two floors are 2× and 0.5× CPA by SOP. A client can override them in
   // settings; the defaults are derived rather than stored so a CPA correction
   // moves the whole model instead of leaving three stale numbers behind.
   const pack: PackSettings = {
     testPurchases: settings.testPurchases,
-    targetCpa: thresholds.targetCpa,
-    perAdFloorDaily: settings.perAdFloorDaily ?? thresholds.targetCpa * 0.5,
-    minPackDaily: settings.minAdsetBudgetDaily ?? thresholds.targetCpa * 2,
-    noTouchDays: thresholds.noTouchDays,
+    targetCpa: display.targetCpa,
+    perAdFloorDaily: settings.perAdFloorDaily ?? display.targetCpa * 0.5,
+    minPackDaily: settings.minAdsetBudgetDaily ?? display.targetCpa * 2,
+    noTouchDays: display.noTouchDays,
     monthlyBudget: settings.monthlyBudget ?? estimateMonthlyBudget(ctx),
     packsPerMonthTarget: settings.packsPerMonthTarget,
     hooksPerBodyTarget: settings.hooksPerBodyTarget,
@@ -59,12 +64,17 @@ export default async function VelocityPage({
   };
 
   const spec = packSpec(pack);
-  const tiles = gauges({ ads: data.ads, adsets: data.adsets, settings: pack });
+  const tiles = gauges({ ads: data.ads, adsets: data.adsets, settings: pack }).filter(
+    (g) => judged || !g.cpaDerived
+  );
   const options = horizons(pack);
+  const cadence = launchCadence(await getAdsetLaunchDates(client.clientId));
   const m = (v: number | null) => formatMoney(v, currency);
 
   return (
     <Shell ctx={ctx}>
+      {!judged && <ThresholdsMissing clientName={client.name} />}
+
       {!data.available && (
         <NotIngested
           what="No delivery data, so the cadence gauges have nothing to measure."
@@ -114,6 +124,27 @@ export default async function VelocityPage({
         ))}
       </div>
 
+      {/* The mockup's second block, and the one that was never built. */}
+      <section>
+        <SectionHead
+          title="Packs launched per month"
+          eyebrow="weekly to biweekly batch cadence"
+        />
+        <div className="glass p-5">
+          <LaunchCadence months={cadence} target={pack.packsPerMonthTarget} />
+          <p className="mt-3 max-w-[78ch] text-[12.5px] leading-[1.6] text-content-muted">
+            A pack is an ad set, dated by the month it first delivered. An ad set
+            that never spent is not a launch — nothing ran, so nothing can be
+            judged, and counting it would let a folder of drafts read as output.
+          </p>
+        </div>
+      </section>
+
+      {/* Everything below is the pack model, and the pack model is the target
+          CPA restated four ways. Without one it would be arithmetic on a
+          placeholder, printed with the confidence of a measurement. */}
+      {judged && (
+      <>
       <section>
         <SectionHead title="One pack, start to verdict" eyebrow="current configuration" />
         <Scorecard
@@ -208,6 +239,8 @@ export default async function VelocityPage({
           pack is not holding.
         </p>
       </section>
+      </>
+      )}
     </Shell>
   );
 }
@@ -260,6 +293,11 @@ function Shell({
           currency={ctx.currency}
           href="/creative#unmapped"
         />
+        {/* The screen's own definition, where the mockup puts it. The app shell
+            spends the header's eyebrow on the client, so it sits here. */}
+        <p className="-mt-1 m-0 font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
+          pack cadence against what the budget can carry
+        </p>
         {children}
       </main>
     </>

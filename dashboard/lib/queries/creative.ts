@@ -678,3 +678,39 @@ export async function getConcepts(clientId: string): Promise<ConceptRow[]> {
     return [];
   }
 }
+
+/**
+ * The date each ad set first delivered, over the whole history.
+ *
+ * ── Why this is its own query ──────────────────────────────────────────────
+ * `AdsetRow.firstDate` is `MIN(date)` *inside the selected window*, which is
+ * right for the age gate — an ad set's no-touch clock is about how long it has
+ * been running — and catastrophic for a cadence chart. Under the 30-day window
+ * every ad set's first date clamps into the last thirty days, and the chart
+ * would report the whole account as having launched last month: a wrong answer
+ * that looks entirely plausible.
+ *
+ * Cadence is a multi-month question by definition, so it is asked once,
+ * lifetime, regardless of what window the reader is in.
+ */
+export async function getAdsetLaunchDates(clientId: string): Promise<string[]> {
+  if (isDemo(clientId)) {
+    const { demoLaunchDates } = await import("@/lib/demo/creative");
+    return demoLaunchDates();
+  }
+  try {
+    const rows = await query<Record<string, unknown>>(
+      `SELECT MIN(date) AS first_date
+       FROM \`${PROJECT_ID}.mart.mart_creative_adset_perf\`
+       WHERE client_id = @clientId AND spend > 0
+       GROUP BY adset_id`,
+      { clientId }
+    );
+    return rows
+      .map((r) => isoDate(r.first_date as never))
+      .filter((d): d is string => d !== null);
+  } catch (error) {
+    if (!isMissingObject(error)) throw error;
+    return [];
+  }
+}

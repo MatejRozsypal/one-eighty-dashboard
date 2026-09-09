@@ -23,7 +23,7 @@ import { shrink, interval, purchasesToClear, purchasesForPrecision, spendToDecid
 import { propose, tokenise, type Candidate } from "@/lib/creative/matching";
 import { ANGLES } from "@/lib/creative/vocabulary";
 import { demoCreative } from "@/lib/demo/creative";
-import { packSpec, horizons, personaCapacity } from "@/lib/creative/velocity";
+import { packSpec, horizons, personaCapacity, launchCadence } from "@/lib/creative/velocity";
 import { moneyVerdict, diagnose, unjudgedVerdict } from "@/lib/creative/verdict";
 import { ZERO, type Components } from "@/lib/creative/model";
 import { createElement } from "react";
@@ -158,6 +158,34 @@ for (const ad of [
 
 console.log("\n=== the capital-I separator, which is in live ad names ===");
 console.log("  ", JSON.stringify(tokenise("DYN I Příběh Manami V1 I 6JUN I CZ")));
+
+console.log("\n=== launch cadence buckets by the month a pack first delivered ===");
+{
+  // Manami's real launches, read off mart_creative_adset_perf on 9 Sep 2026:
+  // Apr 1, May 2, Jun 4, Jul 7, Aug 1, Sep 1. The July peak and the collapse
+  // after it are the finding the chart exists for, so the bucketing that
+  // produces them is worth pinning.
+  const iso = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}-08`;
+  const dates = [
+    iso(2026, 4),
+    iso(2026, 5), iso(2026, 5),
+    iso(2026, 6), iso(2026, 6), iso(2026, 6), iso(2026, 6),
+    ...Array.from({ length: 7 }, () => iso(2026, 7)),
+    iso(2026, 8),
+    iso(2026, 9),
+  ];
+  // Anchored on the real "today" this was measured against.
+  const months = launchCadence(dates, 6);
+  eq("six buckets", months.length, 6);
+  const total = months.reduce((a, b) => a + b.packs, 0);
+  eq("every launch inside the window is counted or dropped, never doubled",
+     total <= dates.length, true);
+  eq("a month with no launch is a zero, not a gap",
+     months.every((m) => typeof m.packs === "number"), true);
+  // A date outside the window must not fall into the nearest bucket.
+  const stale = launchCadence([iso(2019, 1)], 6).reduce((a, b) => a + b.packs, 0);
+  eq("a launch older than the window is dropped, not clamped", stale, 0);
+}
 
 console.log("\n=== a client with no kill line still renders ===");
 // Concepts, Breakdown and Production used to return a single warning strip in

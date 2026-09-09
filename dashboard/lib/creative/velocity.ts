@@ -134,6 +134,14 @@ export interface Gauge {
   /** 0..1 position of the target tick on that bar. */
   mark: number;
   state: GaugeState;
+  /**
+   * True when the figure is derived from the target CPA, and therefore means
+   * nothing for a client that has not set one. Four of the eight are: the pack
+   * budget is 2× CPA, the ads it feeds follow from that, and both the verdict
+   * horizon and the testing share follow from those. The other four are
+   * counted off delivery and hold either way.
+   */
+  cpaDerived: boolean;
 }
 
 export interface VelocityInput {
@@ -173,10 +181,15 @@ export function gauges(input: VelocityInput): Gauge[] {
   // two hooks. This is the only creative test One Eighty has the sample size to
   // read, it is the cheapest production there is — re-record three to five
   // seconds — and it has never been run once.
+  // Only ads that actually carry a Body code. Counting every absent code as
+  // one shared body turned "nobody fills this field in" into a confident 13.8
+  // hooks per body against a target of 6 — a gauge reading full green on a
+  // measurement that was never taken.
+  const coded = ads.filter((a) => a.tags.bodyCode !== null);
   const bodies = new Set(
-    ads.map((a) => `${a.tags.conceptId ?? a.adId}|${a.tags.bodyCode ?? "b?"}`)
+    coded.map((a) => `${a.tags.conceptId ?? a.adId}|${a.tags.bodyCode}`)
   ).size;
-  const hooksPerBody = bodies > 0 ? ads.length / bodies : 0;
+  const hooksPerBody = bodies > 0 ? coded.length / bodies : null;
 
   // Net-new share, for the 80/20 rule.
   //
@@ -208,6 +221,7 @@ export function gauges(input: VelocityInput): Gauge[] {
       fill: clamp(packsLast30 / s.packsPerMonthTarget),
       mark: 1,
       state: band(packsLast30, packsLast30 >= s.packsPerMonthTarget, packsLast30 >= 1),
+      cpaDerived: false,
     },
     {
       label: "Ads in last pack",
@@ -223,6 +237,7 @@ export function gauges(input: VelocityInput): Gauge[] {
           : adsInLastPack > spec.adsPerPack
             ? "bad"
             : "warn",
+      cpaDerived: true,
     },
     {
       label: "Days to a verdict",
@@ -235,6 +250,7 @@ export function gauges(input: VelocityInput): Gauge[] {
         spec.daysToVerdict <= s.noTouchDays,
         spec.daysToVerdict <= s.noTouchDays * 1.4
       ),
+      cpaDerived: true,
     },
     {
       label: "New ads, 30d",
@@ -243,18 +259,26 @@ export function gauges(input: VelocityInput): Gauge[] {
       fill: adsTarget > 0 ? clamp(adsLast30 / adsTarget) : 0,
       mark: 1,
       state: band(adsLast30, adsLast30 >= adsTarget, adsLast30 >= adsTarget * 0.5),
+      cpaDerived: true,
     },
     {
       label: "Hooks per body",
-      value: hooksPerBody.toFixed(1),
-      against: `target ${s.hooksPerBodyTarget}`,
-      fill: clamp(hooksPerBody / s.hooksPerBodyTarget),
+      value: hooksPerBody === null ? "—" : hooksPerBody.toFixed(1),
+      against:
+        hooksPerBody === null
+          ? "no Body code on any ad"
+          : `target ${s.hooksPerBodyTarget}`,
+      fill: hooksPerBody === null ? 0 : clamp(hooksPerBody / s.hooksPerBodyTarget),
       mark: 1,
-      state: band(
-        hooksPerBody,
-        hooksPerBody >= s.hooksPerBodyTarget * 0.7,
-        hooksPerBody >= 2
-      ),
+      state:
+        hooksPerBody === null
+          ? "warn"
+          : band(
+              hooksPerBody,
+              hooksPerBody >= s.hooksPerBodyTarget * 0.7,
+              hooksPerBody >= 2
+            ),
+      cpaDerived: false,
     },
     {
       label: "Net-new share",
@@ -265,6 +289,7 @@ export function gauges(input: VelocityInput): Gauge[] {
       fill: clamp(netNew / 0.6),
       mark: s.netNewShareTarget / 0.6,
       state: band(netNew, netNew <= s.netNewShareTarget * 1.5, netNew <= 0.45),
+      cpaDerived: false,
     },
     {
       label: "Testing share of budget",
@@ -273,6 +298,7 @@ export function gauges(input: VelocityInput): Gauge[] {
       fill: clamp(testShare / 0.4),
       mark: 0.75,
       state: testShare >= 0.18 && testShare <= 0.32 ? "ok" : "warn",
+      cpaDerived: true,
     },
     {
       label: "Pack daily budget",
@@ -285,6 +311,7 @@ export function gauges(input: VelocityInput): Gauge[] {
         s.minPackDaily >= 2 * s.targetCpa,
         s.minPackDaily >= 1.5 * s.targetCpa
       ),
+      cpaDerived: true,
     },
   ];
 }
@@ -334,4 +361,56 @@ export function personaCapacity(
     activePersonas,
     dormant,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Launch cadence
+// ---------------------------------------------------------------------------
+
+export interface LaunchMonth {
+  /** `YYYY-MM`. */
+  month: string;
+  /** Short label for the axis. */
+  label: string;
+  packs: number;
+}
+
+/**
+ * Packs launched per month, counted off the ad sets themselves.
+ *
+ * ── Why this is the chart and not a number ─────────────────────────────────
+ * "Packs launched, 30d" is one of the eight gauges and it answers the wrong
+ * shape of question: cadence is a rhythm, and a rhythm is only visible over
+ * several months. An account that shipped four packs in June and none since
+ * reads identically to one shipping two a month, on a gauge that only sees the
+ * last thirty days — and those are opposite situations. One is a team that
+ * stopped; the other is a team that is fine.
+ *
+ * A pack is an ad set, and the month it launched is the month its first
+ * delivery landed in. Ad sets with no delivery at all are not launches: nothing
+ * ran, so nothing can be judged, and counting them would let a folder of drafts
+ * look like output.
+ *
+ * The dates come from `getAdsetLaunchDates`, which reads them lifetime — never
+ * from `AdsetRow.firstDate`, which is clamped to the selected window and would
+ * put the entire account's launches in the last thirty days.
+ */
+export function launchCadence(launchDates: string[], months = 6): LaunchMonth[] {
+  const now = new Date();
+  const buckets: LaunchMonth[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    buckets.push({
+      month: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
+      label: d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }),
+      packs: 0,
+    });
+  }
+  const index = new Map(buckets.map((b, i) => [b.month, i]));
+
+  for (const date of launchDates) {
+    const at = index.get(date.slice(0, 7));
+    if (at !== undefined) buckets[at].packs += 1;
+  }
+  return buckets;
 }

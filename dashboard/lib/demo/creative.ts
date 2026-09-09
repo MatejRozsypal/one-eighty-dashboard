@@ -481,3 +481,15 @@ export function demoConcepts(): ConceptRow[] {
     },
   ];
 }
+
+/** Six months of launches: a ramp, a peak, then a stall. */
+export function demoLaunchDates(): string[] {
+  const now = new Date();
+  const perMonth = [1, 2, 4, 3, 1, 1];
+  const out: string[] = [];
+  perMonth.forEach((n, i) => {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (5 - i), 8));
+    for (let k = 0; k < n; k++) out.push(d.toISOString().slice(0, 10));
+  });
+  return out;
+}

@@ -303,7 +303,19 @@ body {
   background-attachment: fixed;
 }
 
-.creative-ground {
+/*
+ * The glass custom properties are declared on :root, not on .creative-ground.
+ *
+ * Declaring a variable renders nothing — only the `.glass` classes below do —
+ * so scoping the VALUES bought nothing and cost something real: the ad detail
+ * panel is portalled to <body> to escape ancestor transforms, which put it
+ * outside .creative-ground, and every one of these resolved to nothing. The
+ * modal lost its own background and the page showed through it.
+ *
+ * The visual scoping that matters is still intact: Analytics uses none of the
+ * .glass classes, so nothing there changes.
+ */
+:root {
   --glass: color-mix(in srgb, var(--paper) 62%, transparent);
   --glass-2: color-mix(in srgb, var(--paper) 78%, transparent);
   --glass-solid: color-mix(in srgb, var(--paper) 94%, transparent);

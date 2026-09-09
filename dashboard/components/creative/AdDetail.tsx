@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { loadBreakdowns } from "@/app/(app)/creative/actions";
 import type { AdBreakdowns } from "@/lib/queries/creative";
 import type { AdView } from "@/lib/creative/view";
@@ -79,7 +80,22 @@ export function AdDetail({
     };
   }, [clientId, ad.adId]);
 
-  return (
+  // ── Portalled to <body>, and this is not a stylistic choice ──────────────
+  // `position: fixed` is only relative to the viewport while no ancestor
+  // establishes a containing block, and several ordinary things do: a
+  // transform, a filter, a backdrop-filter, `will-change`, or an element in
+  // the middle of an animation. This modal renders inside `ProductTransition`,
+  // which carries `animation: product-enter ... both` and therefore animates a
+  // transform — so the scrim was being positioned against that box instead of
+  // the window, which is why it sat low on the page with the panel running off
+  // the bottom.
+  //
+  // The bug never appeared in a bare test page because that page had none of
+  // those ancestors. Rendering into <body> removes the whole dependency on
+  // what happens to be above this component in the tree.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -102,10 +118,22 @@ export function AdDetail({
         gone milky"; a firmer dim and a gentler blur says the same thing more
         clearly.
       */
-      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-ink-950/55 backdrop-blur-[5px]"
+      /*
+        A literal rgba rather than `bg-ink-950/55`. The design tokens render an
+        opacity modifier as `color-mix(in srgb, var(--ink-950) calc(.55*100%),
+        transparent)`, and a scrim is the one place where a colour that fails
+        to parse degrades to *nothing* — no dim at all, just a blur, which is
+        precisely the milky wash this looked like. Every other translucent
+        surface in the app can afford to fall back; this one cannot.
+      */
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-[rgba(10,10,11,0.55)] backdrop-blur-[5px]"
     >
-      <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
-      <div className="glass-solid flex w-full max-w-[1080px] flex-col rounded-2xl shadow-xl">
+      {/* `items-start` with `my-auto`, not `items-center`: a flex item taller
+          than its container and centred overflows in BOTH directions, and the
+          top half becomes unreachable by scrolling. This centres when it fits
+          and top-aligns when it does not. */}
+      <div className="flex min-h-full items-start justify-center p-4 sm:p-6">
+      <div className="glass-solid my-auto flex w-full max-w-[1080px] flex-col rounded-2xl shadow-xl">
         <header className="flex flex-shrink-0 items-start gap-3.5 border-b border-hairline px-5 py-4">
           <div className="min-w-0 flex-1">
             <div className="break-all font-mono text-[13px] font-medium text-content-strong">
@@ -194,7 +222,8 @@ export function AdDetail({
         </div>
       </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

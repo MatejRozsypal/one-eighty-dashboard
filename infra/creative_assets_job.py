@@ -56,10 +56,18 @@ TABLE = f"{PROJECT}.raw.raw_meta_ad_creatives"
 THUMB_PX = 400
 TIMEOUT = 90
 
+# ── The creative is a FIELD on the ad, not an edge ────────────────────────
+# `GET /{ad_id}/adcreative` — which is what CREATIVE_ENGINE_BRIEF.md section 5b
+# and runbook 28 both specify — returns
+#   "Unknown path components: /adcreative"
+# on every ad. The edge exists on an ad ACCOUNT (/act_X/adcreatives), not on an
+# ad. Reading it as a nested field works, and `link_description` has to go: it
+# is not a field of adcreative at all (it lives inside
+# object_story_spec.link_data.description) and asking for it 400s the request.
 CREATIVE_FIELDS = (
-    "id,object_story_spec,asset_feed_spec,title,body,link_description,"
+    "creative{id,object_type,object_story_spec,asset_feed_spec,title,body,"
     "call_to_action_type,image_hash,image_url,video_id,thumbnail_url,"
-    "effective_object_story_id,object_type"
+    "effective_object_story_id}"
 )
 
 # ---------------------------------------------------------------------------
@@ -130,6 +138,75 @@ def extract_copy(c: dict) -> dict:
         "titles_json": json.dumps(feed.get("titles") or [], ensure_ascii=False),
         "descriptions_json": json.dumps(feed.get("descriptions") or [], ensure_ascii=False),
     }
+
+
+def resolve_image_hashes(account: str, token: str, hashes: list[str]) -> dict[str, str]:
+    """
+    Turn image hashes into download URLs.
+
+    `asset_feed_spec.images[]` carries a `hash` and no URL — an Advantage+ ad
+    lists its images by hash and expects you to look them up on the ad account.
+    Batched because a creative can list eight of them and this is one call for
+    all of them.
+    """
+    out: dict[str, str] = {}
+    for i in range(0, len(hashes), 40):
+        chunk = hashes[i : i + 40]
+        try:
+            payload = get_json(
+                f"https://graph.facebook.com/{API_VERSION}/{account}/adimages",
+                {"hashes": json.dumps(chunk), "fields": "hash,url", "access_token": token},
+            )
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            print(f"    ! adimages lookup failed: {e}", file=sys.stderr)
+            continue
+        for row in payload.get("data") or []:
+            if row.get("hash") and row.get("url"):
+                out[row["hash"]] = row["url"]
+    return out
+
+
+def pick_asset(c: dict) -> tuple[str | None, str | None, str | None]:
+    """
+    Decide what the full-size asset for this creative is.
+
+    Manami's account turned out to be mostly `object_type: SHARE` — boosted
+    existing posts — where the creative carries no image_hash, no video_id and
+    an empty object_story_spec. The media is listed in `asset_feed_spec`
+    instead, or reachable only through the post. So the order below is what
+    actually finds something, in descending order of quality:
+
+        video_id on the creative        a plain video ad
+        asset_feed_spec.videos[]        Advantage+ rotating video
+        image_hash / image_url          a plain image ad
+        asset_feed_spec.images[]        Advantage+ rotating images, by hash
+        nothing                         thumbnail only
+
+    Returns (kind, video_id, image_hash_or_url).
+    """
+    afs = c.get("asset_feed_spec") or {}
+    spec = c.get("object_story_spec") or {}
+
+    vid = c.get("video_id") or (spec.get("video_data") or {}).get("video_id")
+    if not vid:
+        videos = afs.get("videos") or []
+        if videos:
+            vid = videos[0].get("video_id")
+    if vid:
+        return "video", str(vid), None
+
+    img = c.get("image_hash") or (spec.get("link_data") or {}).get("image_hash")
+    if not img:
+        images = afs.get("images") or []
+        if images:
+            img = images[0].get("hash")
+    if img:
+        return "image", None, str(img)
+
+    if c.get("image_url"):
+        return "image", None, c["image_url"]
+
+    return (None, None, None)
 
 
 def thumbnail(raw: bytes) -> tuple[bytes, str]:
@@ -208,6 +285,7 @@ def upload(storage, name: str, data: bytes, content_type: str) -> str:
 
 def run_client(bq, storage, client_id: str, slug: str) -> int:
     token = secret(f"meta-{slug}-access-token")
+    account = secret(f"meta-{slug}-ad-account-id")
     todo = ads_needing_creatives(bq, client_id)
     if not todo:
         print(f"  {client_id}: nothing to fetch")
@@ -217,41 +295,65 @@ def run_client(bq, storage, client_id: str, slug: str) -> int:
     have = existing_objects(storage, client_id)
     now = datetime.now(timezone.utc).isoformat()
     today = date.today().isoformat()
-    rows: list[dict] = []
 
+    # ── Pass one: read every creative, note which image hashes need URLs ────
+    creatives: dict[str, dict] = {}
+    wanted_hashes: set[str] = set()
     for entry in todo:
         ad_id = entry["ad_id"]
         try:
             payload = get_json(
-                f"https://graph.facebook.com/{API_VERSION}/{ad_id}/adcreative",
-                {"fields": CREATIVE_FIELDS, "access_token": token, "limit": 1},
+                f"https://graph.facebook.com/{API_VERSION}/{ad_id}",
+                {"fields": CREATIVE_FIELDS, "access_token": token},
             )
         except (urllib.error.HTTPError, urllib.error.URLError) as e:
-            # A deleted ad still has insight rows. Skipping keeps the run going;
-            # the ad simply has no creative, which the UI already handles.
-            print(f"    ! {ad_id}: adcreative failed ({e})", file=sys.stderr)
+            # A deleted ad still has insight rows. Skipping keeps the run going.
+            print(f"    ! {ad_id}: creative read failed ({e})", file=sys.stderr)
             continue
-
-        creatives = payload.get("data") or []
-        if not creatives:
+        c = payload.get("creative")
+        if not c:
             continue
-        c = creatives[0]
+        creatives[ad_id] = c
+        kind, _vid, img = pick_asset(c)
+        if kind == "image" and img and not img.startswith("http"):
+            wanted_hashes.add(img)
 
-        image_hash = c.get("image_hash")
-        video_id = c.get("video_id")
-        spec = c.get("object_story_spec") or {}
-        if not video_id:
-            video_id = (spec.get("video_data") or {}).get("video_id")
-        if not image_hash:
-            image_hash = (spec.get("link_data") or {}).get("image_hash")
+    urls = resolve_image_hashes(account, token, sorted(wanted_hashes)) if wanted_hashes else {}
+    print(f"  {client_id}: {len(creatives)} creatives read, {len(urls)} image hashes resolved")
 
-        asset_uri = thumb_uri = asset_kind = None
+    # ── Pass two: mirror ────────────────────────────────────────────────────
+    rows: list[dict] = []
+    for ad_id, c in creatives.items():
+        kind, video_id, image_ref = pick_asset(c)
+        asset_uri = thumb_uri = None
         asset_bytes = video_len = None
+        image_hash = image_ref if (image_ref and not image_ref.startswith("http")) else None
 
-        if video_id:
-            asset_kind = "video"
+        # The thumbnail is the one thing EVERY creative has, whatever its type,
+        # so it is mirrored first and unconditionally. It is what the grid
+        # renders, and a wall of real thumbnails is most of the value here even
+        # when the full-size asset cannot be reached.
+        thumb_src = c.get("thumbnail_url")
+        if kind == "video" and not thumb_src:
+            vids = (c.get("asset_feed_spec") or {}).get("videos") or []
+            thumb_src = vids[0].get("thumbnail_url") if vids else None
+
+        ident = video_id or image_hash or f"ad{ad_id}"
+        thumb_key = f"{client_id}/thumb/{ident}.webp"
+        if thumb_key in have:
+            thumb_uri = f"gs://{BUCKET}/{thumb_key}"
+        elif thumb_src:
+            blob = get_bytes(thumb_src)
+            if blob:
+                small, ext = thumbnail(blob)
+                thumb_key = f"{client_id}/thumb/{ident}.{ext}"
+                thumb_uri = upload(
+                    storage, thumb_key, small,
+                    "image/webp" if ext == "webp" else "image/jpeg")
+                have.add(thumb_key)
+
+        if kind == "video" and video_id:
             key = f"{client_id}/video/{video_id}.mp4"
-            thumb_key = f"{client_id}/thumb/{video_id}.jpg"
             try:
                 meta = get_json(
                     f"https://graph.facebook.com/{API_VERSION}/{video_id}",
@@ -260,7 +362,6 @@ def run_client(bq, storage, client_id: str, slug: str) -> int:
             except (urllib.error.HTTPError, urllib.error.URLError) as e:
                 print(f"    ! {ad_id}: video meta failed ({e})", file=sys.stderr)
                 meta = {}
-
             video_len = meta.get("length")
 
             if key in have:
@@ -273,35 +374,22 @@ def run_client(bq, storage, client_id: str, slug: str) -> int:
                     have.add(key)
             else:
                 # `source` needs the video permission on the system user
-                # (runbooks/07). Absent it, keep the poster frame and leave
-                # asset_uri NULL so the next run retries rather than failing now.
+                # (runbooks/07). Without it the poster frame is all there is,
+                # and the next run retries rather than needing a backfill.
                 print(f"    · {ad_id}: no video source (permission?), thumbnail only")
 
-            if thumb_key in have:
-                thumb_uri = f"gs://{BUCKET}/{thumb_key}"
-            elif meta.get("picture"):
-                blob = get_bytes(meta["picture"])
-                if blob:
-                    thumb_uri = upload(storage, thumb_key, blob, "image/jpeg")
-                    have.add(thumb_key)
-
-        elif image_hash or c.get("image_url"):
-            asset_kind = "image"
-            ident = image_hash or f"ad{ad_id}"
+        elif kind == "image" and image_ref:
             key = f"{client_id}/image/{ident}.jpg"
             if key in have:
                 asset_uri = f"gs://{BUCKET}/{key}"
-                thumb_uri = f"gs://{BUCKET}/{client_id}/thumb/{ident}.webp"
-            elif c.get("image_url"):
-                blob = get_bytes(c["image_url"])
-                if blob:
-                    asset_uri = upload(storage, key, blob, "image/jpeg")
-                    asset_bytes = len(blob)
-                    have.add(key)
-                    thumb, ext = thumbnail(blob)
-                    thumb_uri = upload(
-                        storage, f"{client_id}/thumb/{ident}.{ext}", thumb,
-                        "image/webp" if ext == "webp" else "image/jpeg")
+            else:
+                src = image_ref if image_ref.startswith("http") else urls.get(image_ref)
+                if src:
+                    blob = get_bytes(src)
+                    if blob:
+                        asset_uri = upload(storage, key, blob, "image/jpeg")
+                        asset_bytes = len(blob)
+                        have.add(key)
 
         rows.append({
             "client_id": client_id,
@@ -314,11 +402,11 @@ def run_client(bq, storage, client_id: str, slug: str) -> int:
             "video_id": video_id,
             "effective_object_story_id": c.get("effective_object_story_id"),
             "asset_uri": asset_uri,
-            "asset_kind": asset_kind,
+            "asset_kind": kind,
             "thumb_uri": thumb_uri,
             # INT64: never emit 12345.0. BigQuery rejects a decimal point in an
-            # INT64 load, and the job fails AFTER "Upload complete" is printed,
-            # so the failure reads as success. Same trap as meta_backfill.py.
+            # INT64 load and reports it after "Upload complete" is printed, so
+            # the failure reads as success. Same trap as meta_backfill.py.
             "asset_bytes": int(asset_bytes) if asset_bytes else None,
             "video_length_sec": float(video_len) if video_len else None,
             "payload_json": json.dumps(c, ensure_ascii=False),
@@ -327,7 +415,9 @@ def run_client(bq, storage, client_id: str, slug: str) -> int:
 
     if rows:
         load(bq, rows)
-    print(f"  {client_id}: wrote {len(rows)} creative rows")
+    mirrored = sum(1 for r in rows if r["asset_uri"])
+    thumbed = sum(1 for r in rows if r["thumb_uri"])
+    print(f"  {client_id}: {len(rows)} rows, {thumbed} thumbnails, {mirrored} full assets")
     return len(rows)
 
 

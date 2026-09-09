@@ -40,11 +40,42 @@ Backfill is not possible for the video quartiles beyond Meta's ~37-month insight
 New nightly job. One call per ad that is not already stored.
 
 ```
-GET /v22.0/{ad_id}/adcreative
-  ?fields=id,object_story_spec,asset_feed_spec,title,body,link_description,
-          call_to_action_type,image_hash,image_url,video_id,thumbnail_url,
-          effective_object_story_id
+GET /v22.0/{ad_id}
+  ?fields=creative{id,object_type,object_story_spec,asset_feed_spec,title,body,
+                   call_to_action_type,image_hash,image_url,video_id,
+                   thumbnail_url,effective_object_story_id}
 ```
+
+> **Corrected 9 Sep 2026 against the live account.** This section, and
+> `CREATIVE_ENGINE_BRIEF.md` section 5b, both specified
+> `GET /{ad_id}/adcreative`. That is not a valid edge — every call returns
+> `Unknown path components: /adcreative`. The `adcreatives` edge belongs to an
+> ad ACCOUNT; on an ad the creative is a nested FIELD. `link_description` is
+> also not a field of adcreative and 400s the whole request; the description
+> lives at `object_story_spec.link_data.description`.
+
+### What Manami's account actually contains
+
+Sampled across the fourteen highest-spend ads:
+
+| object_type | count | image_hash | video_id | thumbnail_url |
+|---|---|---|---|---|
+| `SHARE` | 9 | 3 of 9 | none | **all** |
+| `VIDEO` | 4 | none | all | **all** |
+| `PRIVACY_CHECK_FAIL` | 1 | none | none | **all** |
+
+Most of the account is boosted existing posts, where the creative carries no
+`image_hash`, no `video_id` and an empty `object_story_spec` — the media is
+listed in `asset_feed_spec` instead, and images there are given as a **hash
+with no URL**. Resolve those in one batched call:
+
+```
+GET /v22.0/act_{account}/adimages?hashes=["<hash>",…]&fields=hash,url
+```
+
+**`thumbnail_url` is the one field every creative has**, whatever its type. Mirror
+it first and unconditionally: a wall of real thumbnails is most of the value
+here even where the full-size asset cannot be reached.
 
 Copy lives in different places by ad type:
 
@@ -77,6 +108,15 @@ Per ad, if `(client_id, hash|video_id)` is not already in the bucket:
 - **Video**: `GET /v22.0/{video_id}?fields=source,picture,length`. `source` is time-limited and needs
   the video permission on the system user (`runbooks/07_meta_app_and_system_user.md`). If `source`
   is absent, store `picture` as the thumbnail and mark `asset_uri` null rather than failing the run.
+
+  > **Confirmed missing, 9 Sep 2026.** The system user token returns
+  > `(#10) Application does not have permission for this action` on every video.
+  > Its scopes are `ads_management, ads_read, business_management,
+  > pages_show_list, pages_read_engagement, pages_manage_ads, instagram_basic,
+  > instagram_manage_insights, instagram_manage_contents, public_profile` —
+  > none of which grants video source access. Until that is added, video ads
+  > mirror their poster frame and nothing else, and `asset_uri` stays null so
+  > the next run retries. No backfill is needed once it is granted.
 
 Write `asset_uri`, `thumb_uri`, `asset_kind` back to `raw_meta_ad_creatives`. Dedupe on the hash, so
 a creative reused across ad sets or graduated by post ID stores once.

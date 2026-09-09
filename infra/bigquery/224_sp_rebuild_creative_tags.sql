@@ -183,6 +183,9 @@ BEGIN
       a.client_id,
       TRIM(ad) AS ad_id,
       a.task_id,
+      -- Carried because funnel stage is parsed out of it: no ClickUp field
+      -- holds TOF/MOF/BOF, so the ad's name is the only place it exists.
+      a.task_name,
       a.task_url,
       a.concept_task_id,
       a.content_format,

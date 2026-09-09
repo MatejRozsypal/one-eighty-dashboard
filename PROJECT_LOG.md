@@ -4,6 +4,117 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-09-09 (night) — The creative fills the panel; the picker reaches every page; ClickUp made diagnosable
+
+Three items from the previous session, all of them stated by the reader as
+still wrong rather than found by a test.
+
+### 1. The ad detail panel, redone
+
+The previous pass moved the delivery chip and renamed the tabs but left the
+layout alone, and the layout was the complaint. The preview sat in a fixed
+`360px` column inside a box capped at `maxHeight: 52vh`. On a 9:16 that draws
+the creative as a stamp roughly a third of the panel's height, ringed with
+grey, beside two screens of numbers — the annotation given more room than the
+subject.
+
+What changed, in `components/creative/AdDetail.tsx`:
+
+- The column is `minmax(360px, 42%)` and the media is `width: 100%` with its
+  stored `aspectRatio` and **no height cap**. The cap was the thing preventing
+  "fills the entire left side": a capped box has to surrender either the width
+  or the ratio, and surrendering the ratio is the crop that 226/the mirror job
+  went to some trouble to remove. A tall vertical now costs a scroll. The
+  scrim already scrolls, so that costs nothing structurally.
+- The media is flush to the panel edge, with the scrub bar, controls, spec
+  list and links in a padded footer beneath it.
+- **Feed preview**, a toggle above the media. It assembles primary text →
+  media → headline/description/CTA in the order the feed puts them, from the
+  copy fields already on the creative row. It is labelled "As assembled / not
+  Meta's renderer" and carries no fake avatar or engagement row, because a
+  mock that looks exact invites trust in the parts that are not.
+  `/{ad_id}/previews` was rejected, not forgotten: it needs a Meta token in
+  the dashboard's own environment — which this app has never held, it reads
+  the warehouse and nothing else — and the iframe URL expires, so it cannot be
+  signed alongside the asset in a server component.
+- **Download**, on a second signature. This is the non-obvious one: `<a
+  download>` is ignored cross-origin and every signed GCS URL is cross-origin,
+  so a button built on `assetUrl` navigates the tab to the bare video and
+  loses the dashboard. `signedDownloadUrl()` in `lib/creative/assets.ts` asks
+  for `responseDisposition: attachment; filename="<ad name>"` in the signature
+  itself — a real save, from a plain link, no CORS rule needed.
+- The header carries a range chip (`rangeLabel()` in `lib/params.ts`), because
+  the panel covers the picker that scoped every number on it.
+
+Verified in the browser against a 1080×1920 and a 1080×1080 probe rendered
+through a throwaway route: both edges of the vertical on screen, neither shape
+cropped, feed preview correct in both states, mobile stacking correct. The
+probe route and its fixtures were deleted before the commit.
+
+### 2. The picker, on every page that reads client data
+
+Audit of all 26 pages under `app/(app)`. Three still had none: Buying plan,
+Catalogue, Repeat timing. Repeat timing already carried the sentence "ignores
+the date range above", written against a bar that was not there.
+
+Four still take none and should: Admin, Settings, Chat, Data health. They are
+not readings of a period in any sense, which is the rule already written into
+`components/controls/PageControls.tsx`.
+
+### 3. ClickUp — the code is right; the value in Vercel cannot be read from here
+
+Proven end to end against the live API with the Secret Manager token
+(`clickup-api-token`, **not** `CLICKUP_API_TOKEN` — that name does not exist
+in Secret Manager and was the wrong guess earlier): `GET /user`, `/task/{id}`,
+`/task/{id}/comment` and `/task/{id}/time_in_status` all 200, returning
+creation date, creator, five status transitions with durations, assignees and
+comments with names. `getActivity()` and `listNotes()` parse all of it
+correctly.
+
+`CLICKUP_API_TOKEN` **is** set in Vercel production and the current build is
+newer than it, so the "set it then redeploy" theory is exhausted. Vercel seals
+secret values, so the stored value cannot be compared from here, and a
+credential is not something this session should write.
+
+What was added instead, so this never again needs a session to diagnose:
+
+- `probeClickUp()` in `lib/creative/clickup.ts`, rendered on **Data Health**.
+  One live `GET /user` per load, distinguishing not-set / rejected / connected
+  and naming the account the token authenticates as. This gap is why a
+  rejected token went unnoticed for a day: the Notes tab reports each failure
+  precisely, but only on one of the 39 ads mapped to a task — on the ~165 that
+  are not, it says "no task yet", which from outside looks identical to a
+  broken integration.
+- `npm run check:clickup [taskId]` — the same probe from a terminal, before a
+  deploy rather than after.
+
+### Open
+
+- **The Vercel token value.** Re-set it and redeploy; Data Health then says
+  Connected or Rejected without opening an ad:
+  `gcloud secrets versions access latest --secret=clickup-api-token --project=oneeighty-warehouse | npx vercel env add CLICKUP_API_TOKEN production --force`
+- Ad-set insights (runbook 28 §4) is still the real fix behind
+  `225_adset_perf_fallback.sql`.
+
+### Files changed
+
+`components/creative/AdDetail.tsx` (left column rebuilt, `FeedPreview`,
+`ctaLabel`, range chip), `components/creative/CreativeGrid.tsx`,
+`components/creative/ConceptList.tsx` (thread `rangeLabel`),
+`lib/creative/assets.ts` (`signedDownloadUrl`, `signManyDownloads`),
+`lib/creative/view.ts` + `lib/creative/page.ts` (`downloadUrl`),
+`lib/params.ts` (`rangeLabel`), `lib/creative/clickup.ts` (`probeClickUp`),
+`app/(app)/health/page.tsx`, `app/(app)/inventory/buying|catalogue/page.tsx`,
+`app/(app)/repurchase/timing/page.tsx`, `scripts/probe-clickup.ts` (new).
+
+### Live state
+
+`npm run build`, `type-check`, `check:creative`, `check:queries` and
+`check:warehouse` all pass (5 pre-existing empties, no failures). Deployed and
+the alias verified: `dashboard.oneeighty.cz` → `one-eighty-dashboard-gn308shp7`.
+
+---
+
 ## 2026-09-09 (evening) — Creative Engine: the videos play, the tags arrive, and the whole thing ships
 
 A long session against Manami's live account. It starts with the three items

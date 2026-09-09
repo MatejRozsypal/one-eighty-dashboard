@@ -82,6 +82,8 @@ export interface AdView {
   thumbUrl: string | null;
   assetUrl: string | null;
   assetKind: string | null;
+  /** Width over height of the creative as served. Null when unrecorded. */
+  aspectRatio: number | null;
   effectiveStatus: string | null;
 
   copyPrimary: string | null;
@@ -214,6 +216,7 @@ export function toAdView(
     thumbUrl: signed.thumbUrl,
     assetUrl: signed.assetUrl,
     assetKind: asset?.assetKind ?? null,
+    aspectRatio: asset?.aspectRatio ?? null,
     effectiveStatus: asset?.effectiveStatus ?? null,
 
     copyPrimary: asset?.body ?? null,

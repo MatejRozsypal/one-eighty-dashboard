@@ -83,12 +83,15 @@ export function ConceptCard({
             aria-label={`Open ${ad.adName}`}
             onClick={onOpenAd ? () => onOpenAd(ad) : undefined}
             disabled={!onOpenAd}
-            className="relative block h-[50px] w-10 overflow-hidden rounded-[7px] border border-hairline p-0 transition-transform duration-fast enabled:cursor-pointer enabled:hover:scale-[1.06]"
+            className="relative block h-[50px] w-10 overflow-hidden rounded-[7px] border border-hairline bg-gray-100/70 p-0 transition-transform duration-fast enabled:cursor-pointer enabled:hover:scale-[1.06]"
           >
             {ad.thumbUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- signed,
               // short-lived GCS URL; next/image would cache one that expires.
-              <img src={ad.thumbUrl} alt="" className="h-full w-full object-cover" />
+              // `contain`, like the grid: at 40x50 either choice is a smudge,
+              // but a cropped one misrepresents the composition of the creative
+              // it is standing in for.
+              <img src={ad.thumbUrl} alt="" className="h-full w-full object-contain" />
             ) : (
               <span
                 aria-hidden="true"

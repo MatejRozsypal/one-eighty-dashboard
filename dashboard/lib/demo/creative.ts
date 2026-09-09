@@ -368,6 +368,11 @@ export function demoAssets(): Map<string, CreativeAsset> {
           // to this duration, and a different one here would plot the points
           // against the wrong clock.
           videoLengthSec: s.format === "DYN" ? 32 + Math.round(unit(`len:${s.id}`) * 12) : null,
+          // The real mix on a Meta account, and the point of the demo carrying
+          // it at all: 9:16 for video, and statics split between square and
+          // 4:5. A demo that was all one shape would have hidden the crop.
+          aspectRatio:
+            s.format === "DYN" ? 9 / 16 : unit(`ar:${s.id}`) > 0.5 ? 1 : 4 / 5,
           title: c?.title ?? null,
           body: c?.body ?? null,
           linkDescription: c?.desc ?? null,

@@ -16,7 +16,7 @@
  * works fully on an untagged ad.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { loadBreakdowns } from "@/app/(app)/creative/actions";
 import type { AdBreakdowns } from "@/lib/queries/creative";
@@ -229,6 +229,26 @@ export function AdDetail({
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The style that lets a creative be its own shape inside a bounded panel.
+ *
+ * `aspect-ratio` with `width: auto` and both maxima set is the one combination
+ * where a replaced element keeps its proportions under two constraints at once:
+ * a 9:16 hits the height cap and narrows, a 1:1 or a 4:5 hits the width and
+ * shortens. Nothing is cropped in either direction, and nothing is letterboxed,
+ * because the element is exactly the media's box.
+ */
+function mediaBox(ratio: number | null): CSSProperties {
+  const bounds: CSSProperties = { width: "auto", maxWidth: "100%", maxHeight: "52vh" };
+  // No stored shape: say nothing about the ratio and let the media's own
+  // natural size drive the box. Measured, an explicit 4:5 fallback produced a
+  // 420x376 box — neither 4:5 nor the creative's shape — because a fixed width
+  // and a height cap cannot both hold. The cost of leaving it out is a small
+  // reflow once the poster loads, on the eighteen assets whose shape was never
+  // recorded; the cost of guessing is every one of them drawn wrong.
+  return ratio ? { ...bounds, aspectRatio: String(ratio) } : bounds;
+}
+
 function Creative({ ad }: { ad: AdView }) {
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
@@ -243,11 +263,28 @@ function Creative({ ad }: { ad: AdView }) {
   return (
     <div className="flex flex-col gap-3.5 self-start border-b border-hairline p-5 lg:sticky lg:top-0 lg:border-b-0 lg:border-r">
       {/*
-        Capped in viewport units as well as by aspect ratio. A 4:5 box 360px
-        wide is 450px tall, which on a laptop is most of the window for what is
-        often a placeholder — the metrics are what the panel is for.
+        ── The box takes the creative's shape, not the other way round ──────
+        This was a fixed 4:5 box with `object-fit: cover`. Meta's vertical
+        formats are 9:16, so about 28% of every video — the top and bottom of
+        it, where the hook and the call to action live — was cut off before it
+        reached the screen. The files were never cropped; the mirrored mp4s are
+        720x1280 and 1080x1920. Only this rule was.
+
+        `aspectRatio` is stored per asset, read from the file at mirror time, so
+        the box is the right shape before the media loads and the panel does not
+        reflow under the reader — a `preload="none"` video does not report its
+        size until somebody presses play.
+
+        Height is still capped: a 9:16 at the panel's full width would be about
+        750px tall, which on a laptop is the whole window for one frame. The cap
+        narrows it instead of cropping it.
+
+        Where the shape is unknown — an older row, or an asset we could not
+        reach — no ratio is asserted at all and the media's own natural size
+        drives the box. It reflows once, and it is never drawn in a shape it
+        does not have.
       */}
-      <div className="relative mx-auto aspect-[4/5] max-h-[42vh] w-full overflow-hidden rounded-lg border border-hairline bg-gray-50 shadow-sm">
+      <div className="flex justify-center">
         {ad.assetUrl && ad.assetKind === "video" ? (
           <video
             ref={video}
@@ -263,14 +300,20 @@ function Creative({ ad }: { ad: AdView }) {
             onTimeUpdate={onTime}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
-            className="h-full w-full object-cover"
+            style={mediaBox(ad.aspectRatio)}
+            className="rounded-lg border border-hairline bg-gray-50 object-contain shadow-sm"
           />
         ) : ad.assetUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- signed GCS
           // URL; next/image would cache one that expires within the hour.
-          <img src={ad.assetUrl} alt="" className="h-full w-full object-cover" />
+          <img
+            src={ad.assetUrl}
+            alt=""
+            style={mediaBox(ad.aspectRatio)}
+            className="rounded-lg border border-hairline bg-gray-50 object-contain shadow-sm"
+          />
         ) : (
-          <div className="flex h-full w-full items-center justify-center px-5 text-center">
+          <div className="flex aspect-[4/5] max-h-[52vh] w-full items-center justify-center rounded-lg border border-hairline bg-gray-50 px-5 text-center shadow-sm">
             <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
               no asset mirrored
             </span>

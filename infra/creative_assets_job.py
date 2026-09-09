@@ -245,6 +245,104 @@ def ig_media(media_id: str, token: str) -> dict | None:
     return {"source": d["media_url"], "poster": d.get("thumbnail_url")}
 
 
+def _mp4_boxes(buf: bytes, start: int, end: int):
+    """Yield (kind, offset, size) for each box between two offsets."""
+    i = start
+    while i + 8 <= end:
+        size = int.from_bytes(buf[i:i + 4], "big")
+        kind = buf[i + 4:i + 8]
+        if size == 1:                                   # 64-bit extended size
+            size = int.from_bytes(buf[i + 8:i + 16], "big")
+        if size < 8:
+            return
+        yield kind, i, size
+        i += size
+
+
+def mp4_dimensions(blob: bytes) -> tuple[int, int] | None:
+    """
+    Pixel width and height, from the first video track's `tkhd` box.
+
+    ── Why this is stored rather than measured in the browser ────────────────
+    The detail panel sizes its player to the creative's real shape. Waiting for
+    the browser to report it means the box has no height until the metadata
+    loads, and the panel visibly reflows under the reader — on a `preload=none`
+    video, not until they press play. Two integers in the row remove that
+    entirely.
+
+    `tkhd` carries width and height as 16.16 fixed-point, after a header whose
+    length depends on the box version. A rotated portrait video records its
+    dimensions landscape and puts the rotation in the transform matrix, so the
+    matrix is read too — otherwise every vertical creative would be described as
+    horizontal, which is exactly the shape this whole change is about.
+    """
+    try:
+        for kind, off, size in _mp4_boxes(blob, 0, len(blob)):
+            if kind != b"moov":
+                continue
+            for k2, o2, s2 in _mp4_boxes(blob, off + 8, off + size):
+                if k2 != b"trak":
+                    continue
+                for k3, o3, _ in _mp4_boxes(blob, o2 + 8, o2 + s2):
+                    if k3 != b"tkhd":
+                        continue
+                    version = blob[o3 + 8]
+                    after_times = o3 + 12 + (32 if version == 1 else 20)
+                    matrix = after_times + 16
+                    # a and d of the 3x3 matrix; a 90 degree rotation zeroes
+                    # both and puts the scale in b and c instead.
+                    a = int.from_bytes(blob[matrix:matrix + 4], "big")
+                    d = int.from_bytes(blob[matrix + 20:matrix + 24], "big")
+                    dims = matrix + 36
+                    w = int.from_bytes(blob[dims:dims + 4], "big") / 65536
+                    h = int.from_bytes(blob[dims + 4:dims + 8], "big") / 65536
+                    if not (w and h):
+                        continue
+                    if a == 0 and d == 0:               # rotated a quarter turn
+                        w, h = h, w
+                    return int(round(w)), int(round(h))
+    except (IndexError, ValueError):
+        return None
+    return None
+
+
+def image_dimensions(blob: bytes) -> tuple[int, int] | None:
+    """
+    Pixel size of an image. Pillow only reads the header for this.
+
+    Returns None for a 64x64, because that is not an image size — it is Meta's
+    `thumbnail_url`, which is a fixed SQUARE CROP of whatever the creative is
+    (`stp=...p64x64...` in the URL). Reading a shape off it describes every
+    vertical video as 1:1, which is the exact defect this column exists to fix,
+    restated with more confidence. No creative is deliberately 64 pixels.
+    """
+    try:
+        from PIL import Image  # noqa: PLC0415 — optional dependency by design
+        size = Image.open(io.BytesIO(blob)).size
+        return None if size == (64, 64) else size
+    except Exception:
+        return None
+
+
+def dimensions_of_stored(storage, name: str) -> tuple[int, int] | None:
+    """
+    The shape of an object already in our bucket, without fetching all of it.
+
+    A re-run skips downloading an asset it has already mirrored, which is right
+    — and it left those rows with no shape, or with one read off the 64px square
+    poster. The header is enough to answer, and it is a range request: 256 KB
+    covers an mp4's `ftyp`+`moov` (the mirrored files are faststart, moov first)
+    and any image's header several times over.
+    """
+    try:
+        blob = storage.bucket(BUCKET).blob(name)
+        head = blob.download_as_bytes(start=0, end=256 * 1024 - 1)
+    except Exception as e:                              # noqa: BLE001
+        print(f"    ! could not read {name} for its size: {e}", file=sys.stderr)
+        return None
+    return mp4_dimensions(head) if name.endswith(".mp4") else image_dimensions(head)
+
+
 def mp4_duration(blob: bytes) -> float | None:
     """
     Seconds, read out of the file's own `mvhd` box.
@@ -257,17 +355,9 @@ def mp4_duration(blob: bytes) -> float | None:
     No decoding, no dependency.
     """
     def walk(buf: bytes, start: int, end: int, want: bytes) -> int | None:
-        i = start
-        while i + 8 <= end:
-            size = int.from_bytes(buf[i:i + 4], "big")
-            kind = buf[i + 4:i + 8]
-            if size == 1:                       # 64-bit extended size
-                size = int.from_bytes(buf[i + 8:i + 16], "big")
-            if size < 8:
-                return None
+        for kind, off, _ in _mp4_boxes(buf, start, end):
             if kind == want:
-                return i
-            i += size
+                return off
         return None
 
     try:
@@ -547,6 +637,11 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
         kind, video_id, image_ref = pick_asset(c)
         asset_uri = thumb_uri = None
         asset_bytes = video_len = None
+        # The creative's true shape. Read from the asset itself wherever one is
+        # downloaded, and from the poster otherwise — a poster always shares the
+        # creative's aspect, so even the videos whose source is unreachable
+        # still describe themselves correctly.
+        dims: tuple[int, int] | None = None
         image_hash = image_ref if (image_ref and not image_ref.startswith("http")) else None
         # Dedupe key. The video id or image hash is stable across ads, so a
         # creative reused in several ad sets — or graduated by post ID into a
@@ -580,11 +675,13 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
                         meta = {**meta, "poster": meta.get("poster") or found["poster"]}
             if key in have:
                 asset_uri = f"gs://{BUCKET}/{key}"
+                dims = dims or dimensions_of_stored(storage, key)
             elif source:
                 blob = get_bytes(source)
                 if blob:
                     asset_uri = upload(storage, key, blob, "video/mp4")
                     asset_bytes = len(blob)
+                    dims = dims or mp4_dimensions(blob)
                     video_len = video_len or mp4_duration(blob)
                     if video_len:
                         lengths[video_id] = float(video_len)
@@ -600,11 +697,13 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
             src = image_ref if image_ref.startswith("http") else urls.get(image_ref)
             if key in have:
                 asset_uri = f"gs://{BUCKET}/{key}"
+                dims = dims or dimensions_of_stored(storage, key)
             elif src:
                 blob = get_bytes(src)
                 if blob:
                     asset_uri = upload(storage, key, blob, "image/jpeg")
                     asset_bytes = len(blob)
+                    dims = dims or image_dimensions(blob)
                     have.add(key)
             best_source = src or c.get("thumbnail_url")
 
@@ -620,6 +719,7 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
         elif best_source:
             blob = get_bytes(best_source)
             if blob:
+                dims = dims or image_dimensions(blob)
                 small, ext = thumbnail(blob)
                 thumb_key = f"{client_id}/thumb/{ident}.{ext}"
                 thumb_uri = upload(
@@ -650,6 +750,8 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
             # the failure reads as success. Same trap as meta_backfill.py.
             "asset_bytes": int(asset_bytes) if asset_bytes else None,
             "video_length_sec": float(video_len) if video_len else None,
+            "asset_width": int(dims[0]) if dims else None,
+            "asset_height": int(dims[1]) if dims else None,
             "payload_json": json.dumps(c, ensure_ascii=False),
             **extract_copy(c),
         })

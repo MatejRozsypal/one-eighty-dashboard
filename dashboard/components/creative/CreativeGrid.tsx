@@ -256,7 +256,11 @@ function Tile({
       aria-label={`Open ${ad.adName}`}
       className="glass glass-lift flex cursor-pointer flex-col overflow-hidden"
     >
-      <div className="relative aspect-[4/5] border-b border-hairline bg-gray-50">
+      {/* The tile stays a uniform 4:5 — a wall of mixed shapes is unreadable,
+          and the grid's whole job is comparison. What changed is `contain`
+          rather than `cover` inside it: a 9:16 creative now sits letterboxed
+          and entire, instead of cropped to the middle 72% of itself. */}
+      <div className="relative aspect-[4/5] border-b border-hairline bg-gray-100/70">
         <Thumb ad={ad} />
         <span className="absolute left-2 top-2 rounded-xs bg-ink-950/70 px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.09em] text-white">
           {ad.format ?? "—"}
@@ -360,7 +364,7 @@ function Thumb({ ad }: { ad: AdView }) {
         src={ad.thumbUrl}
         alt=""
         loading="lazy"
-        className="h-full w-full object-cover"
+        className="h-full w-full object-contain"
       />
     );
   }

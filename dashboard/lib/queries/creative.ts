@@ -316,6 +316,12 @@ export interface CreativeAsset {
   assetKind: string | null;
   objectType: string | null;
   videoLengthSec: number | null;
+  /**
+   * Width over height, as the creative was served. Null where the shape was
+   * never recorded — an older row, or an asset we could not reach. The UI must
+   * not substitute a number for it: the crop this replaced was a guessed 4:5.
+   */
+  aspectRatio: number | null;
   title: string | null;
   body: string | null;
   linkDescription: string | null;
@@ -351,7 +357,7 @@ export async function getCreativeAssets(
   }
   try {
     const rows = await query<Record<string, unknown>>(
-      `SELECT ad_id, asset_uri, thumb_uri, asset_kind, object_type, video_length_sec,
+      `SELECT ad_id, asset_uri, thumb_uri, asset_kind, object_type, video_length_sec, aspect_ratio,
               title, body, link_description, call_to_action_type, link_url,
               bodies_json, titles_json, effective_status, adset_name, campaign_name
        FROM \`${PROJECT_ID}.mart.mart_creative_asset\`
@@ -369,6 +375,7 @@ export async function getCreativeAssets(
           assetKind: s(r.asset_kind),
           objectType: s(r.object_type),
           videoLengthSec: num(r.video_length_sec),
+          aspectRatio: num(r.aspect_ratio),
           title: s(r.title),
           body: s(r.body),
           linkDescription: s(r.link_description),

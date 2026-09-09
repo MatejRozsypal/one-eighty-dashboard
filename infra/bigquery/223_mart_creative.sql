@@ -127,6 +127,12 @@ SELECT
   cr.asset_uri,
   cr.thumb_uri,
   cr.video_length_sec,
+  cr.asset_width,
+  cr.asset_height,
+  -- Width over height. Computed here so five call sites cannot each pick a
+  -- different rounding, and null rather than 1 when either side is missing —
+  -- a default would be a claim about the creative's shape.
+  SAFE_DIVIDE(cr.asset_width, cr.asset_height) AS aspect_ratio,
   cr.image_hash,
   cr.video_id,
   cr.effective_object_story_id,

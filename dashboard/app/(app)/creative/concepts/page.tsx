@@ -28,7 +28,7 @@ import {
 import { buildAdViews, loadCreativeContext } from "@/lib/creative/page";
 import { getPersonas } from "@/lib/queries/creative";
 import { groupBy, read, sum, UNTAGGED } from "@/lib/creative/model";
-import { moneyVerdict } from "@/lib/creative/verdict";
+import { moneyVerdict, unjudgedVerdict } from "@/lib/creative/verdict";
 import { toAdsetView, toVerdictView, type AdView } from "@/lib/creative/view";
 import { listDecisions } from "@/lib/creative/store";
 import { ANGLES } from "@/lib/creative/vocabulary";
@@ -44,7 +44,13 @@ export default async function ConceptsPage({
   searchParams: { [k: string]: string | string[] | undefined };
 }) {
   const ctx = await loadCreativeContext(searchParams);
-  const { client, currency, data, thresholds, account } = ctx;
+  const { client, currency, data, thresholds, display, account } = ctx;
+  // Everything on this page except the verdict is a measurement. Rendering it
+  // against `display` — which equals `thresholds` when they are set, and a
+  // judgement-free stand-in when they are not — means a client without a kill
+  // line still sees its concepts, its angle coverage and its untagged share,
+  // which is the state in which those are most worth seeing.
+  const judged = thresholds !== null;
 
   if (!data.available || data.ads.length === 0) {
     return (
@@ -58,15 +64,7 @@ export default async function ConceptsPage({
     );
   }
 
-  if (!thresholds) {
-    return (
-      <Shell ctx={ctx}>
-        <ThresholdsMissing clientName={client.name} />
-      </Shell>
-    );
-  }
-
-  const views = await buildAdViews(ctx, thresholds);
+  const views = await buildAdViews(ctx, display);
   const byId = new Map(views.map((v) => [v.adId, v]));
 
   // Spend per angle, for the coverage grid. Untagged spend is excluded from the
@@ -90,7 +88,7 @@ export default async function ConceptsPage({
 
   const cards: ConceptCardData[] = groups.map((g) => {
     const components = sum(g.ads);
-    const r = read(components, account.meanRoas, account.spend, thresholds);
+    const r = read(components, account.meanRoas, account.spend, display);
     const first = g.ads[0];
     const adsets = [...new Set(g.ads.map((a) => a.adsetName ?? "—"))];
     // The verdict is taken against the OLDEST ad set the concept runs in: the
@@ -123,7 +121,9 @@ export default async function ConceptsPage({
       roas: r.roas,
       confidence: r.confidence,
       verdict: toVerdictView(
-        moneyVerdict({ level: "concept", components, roas: r.roas, ageDays }, thresholds)
+        judged
+          ? moneyVerdict({ level: "concept", components, roas: r.roas, ageDays }, thresholds)
+          : unjudgedVerdict()
       ),
       ageDays,
       frequency: freqs.length ? Math.max(...freqs) : null,
@@ -143,8 +143,8 @@ export default async function ConceptsPage({
   const quarterSpend =
     ctx.window === "30d" ? account.spend * 3 : account.spend / 2;
   const capacity = personaCapacity(
-    purchasesForPrecision(thresholds.maxCiHalfWidth),
-    thresholds.targetCpa,
+    purchasesForPrecision(display.maxCiHalfWidth),
+    display.targetCpa,
     quarterSpend,
     personas.length || personasUsed.size,
     Math.max(0, (personas.length || personasUsed.size) - personasUsed.size)
@@ -164,7 +164,7 @@ export default async function ConceptsPage({
       data.ads.filter((a) => a.adsetId === set.adsetId).length,
       account.meanRoas,
       account.spend,
-      thresholds
+      display
     );
     return {
       adsetId: v.adsetId,
@@ -196,6 +196,8 @@ export default async function ConceptsPage({
 
   return (
     <Shell ctx={ctx}>
+      {!judged && <ThresholdsMissing clientName={client.name} />}
+
       <Scorecard
         tiles={[
           { label: "Live concepts", value: String(tagged.length), sub: "minimum 3" },
@@ -241,7 +243,12 @@ export default async function ConceptsPage({
         />
       </section>
 
-      {reviewRows.length > 0 && (
+      {/* The weekly review is the one section that is genuinely a judgement
+          rather than a measurement: every row is a Scale / Hold / Kill against
+          lines this client has not set, and logging a decision would write an
+          "unjudged" computed verdict into the record. It is withheld until the
+          three numbers exist; everything above and below it is not. */}
+      {judged && reviewRows.length > 0 && (
         <section>
           <SectionHead
             title="This week's decisions"

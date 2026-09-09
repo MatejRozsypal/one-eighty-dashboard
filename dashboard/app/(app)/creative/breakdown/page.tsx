@@ -76,7 +76,12 @@ export default async function BreakdownPage({
   searchParams: { [k: string]: string | string[] | undefined };
 }) {
   const ctx = await loadCreativeContext(searchParams);
-  const { client, currency, data, thresholds, account } = ctx;
+  const { client, currency, data, thresholds, display, account } = ctx;
+  // A breakdown is arithmetic on delivery: which angle took the spend, what it
+  // returned, how wide the interval is. None of that needs a kill line. Only
+  // the colour coding and the three zones on the interval chart do, and those
+  // come off rather than the whole screen.
+  const judged = thresholds !== null;
 
   const raw = Array.isArray(searchParams.by) ? searchParams.by[0] : searchParams.by;
   const dimension: BreakdownKey = isBreakdownKey(raw) ? raw : "angle";
@@ -93,20 +98,12 @@ export default async function BreakdownPage({
       </Shell>
     );
   }
-  if (!thresholds) {
-    return (
-      <Shell ctx={ctx} dimension={dimension}>
-        <ThresholdsMissing clientName={client.name} />
-      </Shell>
-    );
-  }
-
   const coverage = await getTagCoverage(client.clientId);
   const groups = groupBy(data.ads, KEY_OF[dimension]);
 
   const rows: BreakdownRow[] = groups.map((g) => {
     const c = sum(g.ads);
-    const r = read(c, account.meanRoas, account.spend, thresholds);
+    const r = read(c, account.meanRoas, account.spend, display);
     return {
       key: g.key,
       label: g.untagged ? "— untagged —" : g.label,
@@ -122,7 +119,7 @@ export default async function BreakdownPage({
       ciLow: r.ciLow,
       ciHigh: r.ciHigh,
       confidence: r.confidence,
-      readable: c.purchases >= thresholds.directionalPurchases,
+      readable: c.purchases >= display.directionalPurchases,
     };
   });
 
@@ -152,6 +149,8 @@ export default async function BreakdownPage({
 
   return (
     <Shell ctx={ctx} dimension={dimension}>
+      {!judged && <ThresholdsMissing clientName={client.name} />}
+
       {coverage.pctSpendTagged !== null && coverage.pctSpendTagged < COVERAGE_FLOOR && (
         <div className="glass flex flex-col gap-2 border-warning/40 p-5">
           <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-warning">
@@ -174,16 +173,22 @@ export default async function BreakdownPage({
         </h4>
         <SpendRevenueBars
           rows={rows}
-          killRoas={thresholds.killRoas}
-          targetRoas={thresholds.targetRoas}
+          killRoas={judged ? thresholds.killRoas : null}
+          targetRoas={judged ? thresholds.targetRoas : null}
         />
         <div className="mt-3 flex flex-wrap gap-4 text-[12px] text-content-muted">
-          {[
-            ["var(--text-muted)", "Spend"],
-            ["var(--accent)", "Revenue, at or above target"],
-            ["var(--info)", "Revenue, profitable under target"],
-            ["var(--negative)", "Revenue, below the kill line"],
-          ].map(([c, l]) => (
+          {(judged
+            ? [
+                ["var(--text-muted)", "Spend"],
+                ["var(--accent)", "Revenue, at or above target"],
+                ["var(--info)", "Revenue, profitable under target"],
+                ["var(--negative)", "Revenue, below the kill line"],
+              ]
+            : [
+                ["var(--text-muted)", "Spend"],
+                ["var(--info)", "Revenue"],
+              ]
+          ).map(([c, l]) => (
             <span key={l}>
               <i aria-hidden="true" className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]"
                  style={{ background: c }} />
@@ -199,8 +204,8 @@ export default async function BreakdownPage({
         </h4>
         <IntervalChart
           rows={rows}
-          killRoas={thresholds.killRoas}
-          targetRoas={thresholds.targetRoas}
+          killRoas={judged ? thresholds.killRoas : null}
+          targetRoas={judged ? thresholds.targetRoas : null}
         />
       </div>
 
@@ -230,7 +235,7 @@ export default async function BreakdownPage({
                 title={
                   r.readable
                     ? undefined
-                    : `Under ${thresholds.directionalPurchases} purchases. The interval is wider than the gap between the kill line and the target, so this row cannot support a decision.`
+                    : `Under ${display.directionalPurchases} purchases. The interval is wider than the gap between the kill line and the target, so this row cannot support a decision.`
                 }
               >
                 <td className={`border-b border-hairline px-3.5 py-2.5 text-[13px] font-medium ${r.untagged ? "italic text-content-muted" : "text-content-strong"}`}>
@@ -242,8 +247,10 @@ export default async function BreakdownPage({
                   <SpendBar
                     fraction={r.spend / maxSpend}
                     tone={
-                      !r.readable
-                        ? "muted"
+                      !r.readable || !judged
+                        ? !r.readable
+                          ? "muted"
+                          : "neutral"
                         : r.roas !== null && r.roas >= thresholds.targetRoas
                           ? "accent"
                           : r.roas !== null && r.roas < thresholds.killRoas

@@ -24,8 +24,11 @@ import { propose, tokenise, type Candidate } from "@/lib/creative/matching";
 import { ANGLES } from "@/lib/creative/vocabulary";
 import { demoCreative } from "@/lib/demo/creative";
 import { packSpec, horizons, personaCapacity } from "@/lib/creative/velocity";
-import { moneyVerdict, diagnose } from "@/lib/creative/verdict";
+import { moneyVerdict, diagnose, unjudgedVerdict } from "@/lib/creative/verdict";
 import { ZERO, type Components } from "@/lib/creative/model";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { IntervalChart, SpendRevenueBars } from "@/components/creative/BreakdownCharts";
 
 const T = {
   killRoas: 1.8, targetRoas: 2.5, targetCpa: 527, grossMargin: 0.684,
@@ -35,6 +38,18 @@ const T = {
   hookRateFloor: 0.20, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3,
   noTouchDays: 14, minAdsetBudgetDaily: 860, perAdFloorDaily: 215, tier: "MID",
 };
+
+/** Two rows with real shapes: one readable, one under the directional gate. */
+const CHART_ROWS = [
+  { key: "a", label: "Problem agitation", untagged: false, ads: 6, spend: 41000,
+    spendShare: 0.42, revenue: 92000, purchases: 78, cpa: 526, roas: 2.24,
+    roasRaw: 2.41, ciLow: 1.79, ciHigh: 2.69, confidence: "directional" as const,
+    readable: true },
+  { key: "b", label: "Curiosity gap", untagged: false, ads: 3, spend: 9000,
+    spendShare: 0.09, revenue: 14000, purchases: 4, cpa: 2250, roas: 1.66,
+    roasRaw: 1.56, ciLow: 0.71, ciHigh: 2.61, confidence: "noise" as const,
+    readable: false },
+];
 
 const f = (n: number | null, d = 2) => (n === null ? "null" : n.toFixed(d));
 let fails = 0;
@@ -143,6 +158,50 @@ for (const ad of [
 
 console.log("\n=== the capital-I separator, which is in live ad names ===");
 console.log("  ", JSON.stringify(tokenise("DYN I Příběh Manami V1 I 6JUN I CZ")));
+
+console.log("\n=== a client with no kill line still renders ===");
+// Concepts, Breakdown and Production used to return a single warning strip in
+// this state, which is how the Concepts tab came to look unbuilt on an account
+// that had never had its three numbers entered. They now render on the display
+// stand-ins, and these are the two things that has to survive:
+//
+//   1. the verdict says "not judged" rather than resolving to `hold`, which is
+//      what a kill line of 0 and a target of Infinity otherwise produce;
+//   2. no chart derives a coordinate from that infinite target. IntervalChart
+//      scales its x-axis off `targetRoas`, so passing the stand-in through
+//      would collapse every bar to zero width without erroring.
+// `toDisplayThresholds` itself is not imported here: it lives beside the
+// Postgres reads in lib/creative/store.ts, which is `server-only` and refuses
+// to load outside a server component. What it returns is a kill line of 0 and
+// an infinite target, and those two values are what the assertions below feed
+// through the render path.
+{
+  eq("unjudged verdict code", unjudgedVerdict().code, "unjudged");
+  eq("unjudged verdict declines to decide", unjudgedVerdict().undecided, true);
+
+  // What a Concepts card does with those: read the delivery, judge nothing.
+  const c: Components = { ...ZERO, spend: 12000, revenue: 26400, purchases: 31, impressions: 210000 };
+  const judgedSay = moneyVerdict({ level: "concept", components: c, roas: 2.2, ageDays: 40 }, T as never).code;
+  eq("the same concept, with lines, is judged", judgedSay !== "unjudged", true);
+
+  // The charts, actually rendered. A NaN or an Infinity in an SVG attribute
+  // does not throw — it produces an invisible chart — so the assertion is on
+  // the markup rather than on the absence of an exception.
+  const markup = renderToStaticMarkup(
+    createElement("div", null,
+      createElement(SpendRevenueBars, { rows: CHART_ROWS, killRoas: null, targetRoas: null }),
+      createElement(IntervalChart, { rows: CHART_ROWS, killRoas: null, targetRoas: null }))
+  );
+  eq("charts render with no decision lines", markup.length > 500, true);
+  eq("no Infinity in the rendered SVG", /Infinity/.test(markup), false);
+  eq("no NaN in the rendered SVG", /NaN/.test(markup), false);
+  eq("no kill-line label drawn without a kill line", /kill \d/.test(markup), false);
+
+  const judgedMarkup = renderToStaticMarkup(
+    createElement(IntervalChart, { rows: CHART_ROWS, killRoas: 1.8, targetRoas: 2.5 })
+  );
+  eq("the kill line is drawn when there is one", /kill 1\.80/.test(judgedMarkup), true);
+}
 
 console.log("\n=== every angle in use is in the vocabulary ===");
 // The angle strings are a join key, not labels: an angle spelled differently

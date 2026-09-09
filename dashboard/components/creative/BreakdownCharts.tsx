@@ -52,8 +52,9 @@ export function SpendRevenueBars({
   targetRoas,
 }: {
   rows: BreakdownRow[];
-  killRoas: number;
-  targetRoas: number;
+  /** Null when the client has set no lines: the bars are drawn, uncoloured. */
+  killRoas: number | null;
+  targetRoas: number | null;
 }) {
   const top = rows.slice(0, 8);
   if (top.length === 0) return null;
@@ -70,14 +71,20 @@ export function SpendRevenueBars({
   const cP = W - RT + 196;
   const cR = W - RT + 262;
 
+  // Colour is a verdict. Without lines to judge against, every revenue bar is
+  // drawn in the neutral tone rather than in whichever colour a zero kill line
+  // and an infinite target happen to fall out to.
+  const judged = killRoas !== null && targetRoas !== null;
   const revColour = (r: BreakdownRow) =>
     !r.readable
       ? "var(--text-muted)"
-      : r.roas !== null && r.roas >= targetRoas
-        ? "var(--accent)"
-        : r.roas !== null && r.roas < killRoas
-          ? "var(--negative)"
-          : "var(--info)";
+      : !judged
+        ? "var(--info)"
+        : r.roas !== null && r.roas >= targetRoas
+          ? "var(--accent)"
+          : r.roas !== null && r.roas < killRoas
+            ? "var(--negative)"
+            : "var(--info)";
 
   return (
     <svg
@@ -182,35 +189,57 @@ export function IntervalChart({
   targetRoas,
 }: {
   rows: BreakdownRow[];
-  killRoas: number;
-  targetRoas: number;
+  /**
+   * Null when the client has set no lines. The intervals still draw — how far
+   * apart two rows are is a measurement — but the three zones, the two vertical
+   * lines and the verdict wording on the right all come off, because each of
+   * them is a claim about a threshold that does not exist.
+   *
+   * Passing the display stand-ins here instead would put `targetRoas` at
+   * Infinity, and `maxR` is derived from it: the x-scale would collapse and
+   * every bar would render at zero width.
+   */
+  killRoas: number | null;
+  targetRoas: number | null;
 }) {
   const top = rows.slice(0, 8).filter((r) => r.roas !== null);
   if (top.length === 0) return null;
 
+  const judged = killRoas !== null && targetRoas !== null;
   const W = 900;
   const RH = 38;
   const L = 232;
   const R = 176;
-  const maxR = Math.max(4.5, targetRoas * 1.8);
+  const maxR = judged
+    ? Math.max(4.5, targetRoas * 1.8)
+    : Math.max(4.5, ...top.map((r) => (r.ciHigh ?? r.roas ?? 0) * 1.1));
   const h = top.length * RH + 44;
   const plotB = top.length * RH + 8;
   const X = (v: number) => L + Math.min(1, v / maxR) * (W - L - R);
 
   return (
     <svg viewBox={`0 0 ${W} ${h}`} className="h-auto w-full" role="img"
-         aria-label="Shrunk ROAS with 95% intervals against the kill line and the target">
-      <rect x={X(0)} y="4" width={X(killRoas) - X(0)} height={plotB - 4}
-            fill="var(--negative)" opacity="0.06" />
-      <rect x={X(killRoas)} y="4" width={X(targetRoas) - X(killRoas)} height={plotB - 4}
-            fill="var(--text-muted)" opacity="0.05" />
-      <rect x={X(targetRoas)} y="4" width={X(maxR) - X(targetRoas)} height={plotB - 4}
-            fill="var(--accent)" opacity="0.07" />
+         aria-label={judged
+           ? "Shrunk ROAS with 95% intervals against the kill line and the target"
+           : "Shrunk ROAS with 95% intervals. No kill line or target is set for this client."}>
+      {judged && (
+        <>
+          <rect x={X(0)} y="4" width={X(killRoas) - X(0)} height={plotB - 4}
+                fill="var(--negative)" opacity="0.06" />
+          <rect x={X(killRoas)} y="4" width={X(targetRoas) - X(killRoas)} height={plotB - 4}
+                fill="var(--text-muted)" opacity="0.05" />
+          <rect x={X(targetRoas)} y="4" width={X(maxR) - X(targetRoas)} height={plotB - 4}
+                fill="var(--accent)" opacity="0.07" />
+        </>
+      )}
 
-      {[
-        [killRoas, "var(--negative)", `kill ${killRoas.toFixed(2)}`],
-        [targetRoas, "var(--accent)", `target ${targetRoas.toFixed(2)}`],
-      ].map(([v, col, label]) => (
+      {(judged
+        ? ([
+            [killRoas, "var(--negative)", `kill ${killRoas.toFixed(2)}`],
+            [targetRoas, "var(--accent)", `target ${targetRoas.toFixed(2)}`],
+          ] as const)
+        : []
+      ).map(([v, col, label]) => (
         <g key={label as string}>
           <line x1={X(v as number)} x2={X(v as number)} y1="4" y2={plotB}
                 stroke={col as string} strokeWidth="1.25" />
@@ -230,7 +259,14 @@ export function IntervalChart({
 
         let say: string;
         let colour: string;
-        if (!r.readable) {
+        if (!judged) {
+          // The width of the interval is still worth stating: it is the one
+          // thing here that does not depend on a threshold.
+          say = r.readable
+            ? `${lo.toFixed(2)} – ${hi.toFixed(2)}`
+            : "too little data";
+          colour = "var(--text-muted)";
+        } else if (!r.readable) {
           say = "too little data";
           colour = "var(--text-muted)";
         } else if (lo >= targetRoas) {
@@ -247,8 +283,9 @@ export function IntervalChart({
           colour = "var(--text-muted)";
         }
 
-        const dot =
-          point >= targetRoas
+        const dot = !judged
+          ? "var(--text-strong)"
+          : point >= targetRoas
             ? "var(--accent)"
             : point < killRoas
               ? "var(--negative)"

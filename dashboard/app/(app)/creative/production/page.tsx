@@ -46,15 +46,11 @@ export default async function ProductionPage({
   searchParams: { [k: string]: string | string[] | undefined };
 }) {
   const ctx = await loadCreativeContext(searchParams);
-  const { client, currency, data, thresholds, account } = ctx;
-
-  if (!thresholds) {
-    return (
-      <Shell ctx={ctx}>
-        <ThresholdsMissing clientName={client.name} />
-      </Shell>
-    );
-  }
+  const { client, currency, data, thresholds, display, account } = ctx;
+  // What a creative cost and what it returned is a measurement; which of them
+  // "won" is a judgement. So the cost table renders either way and only the
+  // cost-to-first-winner tiles wait for the lines to be set.
+  const judged = thresholds !== null;
   if (!data.available || data.ads.length === 0) {
     return (
       <Shell ctx={ctx}>
@@ -93,7 +89,7 @@ export default async function ProductionPage({
     );
     const priced = costs.filter((c) => c.cost !== null);
     const production = priced.reduce((a, c) => a + (c.cost ?? 0), 0);
-    const cm = contributionMargin(components.revenue, components.spend, thresholds.grossMargin);
+    const cm = contributionMargin(components.revenue, components.spend, display.grossMargin);
 
     return {
       key: g.key,
@@ -111,8 +107,10 @@ export default async function ProductionPage({
       cm,
       net: cm !== null && priced.length ? cm - production : null,
       ret: cm !== null && production > 0 ? cm / production : null,
-      winners: g.ads.filter((a) => classify(a.components, account.meanRoas, thresholds) === "winner").length,
-      confidence: confidenceOf(components.purchases, thresholds),
+      winners: judged
+        ? g.ads.filter((a) => classify(a.components, account.meanRoas, thresholds) === "winner").length
+        : 0,
+      confidence: confidenceOf(components.purchases, display),
     };
   });
 
@@ -128,17 +126,21 @@ export default async function ProductionPage({
       : data.ads.filter(
           (a) => (a.tags.hookCode ?? "h1") === "h1" && (a.tags.bodyCode ?? "b1") === "b1"
         );
-  const netNewWinners = netNew.filter(
-    (a) => classify(a.components, account.meanRoas, thresholds) === "winner"
-  ).length;
-  const burned = data.ads
-    .filter((a) => classify(a.components, account.meanRoas, thresholds) !== "winner")
-    .reduce((a, b) => a + b.components.spend, 0);
+  const netNewWinners = judged
+    ? netNew.filter((a) => classify(a.components, account.meanRoas, thresholds) === "winner").length
+    : 0;
+  const burned = judged
+    ? data.ads
+        .filter((a) => classify(a.components, account.meanRoas, thresholds) !== "winner")
+        .reduce((a, b) => a + b.components.spend, 0)
+    : 0;
 
   const unpriced = rows.some((r) => r.pricedShare < 1);
 
   return (
     <Shell ctx={ctx}>
+      {!judged && <ThresholdsMissing clientName={client.name} />}
+
       {(unpriced || rates.length === 0) && (
         <div className="glass flex flex-col gap-2 border-warning/40 p-5">
           <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-warning">
@@ -173,7 +175,7 @@ export default async function ProductionPage({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.key} className={r.purchases >= thresholds.directionalPurchases ? "" : "row-unreadable"}>
+              <tr key={r.key} className={r.purchases >= display.directionalPurchases ? "" : "row-unreadable"}>
                 <td className="border-b border-hairline px-3.5 py-2.5 text-[13px] font-medium text-content-strong">
                   {r.label}
                 </td>
@@ -202,6 +204,11 @@ export default async function ProductionPage({
         </table>
       </div>
 
+      {/* Every tile in this block counts winners, and there is no such thing
+          as a winner without a target ROAS. Rendering it against the display
+          stand-ins would put a confident "0 winners" and a 0% hit rate on the
+          screen, which reads as a finding rather than as an absent input. */}
+      {judged && (
       <section>
         <SectionHead title="Cost to first winner" eyebrow="the number that judges the rest" />
         {/*
@@ -235,6 +242,7 @@ export default async function ProductionPage({
           ]}
         />
       </section>
+      )}
     </Shell>
   );
 }

@@ -67,6 +67,7 @@ export function ConfidenceChip({ level }: { level: Confidence }) {
 }
 
 const VERDICT_STYLES: Record<VerdictCode, string> = {
+  unjudged: "border border-dashed border-hairline-strong text-content-muted",
   scale: "bg-accent-soft text-growth-700",
   "aggressive-scale": "bg-accent-soft text-growth-700",
   hold: "bg-gray-100 text-content-muted",

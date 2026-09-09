@@ -43,6 +43,7 @@ import { hasVideoMetrics } from "@/lib/creative/vocabulary";
 // ---------------------------------------------------------------------------
 
 export type VerdictCode =
+  | "unjudged"
   | "data-missing"
   | "too-early"
   | "needs-more-data"
@@ -82,6 +83,32 @@ export interface VerdictInput {
 }
 
 const money = (v: number) => Math.round(v).toLocaleString("en-US");
+
+/**
+ * The verdict for a client with no kill line, target ROAS or CPA on file.
+ *
+ * ── Why this exists rather than an early return in each screen ─────────────
+ * Concepts, Breakdown and Production used to render nothing at all in that
+ * state — one warning strip on an otherwise blank page. But delivery is not a
+ * judgement: spend, purchases, angle coverage and the concept roster are all
+ * measured, not decided, and they are exactly what somebody looks at while
+ * working out what the kill line should be. Withholding them made the screen
+ * useless precisely when it was most needed.
+ *
+ * So the screens render on the display thresholds and every verdict resolves
+ * here instead: stated plainly as absent, never as `hold` — which is what a
+ * kill line of zero and a target of infinity would otherwise silently produce.
+ */
+export function unjudgedVerdict(): Verdict {
+  return {
+    code: "unjudged",
+    label: "Not judged",
+    say: "No kill line, target ROAS or CPA on file for this client. Set the three under Settings → Creative Engine and this row gets a verdict.",
+    costToDecide: null,
+    purchasesShort: null,
+    undecided: true,
+  };
+}
 
 /**
  * How many times its own spend a row may need before "spend more to find out"

@@ -125,14 +125,83 @@ The engine now reads everything ClickUp holds. What it does not hold:
 4. **Manami's three thresholds are still unset**, so nothing is judged. Runbook
    29 section 6 has the agreed figures: kill 1.80, target 2.50, CPA 527.
 
+### Second half: the three screens, against the mockup
+
+`docs/creative-engine/DEMO.html` is the published Creative Engine artifact byte
+for byte, and it is the design of record. Concepts and Breakdown were compared
+against it line by line. Most of it already matched — the strip's columns and
+type scale, the angle grid's 168px tracks and dashed empties, the concept
+card's 40×50 film strip and five-figure block, Breakdown's section order. Five
+things did not, and one screen was missing a whole block.
+
+**Both screens stopped at the edge of their own design.** A concept card showed
+four thumbnails you could not click; a breakdown row said Curiosity gap returns
+1,25 with no way to reach the eleven ads behind it. The concept strip now opens
+the same ad detail panel the Creatives grid opens, and every breakdown row links
+into that grid filtered to itself — as a dismissible chip rather than a sixth
+dropdown, because a concept matches on an id and displays as a name.
+
+**Concepts gained the half of the roster that ad rows cannot show.** A screen
+built by grouping delivery can only list concepts something is already attached
+to, which hides the two states worth acting on: a concept written and never
+briefed against, and a concept whose angle, persona and offer are empty. Six of
+Manami's nine are the second, and an ad inherits from its concept and cannot
+override — so those six pass nothing down however carefully the ad pipeline is
+filled. Read from `mart_creative_concepts`, listed with a link into ClickUp.
+
+**`concept_code`**, new in the warehouse. `concept_id` falls back to the ClickUp
+task id so joins always resolve, which meant the screen was captioning concepts
+`86ca9t2h4` as though somebody had chosen it. The new column is what a person
+wrote, or nothing.
+
+**Hooks per body was fabricated in two places** — the Concepts tile and the
+Velocity gauge — by counting every ad's absent Body code as one shared body. On
+an account where the field is filled on zero of 55 ads that produced a confident
+13,8 against a target of 6, gauge full green. Both now read "—" and say why.
+
+**Design corrections.** Every `SectionHead` was an h2 at 19px, two points off
+the page title, which flattened the design's two heading levels into one; they
+are h3 at 16px. The screen definitions the mockup sets beside each title —
+"persona × angle × offer · one concept, one ad set", "pack cadence against what
+the budget can carry" — were absent, because the app shell spends that line on
+the client; they sit under the control bar now. The weekly review sat between
+angle coverage and the concept roster, which are one thought, and it is not in
+the mockup at all — it moved below both. The interval chart's legend swatches
+were painted through `opacity`, fading the border along with the fill and
+leaving a 6% zone invisible at nine pixels; they are `color-mix()` at the
+alpha the chart paints, with a solid hairline.
+
+**The interval chart had no scale.** Two labelled points, both of them policy,
+and no way to see where 2,0 sat. Whole-number ticks now, minus any that would
+collide with the kill or target label — and a legend, because the bar is the
+chart's payload and nothing said so. A reader takes a long bar for a good row
+when it means the opposite.
+
+**Breakdown's table is the shared sortable one** the rest of the app uses. A
+breakdown is read by reordering it, and a fixed sort by spend answers one
+question out of six.
+
+**Velocity was missing the mockup's second block entirely** — packs launched per
+month against the target. Manami's real six months are 1, 2, 4, 7, 1, 1: a ramp,
+a July peak, then a stall, and none of it was on the screen. The launch dates
+are read lifetime in their own query, never from `AdsetRow.firstDate`, which is
+`MIN(date)` inside the selected window — under the 30-day window that would put
+the entire account's launches in the last month, which looks entirely plausible.
+Velocity also stops waiting for a target CPA before showing anything: `Gauge`
+carries `cpaDerived`, so the four gauges counted off delivery render either way
+and only the pack model waits.
+
 ### Files changed
 
 - `infra/creative_assets_job.py` — Instagram fallback, `mp4_duration`.
 - `infra/bigquery/224_sp_rebuild_creative_tags.sql` — `ref.creative_name_key`,
   the `name_exact` arm, one-row-per-ad, two new sync issues. Applied.
-- `dashboard/app/(app)/creative/{concepts,breakdown,production}/page.tsx`,
-  `components/creative/{BreakdownCharts,primitives}.tsx`,
-  `lib/creative/verdict.ts` — the unjudged path.
+- `infra/bigquery/223`, `221` — `concept_code`.
+- `dashboard/app/(app)/creative/*` — the unjudged path, the build-out, the
+  mockup corrections. New: `components/creative/{ConceptList,LaunchCadence}.tsx`.
+- `dashboard/lib/creative/{verdict,velocity,vocabulary}.ts`,
+  `lib/queries/creative.ts` — `unjudgedVerdict`, `launchCadence`,
+  `getAdsetLaunchDates`, `getConcepts`, `FOCUS_FIELD`.
 - `dashboard/scripts/check-creative-engine.ts` + `scripts/tsconfig.json`.
 - `runbooks/27`, `28`, `29` — corrected where they were wrong.
 

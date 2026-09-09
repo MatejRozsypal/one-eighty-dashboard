@@ -4,10 +4,17 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
-## 2026-09-09 (evening) — Creative Engine: the videos play, and the tags arrive
+## 2026-09-09 (evening) — Creative Engine: the videos play, the tags arrive, and the whole thing ships
 
-Three things the morning's handover listed as open, and one defect they made
-visible. All of it against Manami's live account.
+A long session against Manami's live account. It starts with the three items
+the morning's handover listed as open — playable video, tagging, the screens —
+and ends somewhere else entirely, because most of what went wrong was not in
+the code.
+
+**If you are picking this up, read four sections first:** *The deployment
+mechanics*, *Open, in the order it matters*, *How to check your work*, and
+*A Creative default that re-dated the whole dashboard*. The first will save you
+hours, the last is the failure mode this app is shaped to produce.
 
 ### The videos were never unreachable — they were on Instagram
 
@@ -240,9 +247,171 @@ imports `lib/bigquery`. The moment a client component rendered a delta the build
 failed naming `server-only` rather than the import that dragged it in. That is
 exactly what `lib/format`'s own header says it exists to prevent.
 
+### Fourth: the crop, which was never in the files
+
+Video ads were being cut off top and bottom. The mirrored mp4s are 720x1280 and
+1080x1920 and their posters 360x640 — all exactly 9:16, as served. What cropped
+them was one CSS rule: the detail panel drew every creative in a fixed 4:5 box
+with `object-fit: cover`, losing about 28% of every vertical. On Manami that is
+63 creatives at 9:16 and 23 more at 4:5 losing 20%, and the lost band is where
+the hook is written and the offer sits.
+
+The box now takes the creative's shape. `aspect-ratio` with `width: auto` and
+both maxima set is the one combination where a replaced element keeps its
+proportions under two constraints — measured at a 720px viewport: 9:16 renders
+213x376, 1:1 renders 376x376, 4:5 renders 302x376, and a `<video>` with only a
+poster behaves identically.
+
+**The shape is stored, not measured in the browser** — migration 226 adds
+`asset_width` / `asset_height`, read at mirror time from `tkhd` for video and
+the image header otherwise, because a `preload="none"` video does not report its
+size until somebody presses play and the panel would reflow under the reader.
+
+Two traps in that, both caught by looking at the output rather than trusting it:
+
+- **Meta's `thumbnail_url` is a 64px SQUARE CROP.** The first pass read the
+  shape off it for 48 rows and confidently described 9:16 videos as 1:1 — the
+  same defect with more authority behind it. A 64x64 is now refused outright.
+- A re-run skips already-mirrored assets, leaving those rows unshaped. It now
+  range-reads 256 KB of the stored object instead, enough for a faststart
+  `moov` or any image header.
+
+Where the shape is still unknown, **no ratio is asserted** and the media's own
+natural size drives the box. An explicit 4:5 fallback measured 420x376 — neither
+4:5 nor the creative's shape — because a fixed width and a height cap cannot
+both hold.
+
+### Fifth: a Creative default that re-dated the whole dashboard
+
+Every card on Snapshot read "—". Nothing was broken: the range was
+Aug 1-31 **2021**, and Manami has no data in 2021. Two clicks, neither a
+mistake, got there:
+
+`DateRangeControl` anchored its calendar on `range.from`. Right for "Last 30
+days", harmful for anything long — and the Creative screens default to all-time,
+so the popover opened on September 2021 with both visible months five years old.
+Picking a range there writes `preset=custom&from=2021-08-01`, and `Sidebar`
+appends the current query string to every nav link, so one screen's range became
+every screen's range.
+
+**This is the shape of failure to watch for in this app.** Page-level state is
+global by construction: the sidebar propagates the query string, so any screen
+that resolves a different default can export it to all the others.
+
+Three fixes: the calendar anchors on the month *before* `range.to`; Creative's
+row links carry the incoming params rather than `viewQuery(resolved)`, which was
+serialising `preset=all` nobody chose; and `check:creative` now asserts the
+anchor lands within two months of today for every preset.
+
+### Sixth: the panel, the grid, and the ClickUp thread
+
+**The grid** is uniform 1:1 crops with `object-cover`. This deliberately
+reverses the "show it entirely" rule *for the grid only* — the wall is for
+comparison and comparison needs one shape; the panel still cuts nothing. Card
+bodies are label/value rows on a fixed rhythm: three tiles with 1-, 1- and
+2-line names all measure 228x345.
+
+**Play is the button, and only the button.** The video mounts on first press and
+plays in place; `stopPropagation` keeps that click off the card. Measured: two
+play presses and one card press produced exactly `play:A`, `play:B`,
+`open:TILE C`.
+
+**The panel is Overview / Breakdowns / Notes**, delivery status moved up beside
+the confidence chip, metrics are cards with a verdict dot against a named line,
+and a metric with nothing to judge it against gets NO dot rather than a grey
+one. Breakdowns draws two bars per age bucket — that gender split was in the
+source all along and the aggregation was collapsing it away — and placement
+gains CPM and CTR.
+
+**Notes is ClickUp's own thread**, plus what the task records: created and by
+whom, every status held and how long, assignees, last touch. `GET
+/task/{id}/comment` and `/time_in_status` both verified live. **ClickUp v2 has
+no audit log**, so a per-field edit history is not obtainable at any price; the
+panel says so rather than leaving a gap that reads as a bug.
+
+Boosted posts now resolve through Instagram too: 12 Manami creatives had no
+asset at all and fell back to the 64px square. Full assets 177 -> 187 of 195.
+
+### The deployment mechanics, which cost most of the session
+
+Read this before touching production.
+
+1. **A push to `venev-onboarding` deploys production.** That branch is Vercel's
+   production branch. `vercel --prod` only ever *looked* like the sole route
+   because git builds were dying in 4s while `rootDirectory` was unset; fixing
+   that setting turned an accident into a pipeline and nothing announced it.
+   The note in memory saying "git push does not deploy" was stale and wrong.
+2. **A rollback PINS the production alias.** After one, new production
+   deployments build, report `Ready` and `target: production`, and never take
+   the domain. Three piled up unused while the app looked frozen for hours and
+   the site served a seven-hour-old build. `npx vercel promote <url>` cancels
+   the pin. `npx vercel alias ls | grep dashboard.oneeighty.cz` is the only
+   check that actually answers "what is live".
+3. **`vercel.json` rejects unknown keys**, including a `//` comment field —
+   `Invalid vercel.json - should NOT have additional property`. The reasoning
+   lives in `VERCEL_DEPLOYS.md` instead.
+4. The git gate must be at the **repository root**, not under `dashboard/`:
+   the root directory setting governs build config, but the git gate is
+   evaluated when the webhook arrives, before any root directory is applied.
+   **Untested by design** — confirming it means pushing to the production
+   branch to see whether a build fires.
+
+### Secrets: audited, and clean
+
+Asked whether the ClickUp token is obtainable from the code. It is not:
+
+- no literal `pk_` token in the tree or anywhere in git history — the matches
+  are `pk_XXXXXXXX` placeholders in runbooks;
+- no secret exposed through `NEXT_PUBLIC_`;
+- `lib/creative/clickup.ts` carries `import "server-only"`, which makes a
+  client import a **build failure** rather than a silent leak;
+- decisively: `api.clickup.com`, `CLICKUP_API_TOKEN` and any `pk_` string
+  appear in `.next/server/` and in **none of the 12 browser chunks** under
+  `.next/static/`.
+
+The `type`-only import of `CreativeNote` into the panel is erased at compile
+time, which is why the bundle stays clean.
+
+### Open, in the order it matters
+
+1. **Notes returns 401.** `CLICKUP_API_TOKEN` IS set in production, so the
+   value is being rejected rather than missing. The token is now trimmed of
+   whitespace and quotes and each status gets its own message. If it still
+   401s, re-paste from Secret Manager and redeploy.
+2. **Manami's three thresholds are unset** — kill 1.80 / target 2.50 / CPA 527,
+   runbook 29 section 6. They turn on every verdict and every metric dot.
+3. **Three orphan concept links** in ClickUp take tagged spend 55% -> 68%; six
+   of nine concepts still have no Angle / Persona / Offer.
+4. **Breakdowns has no data for anyone.** `raw_meta_ad_breakdown_demo` and
+   `_placement` are empty — runbook 28 section 5 specifies the calls and they
+   were never added. The tab is built and will stay empty until they run.
+5. **Ad-set insights still empty**; `225` rolls ads up as a fallback, which
+   loses any ad set with delivery but no ad rows.
+6. **Feed preview: decided but not built.** Meta's `GET /{ad_id}/previews`
+   returns a working iframe (verified) but needs a Meta token in the dashboard
+   env and the URL expires. The alternative composes the card from stored copy,
+   media and CTA — permanent, no new credential. Matt has not chosen.
+7. 8 of 195 Manami assets remain unmirrored: 4 page-post videos with no
+   Instagram twin, 4 with no resolvable asset. That is the documented floor
+   without Meta Advanced Access.
+
+### How to check your work
+
+- `npm run check:warehouse` — all 30 stats-page queries against the real
+  warehouse. A throw fails; an empty result is reported but does not, because a
+  check that cries wolf gets muted. **This is what rules out the data in a
+  minute when somebody says a screen is broken.**
+- `npm run check:queries` — every Creative query across five presets, a custom
+  range and both comparison modes, asserting the ranges agree with each other.
+- `npm run check:creative` — the arithmetic, plus the calendar anchor and the
+  unjudged render path through `react-dom/server`.
+- `tsc --noEmit` and `next build` catch neither SQL nor layout. Every defect
+  that reached production this session was invisible to both.
+
 ### Files changed
 
-- `infra/creative_assets_job.py` — Instagram fallback, `mp4_duration`.
+- `infra/creative_assets_job.py` — Instagram fallback, `mp4_duration`,
+  `mp4_dimensions`, boosted-post resolution, ad set / campaign names.
 - `infra/bigquery/224_sp_rebuild_creative_tags.sql` — `ref.creative_name_key`,
   the `name_exact` arm, one-row-per-ad, two new sync issues. Applied.
 - `infra/bigquery/223`, `221` — `concept_code`. New `225` — the ad-set fallback.
@@ -251,13 +420,20 @@ exactly what `lib/format`'s own header says it exists to prevent.
 - `dashboard/lib/creative/{verdict,velocity,vocabulary}.ts`,
   `lib/queries/creative.ts` — `unjudgedVerdict`, `launchCadence`,
   `getAdsetLaunchDates`, `getConcepts`, `FOCUS_FIELD`.
-- `dashboard/scripts/check-creative-engine.ts` + `scripts/tsconfig.json`.
+- `dashboard/scripts/` — `check-creative-engine.ts`, new `check-creative-queries.ts`
+  and `check-warehouse.ts`, `tsconfig.json`, `stubs/server-only.ts`.
+- `dashboard/components/creative/{AdDetail,CreativeGrid,ConceptCard,ConceptList,
+  BreakdownCharts,LaunchCadence,primitives}.tsx`.
+- `dashboard/components/controls/DateRangeControl.tsx` — the calendar anchor.
+- `dashboard/lib/creative/clickup.ts` — notes, activity, token trimming.
+- `dashboard/lib/params.ts` — `parseViewParams` takes a default preset.
+- `infra/bigquery/226` — asset dimensions. New `vercel.json` + `VERCEL_DEPLOYS.md`.
 - `runbooks/27`, `28`, `29` — corrected where they were wrong.
 
-**Not deployed.** All warehouse changes (224, 223, 225) and both ingestion
-re-runs are live; the app changes are committed on
-`claude/creative-tab-video-tagging-8a1d5f` and production still serves the old
-build; `npx vercel --prod` from the repo root is what moves it.
+**Deployed.** `7832b4d` is live on dashboard.oneeighty.cz, verified with
+`vercel alias ls`. All warehouse changes (223, 224, 225, 226) and the ingestion
+re-runs for all three clients are live. Branch `venev-onboarding` and
+`claude/creative-tab-video-tagging-8a1d5f` are both pushed to origin.
 
 ---
 

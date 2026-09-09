@@ -3,16 +3,17 @@ import "server-only";
 /**
  * Warehouse reads for the Creative Engine.
  *
- * ── The window default, and why it is not 30 days ──────────────────────────
- * Tag-level breakdowns default to LIFETIME TO DATE. This is the single most
- * important behaviour in the module and it is the opposite of what every other
- * screen in this dashboard does.
+ * ── The range default, and why it is not 30 days ───────────────────────────
+ * These screens take the same date control as the rest of the dashboard —
+ * presets, a custom range, and a comparison period — but they open on ALL TIME
+ * rather than the dashboard-wide thirty days.
  *
  * The reason is arithmetic. A persona tested across five months may reach 80
  * purchases even though no single month reaches 20, and 20 purchases carries a
  * ±51% interval while 80 carries ±26%. Accumulation is how a small account buys
- * statistical power, and a 30-day window throws that power away every month.
- * The 30-day toggle exists, and the UI labels it diagnostic only.
+ * statistical power, and defaulting to a month would throw it away every month.
+ * A shorter range is still one click away, and every interval on screen widens
+ * when it is chosen — which is the honest depiction of what was given up.
  *
  * ── What is missing is said, not shown as zero ─────────────────────────────
  * None of these views exist in the warehouse yet. Every query is wrapped so a
@@ -35,8 +36,14 @@ import {
   type Tags,
 } from "@/lib/creative/model";
 import type { Candidate } from "@/lib/creative/matching";
+import type { DateRange } from "@/lib/period";
 
-export type CreativeWindow = "lifetime" | "30d";
+/**
+ * Kept as a type alias only so nothing downstream has to care that the screens
+ * used to have a two-position toggle. The window is a `DateRange` now, chosen
+ * with the same control every other page in the dashboard uses.
+ */
+export type CreativeWindow = DateRange;
 
 /** Everything one screen needs, fetched together. */
 export interface CreativeData {
@@ -110,12 +117,14 @@ function tagsFrom(r: Record<string, unknown>): Tags {
   };
 }
 
-/** `WHERE` fragment for the chosen window. Lifetime still bounds the scan. */
-function windowClause(w: CreativeWindow): string {
-  return w === "30d"
-    ? "date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
-    : "date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)";
-}
+/**
+ * `WHERE` fragment for the selected range.
+ *
+ * Parameterised rather than interpolated: the dates come from the URL, and a
+ * hand-edited `?from=` has no business reaching the SQL text. It is also what
+ * lets BigQuery serve a repeated view from its own result cache.
+ */
+const RANGE_CLAUSE = "date BETWEEN @from AND @to";
 
 const EMPTY: CreativeData = {
   ads: [], adsets: [], available: false, missing: null, currency: null, through: null,
@@ -131,12 +140,14 @@ const EMPTY: CreativeData = {
  */
 export async function getCreativeAds(
   clientId: string,
-  window: CreativeWindow = "lifetime"
+  range: DateRange
 ): Promise<CreativeData> {
   if (isDemo(clientId)) {
     const { demoCreative } = await import("@/lib/demo/creative");
-    return demoCreative(window);
+    return demoCreative(range);
   }
+
+  const bounds = { clientId, from: range.from, to: range.to };
 
   try {
     const [totals, monthly, adsets] = await Promise.all([
@@ -191,7 +202,7 @@ export async function getCreativeAds(
            SUM(video_p75_watched) AS video_p75, SUM(video_p95_watched) AS video_p95,
            SUM(video_p100_watched) AS video_p100, SUM(video_30s_watched) AS video_30s
          FROM \`${PROJECT_ID}.mart.mart_creative_perf\`
-         WHERE client_id = @clientId AND ${windowClause(window)}
+         WHERE client_id = @clientId AND ${RANGE_CLAUSE}
          GROUP BY ad_id
          -- The bare alias, NOT SUM(spend). BigQuery resolves a plain name in
          -- HAVING against the SELECT aliases first, and this query aliases
@@ -202,7 +213,7 @@ export async function getCreativeAds(
          -- literal, and one would end the string.)
          HAVING spend > 0
          ORDER BY spend DESC`,
-        { clientId }
+        bounds
       ),
       query<Record<string, unknown>>(
         `SELECT ad_id, FORMAT_DATE('%Y-%m', date) AS month, SUM(spend) AS spend
@@ -232,7 +243,7 @@ export async function getCreativeAds(
            SUM(landing_page_views) AS landing_page_views, SUM(link_clicks) AS link_clicks,
            SUM(outbound_clicks) AS outbound_clicks
          FROM \`${PROJECT_ID}.mart.mart_creative_adset_perf\`
-         WHERE client_id = @clientId AND ${windowClause(window)}
+         WHERE client_id = @clientId AND ${RANGE_CLAUSE}
          GROUP BY adset_id
          -- The bare alias, NOT SUM(spend). BigQuery resolves a plain name in
          -- HAVING against the SELECT aliases first, and this query aliases
@@ -243,7 +254,7 @@ export async function getCreativeAds(
          -- literal, and one would end the string.)
          HAVING spend > 0
          ORDER BY spend DESC`,
-        { clientId }
+        bounds
       ),
     ]);
 
@@ -712,5 +723,58 @@ export async function getAdsetLaunchDates(clientId: string): Promise<string[]> {
   } catch (error) {
     if (!isMissingObject(error)) throw error;
     return [];
+  }
+}
+
+/**
+ * Account totals for one range, and nothing else.
+ *
+ * ── Why the comparison period is not fetched as ads ────────────────────────
+ * The obvious move is to call `getCreativeAds` twice and diff them. It is the
+ * wrong shape twice over. It pulls every ad, its tags and its monthly spend for
+ * a period nothing on screen renders — several times the payload for six
+ * numbers — and it invites per-ad deltas, which at this account's volume are
+ * noise wearing a percentage sign. An ad with four purchases against three is
+ * not up 33%.
+ *
+ * So the comparison is account-level only: spend, revenue, purchases and the
+ * ratios built from them, which are the four figures with enough events behind
+ * them to move for a reason.
+ */
+export async function getCreativeTotals(
+  clientId: string,
+  range: DateRange
+): Promise<Components | null> {
+  if (isDemo(clientId)) {
+    const { demoTotals } = await import("@/lib/demo/creative");
+    return demoTotals(range);
+  }
+  try {
+    const rows = await query<Record<string, unknown>>(
+      `SELECT
+         SUM(spend) AS spend, SUM(revenue) AS revenue, SUM(purchases) AS purchases,
+         SUM(impressions) AS impressions, SUM(clicks) AS clicks, SUM(reach) AS reach,
+         SUM(add_to_cart) AS add_to_cart, SUM(initiate_checkout) AS initiate_checkout,
+         SUM(landing_page_views) AS landing_page_views, SUM(link_clicks) AS link_clicks,
+         SUM(outbound_clicks) AS outbound_clicks,
+         SUM(unique_outbound_clicks) AS unique_outbound_clicks,
+         SUM(video_views) AS video_views,
+         SUM(video_play_actions) AS video_play_actions,
+         SUM(video_thruplays) AS video_thruplays,
+         SUM(video_p25_watched) AS video_p25, SUM(video_p50_watched) AS video_p50,
+         SUM(video_p75_watched) AS video_p75, SUM(video_p95_watched) AS video_p95,
+         SUM(video_p100_watched) AS video_p100, SUM(video_30s_watched) AS video_30s
+       FROM \`${PROJECT_ID}.mart.mart_creative_perf\`
+       WHERE client_id = @clientId AND ${RANGE_CLAUSE}`,
+      { clientId, from: range.from, to: range.to }
+    );
+    const r = rows[0];
+    // No spend in the comparison range is not zero — it is "this client was not
+    // running then", and a delta against it would read as infinite growth.
+    if (!r || n0(r.spend) === 0) return null;
+    return componentsFrom(r);
+  } catch (error) {
+    if (!isMissingObject(error)) throw error;
+    return null;
   }
 }

@@ -22,6 +22,7 @@
 import { shrink, interval, purchasesToClear, purchasesForPrecision, spendToDecide, separation, Z } from "@/lib/creative/stats";
 import { propose, tokenise, type Candidate } from "@/lib/creative/matching";
 import { ANGLES } from "@/lib/creative/vocabulary";
+import { presetRange, comparisonRange, daysInRange, addDays } from "@/lib/period";
 import { demoCreative } from "@/lib/demo/creative";
 import { packSpec, horizons, personaCapacity, launchCadence } from "@/lib/creative/velocity";
 import { moneyVerdict, diagnose, unjudgedVerdict } from "@/lib/creative/verdict";
@@ -159,6 +160,45 @@ for (const ad of [
 console.log("\n=== the capital-I separator, which is in live ad names ===");
 console.log("  ", JSON.stringify(tokenise("DYN I Příběh Manami V1 I 6JUN I CZ")));
 
+console.log("\n=== the range picker's arithmetic, which the Creative screens now use ===");
+// The screens went from a two-position toggle to the dashboard's shared date
+// control, so the ranges they query are these. Worth pinning because every
+// figure on five screens is now a function of them.
+{
+  const today = "2026-09-09";
+  eq("last 30 days ends yesterday, never today",
+     presetRange("30d", today).to, "2026-09-08");
+  eq("last 30 days is 30 days inclusive",
+     daysInRange(presetRange("30d", today)), 30);
+  eq("previous period is the 30 days before it, ending the day before",
+     JSON.stringify(comparisonRange(presetRange("30d", today), "previous_period")),
+     JSON.stringify({ from: "2026-07-11", to: "2026-08-09" }));
+  {
+    const prev = comparisonRange(presetRange("30d", today), "previous_period")!;
+    eq("comparison abuts the current range with no gap and no overlap",
+       addDays(prev.to, 1), presetRange("30d", today).from);
+    eq("comparison is the same length", daysInRange(prev), 30);
+  }
+  {
+    // 364, not 365: 52 whole weeks, so a Monday compares against a Monday.
+    // Ad delivery is strongly weekday-seasonal and a one-day slip turns a
+    // calendar artefact into a reported change.
+    const yoy = comparisonRange(presetRange("30d", today), "previous_year")!;
+    eq("previous year shifts by 364 days, preserving weekday",
+       daysInRange({ from: yoy.from, to: presetRange("30d", today).from }) - 1, 364);
+  }
+  eq("no comparison means no baseline, not a zero one",
+     comparisonRange(presetRange("30d", today), "none"), null);
+  // A custom range is whatever was asked for, and its comparison follows its
+  // own length rather than a preset's.
+  {
+    const custom = { from: "2026-07-01", to: "2026-07-14" };
+    eq("a custom range compares against its own span",
+       JSON.stringify(comparisonRange(custom, "previous_period")),
+       JSON.stringify({ from: "2026-06-17", to: "2026-06-30" }));
+  }
+}
+
 console.log("\n=== launch cadence buckets by the month a pack first delivered ===");
 {
   // Manami's real launches, read off mart_creative_adset_perf on 9 Sep 2026:
@@ -239,7 +279,7 @@ console.log("\n=== every angle in use is in the vocabulary ===");
 {
   const valid = new Set<string>(ANGLES);
   const used = new Set(
-    demoCreative("lifetime").ads.map((a) => a.tags.angle).filter(Boolean) as string[]
+    demoCreative(presetRange("all")).ads.map((a) => a.tags.angle).filter(Boolean) as string[]
   );
   const stray = [...used].filter((a) => !valid.has(a));
   eq("demo angles all present in the vocabulary", stray.length, 0);

@@ -14,7 +14,7 @@ import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
 import { CreativeTabs } from "@/components/creative/CreativeTabs";
-import { WindowToggle } from "@/components/creative/WindowToggle";
+import { PageControls } from "@/components/controls/PageControls";
 import { AngleCoverage } from "@/components/creative/AngleCoverage";
 import { ConceptList } from "@/components/creative/ConceptList";
 import type { ConceptCardData } from "@/components/creative/ConceptCard";
@@ -34,6 +34,8 @@ import { moneyVerdict, unjudgedVerdict } from "@/lib/creative/verdict";
 import { toAdsetView, toVerdictView, type AdView } from "@/lib/creative/view";
 import { listDecisions } from "@/lib/creative/store";
 import { ANGLES } from "@/lib/creative/vocabulary";
+import { viewQuery } from "@/lib/params";
+import { daysInRange } from "@/lib/period";
 import { personaCapacity } from "@/lib/creative/velocity";
 import { purchasesForPrecision } from "@/lib/creative/stats";
 
@@ -96,10 +98,7 @@ export default async function ConceptsPage({
   // Carries the client and the window into the link, so following a concept
   // does not silently move the reader to another client's lifetime figures.
   const adsHref = (conceptId: string) => {
-    const q = new URLSearchParams();
-    const c = Array.isArray(searchParams.client) ? searchParams.client[0] : searchParams.client;
-    if (c) q.set("client", c);
-    if (ctx.window === "30d") q.set("window", "30d");
+    const q = new URLSearchParams(viewQuery(ctx.params));
     q.set("focus", "conceptId");
     q.set("is", conceptId);
     return `/creative?${q.toString()}`;
@@ -188,8 +187,11 @@ export default async function ConceptsPage({
   // Quarterly spend, approximated from the window in view. The statement it
   // supports is an order-of-magnitude one — "six, not twelve" — so a precise
   // quarter boundary would be false precision.
-  const quarterSpend =
-    ctx.window === "30d" ? account.spend * 3 : account.spend / 2;
+  // Scaled from whatever range is selected to a quarter, so the statement
+  // holds whether somebody is looking at seven days or two years. It supports
+  // an order-of-magnitude claim — "six personas, not twelve" — so a precise
+  // quarter boundary would be false precision either way.
+  const quarterSpend = account.spend * (91 / Math.max(1, daysInRange(ctx.params.range)));
   const capacity = personaCapacity(
     purchasesForPrecision(display.maxCiHalfWidth),
     display.targetCpa,
@@ -432,18 +434,15 @@ function Shell({
   return (
     <>
       <Header eyebrow={`Creative · ${ctx.client.name}`} title="Concepts" />
-      <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-0 lg:px-8">
+      <PageControls client={ctx.client} params={ctx.params} />
+      <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-4 lg:px-8">
         <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CreativeBar
-            unmapped={0}
-            window={ctx.window}
-            through={ctx.data.through}
-            currency={ctx.currency}
-            href="/creative#unmapped"
-          />
-          <WindowToggle current={ctx.window} />
-        </div>
+        <CreativeBar
+          unmapped={0}
+          through={ctx.data.through}
+          currency={ctx.currency}
+          href="/creative#unmapped"
+        />
         {/* The definition, where the design puts it: beside the screen's name.
             The app shell owns that line and spends it on the client, so it sits
             here instead. It is load-bearing on this screen — every card below

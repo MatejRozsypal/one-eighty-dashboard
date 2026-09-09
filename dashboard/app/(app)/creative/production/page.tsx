@@ -22,6 +22,7 @@ import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
 import { CreativeTabs } from "@/components/creative/CreativeTabs";
+import { PageControls } from "@/components/controls/PageControls";
 import {
   ConfidenceChip,
   NotIngested,
@@ -265,11 +266,11 @@ function Shell({
   return (
     <>
       <Header eyebrow={`Creative · ${ctx.client.name}`} title="Production ROI" />
-      <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-0 lg:px-8">
+      <PageControls client={ctx.client} params={ctx.params} />
+      <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-4 lg:px-8">
         <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
         <CreativeBar
           unmapped={0}
-          window={ctx.window}
           through={ctx.data.through}
           currency={ctx.currency}
           href="/creative#unmapped"

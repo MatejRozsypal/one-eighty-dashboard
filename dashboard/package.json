@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "check:creative": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-engine.ts"
+    "check:creative": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-engine.ts",
+    "check:queries": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-queries.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.0",

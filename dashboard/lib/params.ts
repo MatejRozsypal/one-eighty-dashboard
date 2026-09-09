@@ -42,14 +42,28 @@ export interface ViewParams {
   displayCurrency: string;
 }
 
-export function parseViewParams(searchParams: SearchParams): ViewParams {
+/**
+ * @param defaultPreset What to use when the URL says nothing.
+ *
+ * Thirty days for the business screens, because that is the period an operator
+ * thinks in. The Creative screens pass `all` instead, and the reason is
+ * arithmetic rather than taste: a persona tested across five months may reach
+ * 80 purchases while no single month reaches 20, and 20 purchases carries a
+ * ±51% interval against 80's ±26%. Accumulation is how a small account buys
+ * statistical power, and defaulting those screens to a month would throw it
+ * away every month. The picker is the same; only where it starts differs.
+ */
+export function parseViewParams(
+  searchParams: SearchParams,
+  defaultPreset: PresetKey = DEFAULT_PRESET
+): ViewParams {
   const clientId = first(searchParams.client);
 
   const presetParam = first(searchParams.preset);
   const from = first(searchParams.from);
   const to = first(searchParams.to);
 
-  let presetKey: PresetKey | "custom" = DEFAULT_PRESET;
+  let presetKey: PresetKey | "custom" = defaultPreset;
   let range: DateRange;
 
   if (
@@ -66,7 +80,7 @@ export function parseViewParams(searchParams: SearchParams): ViewParams {
     presetKey = presetParam as PresetKey;
     range = presetRange(presetKey);
   } else {
-    range = presetRange(DEFAULT_PRESET);
+    range = presetRange(defaultPreset);
   }
 
   const compareParam = first(searchParams.compare);

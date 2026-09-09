@@ -73,6 +73,16 @@ TIMEOUT = 90
 # ad. Reading it as a nested field works, and `link_description` has to go: it
 # is not a field of adcreative at all (it lives inside
 # object_story_spec.link_data.description) and asking for it 400s the request.
+# ── The ad's own fields, beside the creative's ────────────────────────────
+# `raw_meta_ad_creatives` has carried `adset_id`, `adset_name`, `campaign_id`,
+# `campaign_name` and `effective_status` since it was created, and this job has
+# never written any of them — NULL on all 195 Manami rows. Nothing errored;
+# `mart_creative_adset_perf` simply had no name to show and fell back to the id,
+# and the detail panel had no status to print.
+#
+# They cost nothing: this is the same request, one field list longer.
+AD_FIELDS = "adset{id,name},campaign{id,name},effective_status"
+
 CREATIVE_FIELDS = (
     "creative{id,object_type,object_story_spec,asset_feed_spec,title,body,"
     "call_to_action_type,image_hash,image_url,video_id,thumbnail_url,"
@@ -503,7 +513,7 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
         try:
             payload = get_json(
                 f"https://graph.facebook.com/{API_VERSION}/{ad_id}",
-                {"fields": CREATIVE_FIELDS, "access_token": token},
+                {"fields": f"{AD_FIELDS},{CREATIVE_FIELDS}", "access_token": token},
             )
         except (urllib.error.HTTPError, urllib.error.URLError) as e:
             # A deleted ad still has insight rows. Skipping keeps the run going.
@@ -512,6 +522,11 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
         c = payload.get("creative")
         if not c:
             continue
+        # Carried on the creative dict so pass two has one thing to read. They
+        # are the ad's fields, not the creative's, hence the underscore prefix.
+        c["_adset"] = payload.get("adset") or {}
+        c["_campaign"] = payload.get("campaign") or {}
+        c["_effective_status"] = payload.get("effective_status")
         creatives[ad_id] = c
         kind, _vid, img = pick_asset(c)
         if kind == "image" and img and not img.startswith("http"):
@@ -618,6 +633,11 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
             "snapshot_date": today,
             "ad_id": str(ad_id),
             "creative_id": c.get("id"),
+            "adset_id": (c.get("_adset") or {}).get("id"),
+            "adset_name": (c.get("_adset") or {}).get("name"),
+            "campaign_id": (c.get("_campaign") or {}).get("id"),
+            "campaign_name": (c.get("_campaign") or {}).get("name"),
+            "effective_status": c.get("_effective_status"),
             "object_type": c.get("object_type"),
             "image_hash": image_hash,
             "video_id": video_id,

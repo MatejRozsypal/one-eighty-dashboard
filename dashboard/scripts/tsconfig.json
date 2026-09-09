@@ -1,5 +1,12 @@
 {
-  "//": "The app's tsconfig leaves JSX alone for Next to compile ('jsx': 'preserve'). This script renders two components outside Next, so it needs a transform — the automatic runtime, which is what Next itself uses, so the components compile here exactly as they do in the app.",
+  "//": "The app's tsconfig leaves JSX alone for Next to compile ('jsx': 'preserve'). These scripts render components and load server modules outside Next, so they need a transform — the automatic runtime, which is what Next itself uses — and a stand-in for `server-only`, whose whole job is to throw outside a server component. baseUrl is restated because paths resolve against it and an extended config would otherwise inherit the parent's, one directory up from here.",
   "extends": "../tsconfig.json",
-  "compilerOptions": { "jsx": "react-jsx" }
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["./*"],
+      "server-only": ["./scripts/stubs/server-only.ts"]
+    }
+  }
 }

@@ -10,6 +10,11 @@
  * numbers were not comparable and nobody could see it, because nothing on
  * screen said what they were.
  *
+ * The range itself is NOT repeated here. It moved to the shared control bar
+ * directly above — the same picker every other screen in the dashboard uses —
+ * and printing it twice on one screen was how the old two-position toggle and
+ * the app's date picker came to disagree about what "last 30 days" meant.
+ *
  * ── Why the unmapped count is a permanent badge ────────────────────────────
  * There is always a window between an ad going live and somebody mapping it,
  * and during that window its spend is invisible to every tag breakdown. A
@@ -21,14 +26,11 @@ import Link from "next/link";
 
 export function CreativeBar({
   unmapped,
-  window,
   through,
   currency,
   href,
 }: {
   unmapped: number;
-  /** Which window the tag figures are on. */
-  window: "lifetime" | "30d";
   through: string | null;
   currency: string | null;
   /** Where the unmapped pill points. */
@@ -38,10 +40,6 @@ export function CreativeBar({
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pb-1">
       <span className="font-mono text-[11.5px] text-content-muted">
         7-day click · customers excluded
-      </span>
-
-      <span className="font-mono text-[11.5px] text-content-muted">
-        {window === "lifetime" ? "lifetime to date" : "last 30 days · diagnostic only"}
       </span>
 
       {currency && (

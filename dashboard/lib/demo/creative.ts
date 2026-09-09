@@ -20,7 +20,8 @@
  */
 
 import { ZERO, type AdRow, type Components, type MonthlySpend, type Tags, NO_TAGS } from "@/lib/creative/model";
-import type { CreativeData, CreativeAsset, AdBreakdowns, UnmappedData, TagCoverage, PersonaRow, ConceptRow, CreativeWindow } from "@/lib/queries/creative";
+import type { CreativeData, CreativeAsset, AdBreakdowns, UnmappedData, TagCoverage, PersonaRow, ConceptRow } from "@/lib/queries/creative";
+import { daysInRange, type DateRange } from "@/lib/period";
 import type { Candidate } from "@/lib/creative/matching";
 import { unit } from "@/lib/demo/random";
 
@@ -261,13 +262,24 @@ function monthly(seed: Seed): MonthlySpend[] {
   return MONTHS.map((month, i) => ({ month, spend: seed.m[i] ?? 0 }));
 }
 
-function adRows(window: CreativeWindow): AdRow[] {
+/**
+ * How much of the demo's lifetime figures a range should return.
+ *
+ * The seeds carry six months of monthly spend and a lifetime total. A shorter
+ * range takes proportionally less, which reproduces the effect the range picker
+ * exists to show: every interval widens and most rows stop being readable. Six
+ * months is the whole seed, so anything at or beyond it returns everything.
+ */
+function rangeShare(range: DateRange): number {
+  const days = daysInRange(range);
+  return Math.min(1, days / (MONTHS.length * 30));
+}
+
+function adRows(range: DateRange): AdRow[] {
+  const fraction = rangeShare(range);
   return SEEDS.map((seed) => {
     const full = componentsOf(seed);
-    // The 30-day toggle takes the last month's share, which is what a real
-    // window would return — and produces exactly the effect it is there to
-    // demonstrate: every interval widens and most rows stop being readable.
-    const share = window === "30d" && seed.s > 0 ? (seed.m[MONTHS.length - 1] ?? 0) / seed.s : 1;
+    const share = fraction;
     const scaled = { ...ZERO };
     for (const k of Object.keys(ZERO) as (keyof Components)[]) {
       scaled[k] = Math.round(full[k] * share);
@@ -281,14 +293,14 @@ function adRows(window: CreativeWindow): AdRow[] {
       campaignId: ADSETS[seed.adset]?.campaign ?? null,
       campaignName: ADSETS[seed.adset]?.campaign ?? null,
       tags: tagsOf(seed),
-      components: window === "30d" ? scaled : full,
+      components: fraction >= 1 ? full : scaled,
       monthlySpend: monthly(seed),
     };
   }).sort((a, b) => b.components.spend - a.components.spend);
 }
 
-export function demoCreative(window: CreativeWindow = "lifetime"): CreativeData {
-  const ads = adRows(window);
+export function demoCreative(range: DateRange): CreativeData {
+  const ads = adRows(range);
 
   const adsets = Object.entries(ADSETS).map(([name, meta]) => {
     const mine = ads.filter((a) => a.adsetId === name);
@@ -492,4 +504,17 @@ export function demoLaunchDates(): string[] {
     for (let k = 0; k < n; k++) out.push(d.toISOString().slice(0, 10));
   });
   return out;
+}
+
+/** Account totals for a comparison range, scaled the same way the ads are. */
+export function demoTotals(range: DateRange): Components | null {
+  const rows = adRows(range);
+  if (rows.length === 0) return null;
+  const out = { ...ZERO };
+  for (const r of rows) {
+    for (const k of Object.keys(ZERO) as (keyof Components)[]) {
+      out[k] += r.components[k];
+    }
+  }
+  return out.spend > 0 ? out : null;
 }

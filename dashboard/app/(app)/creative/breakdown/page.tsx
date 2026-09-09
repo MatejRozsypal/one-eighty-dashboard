@@ -21,7 +21,7 @@ import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
 import { CreativeTabs } from "@/components/creative/CreativeTabs";
-import { WindowToggle } from "@/components/creative/WindowToggle";
+import { PageControls } from "@/components/controls/PageControls";
 import { DimensionPicker } from "@/components/creative/DimensionPicker";
 import {
   IntervalChart,
@@ -45,6 +45,7 @@ import { groupBy, read, sum } from "@/lib/creative/model";
 import { BREAKDOWN_DIMENSIONS, FOCUS_FIELD, FORMAT_LABELS, isBreakdownKey, type BreakdownKey, type Format } from "@/lib/creative/vocabulary";
 import Link from "next/link";
 import { DataTable } from "@/components/ui/DataTable";
+import { viewQuery } from "@/lib/params";
 import type { AdRow } from "@/lib/creative/model";
 
 export const metadata: Metadata = { title: "Breakdown" };
@@ -163,10 +164,7 @@ export default async function BreakdownPage({
   // Carries the client and the window across, so following a row does not
   // silently reset the reader to another client's lifetime figures.
   const linkTo = (value: string) => {
-    const q = new URLSearchParams();
-    const c = Array.isArray(searchParams.client) ? searchParams.client[0] : searchParams.client;
-    if (c) q.set("client", c);
-    if (ctx.window === "30d") q.set("window", "30d");
+    const q = new URLSearchParams(viewQuery(ctx.params));
     q.set("focus", FOCUS_FIELD[dimension]);
     q.set("is", value);
     return `/creative?${q.toString()}`;
@@ -399,16 +397,12 @@ function Shell({
       <Header eyebrow={`Creative · ${ctx.client.name}`} title="Breakdown" />
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-0 lg:px-8">
         <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CreativeBar
-            unmapped={0}
-            window={ctx.window}
-            through={ctx.data.through}
-            currency={ctx.currency}
-            href="/creative#unmapped"
-          />
-          <WindowToggle current={ctx.window} />
-        </div>
+        <CreativeBar
+          unmapped={0}
+          through={ctx.data.through}
+          currency={ctx.currency}
+          href="/creative#unmapped"
+        />
         <DimensionPicker current={dimension} />
         {children}
       </main>

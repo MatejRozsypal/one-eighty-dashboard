@@ -19,15 +19,17 @@ import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
 import { CreativeTabs } from "@/components/creative/CreativeTabs";
+import { PageControls } from "@/components/controls/PageControls";
 import { CreativeGrid } from "@/components/creative/CreativeGrid";
 import { UnmappedQueue } from "@/components/creative/UnmappedQueue";
 import { toQueueProposal, type QueueRow } from "@/lib/creative/view";
 import { NotIngested, Scorecard, SectionHead, ThresholdsMissing } from "@/components/creative/primitives";
-import { WindowToggle } from "@/components/creative/WindowToggle";
 import { buildAdViews, loadCreativeContext } from "@/lib/creative/page";
 import { winnerEconomics } from "@/lib/creative/model";
 import { CONFIRM_THRESHOLD, propose } from "@/lib/creative/matching";
 import { formatMoney } from "@/lib/currency";
+import { comparisonLabel } from "@/lib/params";
+import { delta } from "@/lib/period";
 import { money, pct, roas } from "@/components/creative/primitives";
 import type { AdView } from "@/lib/creative/view";
 
@@ -86,22 +88,45 @@ export default async function CreativesPage({
       : null;
   const w = thresholds ? winnerEconomics(data.ads, account.meanRoas, thresholds) : null;
 
+  // ── Against the comparison period ───────────────────────────────────────
+  // Only these four. They are account-level sums with enough events behind them
+  // to move for a reason; the verdict counts below them are small integers, and
+  // a winner count going from one to two is not "up 100%".
+  const prev = ctx.previous;
+  const prevRoas = prev && prev.spend > 0 ? prev.revenue / prev.spend : null;
+  const prevCpa = prev && prev.purchases > 0 ? prev.spend / prev.purchases : null;
+  const compare = comparisonLabel(ctx.params);
+
   const tiles = [
-    { label: "Spend", value: money(account.spend, currency), sub: `${account.ads} creatives` },
+    {
+      label: "Spend",
+      value: money(account.spend, currency),
+      sub: `${account.ads} creatives`,
+      delta: delta(account.spend, prev?.spend ?? null),
+      // Spending more is neither good nor bad on its own, and colouring it
+      // would assert a judgement the number does not support.
+      goodWhen: "neutral" as const,
+    },
     {
       label: "Blended ROAS",
       value: roas(account.meanRoas),
       sub: thresholds ? `target ${thresholds.targetRoas.toFixed(2)}` : "no target set",
+      delta: delta(account.meanRoas, prevRoas),
+      goodWhen: "up" as const,
     },
     {
       label: "CPA",
       value: money(account.cpa, currency),
       sub: thresholds ? `target ${formatMoney(thresholds.targetCpa, currency)}` : "no target set",
+      delta: delta(account.cpa, prevCpa),
+      goodWhen: "down" as const,
     },
     {
       label: "Purchases",
       value: account.purchases.toLocaleString("en-US"),
-      sub: ctx.window === "lifetime" ? "lifetime" : "last 30 days",
+      sub: compare ?? "no comparison",
+      delta: delta(account.purchases, prev?.purchases ?? null),
+      goodWhen: "up" as const,
     },
     // The four that judge the rest. They need a kill line and a target to mean
     // anything, so without them they read as absent rather than as zero — a
@@ -138,12 +163,10 @@ export default async function CreativesPage({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CreativeBar
             unmapped={0}
-            window={ctx.window}
             through={data.through}
             currency={currency}
             href="#unmapped"
           />
-          <WindowToggle current={ctx.window} />
         </div>
 
         {!thresholds && data.available && data.ads.length > 0 && (

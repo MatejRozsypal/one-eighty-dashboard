@@ -14,14 +14,15 @@ import { getClients, resolveClient, type Client } from "@/lib/clients";
 import {
   getCreativeAds,
   getCreativeAssets,
+  getCreativeTotals,
   getUnmapped,
   type CreativeAsset,
   type CreativeData,
-  type CreativeWindow,
   type UnmappedData,
 } from "@/lib/queries/creative";
 import { getCreativeSettings, listConfirmedMappings, toDisplayThresholds, toThresholds, type StoredCreativeSettings } from "@/lib/creative/store";
-import { accountContext, type AccountContext } from "@/lib/creative/model";
+import { accountContext, type AccountContext, type Components } from "@/lib/creative/model";
+import { parseViewParams, type ViewParams } from "@/lib/params";
 import { signMany } from "@/lib/creative/assets";
 import { toAdView, type AdView } from "@/lib/creative/view";
 import type { CreativeThresholds } from "@/lib/creative/stats";
@@ -29,7 +30,8 @@ import type { CreativeThresholds } from "@/lib/creative/stats";
 export interface CreativeContext {
   client: Client;
   currency: string;
-  window: CreativeWindow;
+  /** The selected range, comparison range and mode, straight off the URL. */
+  params: ViewParams;
   settings: StoredCreativeSettings;
   /** Null when the client has no kill line, target or CPA on file. */
   thresholds: CreativeThresholds | null;
@@ -44,28 +46,37 @@ export interface CreativeContext {
   unmapped: UnmappedData;
   /** Unmapped ads minus any a person has already confirmed this hour. */
   unmappedCount: number;
+  /**
+   * The comparison period's account totals, or null when no comparison is
+   * selected, the client was not running then, or the range has no rows.
+   * Account-level only — see `getCreativeTotals`.
+   */
+  previous: Components | null;
 }
 
-export function parseWindow(value: string | string[] | undefined): CreativeWindow {
-  return (Array.isArray(value) ? value[0] : value) === "30d" ? "30d" : "lifetime";
-}
+
 
 export async function loadCreativeContext(searchParams: {
   [k: string]: string | string[] | undefined;
 }): Promise<CreativeContext> {
+  // `all` rather than the dashboard-wide 30-day default. See parseViewParams:
+  // tag breakdowns live on accumulation, and a month of a small account is not
+  // enough purchases to separate one persona from another.
+  const params = parseViewParams(searchParams, "all");
   const clients = await getClients();
-  const requested = Array.isArray(searchParams.client)
-    ? searchParams.client[0]
-    : searchParams.client;
+  const requested = params.clientId;
   const client = await resolveClient(requested, clients);
-  const window = parseWindow(searchParams.window);
 
-  const [settings, data, assets, unmapped, confirmed] = await Promise.all([
+  const [settings, data, assets, unmapped, confirmed, previous] = await Promise.all([
     getCreativeSettings(client.clientId),
-    getCreativeAds(client.clientId, window),
+    getCreativeAds(client.clientId, params.range),
     getCreativeAssets(client.clientId),
     getUnmapped(client.clientId),
     listConfirmedMappings(client.clientId),
+    // Account totals only, and only when a comparison is actually selected.
+    params.period.comparison
+      ? getCreativeTotals(client.clientId, params.period.comparison)
+      : Promise.resolve(null),
   ]);
 
   const confirmedIds = new Set(confirmed.map((c) => c.adId));
@@ -76,7 +87,8 @@ export async function loadCreativeContext(searchParams: {
     // separately and are not always the same, and a ROAS built from one
     // currency's spend and another's revenue is silently wrong.
     currency: data.currency ?? client.currency,
-    window,
+    params,
+    previous,
     settings,
     thresholds: toThresholds(settings),
     display: toThresholds(settings) ?? toDisplayThresholds(settings),

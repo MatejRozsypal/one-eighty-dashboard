@@ -17,7 +17,12 @@
  * judgement the number doesn't support. Those render muted.
  */
 
-import { formatPercent } from "@/lib/currency";
+// From lib/format, not lib/currency. The re-export in lib/currency is
+// identical, but that module also holds the FX SQL and therefore imports
+// `lib/bigquery`, which is `server-only` — so a single client component
+// rendering a delta chip fails the build with an error naming `server-only`
+// rather than this line. lib/format's own header documents the split.
+import { formatPercent } from "@/lib/format";
 
 export type GoodWhen = "up" | "down" | "neutral";
 

@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import { formatMoney } from "@/lib/format";
 import { CONFIDENCE_LABELS, type Confidence } from "@/lib/creative/stats";
 import type { VerdictCode } from "@/lib/creative/verdict";
+import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 
 // ---------------------------------------------------------------------------
 // Numbers
@@ -126,6 +127,15 @@ export interface Tile {
   label: string;
   value: string;
   sub?: string;
+  /**
+   * Period-over-period change, when a comparison range is selected. Only the
+   * four delivery figures carry one — spend, ROAS, CPA and purchases have
+   * enough events behind them to move for a reason. A "winners" count that went
+   * from 1 to 2 is not up 100%.
+   */
+  delta?: number | null;
+  /** Which direction is good. Spend is neutral; CPA is good when it falls. */
+  goodWhen?: GoodWhen;
 }
 
 /**
@@ -156,9 +166,14 @@ export function Scorecard({ tiles }: { tiles: Tile[] }) {
           <div className="mt-1 whitespace-nowrap font-mono text-[21px] font-medium tracking-heading tabular text-content-strong">
             {t.value}
           </div>
-          {t.sub && (
-            <div className="mt-0.5 truncate text-[12px] text-content-muted">{t.sub}</div>
-          )}
+          <div className="mt-0.5 flex items-baseline gap-2">
+            {t.sub && (
+              <span className="truncate text-[12px] text-content-muted">{t.sub}</span>
+            )}
+            {t.delta !== undefined && t.delta !== null && (
+              <DeltaChip delta={t.delta} goodWhen={t.goodWhen ?? "up"} />
+            )}
+          </div>
         </div>
       ))}
     </div>

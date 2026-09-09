@@ -287,13 +287,34 @@ Manami's figures from `_clients/manami/learnings/meta-ads.md`:
 
 ## 7. Deploy
 
+The app is the only thing here that deploys. The migrations, the bucket, the
+ClickUp fields and the n8n workflows are all *applied* somewhere else, and none
+of them go through Vercel.
+
 ```bash
-npx vercel --prod --yes
+# The Vercel project is linked from dashboard/, not the repo root.
+cd dashboard
+npx vercel --prod
 ```
 
-From the repo root, and read `runbooks/22` first: Root Directory, the
-authorized datasets, and the middleware trap all still apply. A `git push` does
-not deploy — production only moves on this command.
+Two things worth repeating from `runbooks/22`: **a `git push` does not deploy** —
+production only moves on this command — and the authorized-datasets step is what
+stops every page 500ing with `Access Denied` on a table the service account was
+never meant to read directly.
+
+Add one environment variable before write-back works:
+
+```bash
+npx vercel env add CLICKUP_API_TOKEN production   # the same pk_... as the secret
+```
+
+### Order matters
+
+Deploying before step 1 is safe but pointless: every creative screen renders an
+honest "not ingested yet" and nothing else. The shortest path to a working
+product is **step 1 (migrations) → deploy → step 6 (thresholds)**, because
+thresholds are set *in* the deployed app. Assets, Meta fields and ClickUp can
+follow at any pace after that; each one lights up more of the same screens.
 
 ---
 

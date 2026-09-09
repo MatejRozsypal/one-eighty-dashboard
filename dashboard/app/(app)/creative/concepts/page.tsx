@@ -34,7 +34,6 @@ import { moneyVerdict, unjudgedVerdict } from "@/lib/creative/verdict";
 import { toAdsetView, toVerdictView, type AdView } from "@/lib/creative/view";
 import { listDecisions } from "@/lib/creative/store";
 import { ANGLES } from "@/lib/creative/vocabulary";
-import { viewQuery } from "@/lib/params";
 import { daysInRange } from "@/lib/period";
 import { personaCapacity } from "@/lib/creative/velocity";
 import { purchasesForPrecision } from "@/lib/creative/stats";
@@ -97,8 +96,15 @@ export default async function ConceptsPage({
 
   // Carries the client and the window into the link, so following a concept
   // does not silently move the reader to another client's lifetime figures.
+  // The incoming params, never the resolved ones — see the note in
+  // breakdown/page.tsx. A resolved default written into a link escapes this
+  // screen and re-dates every other one.
   const adsHref = (conceptId: string) => {
-    const q = new URLSearchParams(viewQuery(ctx.params));
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(searchParams)) {
+      const one = Array.isArray(v) ? v[0] : v;
+      if (one !== undefined && k !== "focus" && k !== "is") q.set(k, one);
+    }
     q.set("focus", "conceptId");
     q.set("is", conceptId);
     return `/creative?${q.toString()}`;

@@ -45,7 +45,6 @@ import { groupBy, read, sum } from "@/lib/creative/model";
 import { BREAKDOWN_DIMENSIONS, FOCUS_FIELD, FORMAT_LABELS, isBreakdownKey, type BreakdownKey, type Format } from "@/lib/creative/vocabulary";
 import Link from "next/link";
 import { DataTable } from "@/components/ui/DataTable";
-import { viewQuery } from "@/lib/params";
 import type { AdRow } from "@/lib/creative/model";
 
 export const metadata: Metadata = { title: "Breakdown" };
@@ -163,8 +162,18 @@ export default async function BreakdownPage({
 
   // Carries the client and the window across, so following a row does not
   // silently reset the reader to another client's lifetime figures.
+  // Built from the INCOMING params, not from `viewQuery(ctx.params)`.
+  // viewQuery serialises the resolved preset, and on these screens that
+  // resolves to `all` even when nobody chose it — so following a row wrote
+  // `preset=all` into the URL, and the sidebar then carried it onto Snapshot,
+  // Orders and everything else. A link may preserve a choice; it must not
+  // invent one.
   const linkTo = (value: string) => {
-    const q = new URLSearchParams(viewQuery(ctx.params));
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(searchParams)) {
+      const one = Array.isArray(v) ? v[0] : v;
+      if (one !== undefined && k !== "focus" && k !== "is") q.set(k, one);
+    }
     q.set("focus", FOCUS_FIELD[dimension]);
     q.set("is", value);
     return `/creative?${q.toString()}`;

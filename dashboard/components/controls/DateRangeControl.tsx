@@ -70,9 +70,21 @@ export function DateRangeControl({
     from: range.from,
     to: range.to,
   });
+  // ── The calendar opens on the recent end of the range, not its start ────
+  // It used to anchor on `range.from`, which is fine for "Last 30 days" and
+  // actively harmful for anything long: on "All time" the popover opened on
+  // September 2021 and the two months on screen were five years ago. Picking a
+  // range there is the obvious next click, and it produces a custom range in
+  // 2021 — which then follows you to every other screen, because the sidebar
+  // appends the current query string to every link. That is how a whole
+  // dashboard came to read August 2021 and show nothing but dashes.
+  //
+  // Anchoring on the month BEFORE `range.to` puts the two most recent months
+  // side by side with today on the right, which is what a date picker is
+  // expected to do and what makes a long range safe to open.
   const [anchorMonth, setAnchorMonth] = useState(() => {
-    const [y, m] = range.from.split("-").map(Number);
-    return { year: y, month: m - 1 };
+    const [y, m] = range.to.split("-").map(Number);
+    return m === 1 ? { year: y - 1, month: 11 } : { year: y, month: m - 2 };
   });
 
   const wrapRef = useRef<HTMLDivElement>(null);

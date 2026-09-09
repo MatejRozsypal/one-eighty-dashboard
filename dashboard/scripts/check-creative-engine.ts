@@ -199,6 +199,34 @@ console.log("\n=== the range picker's arithmetic, which the Creative screens now
   }
 }
 
+console.log("\n=== the date picker opens on months that have data ===");
+// The regression that blanked every screen on 9 Sep 2026: the calendar
+// anchored on `range.from`, so the Creative screens' all-time default opened it
+// on September 2021. Two clicks later the whole dashboard was showing August
+// 2021 — every card a dash — because the sidebar appends the current query
+// string to every link, so one screen's range became every screen's range.
+//
+// The anchor is the month BEFORE `range.to`, which for any range, however
+// long, is within a month of today.
+{
+  const anchorOf = (r: { from: string; to: string }) => {
+    const [y, m] = r.to.split("-").map(Number);
+    return m === 1 ? { year: y - 1, month: 11 } : { year: y, month: m - 2 };
+  };
+  const today = "2026-09-09";
+  for (const preset of ["7d", "30d", "90d", "12m", "all"] as const) {
+    const r = presetRange(preset, today);
+    const a = anchorOf(r);
+    // Within two months of "now" for every preset, including the five-year one.
+    const monthsAgo = (2026 - a.year) * 12 + (8 - a.month);
+    eq(`${preset}: calendar opens near today, not at the range start`, monthsAgo <= 2, true);
+  }
+  // The specific case that broke it.
+  const all = presetRange("all", today);
+  eq("all-time still starts five years back", all.from.slice(0, 4), "2021");
+  eq("but the calendar does not open there", anchorOf(all).year, 2026);
+}
+
 console.log("\n=== launch cadence buckets by the month a pack first delivered ===");
 {
   // Manami's real launches, read off mart_creative_adset_perf on 9 Sep 2026:

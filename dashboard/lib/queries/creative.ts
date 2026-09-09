@@ -191,7 +191,14 @@ export async function getCreativeAds(
          FROM \`${PROJECT_ID}.mart.mart_creative_perf\`
          WHERE client_id = @clientId AND ${windowClause(window)}
          GROUP BY ad_id
-         HAVING SUM(spend) > 0
+         -- The bare alias, NOT SUM(spend). BigQuery resolves a plain name in
+         -- HAVING against the SELECT aliases first, and this query aliases
+         -- SUM(spend) AS spend -- so writing HAVING SUM(spend) expands to
+         -- SUM(SUM(spend)) and the page 500s with "Aggregations of
+         -- aggregations are not allowed". The alias already is the sum.
+         -- (Backticks are deliberately absent: this is inside a template
+         -- literal, and one would end the string.)
+         HAVING spend > 0
          ORDER BY spend DESC`,
         { clientId }
       ),
@@ -225,7 +232,14 @@ export async function getCreativeAds(
          FROM \`${PROJECT_ID}.mart.mart_creative_adset_perf\`
          WHERE client_id = @clientId AND ${windowClause(window)}
          GROUP BY adset_id
-         HAVING SUM(spend) > 0
+         -- The bare alias, NOT SUM(spend). BigQuery resolves a plain name in
+         -- HAVING against the SELECT aliases first, and this query aliases
+         -- SUM(spend) AS spend -- so writing HAVING SUM(spend) expands to
+         -- SUM(SUM(spend)) and the page 500s with "Aggregations of
+         -- aggregations are not allowed". The alias already is the sum.
+         -- (Backticks are deliberately absent: this is inside a template
+         -- literal, and one would end the string.)
+         HAVING spend > 0
          ORDER BY spend DESC`,
         { clientId }
       ),

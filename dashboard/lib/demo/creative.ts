@@ -373,6 +373,9 @@ export function demoAssets(): Map<string, CreativeAsset> {
           // 4:5. A demo that was all one shape would have hidden the crop.
           aspectRatio:
             s.format === "DYN" ? 9 / 16 : unit(`ar:${s.id}`) > 0.5 ? 1 : 4 / 5,
+          assetWidth: 1080,
+          assetHeight:
+            s.format === "DYN" ? 1920 : unit(`ar:${s.id}`) > 0.5 ? 1080 : 1350,
           title: c?.title ?? null,
           body: c?.body ?? null,
           linkDescription: c?.desc ?? null,
@@ -410,19 +413,32 @@ export function demoBreakdowns(adId: string): AdBreakdowns {
   const placeTotal = placeWeights.reduce((a, b) => a + b, 0);
 
   return {
-    ages: AGES.map((label, i) => ({
-      label,
-      impressions: Math.round((ageWeights[i] / ageTotal) * impressions),
-      spend: Math.round(((ageWeights[i] / ageTotal) * (seed?.s ?? 0)) * 100) / 100,
-      purchases: Math.round(((ageWeights[i] / ageTotal) * (seed?.p ?? 0))),
-    })),
+    ages: AGES.map((label, i) => {
+      const imp = Math.round((ageWeights[i] / ageTotal) * impressions);
+      // A skew that varies a little by bucket, so the two-bar chart in the
+      // panel has something to actually show rather than six identical splits.
+      const f = Math.min(0.95, 0.78 + unit(`fa:${adId}:${i}`) * 0.16);
+      return {
+        label,
+        impressions: imp,
+        spend: Math.round(((ageWeights[i] / ageTotal) * (seed?.s ?? 0)) * 100) / 100,
+        purchases: Math.round(((ageWeights[i] / ageTotal) * (seed?.p ?? 0))),
+        clicks: Math.round(imp * 0.018),
+        female: Math.round(imp * f),
+        male: imp - Math.round(imp * f),
+      };
+    }),
     femaleShare: 0.84 + unit(`f:${adId}`) * 0.12,
-    placements: PLACEMENTS.map((label, i) => ({
-      label,
-      impressions: Math.round((placeWeights[i] / placeTotal) * impressions),
-      spend: Math.round(((placeWeights[i] / placeTotal) * (seed?.s ?? 0)) * 100) / 100,
-      purchases: Math.round(((placeWeights[i] / placeTotal) * (seed?.p ?? 0))),
-    })).sort((a, b) => b.impressions - a.impressions),
+    placements: PLACEMENTS.map((label, i) => {
+      const imp = Math.round((placeWeights[i] / placeTotal) * impressions);
+      return {
+        label,
+        impressions: imp,
+        spend: Math.round(((placeWeights[i] / placeTotal) * (seed?.s ?? 0)) * 100) / 100,
+        purchases: Math.round(((placeWeights[i] / placeTotal) * (seed?.p ?? 0))),
+        clicks: Math.round(imp * (0.008 + unit(`cl:${adId}:${i}`) * 0.016)),
+      };
+    }).sort((a, b) => b.impressions - a.impressions),
   };
 }
 

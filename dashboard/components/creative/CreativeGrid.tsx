@@ -64,6 +64,7 @@ export function CreativeGrid({
   clientId,
   killRoas,
   targetRoas,
+  targetCpa,
   directionalPurchases,
   focus,
 }: {
@@ -72,9 +73,13 @@ export function CreativeGrid({
   clientId: string;
   killRoas: number;
   targetRoas: number;
+  targetCpa: number;
   directionalPurchases: number;
   focus?: GridFocus | null;
 }) {
+  // The display stand-in sets an infinite target, which is how "nobody has set
+  // a line" arrives here. The detail panel's verdict dots key off this.
+  const judged = Number.isFinite(targetRoas);
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<AdView | null>(null);
   const [focusOn, setFocusOn] = useState(true);
@@ -197,6 +202,7 @@ export function CreativeGrid({
           ad={open}
           currency={currency}
           clientId={clientId}
+          thresholds={judged ? { targetCpa, targetRoas, killRoas } : null}
           onClose={() => setOpen(null)}
         />
       )}

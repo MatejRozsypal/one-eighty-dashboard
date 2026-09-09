@@ -19,10 +19,11 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { addNote, loadBreakdowns, loadNotes } from "@/app/(app)/creative/actions";
-import type { CreativeNote } from "@/lib/creative/clickup";
+import type { CreativeNote, TaskActivity } from "@/lib/creative/clickup";
 import type { AdBreakdowns } from "@/lib/queries/creative";
 import type { AdView } from "@/lib/creative/view";
 import { RetentionCurve } from "@/components/creative/RetentionCurve";
+import { CONFIDENCE_LABELS } from "@/lib/creative/stats";
 import {
   ConfidenceChip,
   Tag,
@@ -40,14 +41,21 @@ export function AdDetail({
   ad,
   currency,
   clientId,
+  thresholds,
   onClose,
 }: {
   ad: AdView;
   currency: string;
   clientId: string;
+  /**
+   * The client's own lines. Null when they have not been set, and then every
+   * metric card renders without a verdict dot rather than inventing one — the
+   * same rule the rest of the product follows.
+   */
+  thresholds?: { targetCpa: number; targetRoas: number; killRoas: number } | null;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"overview" | "copy" | "notes">("overview");
+  const [tab, setTab] = useState<"overview" | "breakdowns" | "notes">("overview");
   const [breakdowns, setBreakdowns] = useState<AdBreakdowns | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -154,6 +162,12 @@ export function AdDetail({
               {ad.market && <Tag value={ad.market} missing="market" />}
               {ad.bodyHook && <Tag value={ad.bodyHook} missing="body/hook" />}
               <ConfidenceChip level={ad.confidence} />
+              {/* Delivery, beside the reading confidence rather than buried
+                  under the creative. Whether an ad is still running is the
+                  first thing that qualifies every number below it — a 1.2x
+                  ROAS on something paused three weeks ago is a different
+                  statement from the same figure on something live. */}
+              {ad.effectiveStatus && <StatusChip status={ad.effectiveStatus} />}
             </div>
           </div>
           <button
@@ -181,7 +195,7 @@ export function AdDetail({
           aria-label="Creative detail"
           className="flex gap-6 border-b border-hairline px-5"
         >
-          {(["overview", "copy", "notes"] as const).map((t) => (
+          {(["overview", "breakdowns", "notes"] as const).map((t) => (
             <button
               key={t}
               role="tab"
@@ -207,8 +221,7 @@ export function AdDetail({
           <div className="flex min-w-0 flex-col gap-6 p-5">
             {tab === "overview" && (
               <>
-                <PrimaryMetrics ad={ad} currency={currency} />
-                <SecondaryMetrics ad={ad} currency={currency} />
+                <Metrics ad={ad} currency={currency} thresholds={thresholds ?? null} />
 
                 <Block title="Diagnosis" source="ad level, no money verdict">
                   <p className="m-0 text-[13px] leading-[1.6] text-content-body">
@@ -247,15 +260,18 @@ export function AdDetail({
                   </Block>
                 )}
 
-                <Breakdowns
-                  data={breakdowns}
-                  failed={loadFailed}
-                  purchases={ad.purchases}
-                />
+                <Copy ad={ad} />
               </>
             )}
 
-            {tab === "copy" && <Copy ad={ad} />}
+            {tab === "breakdowns" && (
+              <Breakdowns
+                data={breakdowns}
+                failed={loadFailed}
+                purchases={ad.purchases}
+                currency={currency}
+              />
+            )}
 
             {tab === "notes" && (
               <Notes clientId={clientId} taskId={ad.clickupTaskId} url={ad.clickupUrl} />
@@ -295,6 +311,7 @@ function Notes({
   url: string | null;
 }) {
   const [notes, setNotes] = useState<CreativeNote[] | null>(null);
+  const [activity, setActivity] = useState<TaskActivity | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -306,6 +323,7 @@ function Notes({
       .then((r) => {
         if (!live) return;
         setNotes(r.notes);
+        setActivity(r.activity);
         setUnavailable(r.unavailable);
       })
       .catch(() => live && setUnavailable("Could not load the thread."));
@@ -340,7 +358,83 @@ function Notes({
       ) : notes === null ? (
         <p className="m-0 text-[13px] text-content-muted">Loading the thread…</p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
+          {/* ── What the task itself records ──────────────────────────────
+              ClickUp's v2 API has no audit log, so a field-by-field history
+              is not obtainable at any price. What it does expose is the
+              creation, every status the task has held and how long it sat in
+              each, the assignees, and the last touch — which is enough to
+              answer "what happened to this creative and who did it". The gap
+              is stated rather than papered over. */}
+          {activity && (
+            <div className="flex flex-col gap-2 rounded-card border border-hairline bg-paper/60 px-3.5 py-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
+                  Activity
+                </span>
+                {activity.assignees.length > 0 && (
+                  <span className="text-[12px] text-content-muted">
+                    {activity.assignees.join(", ")}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1 text-[12.5px] text-content-body">
+                {activity.createdAt && (
+                  <div className="flex justify-between gap-3">
+                    <span>
+                      Created{activity.createdBy ? ` by ${activity.createdBy}` : ""}
+                    </span>
+                    <span className="font-mono text-[11.5px] text-content-muted">
+                      {when(activity.createdAt)}
+                    </span>
+                  </div>
+                )}
+                {activity.updatedAt && (
+                  <div className="flex justify-between gap-3">
+                    <span>Last touched</span>
+                    <span className="font-mono text-[11.5px] text-content-muted">
+                      {when(activity.updatedAt)}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {activity.statuses.length > 0 && (
+                <div className="mt-1 flex flex-col gap-1 border-t border-hairline pt-2">
+                  {activity.statuses.map((st) => (
+                    <div key={st.status} className="flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-2 text-[12.5px]">
+                        <i
+                          aria-hidden="true"
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            st.current ? "bg-accent" : "bg-hairline-strong"
+                          }`}
+                        />
+                        <span className={st.current ? "text-content-strong" : "text-content-body"}>
+                          {st.status}
+                        </span>
+                        {st.current && (
+                          <span className="font-mono text-[9.5px] uppercase tracking-eyebrow text-content-muted">
+                            now
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-mono text-[11.5px] text-content-muted">
+                        {duration(st.minutes)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="m-0 text-[11.5px] leading-[1.5] text-content-muted">
+                Creation, status history and comments are everything ClickUp&apos;s
+                API exposes — there is no per-field edit log to read.
+              </p>
+            </div>
+          )}
+
           {notes.length === 0 ? (
             <p className="m-0 text-[13px] text-content-muted">
               No notes on this task yet. The first one posts to ClickUp, where
@@ -524,12 +618,27 @@ function Creative({ ad }: { ad: AdView }) {
         </p>
       )}
 
-      {ad.effectiveStatus && (
-        <p className="m-0 font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
-          {ad.effectiveStatus.toLowerCase()}
-          {playing ? " · playing" : ""}
-        </p>
-      )}
+      {/* ── The spec line ────────────────────────────────────────────────
+          The three facts that qualify the picture above them: what shape it
+          actually is, how much of the account it is holding, and how much
+          weight its numbers can carry. Delivery status used to sit here and
+          has moved up beside the name, where it qualifies the metrics too. */}
+      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t border-hairline pt-3.5">
+        <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Format</dt>
+        <dd className="m-0 text-right font-mono text-[12px] tabular text-content-body">
+          {ad.assetWidth && ad.assetHeight
+            ? `${ad.assetWidth}\u00d7${ad.assetHeight}`
+            : "—"}
+        </dd>
+        <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Spend share</dt>
+        <dd className="m-0 text-right font-mono text-[12px] tabular text-content-body">
+          {pct(ad.spendShare)}
+        </dd>
+        <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Learning</dt>
+        <dd className="m-0 text-right text-[12px] text-content-body">
+          {CONFIDENCE_LABELS[ad.confidence]}
+        </dd>
+      </dl>
 
       {(ad.clickupUrl || ad.briefUrl) && (
         <div className="flex flex-wrap gap-3 text-[12.5px]">
@@ -549,70 +658,233 @@ function Creative({ ad }: { ad: AdView }) {
   );
 }
 
-function PrimaryMetrics({ ad, currency }: { ad: AdView; currency: string }) {
-  const tiles = [
-    {
-      k: "Purchases",
-      v: count(ad.purchases),
-      s: ad.impressions > 0
-        ? `${((ad.purchases / ad.impressions) * 1000).toFixed(2)} per 1k impressions`
-        : "",
-    },
-    { k: "Cost per purchase", v: money(ad.cpa, currency), s: "" },
-    {
-      k: "ROAS",
-      v: roas(ad.roas),
-      // The interval is on the tile, not in a tooltip. It is the number that
-      // decides whether the headline figure means anything.
-      s:
-        ad.ciLow !== null && ad.ciHigh !== null
-          ? `95% ${roas(ad.ciLow)}–${roas(ad.ciHigh)}`
-          : "",
-    },
-  ];
+/** A ClickUp epoch, as a date somebody can read. */
+function when(ms: number): string {
+  return new Date(ms).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/** Minutes, rounded to the largest unit that still says something useful. */
+function duration(minutes: number): string {
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  if (minutes < 60 * 48) return `${Math.round(minutes / 60)} h`;
+  return `${Math.round(minutes / 1440)} d`;
+}
+
+/** Delivery, as Meta reports it. Green only when it is actually running. */
+function StatusChip({ status }: { status: string }) {
+  const live = status.toUpperCase() === "ACTIVE";
+  const label = status.toLowerCase().replace(/_/g, " ");
   return (
-    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-      {tiles.map((t) => (
-        <div key={t.k} className="glass px-4 py-3">
-          <div className="font-mono text-[9.5px] uppercase tracking-eyebrow text-content-muted">
-            {t.k}
-          </div>
-          <div className="mt-1 font-mono text-[23px] font-medium tracking-heading tabular text-content-strong">
-            {t.v}
-          </div>
-          {t.s && (
-            <div className="mt-1 font-mono text-[10.5px] text-content-muted">{t.s}</div>
-          )}
-        </div>
-      ))}
+    <span
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xs px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] ${
+        live ? "bg-accent-soft text-growth-700" : "bg-gray-100 text-content-muted"
+      }`}
+    >
+      <span aria-hidden="true" className="h-1 w-1 rounded-full bg-current" />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * ── One card per metric, and a dot that says how to read it ───────────────
+ * The panel used to draw three headline tiles and then a run of bare
+ * label/value pairs, which made a CPA over target look exactly like an
+ * impression count. Every card now carries a verdict dot — green where the
+ * figure is where you want it, amber where it is drifting, red where it is
+ * not — and a sub-line naming the thing it is being judged against.
+ *
+ * A metric with nothing to judge it against gets NO dot rather than a grey
+ * one. Impressions are not good or bad; a dot on them would be decoration
+ * pretending to be information.
+ */
+type Verdict = "good" | "warn" | "bad" | null;
+
+const DOT: Record<"good" | "warn" | "bad", string> = {
+  good: "var(--positive)",
+  warn: "var(--warning)",
+  bad: "var(--negative)",
+};
+
+const TINT: Record<"good" | "warn" | "bad", string> = {
+  good: "bg-accent-soft/50",
+  warn: "bg-warning/[0.07]",
+  bad: "bg-negative/[0.06]",
+};
+
+interface Metric {
+  k: string;
+  v: string;
+  /** Small unit printed after the value, e.g. a currency or a percent. */
+  unit?: string;
+  s?: string;
+  verdict?: Verdict;
+  big?: boolean;
+}
+
+function MetricCard({ m }: { m: Metric }) {
+  return (
+    <div
+      className={`glass flex flex-col justify-between px-4 py-3 ${
+        m.verdict ? TINT[m.verdict] : ""
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-mono text-[9.5px] uppercase tracking-eyebrow text-content-muted">
+          {m.k}
+        </span>
+        {m.verdict && (
+          <span
+            aria-hidden="true"
+            className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full"
+            style={{ background: DOT[m.verdict] }}
+          />
+        )}
+      </div>
+      <div className="mt-1.5 flex items-baseline gap-1">
+        <span
+          className={`font-mono font-medium tracking-heading tabular text-content-strong ${
+            m.big ? "text-[28px] leading-none" : "text-[19px] leading-none"
+          }`}
+        >
+          {m.v}
+        </span>
+        {m.unit && (
+          <span className="font-mono text-[11px] text-content-muted">{m.unit}</span>
+        )}
+      </div>
+      {m.s && (
+        <div className="mt-1.5 font-mono text-[10.5px] text-content-muted">{m.s}</div>
+      )}
     </div>
   );
 }
 
-function SecondaryMetrics({ ad, currency }: { ad: AdView; currency: string }) {
-  const rows: Array<[string, string]> = [
-    ["Spend", money(ad.spend, currency)],
-    ["Revenue", money(ad.revenue, currency)],
-    ["Impressions", count(ad.impressions)],
-    ["Reach", count(ad.reach)],
-    ["CTR", ratePct(ad.ctr)],
-    ["Outbound CTR", ratePct(ad.outboundCtr)],
-    ["CPM", money(ad.cpm, currency)],
-    ["Adds to cart", count(ad.addToCart)],
-    ["Spend share", pct(ad.spendShare)],
+function Metrics({
+  ad,
+  currency,
+  thresholds,
+}: {
+  ad: AdView;
+  currency: string;
+  /** Null when the client has set no lines: every card then goes dotless. */
+  thresholds: { targetCpa: number; targetRoas: number; killRoas: number } | null;
+}) {
+  // Judgements, each stated once. `null` wherever there is no line to judge
+  // against — which is the whole account when nobody has set the thresholds.
+  const cpaVerdict: Verdict =
+    !thresholds || ad.cpa === null
+      ? null
+      : ad.cpa <= thresholds.targetCpa
+        ? "good"
+        : ad.cpa <= thresholds.targetCpa * 1.25
+          ? "warn"
+          : "bad";
+
+  const roasVerdict: Verdict =
+    !thresholds || ad.roas === null
+      ? null
+      : ad.roas >= thresholds.targetRoas
+        ? "good"
+        : ad.roas >= thresholds.killRoas
+          ? "warn"
+          : "bad";
+
+  const cards: Metric[] = [
+    {
+      k: "Purchases",
+      v: count(ad.purchases),
+      big: true,
+      s:
+        ad.impressions > 0
+          ? `${((ad.purchases / ad.impressions) * 1000).toFixed(2)} / 1k impressions`
+          : undefined,
+      // Purchases alone carry no target — the CPA card is where that is judged.
+      verdict: null,
+    },
+    {
+      k: "Cost / purchase",
+      v: money(ad.cpa, currency),
+      big: true,
+      s: thresholds ? `target ≤ ${money(thresholds.targetCpa, currency)}` : "no target set",
+      verdict: cpaVerdict,
+    },
+    {
+      k: "ROAS",
+      v: roas(ad.roas),
+      unit: "×",
+      big: true,
+      // The interval is on the card, not in a tooltip. It is the number that
+      // decides whether the headline figure means anything at all.
+      s:
+        ad.ciLow !== null && ad.ciHigh !== null
+          ? `95% CI ${roas(ad.ciLow)}–${roas(ad.ciHigh)}`
+          : undefined,
+      verdict: roasVerdict,
+    },
+
+    { k: "Spend", v: money(ad.spend, currency), s: `${pct(ad.spendShare)} of account spend` },
+    {
+      k: "Revenue",
+      v: money(ad.revenue, currency),
+      s: `${count(ad.purchases)} purchases`,
+      verdict: ad.revenue > 0 ? "good" : null,
+    },
+    { k: "Impressions", v: count(ad.impressions), s: "delivered" },
+
+    { k: "Reach", v: count(ad.reach), s: "people reached" },
+    {
+      k: "CTR (all)",
+      v: ratePct(ad.ctr),
+      // 1.5% is the account-level reference the learnings file uses for a
+      // static; it is a benchmark, not a threshold anybody set, and it is
+      // labelled as one.
+      s: "benchmark 1.5%",
+      verdict: ad.ctr === null ? null : ad.ctr >= 0.015 ? "good" : ad.ctr >= 0.01 ? "warn" : "bad",
+    },
+    {
+      k: "Outbound CTR",
+      v: ratePct(ad.outboundCtr),
+      s: "clicks that left Meta",
+      verdict:
+        ad.outboundCtr === null
+          ? null
+          : ad.outboundCtr >= 0.01
+            ? "good"
+            : ad.outboundCtr > 0
+              ? "warn"
+              : "bad",
+    },
+
+    { k: "CPM", v: money(ad.cpm, currency), s: "per 1k impressions" },
+    { k: "Adds to cart", v: count(ad.addToCart), s: "from this ad" },
   ];
+
   if (ad.format === "DYN") {
-    rows.push(["Hook rate", ratePct(ad.hookRate)], ["Hold rate", ratePct(ad.holdRate)]);
+    cards.push(
+      {
+        k: "Hook rate",
+        v: ratePct(ad.hookRate),
+        s: "plays over impressions",
+      },
+      {
+        k: "Hold rate",
+        v: ratePct(ad.holdRate),
+        s: "thruplays over impressions",
+        verdict:
+          ad.holdRate === null ? null : ad.holdRate >= 0.05 ? "good" : ad.holdRate >= 0.03 ? "warn" : "bad",
+      }
+    );
   }
+
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(92px,1fr))] gap-x-5">
-      {rows.map(([k, v]) => (
-        <div key={k} className="border-b border-hairline py-1.5">
-          <div className="font-mono text-[9.5px] uppercase tracking-eyebrow text-content-muted">
-            {k}
-          </div>
-          <div className="mt-px font-mono text-[14px] tabular text-content-body">{v}</div>
-        </div>
+    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+      {cards.map((m) => (
+        <MetricCard key={m.k} m={m} />
       ))}
     </div>
   );
@@ -702,11 +974,15 @@ function Breakdowns({
   data,
   failed,
   purchases,
+  currency,
 }: {
   data: AdBreakdowns | null;
   failed: boolean;
   purchases: number;
+  currency: string;
 }) {
+  const total = (data?.ages ?? []).reduce((a, s) => a + s.impressions, 0);
+  const placeTotal = (data?.placements ?? []).reduce((a, s) => a + s.impressions, 0);
   if (failed) {
     return (
       <Block title="Delivery" source="unavailable">
@@ -736,25 +1012,61 @@ function Breakdowns({
 
   return (
     <>
-      <Block title="Who saw it" source="impressions">
+      <Block
+        title="Demographics"
+        source={data.femaleShare === null ? "no gender split" : "ingested"}
+      >
         {data.femaleShare !== null && (
-          <div className="mb-2 flex flex-wrap gap-3.5 text-[12px] text-content-muted">
+          <div className="mb-3 flex justify-end gap-4 text-[12px] text-content-muted">
             <span>
+              <i aria-hidden="true" className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]" style={{ background: "var(--growth-500)" }} />
               Women <b className="font-mono font-medium text-content-strong">{pct(data.femaleShare)}</b>
             </span>
             <span>
-              Men{" "}
-              <b className="font-mono font-medium text-content-strong">
-                {pct(1 - data.femaleShare)}
-              </b>
+              <i aria-hidden="true" className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]" style={{ background: "var(--ink-950)" }} />
+              Men <b className="font-mono font-medium text-content-strong">{pct(1 - data.femaleShare)}</b>
             </span>
           </div>
         )}
-        <Bars slices={data.ages} colour="var(--growth-500)" />
+
+        {/* Two bars per bucket, women over men, both scaled to the largest
+            bucket so the rows are comparable down the column rather than each
+            normalised to itself. */}
+        <div className="flex flex-col">
+          {data.ages.map((a) => {
+            const max = Math.max(1, ...data.ages.map((x) => x.impressions));
+            const share = total > 0 ? a.impressions / total : 0;
+            return (
+              <div
+                key={a.label}
+                className="grid grid-cols-[54px_1fr_auto] items-center gap-4 border-b border-hairline py-2.5 last:border-b-0"
+              >
+                <span className="text-[13px] text-content-body">{a.label}</span>
+                <span className="flex flex-col gap-1">
+                  <Bar value={(a.female ?? a.impressions) / max} colour="var(--growth-500)" />
+                  <Bar value={(a.male ?? 0) / max} colour="var(--ink-950)" />
+                </span>
+                <span className="min-w-[52px] text-right font-mono text-[13px] tabular text-content-strong">
+                  {pct(share)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-2.5 flex items-baseline justify-between">
+          <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
+            Share of impressions
+          </span>
+          <span className="font-mono text-[11.5px] text-content-muted">
+            {count(total)} total
+          </span>
+        </div>
+
         {/* The warning that keeps this panel honest. A single ad split six ways
             has single-digit purchases per bucket, so "which age group converts
-            better" is a question this data cannot answer however confidently it
-            renders. */}
+            better" is a question this data cannot answer however confidently
+            it renders. */}
         <p className="mt-2.5 border-l-2 border-hairline-strong pl-3 text-[12px] leading-[1.6] text-content-muted">
           Impression share, not ROAS. {purchases} purchases split six ways is
           single digits per bucket — read this for where Meta is putting the ad,
@@ -762,45 +1074,60 @@ function Breakdowns({
         </p>
       </Block>
 
-      <Block title="Where it ran" source="impressions">
-        <Bars slices={data.placements} colour="var(--info)" />
+      <Block title="Placement" source="ingested">
+        <div className="mb-1 flex justify-end font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
+          Share · CPM · CTR
+        </div>
+        <div className="flex flex-col">
+          {data.placements.map((p) => {
+            const max = Math.max(1, ...data.placements.map((x) => x.impressions));
+            const share = placeTotal > 0 ? p.impressions / placeTotal : 0;
+            const cpm = p.impressions > 0 ? (p.spend / p.impressions) * 1000 : null;
+            const ctr = p.impressions > 0 ? p.clicks / p.impressions : null;
+            // Against the same 1.5% reference the CTR card uses, so a reader
+            // does not have to hold two different benchmarks in their head.
+            const verdict = ctr === null ? null : ctr >= 0.015 ? "good" : ctr >= 0.01 ? "warn" : "bad";
+            return (
+              <div
+                key={p.label}
+                className="grid grid-cols-[minmax(96px,1fr)_1.4fr_auto_auto_auto] items-center gap-3 border-b border-hairline py-2.5 last:border-b-0"
+              >
+                <span className="truncate text-[13px] text-content-body">{p.label}</span>
+                <Bar value={p.impressions / max} colour="var(--ink-950)" />
+                <span className="min-w-[52px] text-right font-mono text-[13px] tabular text-content-strong">
+                  {pct(share)}
+                </span>
+                <span className="min-w-[56px] text-right font-mono text-[12px] tabular text-content-muted">
+                  {money(cpm, currency)}
+                </span>
+                <span className="flex min-w-[58px] items-center justify-end gap-1.5 font-mono text-[12px] tabular text-content-body">
+                  {ratePct(ctr)}
+                  {verdict && (
+                    <i
+                      aria-hidden="true"
+                      className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                      style={{ background: DOT[verdict] }}
+                    />
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </Block>
     </>
   );
 }
 
-function Bars({
-  slices,
-  colour,
-}: {
-  slices: Array<{ label: string; impressions: number }>;
-  colour: string;
-}) {
-  const total = slices.reduce((a, s) => a + s.impressions, 0);
-  const max = Math.max(1, ...slices.map((s) => s.impressions));
+/** One bar on a shared scale. Rounded, so a near-zero row still reads. */
+function Bar({ value, colour }: { value: number; colour: string }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      {slices.map((s) => (
-        <div
-          key={s.label}
-          className="grid grid-cols-[104px_1fr_56px] items-center gap-2.5 text-[12px]"
-        >
-          <span className="truncate text-content-muted">{s.label}</span>
-          <span className="h-[14px] overflow-hidden rounded-xs bg-gray-100">
-            <span
-              className="block h-full rounded-xs"
-              style={{
-                width: `${((s.impressions / max) * 100).toFixed(1)}%`,
-                background: colour,
-              }}
-            />
-          </span>
-          <span className="text-right font-mono text-[11.5px] tabular text-content-body">
-            {total > 0 ? `${((s.impressions / total) * 100).toFixed(1)}%` : "—"}
-          </span>
-        </div>
-      ))}
-    </div>
+    <span className="block h-[13px] overflow-hidden rounded-full bg-gray-100">
+      <span
+        className="block h-full rounded-full"
+        style={{ width: `${Math.max(1.5, Math.min(100, value * 100)).toFixed(1)}%`, background: colour }}
+      />
+    </span>
   );
 }
 

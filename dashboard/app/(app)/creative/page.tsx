@@ -200,6 +200,7 @@ export default async function CreativesPage({
               // judgement available".
               killRoas={display.killRoas}
               targetRoas={display.targetRoas}
+              targetCpa={display.targetCpa}
               directionalPurchases={display.directionalPurchases}
               focus={focus}
             />

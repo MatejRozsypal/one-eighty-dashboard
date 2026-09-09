@@ -26,9 +26,11 @@ import {
   clickUpConfigured,
   ClickUpError,
   ClickUpNotConfigured,
+  getActivity,
   listNotes,
   postNote,
   type CreativeNote,
+  type TaskActivity,
 } from "@/lib/creative/clickup";
 import { recordDecision, recordMapping } from "@/lib/creative/store";
 import { recordAccess } from "@/lib/users/accessLog";
@@ -250,6 +252,8 @@ export async function logDecision(input: {
 
 export interface NotesResult {
   notes: CreativeNote[];
+  /** Creation, status history, assignees — what the task itself records. */
+  activity: TaskActivity | null;
   /** Why there is nothing to show, when there is nothing to show. */
   unavailable: string | null;
 }
@@ -271,27 +275,42 @@ export async function loadNotes(taskId: string | null): Promise<NotesResult> {
   if (!taskId) {
     return {
       notes: [],
+      activity: null,
       unavailable:
-        "This ad is not mapped to a ClickUp task yet, so it has no thread. Map it in the unmapped queue and the notes appear here.",
+        "This ad is not mapped to a ClickUp task yet, so it has no thread. Map it in the unmapped queue and the activity appears here.",
     };
   }
   if (!clickUpConfigured()) {
     return {
       notes: [],
+      activity: null,
       unavailable: "CLICKUP_API_TOKEN is not set on this deployment.",
     };
   }
   try {
-    return { notes: await listNotes(taskId), unavailable: null };
+    const [notes, activity] = await Promise.all([
+      listNotes(taskId),
+      getActivity(taskId),
+    ]);
+    return { notes, activity, unavailable: null };
   } catch (error) {
     if (error instanceof ClickUpNotConfigured) {
-      return { notes: [], unavailable: error.message };
+      return { notes: [], activity: null, unavailable: error.message };
     }
     if (error instanceof ClickUpError) {
-      return {
-        notes: [],
-        unavailable: `ClickUp refused the request (${error.status}). The task may have been deleted.`,
-      };
+      // Each status means something different and only one of them is about
+      // the task. Telling somebody their task was deleted when the real
+      // problem is a rejected token sends them to fix the wrong thing —
+      // which is exactly what happened on 9 Sep.
+      const say =
+        error.status === 401
+          ? "ClickUp rejected the token (401). CLICKUP_API_TOKEN is set on this deployment but the value is not accepted — re-paste it from Secret Manager, without quotes or a trailing newline."
+          : error.status === 404
+            ? "ClickUp has no such task (404). It may have been deleted since the last sync."
+            : error.status === 403
+              ? "The token is valid but not permitted to read this task (403)."
+              : `ClickUp refused the request (${error.status}).`;
+      return { notes: [], activity: null, unavailable: say };
     }
     throw error;
   }

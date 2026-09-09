@@ -61,7 +61,10 @@ export function clickUpConfigured(): boolean {
 function token(): string {
   const t = process.env.CLICKUP_API_TOKEN;
   if (!t) throw new ClickUpNotConfigured();
-  return t;
+  // Trimmed, because the usual way this value gets set is by pasting it out of
+  // Secret Manager or a file, and a trailing newline or a stray pair of quotes
+  // turns every call into a 401 that reads like a permissions problem.
+  return t.trim().replace(/^["']|["']$/g, "");
 }
 
 /**
@@ -247,4 +250,98 @@ export async function postNote(
       notify_all: false,
     }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Activity — what happened to this creative, and when
+// ---------------------------------------------------------------------------
+
+/**
+ * ── What ClickUp will and will not tell us ────────────────────────────────
+ * There is no audit-log endpoint on the v2 API, so a field-by-field history —
+ * "Angle changed from X to Y" — is not available at any price. What is:
+ *
+ *   · the task's creation, with the person who created it
+ *   · every status it has been in and how long it sat there
+ *   · the comment thread, with authors and dates
+ *   · when it was last touched
+ *
+ * That is enough to answer the question the panel is actually asked, which is
+ * "what has happened to this creative and who did it", so it is what gets
+ * drawn. The gap is stated in the UI rather than papered over.
+ */
+export interface TaskActivity {
+  name: string | null;
+  status: string | null;
+  createdAt: number | null;
+  createdBy: string | null;
+  updatedAt: number | null;
+  assignees: string[];
+  /** In the order ClickUp reports them, earliest first. */
+  statuses: Array<{ status: string; minutes: number; current: boolean }>;
+}
+
+interface TaskDetail {
+  name?: string;
+  date_created?: string | number;
+  date_updated?: string | number;
+  status?: { status?: string };
+  creator?: { username?: string; email?: string };
+  assignees?: Array<{ username?: string; email?: string }>;
+}
+
+interface TimeInStatus {
+  current_status?: { status?: string; total_time?: { by_minute?: number } };
+  status_history?: Array<{
+    status?: string;
+    orderindex?: number;
+    total_time?: { by_minute?: number };
+  }>;
+}
+
+const who = (u?: { username?: string; email?: string }) =>
+  u?.username ?? u?.email?.split("@")[0] ?? null;
+
+export async function getActivity(taskId: string): Promise<TaskActivity> {
+  const id = encodeURIComponent(taskId);
+  // Two calls, in parallel. `time_in_status` is a separate endpoint and the
+  // panel wants both or neither.
+  const [task, timing] = await Promise.all([
+    call<TaskDetail>(`/task/${id}`),
+    // A task that has only ever held one status returns no history, and that
+    // is not a failure — it resolves to an empty list rather than taking the
+    // whole tab down with it.
+    call<TimeInStatus>(`/task/${id}/time_in_status`).catch(() => ({} as TimeInStatus)),
+  ]);
+
+  const history = (timing.status_history ?? [])
+    .slice()
+    .sort((a, b) => Number(a.orderindex ?? 0) - Number(b.orderindex ?? 0))
+    .map((h) => ({
+      status: h.status ?? "—",
+      minutes: Number(h.total_time?.by_minute ?? 0),
+      current: false,
+    }));
+
+  const current = timing.current_status?.status;
+  if (current) {
+    const seen = history.find((h) => h.status === current);
+    if (seen) seen.current = true;
+    else
+      history.push({
+        status: current,
+        minutes: Number(timing.current_status?.total_time?.by_minute ?? 0),
+        current: true,
+      });
+  }
+
+  return {
+    name: task.name ?? null,
+    status: task.status?.status ?? null,
+    createdAt: task.date_created ? Number(task.date_created) : null,
+    createdBy: who(task.creator),
+    updatedAt: task.date_updated ? Number(task.date_updated) : null,
+    assignees: (task.assignees ?? []).map(who).filter((n): n is string => Boolean(n)),
+    statuses: history,
+  };
 }

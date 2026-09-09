@@ -86,6 +86,9 @@ export interface AdView {
   assetKind: string | null;
   /** Width over height of the creative as served. Null when unrecorded. */
   aspectRatio: number | null;
+  /** Pixel dimensions, for the panel's format line. Null when unrecorded. */
+  assetWidth: number | null;
+  assetHeight: number | null;
   effectiveStatus: string | null;
 
   copyPrimary: string | null;
@@ -220,6 +223,8 @@ export function toAdView(
     assetUrl: signed.assetUrl,
     assetKind: asset?.assetKind ?? null,
     aspectRatio: asset?.aspectRatio ?? null,
+    assetWidth: asset?.assetWidth ?? null,
+    assetHeight: asset?.assetHeight ?? null,
     effectiveStatus: asset?.effectiveStatus ?? null,
 
     copyPrimary: asset?.body ?? null,

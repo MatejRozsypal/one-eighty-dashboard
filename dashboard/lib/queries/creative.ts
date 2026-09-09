@@ -322,6 +322,8 @@ export interface CreativeAsset {
    * not substitute a number for it: the crop this replaced was a guessed 4:5.
    */
   aspectRatio: number | null;
+  assetWidth: number | null;
+  assetHeight: number | null;
   title: string | null;
   body: string | null;
   linkDescription: string | null;
@@ -357,7 +359,7 @@ export async function getCreativeAssets(
   }
   try {
     const rows = await query<Record<string, unknown>>(
-      `SELECT ad_id, asset_uri, thumb_uri, asset_kind, object_type, video_length_sec, aspect_ratio,
+      `SELECT ad_id, asset_uri, thumb_uri, asset_kind, object_type, video_length_sec, aspect_ratio, asset_width, asset_height,
               title, body, link_description, call_to_action_type, link_url,
               bodies_json, titles_json, effective_status, adset_name, campaign_name
        FROM \`${PROJECT_ID}.mart.mart_creative_asset\`
@@ -376,6 +378,8 @@ export async function getCreativeAssets(
           objectType: s(r.object_type),
           videoLengthSec: num(r.video_length_sec),
           aspectRatio: num(r.aspect_ratio),
+          assetWidth: num(r.asset_width),
+          assetHeight: num(r.asset_height),
           title: s(r.title),
           body: s(r.body),
           linkDescription: s(r.link_description),
@@ -404,6 +408,15 @@ export interface BreakdownSlice {
   impressions: number;
   spend: number;
   purchases: number;
+  clicks: number;
+  /**
+   * Impressions by gender, on the age slices only. Meta reports age x gender
+   * and the aggregation used to collapse it to age alone, throwing away the
+   * split that the panel draws as two bars. Null on placement slices, where
+   * the dimension does not exist.
+   */
+  female?: number;
+  male?: number;
 }
 
 export interface AdBreakdowns {
@@ -435,7 +448,8 @@ export async function getAdBreakdowns(
     const [demo, place] = await Promise.all([
       query<Record<string, unknown>>(
         `SELECT age, gender, SUM(impressions) AS impressions,
-                SUM(spend) AS spend, SUM(purchases) AS purchases
+                SUM(spend) AS spend, SUM(purchases) AS purchases,
+                SUM(clicks) AS clicks
          FROM \`${PROJECT_ID}.mart.mart_creative_breakdown_demo\`
          WHERE client_id = @clientId AND ad_id = @adId
            AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
@@ -445,7 +459,7 @@ export async function getAdBreakdowns(
       query<Record<string, unknown>>(
         `SELECT publisher_platform, platform_position,
                 SUM(impressions) AS impressions, SUM(spend) AS spend,
-                SUM(purchases) AS purchases
+                SUM(purchases) AS purchases, SUM(clicks) AS clicks
          FROM \`${PROJECT_ID}.mart.mart_creative_breakdown_placement\`
          WHERE client_id = @clientId AND ad_id = @adId
            AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
@@ -461,17 +475,25 @@ export async function getAdBreakdowns(
     let known = 0;
     for (const r of demo) {
       const key = String(r.age);
-      const slice = ages.get(key) ?? { label: key, impressions: 0, spend: 0, purchases: 0 };
+      const slice =
+        ages.get(key) ??
+        { label: key, impressions: 0, spend: 0, purchases: 0, clicks: 0, female: 0, male: 0 };
       slice.impressions += n0(r.impressions);
       slice.spend += n0(r.spend);
       slice.purchases += n0(r.purchases);
-      ages.set(key, slice);
+      slice.clicks += n0(r.clicks);
 
       const g = String(r.gender);
       if (g === "female" || g === "male") {
         known += n0(r.impressions);
-        if (g === "female") female += n0(r.impressions);
+        if (g === "female") {
+          female += n0(r.impressions);
+          slice.female = (slice.female ?? 0) + n0(r.impressions);
+        } else {
+          slice.male = (slice.male ?? 0) + n0(r.impressions);
+        }
       }
+      ages.set(key, slice);
     }
 
     return {
@@ -482,6 +504,7 @@ export async function getAdBreakdowns(
         impressions: n0(r.impressions),
         spend: n0(r.spend),
         purchases: n0(r.purchases),
+        clicks: n0(r.clicks),
       })),
     };
   } catch (error) {

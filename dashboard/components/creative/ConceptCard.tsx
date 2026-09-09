@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * One concept, with its verdict.
  *
@@ -12,6 +14,7 @@
  * person acts in Ads Manager and records it afterwards.
  */
 
+import Link from "next/link";
 import type { AdView, VerdictView } from "@/lib/creative/view";
 import type { Confidence } from "@/lib/creative/stats";
 import {
@@ -27,12 +30,19 @@ import type { VerdictCode } from "@/lib/creative/verdict";
 export interface ConceptCardData {
   key: string;
   conceptId: string | null;
+  /** What a person wrote in ClickUp's `Concept ID`, or null. Never the task id. */
+  conceptCode: string | null;
+  /** The concept's own ClickUp task, where the angle and offer are edited. */
+  clickupUrl: string | null;
+  /** The Creatives grid, filtered to this concept. Null for the untagged group. */
+  adsHref: string | null;
   name: string;
   persona: string | null;
   angle: string | null;
   offer: string | null;
   ads: AdView[];
-  bodies: number;
+  /** Null when no ad in the concept carries a Body code in ClickUp. */
+  bodies: number | null;
   adsets: string[];
   spend: number;
   spendShare: number;
@@ -48,9 +58,12 @@ export interface ConceptCardData {
 export function ConceptCard({
   data,
   currency,
+  onOpenAd,
 }: {
   data: ConceptCardData;
   currency: string;
+  /** Opens the ad detail panel. The strip is the way into the creative itself. */
+  onOpenAd?: (ad: AdView) => void;
 }) {
   const strip = data.ads.slice(0, 4);
   const extra = data.ads.length - strip.length;
@@ -63,10 +76,14 @@ export function ConceptCard({
     >
       <div className="flex flex-shrink-0 gap-1">
         {strip.map((ad) => (
-          <span
+          <button
             key={ad.adId}
+            type="button"
             title={ad.adName}
-            className="relative h-[50px] w-10 overflow-hidden rounded-[7px] border border-hairline"
+            aria-label={`Open ${ad.adName}`}
+            onClick={onOpenAd ? () => onOpenAd(ad) : undefined}
+            disabled={!onOpenAd}
+            className="relative block h-[50px] w-10 overflow-hidden rounded-[7px] border border-hairline p-0 transition-transform duration-fast enabled:cursor-pointer enabled:hover:scale-[1.06]"
           >
             {ad.thumbUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- signed,
@@ -85,20 +102,32 @@ export function ConceptCard({
                 }}
               />
             )}
-          </span>
+          </button>
         ))}
-        {extra > 0 && (
-          <span className="flex h-[50px] w-10 items-center justify-center rounded-[7px] border border-dashed border-hairline-strong font-mono text-[11px] text-content-muted">
-            +{extra}
-          </span>
-        )}
+        {extra > 0 &&
+          (data.adsHref ? (
+            <Link
+              href={data.adsHref}
+              title={`All ${data.ads.length} creatives in this concept`}
+              className="flex h-[50px] w-10 items-center justify-center rounded-[7px] border border-dashed border-hairline-strong font-mono text-[11px] text-content-muted transition-colors duration-fast hover:border-accent/50 hover:text-content-accent"
+            >
+              +{extra}
+            </Link>
+          ) : (
+            <span className="flex h-[50px] w-10 items-center justify-center rounded-[7px] border border-dashed border-hairline-strong font-mono text-[11px] text-content-muted">
+              +{extra}
+            </span>
+          ))}
       </div>
 
       <div className="flex min-w-[210px] flex-1 flex-col gap-1.5">
         <span className="text-[14.5px] font-semibold tracking-heading text-content-strong">
-          {data.conceptId && (
+          {/* The code only when a person wrote one. `conceptId` falls back to
+              the ClickUp task id so the joins always resolve, and printing
+              `86ca9t2h4` beside a concept name reads as a name somebody chose. */}
+          {data.conceptCode && (
             <span className="mr-1.5 font-mono text-[11.5px] font-medium text-content-muted">
-              {data.conceptId}
+              {data.conceptCode}
             </span>
           )}
           {data.name}
@@ -110,11 +139,32 @@ export function ConceptCard({
         </span>
         <span className="text-[12px] text-content-muted">
           {data.ads.length} {data.ads.length === 1 ? "ad" : "ads"} ·{" "}
-          {data.bodies} {data.bodies === 1 ? "body" : "bodies"} ·{" "}
-          {data.adsets.join(", ")}
+          {data.bodies === null
+            ? "body not coded"
+            : `${data.bodies} ${data.bodies === 1 ? "body" : "bodies"}`}{" "}
+          · {data.adsets.join(", ")}
           {data.ageDays !== null && ` · ${data.ageDays} days old`}
           {data.frequency !== null && ` · freq ${data.frequency.toFixed(1)}`}
         </span>
+        {(data.adsHref || data.clickupUrl) && (
+          <span className="flex flex-wrap gap-3 text-[12.5px]">
+            {data.adsHref && (
+              <Link href={data.adsHref} className="text-content-accent underline underline-offset-2">
+                See the {data.ads.length} {data.ads.length === 1 ? "creative" : "creatives"}
+              </Link>
+            )}
+            {data.clickupUrl && (
+              <a
+                href={data.clickupUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-content-accent underline underline-offset-2"
+              >
+                Edit the concept
+              </a>
+            )}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-5">

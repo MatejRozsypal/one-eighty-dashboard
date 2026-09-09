@@ -29,6 +29,28 @@ import { winnerEconomics } from "@/lib/creative/model";
 import { CONFIRM_THRESHOLD, propose } from "@/lib/creative/matching";
 import { formatMoney } from "@/lib/currency";
 import { money, pct, roas } from "@/components/creative/primitives";
+import type { AdView } from "@/lib/creative/view";
+
+const one = (v: string | string[] | undefined) =>
+  (Array.isArray(v) ? v[0] : v) || null;
+
+/**
+ * What to call a linked-in filter value.
+ *
+ * The link carries the value the grid matches on, which for a concept is an id
+ * and for a format is `DYN`. The chip should say "Která z 7 vůní jsi ty?" and
+ * "Video", so the label is read off the first ad that matches: whatever the
+ * Creatives grid calls that ad, the chip calls the filter.
+ */
+function displayFor(ads: AdView[], field: string, value: string): string | null {
+  const hit = ads.find(
+    (a) => ((a as unknown as Record<string, unknown>)[field] ?? null) === value
+  );
+  if (!hit) return null;
+  if (field === "conceptId") return hit.conceptName ?? value;
+  if (field === "format") return hit.format === "DYN" ? "Video" : hit.format === "STAT" ? "Static" : value;
+  return value;
+}
 
 export const metadata: Metadata = { title: "Creatives" };
 export const dynamic = "force-dynamic";
@@ -45,6 +67,23 @@ export default async function CreativesPage({
   // is a judgement-free stand-in when they are not. The wall of creative is the
   // product; it does not wait for anybody to visit Settings.
   const views = data.available ? await buildAdViews(ctx, display) : [];
+
+  // ── A filter linked in from Breakdown or Concepts ───────────────────────
+  // `?focus=<AdView field>&is=<raw value>`. The display text is taken from the
+  // first ad that matches rather than from the URL, so a concept arrives as its
+  // name and a format as "Video" — the reader never sees the id the link was
+  // actually built on.
+  const focusField = one(searchParams.focus);
+  const focusValue = one(searchParams.is);
+  const focus =
+    focusField && focusValue
+      ? {
+          field: focusField,
+          value: focusValue,
+          display:
+            displayFor(views, focusField, focusValue) ?? focusValue,
+        }
+      : null;
   const w = thresholds ? winnerEconomics(data.ads, account.meanRoas, thresholds) : null;
 
   const tiles = [
@@ -139,6 +178,7 @@ export default async function CreativesPage({
               killRoas={display.killRoas}
               targetRoas={display.targetRoas}
               directionalPurchases={display.directionalPurchases}
+              focus={focus}
             />
           </>
         )}

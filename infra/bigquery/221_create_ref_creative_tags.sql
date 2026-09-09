@@ -37,7 +37,11 @@ OPTIONS (description = "Persona Bank, synced from each client's ClickUp persona 
 -- reads like a finding.
 CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.ref.concepts` (
   client_id       STRING NOT NULL,
-  concept_id      STRING NOT NULL,                -- 'C07'
+  concept_id      STRING NOT NULL,                -- 'C07', or the ClickUp task id
+  -- What a person actually wrote in `Concept ID`, or NULL. concept_id falls
+  -- back to the task id so the joins always work; this one never does, so the
+  -- UI can tell a chosen code from a database key.
+  concept_code    STRING,
   name            STRING,
   persona_id      STRING,
   angle           STRING,                         -- one of the 18-value vocabulary

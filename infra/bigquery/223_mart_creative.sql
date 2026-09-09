@@ -38,6 +38,7 @@ SELECT
   t.clickup_task_id,
   t.clickup_url,
   t.concept_id,
+  cn.concept_code,
   cn.name                               AS concept_name,
   t.persona_id,
   p.name                                AS persona_name,
@@ -224,6 +225,7 @@ CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_clickup_ad_tasks` AS
 SELECT
   a.*,
   cn.concept_id,
+  cn.concept_code,
   cn.name AS concept_name,
   cn.persona_id,
   cn.angle,

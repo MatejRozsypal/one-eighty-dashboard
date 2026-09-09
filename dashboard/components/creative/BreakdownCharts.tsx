@@ -29,6 +29,12 @@ export interface BreakdownRow {
   ciHigh: number | null;
   confidence: Confidence;
   readable: boolean;
+  /**
+   * What the Creatives grid filters on to show this row's ads. Null for the
+   * untagged row, which is a residue rather than a value — there is no filter
+   * that means "everything nobody filed".
+   */
+  focusValue?: string | null;
 }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -217,6 +223,12 @@ export function IntervalChart({
   const plotB = top.length * RH + 8;
   const X = (v: number) => L + Math.min(1, v / maxR) * (W - L - R);
 
+  const clash = (v: number) =>
+    judged && (Math.abs(v - killRoas) < 0.45 || Math.abs(v - targetRoas) < 0.45);
+  const ticks = Array.from({ length: Math.floor(maxR) }, (_, i) => i + 1).filter(
+    (v) => v <= maxR - 0.2 && !clash(v)
+  );
+
   return (
     <svg viewBox={`0 0 ${W} ${h}`} className="h-auto w-full" role="img"
          aria-label={judged
@@ -232,6 +244,19 @@ export function IntervalChart({
                 fill="var(--accent)" opacity="0.07" />
         </>
       )}
+
+      {/* ── The scale ────────────────────────────────────────────────────
+          Without these the axis has two labelled points at most, both of them
+          policy rather than measurement, and a reader cannot tell where 2.0
+          sits on the bar in front of them. Whole numbers, minus any that would
+          collide with the kill or target label — a tick printed on top of
+          "kill 1.80" is worse than no tick. */}
+      {ticks.map((v) => (
+        <text key={`t${v}`} x={X(v)} y={plotB + 17} textAnchor="middle"
+              fontFamily="var(--font-mono)" fontSize="10.5" fill="var(--text-muted)">
+          {v.toFixed(1)}
+        </text>
+      ))}
 
       {(judged
         ? ([

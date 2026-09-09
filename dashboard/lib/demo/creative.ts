@@ -20,7 +20,7 @@
  */
 
 import { ZERO, type AdRow, type Components, type MonthlySpend, type Tags, NO_TAGS } from "@/lib/creative/model";
-import type { CreativeData, CreativeAsset, AdBreakdowns, UnmappedData, TagCoverage, PersonaRow, CreativeWindow } from "@/lib/queries/creative";
+import type { CreativeData, CreativeAsset, AdBreakdowns, UnmappedData, TagCoverage, PersonaRow, ConceptRow, CreativeWindow } from "@/lib/queries/creative";
 import type { Candidate } from "@/lib/creative/matching";
 import { unit } from "@/lib/demo/random";
 
@@ -229,6 +229,7 @@ function tagsOf(seed: Seed): Tags {
     clickupTaskId: `demo-${seed.id}`,
     clickupUrl: null,
     conceptId: seed.concept,
+    conceptCode: seed.concept,
     conceptName: c.name,
     personaId: c.persona,
     personaName: c.persona,
@@ -452,5 +453,31 @@ export function demoPersonas(): PersonaRow[] {
   return [
     ...[...used].map((p) => ({ personaId: p, name: p, status: "active", clickupUrl: null })),
     ...dormant.map((p) => ({ personaId: p, name: p, status: "active", clickupUrl: null })),
+  ];
+}
+
+export function demoConcepts(): ConceptRow[] {
+  // Two of the eight are written and never briefed against — the state the
+  // Concepts screen exists to make visible.
+  return [
+    ...Object.entries(CONCEPTS).map(([id, c]) => ({
+      conceptId: id,
+      conceptCode: id,
+      name: c.name,
+      angle: c.angle,
+      offer: c.offer,
+      personaId: c.persona,
+      clickupUrl: null,
+      multiValued: false,
+    })),
+    {
+      conceptId: "C16", conceptCode: "C16", name: "Gift set, wrapped",
+      angle: null, offer: null, personaId: null, clickupUrl: null, multiValued: false,
+    },
+    {
+      conceptId: "C17", conceptCode: "C17", name: "The refill argument",
+      angle: "Cost of inaction", offer: "Refill", personaId: "QuietElegance",
+      clickupUrl: null, multiValued: false,
+    },
   ];
 }

@@ -19,6 +19,7 @@
 
 import { useMemo, useState } from "react";
 import type { AdView } from "@/lib/creative/view";
+import { focusLabel } from "@/lib/creative/vocabulary";
 import { AdDetail } from "@/components/creative/AdDetail";
 import { ConfidenceChip, SpendBar, Tag, money, pct, ratePct, roas } from "@/components/creative/primitives";
 
@@ -37,6 +38,26 @@ const FILTERS: Filter[] = [
   { key: "market", label: "Market" },
 ];
 
+/**
+ * A filter arriving from another screen.
+ *
+ * Breakdown and Concepts both end in the same question — "which ads are those"
+ * — and the answer is this grid. The five selects cannot carry it: a concept is
+ * matched on an id and displayed as a name, and adding a select for every
+ * breakable dimension would put nine dropdowns above the wall.
+ *
+ * So a linked-in filter is a chip instead: it says what it is, it says how many
+ * of how many it left, and it comes off in one click.
+ */
+export interface GridFocus {
+  /** A key of AdView — `conceptId`, `angle`, `adsetName`. */
+  field: string;
+  /** The raw value to match. */
+  value: string;
+  /** What to call it on the chip. */
+  display: string;
+}
+
 export function CreativeGrid({
   ads,
   currency,
@@ -44,6 +65,7 @@ export function CreativeGrid({
   killRoas,
   targetRoas,
   directionalPurchases,
+  focus,
 }: {
   ads: AdView[];
   currency: string;
@@ -51,9 +73,12 @@ export function CreativeGrid({
   killRoas: number;
   targetRoas: number;
   directionalPurchases: number;
+  focus?: GridFocus | null;
 }) {
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<AdView | null>(null);
+  const [focusOn, setFocusOn] = useState(true);
+  const activeFocus = focus && focusOn ? focus : null;
 
   const options = useMemo(() => {
     const out: Record<string, string[]> = {};
@@ -67,20 +92,55 @@ export function CreativeGrid({
 
   const rows = useMemo(
     () =>
-      ads.filter((ad) =>
-        FILTERS.every((f) => {
-          const want = selected[f.key] ?? ALL;
-          if (want === ALL) return true;
-          return ((ad[f.key] as string | null) ?? "Untagged") === want;
-        })
-      ),
-    [ads, selected]
+      ads
+        .filter((ad) =>
+          FILTERS.every((f) => {
+            const want = selected[f.key] ?? ALL;
+            if (want === ALL) return true;
+            return ((ad[f.key] as string | null) ?? "Untagged") === want;
+          })
+        )
+        .filter((ad) =>
+          activeFocus
+            ? ((ad as unknown as Record<string, unknown>)[activeFocus.field] ?? null) ===
+              activeFocus.value
+            : true
+        ),
+    [ads, selected, activeFocus]
   );
 
   const maxSpend = Math.max(1, ...ads.map((a) => a.spend));
 
   return (
     <>
+      {focus && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFocusOn((v) => !v)}
+            aria-pressed={focusOn}
+            className={`inline-flex items-center gap-2 rounded-control border px-3 py-1.5 text-[12.5px] transition-colors duration-fast ${
+              focusOn
+                ? "border-accent/45 bg-accent-soft text-content-strong"
+                : "border-hairline-strong bg-paper/60 text-content-muted"
+            }`}
+          >
+            <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
+              {focusLabel(focus.field)}
+            </span>
+            <span className="font-medium">{focus.display}</span>
+            <span aria-hidden="true" className="text-content-muted">
+              {focusOn ? "×" : "+"}
+            </span>
+          </button>
+          <span className="font-mono text-[11.5px] text-content-muted">
+            {focusOn
+              ? `${rows.length} of ${ads.length} creatives`
+              : "filter off — showing everything"}
+          </span>
+        </div>
+      )}
+
       <div className="mb-5 flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (
           <label key={f.key} className="flex items-center gap-2">
@@ -103,7 +163,7 @@ export function CreativeGrid({
             </select>
           </label>
         ))}
-        {rows.length !== ads.length && (
+        {rows.length !== ads.length && !focus && (
           <span className="font-mono text-[11.5px] text-content-muted">
             {rows.length} of {ads.length}
           </span>

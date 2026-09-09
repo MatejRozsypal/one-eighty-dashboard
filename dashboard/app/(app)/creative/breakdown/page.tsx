@@ -42,7 +42,9 @@ import {
 import { loadCreativeContext } from "@/lib/creative/page";
 import { getTagCoverage } from "@/lib/queries/creative";
 import { groupBy, read, sum } from "@/lib/creative/model";
-import { BREAKDOWN_DIMENSIONS, FORMAT_LABELS, isBreakdownKey, type BreakdownKey, type Format } from "@/lib/creative/vocabulary";
+import { BREAKDOWN_DIMENSIONS, FOCUS_FIELD, FORMAT_LABELS, isBreakdownKey, type BreakdownKey, type Format } from "@/lib/creative/vocabulary";
+import Link from "next/link";
+import { DataTable } from "@/components/ui/DataTable";
 import type { AdRow } from "@/lib/creative/model";
 
 export const metadata: Metadata = { title: "Breakdown" };
@@ -103,6 +105,16 @@ export default async function BreakdownPage({
 
   const rows: BreakdownRow[] = groups.map((g) => {
     const c = sum(g.ads);
+    // The value the Creatives grid matches on, taken off a member of the group
+    // rather than parsed back out of the label — the label for a concept is
+    // "id name" and for a format is "Video", and neither is what filters.
+    const first = g.ads[0];
+    const focusValue = g.untagged
+      ? null
+      : ((first as unknown as Record<string, unknown>)[FOCUS_FIELD[dimension]] as
+          | string
+          | null
+          | undefined) ?? null;
     const r = read(c, account.meanRoas, account.spend, display);
     return {
       key: g.key,
@@ -120,6 +132,7 @@ export default async function BreakdownPage({
       ciHigh: r.ciHigh,
       confidence: r.confidence,
       readable: c.purchases >= display.directionalPurchases,
+      focusValue,
     };
   });
 
@@ -146,6 +159,18 @@ export default async function BreakdownPage({
   }));
 
   const maxSpend = Math.max(1, ...rows.map((r) => r.spend));
+
+  // Carries the client and the window across, so following a row does not
+  // silently reset the reader to another client's lifetime figures.
+  const linkTo = (value: string) => {
+    const q = new URLSearchParams();
+    const c = Array.isArray(searchParams.client) ? searchParams.client[0] : searchParams.client;
+    if (c) q.set("client", c);
+    if (ctx.window === "30d") q.set("window", "30d");
+    q.set("focus", FOCUS_FIELD[dimension]);
+    q.set("is", value);
+    return `/creative?${q.toString()}`;
+  };
 
   return (
     <Shell ctx={ctx} dimension={dimension}>
@@ -207,81 +232,139 @@ export default async function BreakdownPage({
           killRoas={judged ? thresholds.killRoas : null}
           targetRoas={judged ? thresholds.targetRoas : null}
         />
+        {/* The bar is the payload of this chart and nothing on it says so.
+            Without this line a reader takes the bar for a magnitude — a longer
+            bar reading as a better row — when it means the opposite: a wide
+            bar is a row we know less about. */}
+        <div className="mt-3 flex flex-wrap gap-4 text-[12px] text-content-muted">
+          {(judged
+            ? [
+                [`Losing money, under ${thresholds.killRoas.toFixed(2)}`, "var(--negative)", "0.06"],
+                ["Profitable, under target", "var(--text-muted)", "0.05"],
+                [`At or above target ${thresholds.targetRoas.toFixed(2)}`, "var(--accent)", "0.07"],
+              ]
+            : []
+          ).map(([label, colour, alpha]) => (
+            <span key={label}>
+              <i
+                aria-hidden="true"
+                className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]"
+                style={{ background: colour, opacity: Number(alpha) * 6, border: `1px solid ${colour}` }}
+              />
+              {label}
+            </span>
+          ))}
+          <span>
+            <i
+              aria-hidden="true"
+              className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]"
+              style={{ background: "var(--border-strong)" }}
+            />
+            Bar = the range the true value could be in
+          </span>
+        </div>
       </div>
 
-      <div className="glass-solid overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse">
-          <thead>
-            <tr>
-              {[label, "Ads", "Spend", "Share", "Purch.", "CPA", "ROAS", "Raw", "95% interval", "Confidence"].map(
-                (h, i) => (
-                  <th
-                    key={h}
-                    className={`border-b border-hairline bg-gray-50/60 px-3.5 py-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-content-muted ${
-                      i >= 1 && i <= 7 ? "text-right" : "text-left"
-                    }`}
-                  >
-                    {h}
-                  </th>
-                )
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr
-                key={r.key}
-                className={r.readable ? "" : "row-unreadable"}
-                title={
-                  r.readable
-                    ? undefined
-                    : `Under ${display.directionalPurchases} purchases. The interval is wider than the gap between the kill line and the target, so this row cannot support a decision.`
-                }
-              >
-                <td className={`border-b border-hairline px-3.5 py-2.5 text-[13px] font-medium ${r.untagged ? "italic text-content-muted" : "text-content-strong"}`}>
+      {/*
+        The same sortable, resizable table every other screen in the app uses.
+        A breakdown is read by ordering it — by spend to see where the money
+        went, by ROAS to see what came back, by purchases to see what is even
+        readable — and a fixed sort by spend answers only the first of those.
+
+        The dimension cell is a link into the Creatives grid, filtered to this
+        row. "Curiosity gap returns 1.25" is not a finding until you have seen
+        the eleven ads that make it up, and this is the only path from one to
+        the other that does not involve retyping a filter.
+      */}
+      <DataTable
+        gridClass="grid grid-cols-[2.4fr_0.5fr_0.9fr_1fr_0.6fr_0.8fr_0.7fr_0.6fr_1.2fr_1fr] items-center gap-2"
+        emptyMessage="No delivery to break down in this window."
+        columns={[
+          { key: "dim", label },
+          { key: "ads", label: "Ads", align: "right" },
+          { key: "spend", label: "Spend", align: "right" },
+          { key: "share", label: "Share" },
+          { key: "purch", label: "Purch.", align: "right" },
+          { key: "cpa", label: "CPA", align: "right" },
+          { key: "roas", label: "ROAS", align: "right" },
+          { key: "raw", label: "Raw", align: "right" },
+          { key: "ci", label: "95% interval" },
+          { key: "conf", label: "Confidence", sortable: false },
+        ]}
+        rows={rows.map((r) => ({
+          key: r.key,
+          sort: [
+            r.label,
+            r.ads,
+            r.spend,
+            r.spendShare,
+            r.purchases,
+            r.cpa,
+            r.roas,
+            r.roasRaw,
+            r.ciHigh !== null && r.ciLow !== null ? r.ciHigh - r.ciLow : null,
+            null,
+          ],
+          cells: [
+            <span
+              key="d"
+              className={r.readable ? "" : "opacity-60"}
+              title={
+                r.readable
+                  ? undefined
+                  : `Under ${display.directionalPurchases} purchases. The interval is wider than the gap between the kill line and the target, so this row cannot support a decision.`
+              }
+            >
+              {r.focusValue ? (
+                <Link
+                  href={linkTo(r.focusValue)}
+                  className="text-[13px] font-medium text-content-strong underline decoration-hairline-strong underline-offset-2 transition-colors duration-fast hover:decoration-accent"
+                >
                   {r.label}
-                </td>
-                <Num>{r.ads}</Num>
-                <Num>{money(r.spend, currency)}</Num>
-                <td className="border-b border-hairline px-3.5 py-2.5">
-                  <SpendBar
-                    fraction={r.spend / maxSpend}
-                    tone={
-                      !r.readable || !judged
-                        ? !r.readable
-                          ? "muted"
+                </Link>
+              ) : (
+                <span
+                  className={`text-[13px] font-medium ${
+                    r.untagged ? "italic text-content-muted" : "text-content-strong"
+                  }`}
+                >
+                  {r.label}
+                </span>
+              )}
+            </span>,
+            <span key="a" className="font-mono text-[13px] tabular text-content-body">{r.ads}</span>,
+            <span key="s" className="font-mono text-[13px] tabular text-content-body">{money(r.spend, currency)}</span>,
+            <span key="sh" className="block">
+              <SpendBar
+                fraction={r.spend / maxSpend}
+                tone={
+                  !r.readable
+                    ? "muted"
+                    : !judged
+                      ? "neutral"
+                      : r.roas !== null && r.roas >= thresholds.targetRoas
+                        ? "accent"
+                        : r.roas !== null && r.roas < thresholds.killRoas
+                          ? "negative"
                           : "neutral"
-                        : r.roas !== null && r.roas >= thresholds.targetRoas
-                          ? "accent"
-                          : r.roas !== null && r.roas < thresholds.killRoas
-                            ? "negative"
-                            : "neutral"
-                    }
-                  />
-                  <span className="font-mono text-[11px] text-content-muted">
-                    {pct(r.spendShare)}
-                  </span>
-                </td>
-                <Num>{r.purchases}</Num>
-                <Num>{money(r.cpa, currency)}</Num>
-                <Num strong>{roas(r.roas)}</Num>
-                {/* The raw ratio beside the shrunk one, always. Hiding it would
-                    make the shrinkage feel like a correction being applied
-                    behind the reader's back. */}
-                <Num muted>{roas(r.roasRaw)}</Num>
-                <td className="border-b border-hairline px-3.5 py-2.5 text-right font-mono text-[12px] tabular text-content-muted">
-                  {r.ciLow !== null && r.ciHigh !== null
-                    ? `${roas(r.ciLow)} – ${roas(r.ciHigh)}`
-                    : "—"}
-                </td>
-                <td className="border-b border-hairline px-3.5 py-2.5">
-                  <ConfidenceChip level={r.confidence} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                }
+              />
+              <span className="font-mono text-[11px] text-content-muted">{pct(r.spendShare)}</span>
+            </span>,
+            <span key="p" className="font-mono text-[13px] tabular text-content-body">{r.purchases}</span>,
+            <span key="c" className="font-mono text-[13px] tabular text-content-body">{money(r.cpa, currency)}</span>,
+            <span key="r" className="font-mono text-[13px] font-medium tabular text-content-strong">{roas(r.roas)}</span>,
+            /* The raw ratio beside the shrunk one, always. Hiding it would make
+               the shrinkage feel like a correction applied behind the reader's
+               back. */
+            <span key="rw" className="font-mono text-[13px] tabular text-content-muted">{roas(r.roasRaw)}</span>,
+            <span key="ci" className="font-mono text-[12px] tabular text-content-muted">
+              {r.ciLow !== null && r.ciHigh !== null ? `${roas(r.ciLow)} – ${roas(r.ciHigh)}` : "—"}
+            </span>,
+            <ConfidenceChip key="cf" level={r.confidence} />,
+          ],
+        }))}
+      />
 
       <section>
         <SectionHead title="Share of spend over time" eyebrow="top five, monthly" />
@@ -290,26 +373,6 @@ export default async function BreakdownPage({
         </div>
       </section>
     </Shell>
-  );
-}
-
-function Num({
-  children,
-  strong,
-  muted,
-}: {
-  children: React.ReactNode;
-  strong?: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <td
-      className={`border-b border-hairline px-3.5 py-2.5 text-right font-mono text-[13px] tabular ${
-        strong ? "font-medium text-content-strong" : muted ? "text-content-muted" : "text-content-body"
-      }`}
-    >
-      {children}
-    </td>
   );
 }
 

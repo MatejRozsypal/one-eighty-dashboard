@@ -85,6 +85,7 @@ function tagsFrom(r: Record<string, unknown>): Tags {
     clickupTaskId: s("clickup_task_id"),
     clickupUrl: s("clickup_url"),
     conceptId: s("concept_id"),
+    conceptCode: s("concept_code"),
     conceptName: s("concept_name"),
     personaId: s("persona_id"),
     personaName: s("persona_name"),
@@ -153,6 +154,7 @@ export async function getCreativeAds(
            ANY_VALUE(clickup_task_id) AS clickup_task_id,
            ANY_VALUE(clickup_url)  AS clickup_url,
            ANY_VALUE(concept_id)   AS concept_id,
+           ANY_VALUE(concept_code) AS concept_code,
            ANY_VALUE(concept_name) AS concept_name,
            ANY_VALUE(persona_id)   AS persona_id,
            ANY_VALUE(persona_name) AS persona_name,
@@ -620,6 +622,56 @@ export async function getPersonas(clientId: string): Promise<PersonaRow[]> {
       name: String(r.name ?? r.persona_id),
       status: r.status ? String(r.status) : null,
       clickupUrl: r.clickup_url ? String(r.clickup_url) : null,
+    }));
+  } catch (error) {
+    if (!isMissingObject(error)) throw error;
+    return [];
+  }
+}
+
+export interface ConceptRow {
+  conceptId: string;
+  conceptCode: string | null;
+  name: string;
+  angle: string | null;
+  offer: string | null;
+  personaId: string | null;
+  clickupUrl: string | null;
+  /** True when ClickUp held two angles or two personas. Never averaged away. */
+  multiValued: boolean;
+}
+
+/**
+ * The concept roster, including the ones that have never run.
+ *
+ * The Concepts screen otherwise only ever sees a concept that some ad is
+ * already attached to, which hides the two states worth acting on: a concept
+ * written and never briefed against, and a concept whose angle, persona and
+ * offer were never filled in. Six of Manami's nine are in the second state.
+ */
+export async function getConcepts(clientId: string): Promise<ConceptRow[]> {
+  if (isDemo(clientId)) {
+    const { demoConcepts } = await import("@/lib/demo/creative");
+    return demoConcepts();
+  }
+  try {
+    const rows = await query<Record<string, unknown>>(
+      `SELECT concept_id, concept_code, name, angle, offer, persona_id,
+              clickup_url, multi_valued
+       FROM \`${PROJECT_ID}.mart.mart_creative_concepts\`
+       WHERE client_id = @clientId ORDER BY name`,
+      { clientId }
+    );
+    const s = (v: unknown) => (v === null || v === undefined ? null : String(v));
+    return rows.map((r) => ({
+      conceptId: String(r.concept_id),
+      conceptCode: s(r.concept_code),
+      name: String(r.name ?? r.concept_id),
+      angle: s(r.angle),
+      offer: s(r.offer),
+      personaId: s(r.persona_id),
+      clickupUrl: s(r.clickup_url),
+      multiValued: r.multi_valued === true,
     }));
   } catch (error) {
     if (!isMissingObject(error)) throw error;

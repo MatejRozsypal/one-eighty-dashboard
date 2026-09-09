@@ -83,6 +83,8 @@ export interface Tags {
   clickupTaskId: string | null;
   clickupUrl: string | null;
   conceptId: string | null;
+  /** The `Concept ID` a person wrote in ClickUp. Null when only the task id exists. */
+  conceptCode: string | null;
   conceptName: string | null;
   personaId: string | null;
   personaName: string | null;
@@ -108,7 +110,7 @@ export interface Tags {
 }
 
 export const NO_TAGS: Tags = {
-  clickupTaskId: null, clickupUrl: null, conceptId: null, conceptName: null,
+  clickupTaskId: null, clickupUrl: null, conceptId: null, conceptCode: null, conceptName: null,
   personaId: null, personaName: null, angle: null, offer: null, stage: null,
   productionType: null, format: null, bodyCode: null, hookCode: null, productionMethod: null,
   creatorId: null, creatorName: null, creatorType: null, productionCost: null,

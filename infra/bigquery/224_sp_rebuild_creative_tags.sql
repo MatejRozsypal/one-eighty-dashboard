@@ -152,6 +152,18 @@ BEGIN
       REGEXP_EXTRACT(task_name, r'\b(C\d{2,3})\b'),
       task_id
     )                                        AS concept_id,
+    -- ── The same thing, minus the fallback ────────────────────────────────
+    -- `concept_id` must always be present and unique because everything joins
+    -- on it, so it falls back to the ClickUp task id. That fallback is a
+    -- database key and not a name: six of Manami's nine concepts have no
+    -- `Concept ID` filled, and the screens were printing `86ca9t2h4` beside a
+    -- Czech concept name as though somebody had chosen it.
+    --
+    -- This column is what a person wrote, or nothing.
+    COALESCE(
+      NULLIF(TRIM(explicit_id), ''),
+      REGEXP_EXTRACT(task_name, r'\b(C\d{2,3})\b')
+    )                                        AS concept_code,
     task_name                                AS name,
     persona_ids[SAFE_OFFSET(0)]              AS persona_id,
     angles[SAFE_OFFSET(0)]                   AS angle,

@@ -153,3 +153,34 @@ export type BreakdownKey = (typeof BREAKDOWN_DIMENSIONS)[number]["key"];
 export function isBreakdownKey(v: string | undefined): v is BreakdownKey {
   return BREAKDOWN_DIMENSIONS.some((d) => d.key === v);
 }
+
+/**
+ * The field on an `AdView` that each breakdown dimension groups by.
+ *
+ * ── Why this map has to exist ──────────────────────────────────────────────
+ * Breakdown answers "which angle earned the spend"; the only useful next
+ * question is "show me those ads", and the Creatives grid is where that is
+ * answered. Linking the two needs the raw value the grid filters on, not the
+ * label the table prints — `Concept` reads as "Curiosity gap" and matches on a
+ * concept id; `Format` reads as "Video" and matches on `DYN`.
+ *
+ * Keyed by the same strings the picker uses, so a new dimension cannot be added
+ * to one and forgotten in the other without TypeScript saying so.
+ */
+export const FOCUS_FIELD: Record<BreakdownKey, string> = {
+  angle: "angle",
+  persona: "persona",
+  concept: "conceptId",
+  offer: "offer",
+  format: "format",
+  stage: "stage",
+  method: "method",
+  creator: "creator",
+  hook: "bodyHook",
+  adset: "adsetName",
+};
+
+export function focusLabel(key: string): string {
+  const dim = BREAKDOWN_DIMENSIONS.find((d) => FOCUS_FIELD[d.key] === key);
+  return dim ? dim.label : key;
+}

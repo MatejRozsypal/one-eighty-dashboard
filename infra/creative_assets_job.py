@@ -2,7 +2,12 @@
 """
 creative_assets_job.py — mirror Meta ad creatives into BigQuery and GCS.
 
-    python3 creative_assets_job.py [client_id ...]      # default: every Meta client
+    python3 creative_assets_job.py [client_id ...] [--all]
+
+`--all` reprocesses every delivering ad instead of only the ones with no
+mirrored asset, and rebuilds thumbnails even where one already exists. Use it
+after changing how thumbnails are generated; without it the existing objects
+short-circuit the work.
 
 Owns `raw.raw_meta_ad_creatives` end to end: it fetches the creative, extracts
 the copy, downloads the asset, writes the thumbnail, and loads the row. One job
@@ -53,7 +58,11 @@ PROJECT = "oneeighty-warehouse"
 API_VERSION = "v22.0"                       # matches wf_meta_ads_to_bigquery
 BUCKET = os.environ.get("CREATIVE_BUCKET", "oneeighty-creatives")
 TABLE = f"{PROJECT}.raw.raw_meta_ad_creatives"
-THUMB_PX = 400
+# 640, not 400. The grid renders tiles at a 228px minimum, which is ~456
+# device pixels on a retina display, so a 400px source was being upscaled and
+# looked soft next to the full-resolution image in the detail panel. A 640px
+# WebP is around 60-90 KB, so forty tiles is a few megabytes.
+THUMB_PX = 640
 TIMEOUT = 90
 
 # ── The creative is a FIELD on the ad, not an edge ────────────────────────
@@ -84,9 +93,13 @@ def secret(name: str) -> str:
     ).stdout.strip()
 
 
-def get_json(url: str, params: dict) -> dict:
-    q = urllib.parse.urlencode(params)
-    with urllib.request.urlopen(f"{url}?{q}", timeout=TIMEOUT) as r:
+def get_json(url: str, params: dict | None = None) -> dict:
+    # No params means the URL is already complete — a `paging.next` from Graph
+    # carries its own query string, and appending a bare "?" to it broke
+    # pagination silently: the video catalogue stopped at exactly the page
+    # limit and every video past the first hundred looked sourceless.
+    full = f"{url}?{urllib.parse.urlencode(params)}" if params else url
+    with urllib.request.urlopen(full, timeout=TIMEOUT) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
@@ -140,6 +153,51 @@ def extract_copy(c: dict) -> dict:
     }
 
 
+def fetch_ad_videos(account: str, token: str) -> dict[str, dict]:
+    """
+    Every video on the ad account, keyed by id.
+
+    ── Why not GET /{video_id} ───────────────────────────────────────────────
+    Because it is refused. A system user with View Performance on the ad
+    account gets `(#10) Application does not have permission for this action`
+    on the video node — for `source`, and for `picture` too, so even the poster
+    frame is unreachable that way. The same fields come back without complaint
+    from `/act_X/advideos`, which is the account's own edge and inside what
+    View Performance already grants.
+
+    That is worth stating plainly because the obvious conclusion from the error
+    is "add a permission in Meta", and there is nothing to add. One call
+    replaces one-per-video, so this is also faster.
+
+    `thumbnails` carries up to fifteen sizes; the largest is usually 1024px and
+    is what the grid tile should be built from.
+    """
+    out: dict[str, dict] = {}
+    url = f"https://graph.facebook.com/{API_VERSION}/{account}/advideos"
+    params = {"fields": "id,source,picture,length,thumbnails", "limit": "100",
+              "access_token": token}
+    while True:
+        try:
+            payload = get_json(url, params)
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            print(f"    ! advideos lookup failed: {e}", file=sys.stderr)
+            break
+        for v in payload.get("data") or []:
+            thumbs = (v.get("thumbnails") or {}).get("data") or []
+            best = max(thumbs, key=lambda t: t.get("width") or 0, default=None)
+            out[str(v["id"])] = {
+                "source": v.get("source"),
+                "picture": v.get("picture"),
+                "length": v.get("length"),
+                "poster": (best or {}).get("uri") or v.get("picture"),
+            }
+        nxt = ((payload.get("paging") or {}).get("next"))
+        if not nxt:
+            break
+        url, params = nxt, None
+    return out
+
+
 def resolve_image_hashes(account: str, token: str, hashes: list[str]) -> dict[str, str]:
     """
     Turn image hashes into download URLs.
@@ -166,20 +224,78 @@ def resolve_image_hashes(account: str, token: str, hashes: list[str]) -> dict[st
     return out
 
 
+# Placements that mean "the ad as people normally see it". The feed image is
+# what a human means by "what does this ad look like", so it is what the grid
+# tile and the detail panel show.
+FEED_POSITIONS = {"feed", "instagram_profile_feed", "instagram_explore_home", "profile_feed"}
+
+
+def _label_map(assets: list[dict], key: str) -> dict[str, str]:
+    """adlabel name -> hash/video_id, for resolving customization rules."""
+    out: dict[str, str] = {}
+    for a in assets or []:
+        for label in a.get("adlabels") or []:
+            if label.get("name") and a.get(key):
+                out[label["name"]] = str(a[key])
+    return out
+
+
+def _by_placement(afs: dict, assets: list[dict], key: str, rule_key: str) -> str | None:
+    """
+    The asset a feed placement would actually serve.
+
+    ── Why not just take the first one ───────────────────────────────────────
+    A placement-customised ad lists one asset per placement and an unordered
+    catch-all, and `images[0]` is frequently the catch-all. On Manami's
+    highest-spend ad that meant the dashboard showed `1 (4).png` — a different
+    product, with a different offer — while the ad running in feed was
+    `Nezna_static_feed.jpg`. The figures were right and the picture beside them
+    was of something else, which is worse than showing no picture at all.
+
+    `asset_customization_rules` says which asset belongs to which placement, so
+    the feed rule is followed and the catch-all is the fallback rather than the
+    default.
+    """
+    labels = _label_map(assets, key)
+    rules = afs.get("asset_customization_rules") or []
+    feed = catch_all = None
+    for r in rules:
+        spec = r.get("customization_spec") or {}
+        positions = set((spec.get("facebook_positions") or [])
+                        + (spec.get("instagram_positions") or []))
+        hit = labels.get((r.get(rule_key) or {}).get("name") or "")
+        if not hit:
+            continue
+        if positions & FEED_POSITIONS and feed is None:
+            feed = hit
+        if not positions and catch_all is None:
+            catch_all = hit
+    if feed:
+        return feed
+    if catch_all:
+        return catch_all
+    # No usable rules: the asset referenced most often is the closest thing to
+    # a default this structure offers.
+    counts: dict[str, int] = {}
+    for a in assets or []:
+        if a.get(key):
+            counts[str(a[key])] = counts.get(str(a[key]), 0) + 1
+    return max(counts, key=lambda k: counts[k]) if counts else None
+
+
 def pick_asset(c: dict) -> tuple[str | None, str | None, str | None]:
     """
-    Decide what the full-size asset for this creative is.
+    Decide what the asset for this creative is.
 
     Manami's account turned out to be mostly `object_type: SHARE` — boosted
     existing posts — where the creative carries no image_hash, no video_id and
     an empty object_story_spec. The media is listed in `asset_feed_spec`
-    instead, or reachable only through the post. So the order below is what
-    actually finds something, in descending order of quality:
+    instead. The order below is what actually finds something:
 
         video_id on the creative        a plain video ad
-        asset_feed_spec.videos[]        Advantage+ rotating video
+        asset_feed_spec videos          by placement rule, feed first
         image_hash / image_url          a plain image ad
-        asset_feed_spec.images[]        Advantage+ rotating images, by hash
+        asset_feed_spec images          by placement rule, feed first
         nothing                         thumbnail only
 
     Returns (kind, video_id, image_hash_or_url).
@@ -189,17 +305,13 @@ def pick_asset(c: dict) -> tuple[str | None, str | None, str | None]:
 
     vid = c.get("video_id") or (spec.get("video_data") or {}).get("video_id")
     if not vid:
-        videos = afs.get("videos") or []
-        if videos:
-            vid = videos[0].get("video_id")
+        vid = _by_placement(afs, afs.get("videos") or [], "video_id", "video_label")
     if vid:
         return "video", str(vid), None
 
     img = c.get("image_hash") or (spec.get("link_data") or {}).get("image_hash")
     if not img:
-        images = afs.get("images") or []
-        if images:
-            img = images[0].get("hash")
+        img = _by_placement(afs, afs.get("images") or [], "hash", "image_label")
     if img:
         return "image", None, str(img)
 
@@ -232,7 +344,7 @@ def thumbnail(raw: bytes) -> tuple[bytes, str]:
 # ---------------------------------------------------------------------------
 
 
-def ads_needing_creatives(bq, client_id: str) -> list[dict]:
+def ads_needing_creatives(bq, client_id: str, force: bool = False) -> list[dict]:
     """
     Ads with delivery whose creative row is missing or has no asset yet.
 
@@ -257,8 +369,7 @@ def ads_needing_creatives(bq, client_id: str) -> list[dict]:
     SELECT d.ad_id
     FROM delivering d
     LEFT JOIN have h USING (ad_id)
-    WHERE h.ad_id IS NULL OR h.asset_uri IS NULL
-    """
+    """ + ("" if force else "WHERE h.ad_id IS NULL OR h.asset_uri IS NULL")
     from google.cloud.bigquery import QueryJobConfig, ScalarQueryParameter
 
     job = bq.query(sql, job_config=QueryJobConfig(
@@ -283,16 +394,21 @@ def upload(storage, name: str, data: bytes, content_type: str) -> str:
     return f"gs://{BUCKET}/{name}"
 
 
-def run_client(bq, storage, client_id: str, slug: str) -> int:
+def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> int:
     token = secret(f"meta-{slug}-access-token")
     account = secret(f"meta-{slug}-ad-account-id")
-    todo = ads_needing_creatives(bq, client_id)
+    todo = ads_needing_creatives(bq, client_id, force)
     if not todo:
         print(f"  {client_id}: nothing to fetch")
         return 0
 
     print(f"  {client_id}: {len(todo)} ads to fetch")
+    # With --all the point is to rebuild derivatives, so the "already in the
+    # bucket" short-circuit is skipped for thumbnails; full assets are still
+    # reused because those are the originals and do not change.
     have = existing_objects(storage, client_id)
+    if force:
+        have = {k for k in have if "/thumb/" not in k}
     now = datetime.now(timezone.utc).isoformat()
     today = date.today().isoformat()
 
@@ -319,7 +435,9 @@ def run_client(bq, storage, client_id: str, slug: str) -> int:
             wanted_hashes.add(img)
 
     urls = resolve_image_hashes(account, token, sorted(wanted_hashes)) if wanted_hashes else {}
-    print(f"  {client_id}: {len(creatives)} creatives read, {len(urls)} image hashes resolved")
+    videos = fetch_ad_videos(account, token)
+    print(f"  {client_id}: {len(creatives)} creatives read, "
+          f"{len(urls)} image hashes resolved, {len(videos)} videos catalogued")
 
     # ── Pass two: mirror ────────────────────────────────────────────────────
     rows: list[dict] = []
@@ -328,42 +446,24 @@ def run_client(bq, storage, client_id: str, slug: str) -> int:
         asset_uri = thumb_uri = None
         asset_bytes = video_len = None
         image_hash = image_ref if (image_ref and not image_ref.startswith("http")) else None
-
-        # The thumbnail is the one thing EVERY creative has, whatever its type,
-        # so it is mirrored first and unconditionally. It is what the grid
-        # renders, and a wall of real thumbnails is most of the value here even
-        # when the full-size asset cannot be reached.
-        thumb_src = c.get("thumbnail_url")
-        if kind == "video" and not thumb_src:
-            vids = (c.get("asset_feed_spec") or {}).get("videos") or []
-            thumb_src = vids[0].get("thumbnail_url") if vids else None
-
+        # Dedupe key. The video id or image hash is stable across ads, so a
+        # creative reused in several ad sets — or graduated by post ID into a
+        # second ad_id — is stored once and pointed at twice.
         ident = video_id or image_hash or f"ad{ad_id}"
-        thumb_key = f"{client_id}/thumb/{ident}.webp"
-        if thumb_key in have:
-            thumb_uri = f"gs://{BUCKET}/{thumb_key}"
-        elif thumb_src:
-            blob = get_bytes(thumb_src)
-            if blob:
-                small, ext = thumbnail(blob)
-                thumb_key = f"{client_id}/thumb/{ident}.{ext}"
-                thumb_uri = upload(
-                    storage, thumb_key, small,
-                    "image/webp" if ext == "webp" else "image/jpeg")
-                have.add(thumb_key)
+
+        # ── The full-size asset first, because the thumbnail is made FROM it ──
+        # The first version built the tile image from `creative.thumbnail_url`,
+        # which is a ~160px CDN crop. Downscaling that to 640 upscales it, so
+        # the grid looked soft while the detail panel — which loads the real
+        # asset — was sharp. Whatever the highest-resolution source is, that is
+        # what the tile is rendered from.
+        best_source: str | None = None
+        meta: dict = {}
 
         if kind == "video" and video_id:
-            key = f"{client_id}/video/{video_id}.mp4"
-            try:
-                meta = get_json(
-                    f"https://graph.facebook.com/{API_VERSION}/{video_id}",
-                    {"fields": "source,picture,length", "access_token": token},
-                )
-            except (urllib.error.HTTPError, urllib.error.URLError) as e:
-                print(f"    ! {ad_id}: video meta failed ({e})", file=sys.stderr)
-                meta = {}
+            meta = videos.get(video_id, {})
             video_len = meta.get("length")
-
+            key = f"{client_id}/video/{video_id}.mp4"
             if key in have:
                 asset_uri = f"gs://{BUCKET}/{key}"
             elif meta.get("source"):
@@ -373,23 +473,42 @@ def run_client(bq, storage, client_id: str, slug: str) -> int:
                     asset_bytes = len(blob)
                     have.add(key)
             else:
-                # `source` needs the video permission on the system user
-                # (runbooks/07). Without it the poster frame is all there is,
-                # and the next run retries rather than needing a backfill.
-                print(f"    · {ad_id}: no video source (permission?), thumbnail only")
+                print(f"    · {ad_id}: no source for video {video_id}")
+            # Up to 1024px from the video's own thumbnail set, rather than the
+            # creative's small crop.
+            best_source = meta.get("poster") or c.get("thumbnail_url")
 
         elif kind == "image" and image_ref:
             key = f"{client_id}/image/{ident}.jpg"
+            src = image_ref if image_ref.startswith("http") else urls.get(image_ref)
             if key in have:
                 asset_uri = f"gs://{BUCKET}/{key}"
-            else:
-                src = image_ref if image_ref.startswith("http") else urls.get(image_ref)
-                if src:
-                    blob = get_bytes(src)
-                    if blob:
-                        asset_uri = upload(storage, key, blob, "image/jpeg")
-                        asset_bytes = len(blob)
-                        have.add(key)
+            elif src:
+                blob = get_bytes(src)
+                if blob:
+                    asset_uri = upload(storage, key, blob, "image/jpeg")
+                    asset_bytes = len(blob)
+                    have.add(key)
+            best_source = src or c.get("thumbnail_url")
+
+        else:
+            # No resolvable asset — a SHARE whose media lives only on the post.
+            # The creative's own thumbnail is all there is, and it is still
+            # better than an empty tile.
+            best_source = c.get("thumbnail_url")
+
+        thumb_key = f"{client_id}/thumb/{ident}.webp"
+        if thumb_key in have:
+            thumb_uri = f"gs://{BUCKET}/{thumb_key}"
+        elif best_source:
+            blob = get_bytes(best_source)
+            if blob:
+                small, ext = thumbnail(blob)
+                thumb_key = f"{client_id}/thumb/{ident}.{ext}"
+                thumb_uri = upload(
+                    storage, thumb_key, small,
+                    "image/webp" if ext == "webp" else "image/jpeg")
+                have.add(thumb_key)
 
         rows.append({
             "client_id": client_id,
@@ -441,7 +560,9 @@ def main() -> None:
     bq = bigquery.Client(project=PROJECT)
     storage = gcs.Client(project=PROJECT)
 
-    wanted = set(sys.argv[1:])
+    args = sys.argv[1:]
+    force = "--all" in args
+    wanted = {a for a in args if not a.startswith("--")}
     clients = [
         dict(r) for r in bq.query(
             f"SELECT client_id, slug FROM `{PROJECT}.ref.clients` "
@@ -453,7 +574,7 @@ def main() -> None:
 
     total = 0
     for c in clients:
-        total += run_client(bq, storage, c["client_id"], c["slug"])
+        total += run_client(bq, storage, c["client_id"], c["slug"], force)
     print(f"done: {total} rows")
 
 

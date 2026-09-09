@@ -73,9 +73,52 @@ with no URL**. Resolve those in one batched call:
 GET /v22.0/act_{account}/adimages?hashes=["<hash>",…]&fields=hash,url
 ```
 
-**`thumbnail_url` is the one field every creative has**, whatever its type. Mirror
-it first and unconditionally: a wall of real thumbnails is most of the value
-here even where the full-size asset cannot be reached.
+**`thumbnail_url` is the one field every creative has**, whatever its type. It is
+the fallback, not the source — it is a ~160px crop, and a tile built from it
+looks soft beside the full-resolution image in the detail panel. Build the
+thumbnail from the largest source available and fall back to this.
+
+### Which of several images is *the* creative
+
+A placement-customised ad lists one asset per placement plus an unordered
+catch-all, and **`images[0]` is frequently the catch-all**. Manami's
+highest-spend ad, `Něžná - 13MAR - OE`, lists seven images across four hashes;
+`images[0]` is `1 (4).png` — a different product with a different offer — while
+the ad actually running in feed is `Nezna_static_feed.jpg`. The figures were
+right and the picture beside them was of something else.
+
+`asset_feed_spec.asset_customization_rules` resolves it. Each rule carries a
+`customization_spec` with its placements and an `image_label` / `video_label`
+naming an asset by adlabel:
+
+```
+priority 3  positions=[feed, marketplace, profile_feed, …]  -> Nezna_static_feed.jpg   ← this one
+priority 8  positions=none (catch-all)                      -> 1 (4).png
+```
+
+Follow the feed rule, fall back to the catch-all, then to the most frequently
+referenced asset. Never to the first one in the array.
+
+### Videos: use the account edge, not the video node
+
+`GET /{video_id}?fields=source` returns
+`(#10) Application does not have permission for this action` for a system user
+with View Performance — for `picture` too, so even the poster is unreachable.
+**There is no permission to add.** The same fields come back without complaint
+from the ad account's own edge, which View Performance already covers:
+
+```
+GET /v22.0/act_{account}/advideos?fields=id,source,picture,length,thumbnails&limit=100
+```
+
+`thumbnails` carries up to fifteen sizes, the largest usually 1024px, which is
+what a grid tile should be built from. Follow `paging.next` — it already
+carries its own query string, so appending another `?` silently truncates the
+catalogue at one page.
+
+Reading the underlying **post** via `effective_object_story_id` does not work:
+it needs `pages_read_engagement` at Advanced Access, and the app is in
+Development mode. The placement rules make it unnecessary.
 
 Copy lives in different places by ad type:
 

@@ -165,6 +165,17 @@ export function Scorecard({ tiles }: { tiles: Tile[] }) {
   );
 }
 
+/**
+ * A section head inside a screen.
+ *
+ * ── Why this is an h3 at 16px and not an h2 at 19 ──────────────────────────
+ * The design has two heading levels and they carry different jobs: the screen's
+ * own name — Concepts, Breakdown — and the sections within it. The screen's
+ * name is set by the app shell's sticky header, so everything reaching this
+ * component is the second level, and rendering it a couple of points under the
+ * page title is what makes a screen read as one thing with parts rather than a
+ * stack of equal blocks. It was an h2 at 19px, which flattened the two.
+ */
 export function SectionHead({
   title,
   eyebrow,
@@ -175,10 +186,10 @@ export function SectionHead({
   children?: ReactNode;
 }) {
   return (
-    <div className="mb-4 mt-1 flex flex-wrap items-baseline gap-3.5">
-      <h2 className="m-0 text-[19px] font-bold tracking-heading text-content-strong">
+    <div className="mb-3.5 mt-1 flex flex-wrap items-baseline gap-3.5">
+      <h3 className="m-0 text-[16px] font-semibold tracking-heading text-content-strong">
         {title}
-      </h2>
+      </h3>
       {eyebrow && (
         <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
           {eyebrow}

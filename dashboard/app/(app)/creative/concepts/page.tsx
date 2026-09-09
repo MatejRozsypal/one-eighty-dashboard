@@ -302,26 +302,6 @@ export default async function ConceptsPage({
         />
       </section>
 
-      {/* The weekly review is the one section that is genuinely a judgement
-          rather than a measurement: every row is a Scale / Hold / Kill against
-          lines this client has not set, and logging a decision would write an
-          "unjudged" computed verdict into the record. It is withheld until the
-          three numbers exist; everything above and below it is not. */}
-      {judged && reviewRows.length > 0 && (
-        <section>
-          <SectionHead
-            title="This week's decisions"
-            eyebrow="ad set level · where money verdicts are taken"
-          />
-          <DecisionLog
-            rows={reviewRows}
-            recent={recent}
-            clientId={client.clientId}
-            currency={currency}
-          />
-        </section>
-      )}
-
       <section>
         <SectionHead title="Live concepts" eyebrow="sorted by spend · click a creative to open it" />
         <ConceptList cards={cards} currency={currency} clientId={client.clientId} />
@@ -412,6 +392,32 @@ export default async function ConceptsPage({
           )}
         </section>
       )}
+
+      {/* Last, and not in the mockup at all — which is why it sits after
+          everything the mockup does specify rather than between the two halves
+          of it. Angle coverage and the concept roster are one thought: what
+          have we never tried, and what did the things we tried do. A decision
+          table wedged between them separated a question from its answer.
+
+          It is also the one section here that is genuinely a judgement rather
+          than a measurement: every row is a Scale / Hold / Kill against lines
+          this client may not have set, and logging a decision would write an
+          "unjudged" computed verdict into the record. So it waits for the three
+          numbers; nothing above it does. */}
+      {judged && reviewRows.length > 0 && (
+        <section>
+          <SectionHead
+            title="This week's decisions"
+            eyebrow="ad set level · where money verdicts are taken"
+          />
+          <DecisionLog
+            rows={reviewRows}
+            recent={recent}
+            clientId={client.clientId}
+            currency={currency}
+          />
+        </section>
+      )}
     </Shell>
   );
 }
@@ -438,6 +444,14 @@ function Shell({
           />
           <WindowToggle current={ctx.window} />
         </div>
+        {/* The definition, where the design puts it: beside the screen's name.
+            The app shell owns that line and spends it on the client, so it sits
+            here instead. It is load-bearing on this screen — every card below
+            is exactly one persona, one angle and one offer, and a reader who
+            does not know that reads the three chips as a list of attributes. */}
+        <p className="-mt-1 m-0 font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
+          persona × angle × offer · one concept, one ad set
+        </p>
         {children}
       </main>
     </>

@@ -201,7 +201,7 @@ export default async function BreakdownPage({
           killRoas={judged ? thresholds.killRoas : null}
           targetRoas={judged ? thresholds.targetRoas : null}
         />
-        <div className="mt-3 flex flex-wrap gap-4 text-[12px] text-content-muted">
+        <div className="mt-2.5 flex flex-wrap gap-4 text-[12px] text-content-muted">
           {(judged
             ? [
                 ["var(--text-muted)", "Spend"],
@@ -215,7 +215,7 @@ export default async function BreakdownPage({
               ]
           ).map(([c, l]) => (
             <span key={l}>
-              <i aria-hidden="true" className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]"
+              <i aria-hidden="true" className="mr-1.5 inline-block h-[9px] w-[9px] rounded-[2px] align-[-1px]"
                  style={{ background: c }} />
               {l}
             </span>
@@ -232,24 +232,33 @@ export default async function BreakdownPage({
           killRoas={judged ? thresholds.killRoas : null}
           targetRoas={judged ? thresholds.targetRoas : null}
         />
-        {/* The bar is the payload of this chart and nothing on it says so.
-            Without this line a reader takes the bar for a magnitude — a longer
-            bar reading as a better row — when it means the opposite: a wide
-            bar is a row we know less about. */}
-        <div className="mt-3 flex flex-wrap gap-4 text-[12px] text-content-muted">
+        {/*
+          The bar is the payload of this chart and nothing on it says so.
+          Without this line a reader takes the bar for a magnitude — a longer
+          bar reading as a better row — when it means the opposite: a wide bar
+          is a row we know less about.
+
+          The swatches are the zones as the chart actually paints them: the
+          same colour at the same low alpha, with a solid hairline of the full
+          colour so a 6% fill is still visible at 9 pixels.
+        */}
+        <div className="mt-2.5 flex flex-wrap gap-4 text-[12px] text-content-muted">
           {(judged
             ? [
-                [`Losing money, under ${thresholds.killRoas.toFixed(2)}`, "var(--negative)", "0.06"],
-                ["Profitable, under target", "var(--text-muted)", "0.05"],
-                [`At or above target ${thresholds.targetRoas.toFixed(2)}`, "var(--accent)", "0.07"],
+                [`Losing money, under ${thresholds.killRoas.toFixed(2)}`, "var(--negative)", 0.06],
+                ["Profitable, under target", "var(--text-muted)", 0.05],
+                [`At or above target ${thresholds.targetRoas.toFixed(2)}`, "var(--accent)", 0.07],
               ]
             : []
           ).map(([label, colour, alpha]) => (
-            <span key={label}>
+            <span key={label as string}>
               <i
                 aria-hidden="true"
-                className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]"
-                style={{ background: colour, opacity: Number(alpha) * 6, border: `1px solid ${colour}` }}
+                className="mr-1.5 inline-block h-[9px] w-[9px] rounded-[2px] align-[-1px]"
+                style={{
+                  background: `color-mix(in srgb, ${colour} ${(alpha as number) * 100}%, transparent)`,
+                  border: `1px solid ${colour}`,
+                }}
               />
               {label}
             </span>
@@ -257,7 +266,7 @@ export default async function BreakdownPage({
           <span>
             <i
               aria-hidden="true"
-              className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]"
+              className="mr-1.5 inline-block h-[9px] w-[9px] rounded-[2px] align-[-1px]"
               style={{ background: "var(--border-strong)" }}
             />
             Bar = the range the true value could be in

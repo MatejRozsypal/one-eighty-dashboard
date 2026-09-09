@@ -70,7 +70,7 @@ export function ConceptCard({
 
   return (
     <article
-      className={`glass mb-3 flex flex-wrap items-start gap-4 p-4 ${
+      className={`glass mb-[11px] flex flex-wrap items-start gap-[18px] px-[18px] py-[15px] ${
         data.verdict.code === "kill" ? "border-negative/30" : ""
       }`}
     >

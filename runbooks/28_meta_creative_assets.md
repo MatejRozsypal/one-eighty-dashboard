@@ -221,6 +221,21 @@ today it can only be reconstructed by summing ad rows, which loses `adset_name` 
 delivery but no ad rows. Add a third insights call at `level=adset` with the same field list as
 campaign, plus `adset_id`, `adset_name`, `campaign_id`.
 
+> **Status, 9 Sep 2026.** The table now exists and is still **empty** — the call was never added.
+> That was invisible for months: `mart_creative_adset_perf` reads it and simply returned no rows,
+> which took out the ad set age and frequency on every concept card, the whole "This week's
+> decisions" section, two Velocity gauges and the launch cadence chart, without an error anywhere.
+>
+> `infra/bigquery/225_adset_perf_fallback.sql` makes the view **prefer** ad-set insights and fall
+> back to rolling the ads up, per client. It does not replace this section: the fallback loses
+> exactly the ad set this paragraph warns about — delivery, no ad rows — and cannot report `reach`
+> or `frequency` at all, because neither sums across ads. When the call lands, that client moves
+> back onto the real grain with no code change.
+>
+> `adset_name`, `campaign_name` and `effective_status` are now written by
+> `creative_assets_job.py`, which reads them off the ad in the request it already makes. They had
+> been NULL on every row since the table was created.
+
 ## 5. Breakdowns
 
 Two more calls at `level=ad`, `time_increment=1`. Meta will not return arbitrary breakdown

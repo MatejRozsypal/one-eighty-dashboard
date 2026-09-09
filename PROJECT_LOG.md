@@ -191,12 +191,61 @@ Velocity also stops waiting for a target CPA before showing anything: `Gauge`
 carries `cpaDerived`, so the four gauges counted off delivery render either way
 and only the pack model waits.
 
+### Third: the date picker, and two dead things it uncovered
+
+The Creative screens had a two-position toggle — Lifetime or 30 days — while
+every other screen has presets, a custom range and a comparison period. They now
+take the same `PageControls`, with the range in the URL and the selection
+following you between screens.
+
+**Default `all`, not the dashboard-wide 30 days.** The reasoning was already at
+the top of `lib/queries/creative.ts`: a persona tested across five months may
+reach 80 purchases while no single month reaches 20, and 20 purchases carries a
+±51% interval against 80's ±26%. `parseViewParams` takes the default as an
+argument rather than hard-coding it twice.
+
+**Comparison lands on four figures** — spend, ROAS, CPA, purchases, on the
+Creatives strip. Not per ad: four purchases against three is not "up 33%". The
+comparison period is fetched as account totals only and returns null rather than
+zero when the client was not running then.
+
+Then `npm run check:queries` — new, and written for this change — found two
+things on its first run that neither `tsc` nor `check:creative` could see:
+
+1. **`mart_creative_adset_perf` returned nothing, for every client, always.** It
+   reads `stg_meta_adset_insights`, which is empty: runbook 28 §4 specified the
+   ad-set insights call and it was never added to the workflow. Four things
+   depended on it and all four were silently dead — ad set age and frequency on
+   every concept card, "This week's decisions" (zero rows, so the section never
+   rendered at all), two of Velocity's eight gauges, and the launch cadence
+   chart built earlier the same day. Migration 225 makes the view prefer ad-set
+   insights and fall back to rolling the ads up. The cost is what runbook 28
+   warned about — an ad set with delivery but no ad rows disappears — and
+   `reach` and `frequency` stay NULL rather than summing two things that do not
+   sum. Manami: 46 ad sets, reconciling to the cent against ad level.
+2. **No ad set had a name.** `raw_meta_ad_creatives` has carried `adset_name`,
+   `campaign_name` and `effective_status` since it was created and the assets
+   job never wrote any of them. One longer field list on a request the job
+   already makes. All 195 Manami rows now carry real names.
+
+`check:queries` issues every Creative query against the warehouse across five
+presets, a custom range and both comparison modes, then asserts the results
+agree with each other: a narrower range cannot hold more spend than a wider one
+containing it, a comparison cannot overlap the current period, an ad cannot
+appear twice. It runs for any client — `npm run check:queries -- dobias`.
+
+One more trap, worth recording because the module that predicts it is the one
+that got caught: `DeltaChip` imported `formatPercent` from `lib/currency`, which
+imports `lib/bigquery`. The moment a client component rendered a delta the build
+failed naming `server-only` rather than the import that dragged it in. That is
+exactly what `lib/format`'s own header says it exists to prevent.
+
 ### Files changed
 
 - `infra/creative_assets_job.py` — Instagram fallback, `mp4_duration`.
 - `infra/bigquery/224_sp_rebuild_creative_tags.sql` — `ref.creative_name_key`,
   the `name_exact` arm, one-row-per-ad, two new sync issues. Applied.
-- `infra/bigquery/223`, `221` — `concept_code`.
+- `infra/bigquery/223`, `221` — `concept_code`. New `225` — the ad-set fallback.
 - `dashboard/app/(app)/creative/*` — the unjudged path, the build-out, the
   mockup corrections. New: `components/creative/{ConceptList,LaunchCadence}.tsx`.
 - `dashboard/lib/creative/{verdict,velocity,vocabulary}.ts`,
@@ -205,7 +254,8 @@ and only the pack model waits.
 - `dashboard/scripts/check-creative-engine.ts` + `scripts/tsconfig.json`.
 - `runbooks/27`, `28`, `29` — corrected where they were wrong.
 
-**Not deployed.** The app changes are committed on
+**Not deployed.** All warehouse changes (224, 223, 225) and both ingestion
+re-runs are live; the app changes are committed on
 `claude/creative-tab-video-tagging-8a1d5f` and production still serves the old
 build; `npx vercel --prod` from the repo root is what moves it.
 

@@ -242,7 +242,16 @@ def ig_media(media_id: str, token: str) -> dict | None:
         return None
     if not d.get("media_url"):
         return None
-    return {"source": d["media_url"], "poster": d.get("thumbnail_url")}
+    # `media_type` matters for the boosted-post case below: an IG media is the
+    # asset itself there, so we have to know whether we are storing an mp4 or a
+    # jpg. VIDEO and CAROUSEL_ALBUM both carry a video-ish media_url; IMAGE does
+    # not, and a carousel's media_url is its first child, which is the frame the
+    # ad actually leads with.
+    return {
+        "source": d["media_url"],
+        "poster": d.get("thumbnail_url"),
+        "kind": "video" if d.get("media_type") == "VIDEO" else "image",
+    }
 
 
 def _mp4_boxes(buf: bytes, start: int, end: int):
@@ -708,10 +717,43 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
             best_source = src or c.get("thumbnail_url")
 
         else:
-            # No resolvable asset — a SHARE whose media lives only on the post.
-            # The creative's own thumbnail is all there is, and it is still
-            # better than an empty tile.
-            best_source = c.get("thumbnail_url")
+            # ── A boosted post, whose media lives only on the post ──────────
+            # No image_hash, no video_id, nothing in asset_feed_spec. Meta's own
+            # `thumbnail_url` is all the creative offers and it is a 64px SQUARE
+            # CROP, so the tile was a 64-pixel smudge of the wrong shape — on
+            # Manami, twelve of them.
+            #
+            # But most of these were promoted from Instagram, and the IG media
+            # is the actual asset at full resolution. Same call the videos
+            # already use; it just was not being asked for anything but video.
+            ig_id = (c.get("effective_instagram_media_id")
+                     or c.get("source_instagram_media_id"))
+            found = ig_media(str(ig_id), token) if ig_id else None
+            if found:
+                kind = found["kind"]
+                ext = "mp4" if kind == "video" else "jpg"
+                key = f"{client_id}/{kind}/ig{ig_id}.{ext}"
+                if key in have:
+                    asset_uri = f"gs://{BUCKET}/{key}"
+                    dims = dims or dimensions_of_stored(storage, key)
+                else:
+                    blob = get_bytes(found["source"])
+                    if blob:
+                        asset_uri = upload(
+                            storage, key, blob,
+                            "video/mp4" if kind == "video" else "image/jpeg")
+                        asset_bytes = len(blob)
+                        dims = dims or (mp4_dimensions(blob) if kind == "video"
+                                        else image_dimensions(blob))
+                        if kind == "video":
+                            video_len = video_len or mp4_duration(blob)
+                        have.add(key)
+                best_source = found["poster"] or c.get("thumbnail_url")
+            else:
+                # A Facebook page post with no Instagram twin. The 64px crop is
+                # all there is; it is refused for dimensions, so the panel sizes
+                # from the media's natural shape instead of a square lie.
+                best_source = c.get("thumbnail_url")
 
         thumb_key = f"{client_id}/thumb/{ident}.webp"
         if thumb_key in have:

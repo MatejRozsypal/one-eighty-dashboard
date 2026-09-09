@@ -18,7 +18,8 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { loadBreakdowns } from "@/app/(app)/creative/actions";
+import { addNote, loadBreakdowns, loadNotes } from "@/app/(app)/creative/actions";
+import type { CreativeNote } from "@/lib/creative/clickup";
 import type { AdBreakdowns } from "@/lib/queries/creative";
 import type { AdView } from "@/lib/creative/view";
 import { RetentionCurve } from "@/components/creative/RetentionCurve";
@@ -46,6 +47,7 @@ export function AdDetail({
   clientId: string;
   onClose: () => void;
 }) {
+  const [tab, setTab] = useState<"overview" | "copy" | "notes">("overview");
   const [breakdowns, setBreakdowns] = useState<AdBreakdowns | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -164,60 +166,100 @@ export function AdDetail({
           </button>
         </header>
 
-        {/* One flow, no inner scrollers. The creative sticks to the top of its
-            column on wide screens so it stays in view while the numbers scroll
-            past it, which was the point of the two-column split. */}
+        {/* ── Overview / Copy / Notes ──────────────────────────────────────
+            Three tabs rather than one long scroll. The panel had grown to
+            metrics, a diagnosis, a retention curve, the full ad copy and two
+            breakdown charts stacked in a single column — so the copy, which is
+            the thing a creative person actually came to read, sat below three
+            screens of numbers.
+
+            Overview keeps everything that answers "how did it do", retention
+            included, because the curve is read against the CPA and the hook
+            rate sitting above it and splitting them would make both weaker. */}
+        <nav
+          role="tablist"
+          aria-label="Creative detail"
+          className="flex gap-6 border-b border-hairline px-5"
+        >
+          {(["overview", "copy", "notes"] as const).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`-mb-px border-b-2 py-3 text-[13.5px] font-medium capitalize transition-colors duration-fast ${
+                tab === t
+                  ? "border-accent text-content-strong"
+                  : "border-transparent text-content-muted hover:text-content-body"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </nav>
+
+        {/* The creative stays put across all three tabs — it is the subject of
+            every one of them, and re-rendering it per tab would restart a video
+            somebody was halfway through. */}
         <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr]">
           <Creative ad={ad} />
 
           <div className="flex min-w-0 flex-col gap-6 p-5">
-            <PrimaryMetrics ad={ad} currency={currency} />
-            <SecondaryMetrics ad={ad} currency={currency} />
+            {tab === "overview" && (
+              <>
+                <PrimaryMetrics ad={ad} currency={currency} />
+                <SecondaryMetrics ad={ad} currency={currency} />
 
-            <Block title="Diagnosis" source="ad level, no money verdict">
-              <p className="m-0 text-[13px] leading-[1.6] text-content-body">
-                <span className="font-medium text-content-strong">
-                  {ad.diagnosisLabel}.
-                </span>{" "}
-                {ad.diagnosisSay}
-                {ad.iterationType && (
-                  <span className="text-content-muted">
-                    {" "}
-                    Iteration type {ad.iterationType}.
-                  </span>
+                <Block title="Diagnosis" source="ad level, no money verdict">
+                  <p className="m-0 text-[13px] leading-[1.6] text-content-body">
+                    <span className="font-medium text-content-strong">
+                      {ad.diagnosisLabel}.
+                    </span>{" "}
+                    {ad.diagnosisSay}
+                    {ad.iterationType && (
+                      <span className="text-content-muted">
+                        {" "}
+                        Iteration type {ad.iterationType}.
+                      </span>
+                    )}
+                  </p>
+                </Block>
+
+                {ad.retention && ad.videoLengthSec ? (
+                  <Retention ad={ad} />
+                ) : ad.format === "DYN" ? (
+                  <Block title="Retention" source="not ingested">
+                    <p className="m-0 text-[13px] leading-[1.6] text-content-muted">
+                      No quartile data for this ad. Meta serves roughly 37 months
+                      of insights and the video fields were added later, so older
+                      ads keep nulls. A partial curve is not drawn — a line with a
+                      hole in it reads as a collapse in retention rather than as
+                      absent data.
+                    </p>
+                  </Block>
+                ) : (
+                  <Block title="Retention" source="static">
+                    <p className="m-0 text-[13px] leading-[1.6] text-content-muted">
+                      Meta reports no video metrics for a static. Judge this one
+                      on CTR ({ratePct(ad.ctr)}) and cost per purchase (
+                      {money(ad.cpa, currency)}).
+                    </p>
+                  </Block>
                 )}
-              </p>
-            </Block>
 
-            {ad.retention && ad.videoLengthSec ? (
-              <Retention ad={ad} />
-            ) : ad.format === "DYN" ? (
-              <Block title="Retention" source="not ingested">
-                <p className="m-0 text-[13px] leading-[1.6] text-content-muted">
-                  No quartile data for this ad. Meta serves roughly 37 months of
-                  insights and the video fields were added later, so older ads
-                  keep nulls. A partial curve is not drawn — a line with a hole
-                  in it reads as a collapse in retention rather than as absent
-                  data.
-                </p>
-              </Block>
-            ) : (
-              <Block title="Retention" source="static">
-                <p className="m-0 text-[13px] leading-[1.6] text-content-muted">
-                  Meta reports no video metrics for a static. Judge this one on
-                  CTR ({ratePct(ad.ctr)}) and cost per purchase (
-                  {money(ad.cpa, currency)}).
-                </p>
-              </Block>
+                <Breakdowns
+                  data={breakdowns}
+                  failed={loadFailed}
+                  purchases={ad.purchases}
+                />
+              </>
             )}
 
-            <Copy ad={ad} />
+            {tab === "copy" && <Copy ad={ad} />}
 
-            <Breakdowns
-              data={breakdowns}
-              failed={loadFailed}
-              purchases={ad.purchases}
-            />
+            {tab === "notes" && (
+              <Notes clientId={clientId} taskId={ad.clickupTaskId} url={ad.clickupUrl} />
+            )}
           </div>
         </div>
       </div>
@@ -228,6 +270,144 @@ export function AdDetail({
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * The note thread, which is ClickUp's thread.
+ *
+ * ── Why it is not our own comment box ─────────────────────────────────────
+ * The conversation about a creative already happens on its ClickUp task —
+ * the brief, the reviewer's changes, "this one won, do six hooks off it" —
+ * written by people who never open this dashboard. A second comment box in a
+ * second system produces two half-threads and an argument about which is
+ * current. So this reads and writes the same thread they do.
+ *
+ * Loaded when the tab is opened, not with the panel: most opens are to check a
+ * number, and a ClickUp round trip on every one would cost a second on a tab
+ * nobody clicked.
+ */
+function Notes({
+  clientId,
+  taskId,
+  url,
+}: {
+  clientId: string;
+  taskId: string | null;
+  url: string | null;
+}) {
+  const [notes, setNotes] = useState<CreativeNote[] | null>(null);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    loadNotes(taskId)
+      .then((r) => {
+        if (!live) return;
+        setNotes(r.notes);
+        setUnavailable(r.unavailable);
+      })
+      .catch(() => live && setUnavailable("Could not load the thread."));
+    return () => {
+      live = false;
+    };
+  }, [taskId]);
+
+  async function send() {
+    if (!taskId || !draft.trim() || busy) return;
+    setBusy(true);
+    setProblem(null);
+    const result = await addNote({ clientId, taskId, text: draft });
+    setBusy(false);
+    if (result.ok) {
+      setNotes(result.notes);
+      setDraft("");
+    } else {
+      setProblem(result.message);
+    }
+  }
+
+  return (
+    <Block
+      title="Notes"
+      source={taskId ? "the ClickUp task's own thread" : "no task mapped"}
+    >
+      {unavailable ? (
+        <p className="m-0 max-w-[68ch] text-[13px] leading-[1.6] text-content-muted">
+          {unavailable}
+        </p>
+      ) : notes === null ? (
+        <p className="m-0 text-[13px] text-content-muted">Loading the thread…</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {notes.length === 0 ? (
+            <p className="m-0 text-[13px] text-content-muted">
+              No notes on this task yet. The first one posts to ClickUp, where
+              the rest of the team will see it.
+            </p>
+          ) : (
+            notes.map((n) => (
+              <article
+                key={n.id}
+                className="rounded-card border border-hairline bg-paper/60 px-3.5 py-2.5"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-[12.5px] font-medium text-content-strong">
+                    {n.author}
+                  </span>
+                  <span className="font-mono text-[10.5px] text-content-muted">
+                    {n.at ? new Date(n.at).toLocaleDateString("en-GB", {
+                      day: "numeric", month: "short", year: "numeric",
+                    }) : ""}
+                    {n.replies > 0 && ` · ${n.replies} ${n.replies === 1 ? "reply" : "replies"}`}
+                  </span>
+                </div>
+                <p className="m-0 mt-1 whitespace-pre-line text-[13px] leading-[1.55] text-content-body">
+                  {n.text}
+                </p>
+              </article>
+            ))
+          )}
+
+          {taskId && (
+            <div className="flex flex-col gap-2">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={3}
+                placeholder="Add a note. It posts to the ClickUp task, under your name."
+                className="w-full resize-y rounded-card border border-hairline-strong bg-paper px-3 py-2 text-[13px] leading-[1.55] text-content-body outline-none transition-colors duration-fast focus:border-accent/50"
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={send}
+                  disabled={busy || draft.trim().length === 0}
+                  className="rounded-control bg-ink-950 px-3.5 py-1.5 text-[12.5px] font-medium text-paper transition-opacity duration-fast disabled:opacity-40"
+                >
+                  {busy ? "Posting…" : "Post to ClickUp"}
+                </button>
+                {url && (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[12.5px] text-content-accent underline underline-offset-2"
+                  >
+                    Open the task
+                  </a>
+                )}
+                {problem && (
+                  <span className="text-[12.5px] text-negative">{problem}</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Block>
+  );
+}
 
 /**
  * The style that lets a creative be its own shape inside a bounded panel.

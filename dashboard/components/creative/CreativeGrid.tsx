@@ -17,7 +17,7 @@
  * disagrees with itself.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { AdView } from "@/lib/creative/view";
 import { focusLabel } from "@/lib/creative/vocabulary";
 import { AdDetail } from "@/components/creative/AdDetail";
@@ -256,11 +256,17 @@ function Tile({
       aria-label={`Open ${ad.adName}`}
       className="glass glass-lift flex cursor-pointer flex-col overflow-hidden"
     >
-      {/* The tile stays a uniform 4:5 — a wall of mixed shapes is unreadable,
-          and the grid's whole job is comparison. What changed is `contain`
-          rather than `cover` inside it: a 9:16 creative now sits letterboxed
-          and entire, instead of cropped to the middle 72% of itself. */}
-      <div className="relative aspect-[4/5] border-b border-hairline bg-gray-100/70">
+      {/* ── A square crop, deliberately ──────────────────────────────────
+          The wall is for comparison, and comparison needs one shape. It was
+          4:5 with `contain`, which letterboxed every 9:16 and left the tiles
+          ragged — different amounts of dead space above and below different
+          creatives, and the text below each starting at a different height.
+
+          So: 1:1, cropped. The whole creative is still one click away in the
+          panel, which sizes itself to the real shape and cuts nothing. The
+          grid's job is to let you scan forty of them; the panel's job is to
+          show you one properly. */}
+      <div className="relative aspect-square overflow-hidden border-b border-hairline bg-gray-100/70">
         <Thumb ad={ad} />
         <span className="absolute left-2 top-2 rounded-xs bg-ink-950/70 px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.09em] text-white">
           {ad.format ?? "—"}
@@ -273,63 +279,80 @@ function Tile({
             {ad.bodyHook}
           </span>
         )}
-        {/* Video reads as video at a glance, whether or not the file has been
-            mirrored yet — format is one of the few things Meta tells us before
-            the asset job has ever run. */}
-        {ad.format === "DYN" && (
+        {/* ── Play here, in the tile ───────────────────────────────────────
+            The badge used to be decorative — it said "this is a video" and
+            clicking it opened the panel like everywhere else. Now it plays,
+            and it is the ONLY part of the tile that does: `stopPropagation`
+            keeps the click off the card, so the button plays and the rest of
+            the tile still opens the detail. Two targets, two outcomes, no
+            guessing which one you hit. */}
+        {ad.format === "DYN" && ad.assetUrl && (
+          <TilePlayer src={ad.assetUrl} poster={ad.thumbUrl} name={ad.adName} />
+        )}
+
+        {/* No mirrored file: the badge stays as it was, a label rather than a
+            control, because there is nothing behind it to play. */}
+        {ad.format === "DYN" && !ad.assetUrl && (
           <span
             aria-hidden="true"
-            className="absolute inset-0 m-auto flex h-9 w-9 items-center justify-center rounded-full bg-paper/90 shadow-sm"
+            className="absolute inset-0 m-auto flex h-9 w-9 items-center justify-center rounded-full bg-paper/80 shadow-sm"
           >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" className="ml-0.5 text-content-strong">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" className="ml-0.5 text-content-muted">
               <path d="M8 5v14l11-7z" />
             </svg>
           </span>
         )}
       </div>
 
-      <div className="relative flex flex-1 flex-col gap-2.5 p-3">
-        <div className="break-words text-[12.5px] font-medium leading-[1.35] text-content-strong">
+      {/* ── The card body ────────────────────────────────────────────────
+          Label-left, value-right rows on a tight rhythm, like the reference.
+          It was a loose stack — name, then a big number, then a bar, then a
+          ROAS line, then a metric row, then tags — each with its own gap, so
+          the text ran nearly as tall as the image and no two cards lined up.
+
+          Now every row is the same height and the labels form a column, which
+          is what lets you read down four tiles instead of across one. */}
+      <div className="relative flex flex-1 flex-col gap-2 px-3 pb-3 pt-2.5">
+        <div className="line-clamp-2 break-words text-[12.5px] font-medium leading-[1.3] text-content-strong">
           {ad.adName}
         </div>
 
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="font-mono text-[15px] font-medium tabular text-content-strong">
-            {money(ad.spend, currency)}
-          </span>
-          <span className="font-mono text-[11px] text-content-muted">
-            {pct(ad.spendShare)}
-          </span>
-        </div>
-
-        <SpendBar fraction={ad.spend / maxSpend} tone={tone} />
-
-        <div className="flex items-center justify-between gap-2">
-          <span className={`font-mono text-[13px] font-medium tabular ${roasColour}`}>
-            ROAS {roas(ad.roas)}
-          </span>
-          <ConfidenceChip level={ad.confidence} />
-        </div>
-
-        {/* Attention metrics for video, conversion counts for a static. A
-            static reports no hook rate at all, and showing an empty one would
-            imply the data is missing rather than nonexistent. */}
-        <div className="flex flex-wrap gap-2.5 font-mono text-[10.5px] text-content-muted">
+        <dl className="m-0 flex flex-col gap-1">
+          <Row label="Spend" trailing={pct(ad.spendShare)}>
+            <span className="font-mono text-[13px] font-medium tabular text-content-strong">
+              {money(ad.spend, currency)}
+            </span>
+          </Row>
+          <SpendBar fraction={ad.spend / maxSpend} tone={tone} />
+          <Row label="ROAS" trailing={null}>
+            <span className={`font-mono text-[13px] font-medium tabular ${roasColour}`}>
+              {roas(ad.roas)}
+            </span>
+            <ConfidenceChip level={ad.confidence} />
+          </Row>
+          {/* Attention for video, conversions for a static. A static reports no
+              hook rate at all, and an empty one would read as missing data
+              rather than as a metric that does not exist for the format. */}
           {ad.format === "DYN" ? (
             <>
-              <span>hook {ratePct(ad.hookRate)}</span>
-              <span>hold {ratePct(ad.holdRate)}</span>
-              <span>ctr {ratePct(ad.ctr)}</span>
+              <Row label="Hook" trailing={null}>
+                <span className="font-mono text-[12.5px] tabular text-content-body">{ratePct(ad.hookRate)}</span>
+              </Row>
+              <Row label="Hold" trailing={null}>
+                <span className="font-mono text-[12.5px] tabular text-content-body">{ratePct(ad.holdRate)}</span>
+              </Row>
             </>
           ) : (
-            <>
-              <span>ctr {ratePct(ad.ctr)}</span>
-              <span>{ad.purchases} purchases</span>
-            </>
+            <Row label="Purchases" trailing={null}>
+              <span className="font-mono text-[12.5px] tabular text-content-body">{ad.purchases}</span>
+            </Row>
           )}
-        </div>
+          <Row label="CTR" trailing={null}>
+            <span className="font-mono text-[12.5px] tabular text-content-body">{ratePct(ad.ctr)}</span>
+          </Row>
+        </dl>
 
-        <div className="mt-auto flex flex-wrap gap-1 pt-1">
+        <div className="mt-auto flex flex-wrap gap-1 pt-1.5">
           <Tag value={ad.persona} missing="persona" />
           <Tag value={ad.angle} missing="angle" />
           <Tag value={ad.offer} missing="offer" />
@@ -339,6 +362,110 @@ function Tile({
         </div>
       </div>
     </article>
+  );
+}
+
+/** One label/value line. Fixed height, so cards line up across the wall. */
+function Row({
+  label,
+  trailing,
+  children,
+}: {
+  label: string;
+  /** Right-hand annotation, e.g. share of spend. */
+  trailing: string | null;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <dt className="text-[11.5px] text-content-muted">{label}</dt>
+      <dd className="m-0 flex items-center gap-1.5">
+        {children}
+        {trailing && (
+          <span className="font-mono text-[10.5px] text-content-muted">{trailing}</span>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Plays the creative inside its own tile.
+ *
+ * ── Why it mounts the <video> only on the first play ──────────────────────
+ * Forty tiles with forty `<video>` elements is forty media pipelines the
+ * browser sets up on a screen where most of them will never be played. Until
+ * somebody presses play this is a button over a poster; after that it is a
+ * real element, playing in place, and the poster stays behind it so there is no
+ * flash of empty box while the first frames arrive.
+ *
+ * `stopPropagation` on every handler is the whole point of the control: the
+ * card underneath opens the detail panel, and a click meant for play must not
+ * do both.
+ */
+function TilePlayer({
+  src,
+  poster,
+  name,
+}: {
+  src: string;
+  poster: string | null;
+  name: string;
+}) {
+  const [active, setActive] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const ref = useRef<HTMLVideoElement>(null);
+
+  function toggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!active) {
+      setActive(true);
+      return;
+    }
+    const el = ref.current;
+    if (!el) return;
+    if (el.paused) void el.play();
+    else el.pause();
+  }
+
+  return (
+    <>
+      {active && (
+        <video
+          ref={ref}
+          src={src}
+          poster={poster ?? undefined}
+          muted
+          playsInline
+          autoPlay
+          loop
+          onClick={(e) => e.stopPropagation()}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          // Cropped to the square like the poster it replaces, so starting
+          // playback does not change the tile's composition under the cursor.
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
+
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label={`${playing ? "Pause" : "Play"} ${name}`}
+        className="absolute inset-0 m-auto flex h-9 w-9 items-center justify-center rounded-full bg-paper/90 shadow-sm transition-transform duration-fast hover:scale-110"
+      >
+        {playing ? (
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" className="text-content-strong">
+            <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" className="ml-0.5 text-content-strong">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        )}
+      </button>
+    </>
   );
 }
 

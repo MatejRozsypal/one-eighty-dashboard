@@ -77,6 +77,8 @@ export interface AdView {
   bodyHook: string | null;
   briefUrl: string | null;
   clickupUrl: string | null;
+  /** The task itself, for the Notes tab's read and write. */
+  clickupTaskId: string | null;
 
   /** Signed, short-lived. Null when nothing has been mirrored to the bucket. */
   thumbUrl: string | null;
@@ -212,6 +214,7 @@ export function toAdView(
         : null,
     briefUrl: ad.tags.briefUrl,
     clickupUrl: ad.tags.clickupUrl,
+    clickupTaskId: ad.tags.clickupTaskId,
 
     thumbUrl: signed.thumbUrl,
     assetUrl: signed.assetUrl,

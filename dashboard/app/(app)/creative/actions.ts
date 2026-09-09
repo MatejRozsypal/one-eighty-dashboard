@@ -26,6 +26,9 @@ import {
   clickUpConfigured,
   ClickUpError,
   ClickUpNotConfigured,
+  listNotes,
+  postNote,
+  type CreativeNote,
 } from "@/lib/creative/clickup";
 import { recordDecision, recordMapping } from "@/lib/creative/store";
 import { recordAccess } from "@/lib/users/accessLog";
@@ -239,4 +242,101 @@ export async function logDecision(input: {
     console.error("[creative] could not log decision", error);
     return { ok: false, message: "Could not record the decision." };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Notes — the ClickUp thread, in the panel
+// ---------------------------------------------------------------------------
+
+export interface NotesResult {
+  notes: CreativeNote[];
+  /** Why there is nothing to show, when there is nothing to show. */
+  unavailable: string | null;
+}
+
+/**
+ * Read the note thread for one creative.
+ *
+ * Loaded on demand rather than with the panel: most opens are to look at a
+ * number, and a ClickUp round trip on every one of them would put a second on
+ * the whole screen for a tab nobody clicked.
+ *
+ * Every failure resolves to a message rather than an exception. A creative
+ * with no ClickUp task, a workspace without a token, a task deleted since the
+ * last sync — none of those are errors worth taking the panel down for, and
+ * each wants a different sentence.
+ */
+export async function loadNotes(taskId: string | null): Promise<NotesResult> {
+  await actor();
+  if (!taskId) {
+    return {
+      notes: [],
+      unavailable:
+        "This ad is not mapped to a ClickUp task yet, so it has no thread. Map it in the unmapped queue and the notes appear here.",
+    };
+  }
+  if (!clickUpConfigured()) {
+    return {
+      notes: [],
+      unavailable: "CLICKUP_API_TOKEN is not set on this deployment.",
+    };
+  }
+  try {
+    return { notes: await listNotes(taskId), unavailable: null };
+  } catch (error) {
+    if (error instanceof ClickUpNotConfigured) {
+      return { notes: [], unavailable: error.message };
+    }
+    if (error instanceof ClickUpError) {
+      return {
+        notes: [],
+        unavailable: `ClickUp refused the request (${error.status}). The task may have been deleted.`,
+      };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Add a note, onto the ClickUp task itself.
+ *
+ * Returns the reloaded thread rather than just an ok, so the panel shows the
+ * comment as ClickUp actually stored it — including the author prefix — rather
+ * than a local echo that might not match what everyone else will see.
+ */
+export async function addNote(input: {
+  clientId: string;
+  taskId: string;
+  text: string;
+}): Promise<{ ok: boolean; message: string; notes: CreativeNote[] }> {
+  const who = await actor();
+  const c = await client(input.clientId);
+
+  const text = input.text.trim();
+  if (!text) return { ok: false, message: "Nothing to post.", notes: [] };
+
+  try {
+    await postNote(input.taskId, text, who.email);
+  } catch (error) {
+    const message =
+      error instanceof ClickUpNotConfigured || error instanceof ClickUpError
+        ? error.message
+        : "Could not reach ClickUp.";
+    return { ok: false, message, notes: [] };
+  }
+
+  await recordAccess({
+    email: who.email,
+    role: who.role,
+    event: "view",
+    clientId: c.clientId,
+    detail: `clickup note: task ${input.taskId}`,
+  });
+  revalidatePath("/creative");
+
+  return {
+    ok: true,
+    message: "Posted to ClickUp.",
+    notes: await listNotes(input.taskId),
+  };
 }

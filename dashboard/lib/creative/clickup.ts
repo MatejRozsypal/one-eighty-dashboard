@@ -168,3 +168,83 @@ export async function appendCreativeId(
 
   return { taskId, ids, alreadyPresent: false };
 }
+
+// ---------------------------------------------------------------------------
+// Comments — the note thread on a creative
+// ---------------------------------------------------------------------------
+
+/**
+ * ── Why the notes live in ClickUp and not in our own table ────────────────
+ * Because that is where the conversation already is. The brief, the reviewer's
+ * changes and the "this one is the winner, do six hooks off it" all get typed
+ * on the ClickUp task, by people who do not open this dashboard. A second
+ * comment box in a second system produces two half-threads and an argument
+ * about which is current.
+ *
+ * So this reads and writes ClickUp's own thread. Verified against the live
+ * workspace on 9 Sep 2026: `GET /task/{id}/comment` returns `comment_text`,
+ * `user`, `date` and `reply_count`, and 4 of 25 Manami pipeline tasks already
+ * carry comments.
+ */
+export interface CreativeNote {
+  id: string;
+  text: string;
+  author: string;
+  /** Epoch milliseconds, as ClickUp returns it (a string). */
+  at: number;
+  replies: number;
+}
+
+interface CommentsResponse {
+  comments?: Array<{
+    id: string;
+    comment_text?: string;
+    date?: string | number;
+    reply_count?: string | number;
+    user?: { username?: string; email?: string };
+  }>;
+}
+
+export async function listNotes(taskId: string): Promise<CreativeNote[]> {
+  const data = await call<CommentsResponse>(
+    `/task/${encodeURIComponent(taskId)}/comment`
+  );
+  return (data.comments ?? []).map((c) => ({
+    id: String(c.id),
+    text: c.comment_text ?? "",
+    // Falls back to the email's local part, then to a neutral label — a note
+    // with no name attached is still worth showing, and "undefined" is not.
+    author:
+      c.user?.username ??
+      c.user?.email?.split("@")[0] ??
+      "someone",
+    at: Number(c.date ?? 0),
+    replies: Number(c.reply_count ?? 0),
+  }));
+}
+
+/**
+ * Post a note back onto the task.
+ *
+ * `notify_all: false` on purpose. A dashboard that pings the whole task's
+ * watchers every time somebody jots an observation gets muted within a week,
+ * and then the ClickUp notification stops meaning anything for the briefs too.
+ *
+ * The actor's email is prefixed into the body rather than passed as
+ * `assignee`: the token is a workspace credential, so every comment would
+ * otherwise be attributed to whoever owns it, and a thread where six people
+ * appear as one is worse than no thread.
+ */
+export async function postNote(
+  taskId: string,
+  text: string,
+  actorEmail: string
+): Promise<void> {
+  await call(`/task/${encodeURIComponent(taskId)}/comment`, {
+    method: "POST",
+    body: JSON.stringify({
+      comment_text: `${actorEmail}: ${text}`,
+      notify_all: false,
+    }),
+  });
+}

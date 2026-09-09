@@ -127,16 +127,32 @@ export function viewQuery(params: ViewParams): string {
  * panel needs this: every number on it is scoped to the picker at the top of
  * the page, and a panel that opens over the page hides the picker that set it.
  */
-export function rangeLabel(params: ViewParams): string {
-  if (params.presetKey !== "custom") return PRESET_LABELS[params.presetKey];
-  const day = (iso: string) =>
+export interface RangeLabel {
+  /** The preset's own name, or "Custom". */
+  label: string;
+  /** The actual days, always — a preset name alone hides which weeks these are. */
+  dates: string;
+}
+
+export function rangeLabel(params: ViewParams): RangeLabel {
+  const d = (iso: string, withYear: boolean) =>
     new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", {
       day: "numeric",
       month: "short",
-      year: "numeric",
+      ...(withYear ? { year: "numeric" } : {}),
       timeZone: "UTC",
     });
-  return `${day(params.range.from)} – ${day(params.range.to)}`;
+
+  // The year is printed once, and only when the range crosses one. "14-21 Aug"
+  // is what the reader is holding in their head; "14 Aug 2026 - 21 Aug 2026"
+  // is the same fact spelled out twice.
+  const sameYear = params.range.from.slice(0, 4) === params.range.to.slice(0, 4);
+  const dates = `${d(params.range.from, !sameYear)} – ${d(params.range.to, true)}`;
+
+  return {
+    label: params.presetKey === "custom" ? "Custom" : PRESET_LABELS[params.presetKey],
+    dates,
+  };
 }
 
 /** Short label for a delta chip, e.g. "vs prev 30d". */

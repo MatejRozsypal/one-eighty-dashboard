@@ -17,6 +17,7 @@
 
 import { useState } from "react";
 import { AdDetail } from "@/components/creative/AdDetail";
+import type { RangeLabel } from "@/lib/params";
 import { ConceptCard, type ConceptCardData } from "@/components/creative/ConceptCard";
 import type { AdView } from "@/lib/creative/view";
 
@@ -30,7 +31,7 @@ export function ConceptList({
   currency: string;
   clientId: string;
   /** The period the cards are built from, for the detail panel's header. */
-  rangeLabel?: string | null;
+  rangeLabel?: RangeLabel | null;
 }) {
   const [open, setOpen] = useState<AdView | null>(null);
 

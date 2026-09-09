@@ -22,6 +22,7 @@ import { addNote, loadBreakdowns, loadNotes } from "@/app/(app)/creative/actions
 import type { CreativeNote, TaskActivity } from "@/lib/creative/clickup";
 import type { AdBreakdowns } from "@/lib/queries/creative";
 import type { AdView } from "@/lib/creative/view";
+import type { RangeLabel } from "@/lib/params";
 import { RetentionCurve } from "@/components/creative/RetentionCurve";
 import { CONFIDENCE_LABELS } from "@/lib/creative/stats";
 import {
@@ -59,7 +60,7 @@ export function AdDetail({
    * page, and with it the picker that set the range — so without this the
    * reader is looking at a CPA with no idea which weeks produced it.
    */
-  rangeLabel?: string | null;
+  rangeLabel?: RangeLabel | null;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"overview" | "breakdowns" | "notes">("overview");
@@ -150,13 +151,13 @@ export function AdDetail({
           top half becomes unreachable by scrolling. This centres when it fits
           and top-aligns when it does not. */}
       <div className="flex min-h-full items-start justify-center p-4 sm:p-6">
-      <div className="glass-solid my-auto flex w-full max-w-[1080px] flex-col rounded-2xl shadow-xl">
-        <header className="flex flex-shrink-0 items-start gap-3.5 border-b border-hairline px-5 py-4">
+      <div className="my-auto flex w-full max-w-[1080px] flex-col rounded-2xl border border-hairline bg-bg-subtle shadow-xl">
+        <header className="flex flex-shrink-0 items-start gap-4 border-b border-hairline px-6 py-5">
           <div className="min-w-0 flex-1">
-            <div className="break-all font-mono text-[13px] font-medium text-content-strong">
+            <div className="break-all font-mono text-[21px] font-medium leading-[1.2] tracking-heading text-content-strong">
               {ad.adName}
             </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               {ad.conceptId && (
                 <Tag value={`${ad.conceptId} ${ad.conceptName ?? ""}`.trim()} missing="concept" />
               )}
@@ -177,62 +178,61 @@ export function AdDetail({
               {ad.effectiveStatus && <StatusChip status={ad.effectiveStatus} />}
             </div>
           </div>
-          <div className="flex flex-shrink-0 items-center gap-2.5">
+          <div className="flex flex-shrink-0 items-center gap-3">
             {rangeLabel && (
-              <span className="hidden rounded-control border border-hairline bg-gray-50 px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted sm:inline">
-                {rangeLabel}
+              <span className="hidden items-baseline gap-2 rounded-lg border border-hairline px-3.5 py-2 font-mono text-[12px] uppercase tracking-[0.06em] sm:inline-flex">
+                <span className="text-content-body">{rangeLabel.label}</span>
+                {rangeLabel.dates && (
+                  <span className="text-content-muted">{rangeLabel.dates}</span>
+                )}
               </span>
             )}
-          <button
-            ref={closeRef}
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control border border-hairline-strong text-[17px] leading-none text-content-muted transition-colors duration-fast hover:bg-gray-100"
-          >
-            ×
-          </button>
+            <button
+              ref={closeRef}
+              onClick={onClose}
+              aria-label="Close"
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-hairline text-[18px] leading-none text-content-muted transition-colors duration-fast hover:bg-gray-100"
+            >
+              ×
+            </button>
           </div>
         </header>
-
-        {/* ── Overview / Copy / Notes ──────────────────────────────────────
-            Three tabs rather than one long scroll. The panel had grown to
-            metrics, a diagnosis, a retention curve, the full ad copy and two
-            breakdown charts stacked in a single column — so the copy, which is
-            the thing a creative person actually came to read, sat below three
-            screens of numbers.
-
-            Overview keeps everything that answers "how did it do", retention
-            included, because the curve is read against the CPA and the hook
-            rate sitting above it and splitting them would make both weaker. */}
-        <nav
-          role="tablist"
-          aria-label="Creative detail"
-          className="flex gap-6 border-b border-hairline px-5"
-        >
-          {(["overview", "breakdowns", "notes"] as const).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={`-mb-px border-b-2 py-3 text-[13.5px] font-medium capitalize transition-colors duration-fast ${
-                tab === t
-                  ? "border-accent text-content-strong"
-                  : "border-transparent text-content-muted hover:text-content-body"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </nav>
 
         {/* The creative stays put across all three tabs — it is the subject of
             every one of them, and re-rendering it per tab would restart a video
             somebody was halfway through. */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(360px,42%)_1fr]">
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr]">
           <Creative ad={ad} />
 
-          <div className="flex min-w-0 flex-col gap-6 p-5">
+          <div className="flex min-w-0 flex-col gap-7 p-6">
+            {/* ── Overview / Breakdowns / Notes ────────────────────────
+                Inside the right column, not spanning the panel. The creative
+                is the subject of all three tabs and does not belong under a
+                control that switches between them; putting the bar over both
+                columns said the opposite, and left the creative starting a row
+                lower than the numbers it is read against. */}
+            <nav
+              role="tablist"
+              aria-label="Creative detail"
+              className="-mx-6 -mt-6 mb-1 flex gap-8 border-b border-hairline px-6"
+            >
+              {(["overview", "breakdowns", "notes"] as const).map((t) => (
+                <button
+                  key={t}
+                  role="tab"
+                  aria-selected={tab === t}
+                  onClick={() => setTab(t)}
+                  className={`-mb-px border-b-2 py-4 text-[15.5px] font-medium capitalize transition-colors duration-fast ${
+                    tab === t
+                      ? "border-accent text-content-strong"
+                      : "border-transparent text-content-muted hover:text-content-body"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </nav>
+
             {tab === "overview" && (
               <>
                 <Metrics ad={ad} currency={currency} thresholds={thresholds ?? null} />
@@ -552,36 +552,32 @@ function Creative({ ad }: { ad: AdView }) {
   }, []);
 
   const length = ad.videoLengthSec ?? 0;
+  const isVideo = ad.assetKind === "video";
 
   /*
-    ── The creative is the column, not a thumbnail inside it ────────────────
-    Previously this was a 360px column holding a box capped at 52vh, with the
-    media centred in whatever was left. On a 9:16 that produced a stamp about
-    a third of the panel's height, surrounded by grey, next to two screens of
-    numbers — which inverts what the panel is for. The creative is the subject;
-    the numbers are the annotation.
-
-    So the media now takes the column's full width and its own true height,
-    flush to the panel's edge with no padding around it, and everything else
-    on this side sits underneath in a padded footer. There is no height cap
-    (see `mediaBox`): a tall vertical costs a scroll, and a scroll is a much
-    smaller price than a crop or a stamp.
+    ── The creative sits in a card, at its own shape ────────────────────────
+    Sized to the column and to the creative's stored aspect ratio, so a 9:16
+    is tall and narrow and a 1:1 is square, and neither is cropped. The shape
+    is read from the file at mirror time precisely so the box is right before
+    the media loads — a `preload="none"` video reports nothing until somebody
+    presses play, and a box that resizes under the reader is worse than one
+    that waits.
   */
   const media =
-    ad.assetUrl && ad.assetKind === "video" ? (
+    ad.assetUrl && isVideo ? (
       <video
         ref={video}
         src={ad.assetUrl}
         poster={ad.thumbUrl ?? undefined}
         muted
         playsInline
-        // `preload="none"` is not a micro-optimisation: without it a grid of
-        // forty tiles would pull 600 MB of video the moment the page rendered.
+        // Without this a grid of forty tiles pulls 600 MB the moment the page
+        // renders.
         preload="none"
         controls
         onTimeUpdate={onTime}
         style={mediaBox(ad.aspectRatio)}
-        className="block bg-ink-950/[0.04] object-contain"
+        className="block object-contain"
       />
     ) : ad.assetUrl ? (
       // eslint-disable-next-line @next/next/no-img-element -- signed GCS URL;
@@ -590,10 +586,10 @@ function Creative({ ad }: { ad: AdView }) {
         src={ad.assetUrl}
         alt=""
         style={mediaBox(ad.aspectRatio)}
-        className="block bg-ink-950/[0.04] object-contain"
+        className="block object-contain"
       />
     ) : (
-      <div className="flex aspect-[4/5] w-full items-center justify-center bg-ink-950/[0.04] px-5 text-center">
+      <div className="flex aspect-[4/5] w-full items-center justify-center px-5 text-center">
         <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
           no asset mirrored
         </span>
@@ -601,102 +597,124 @@ function Creative({ ad }: { ad: AdView }) {
     );
 
   return (
-    <div className="flex flex-col self-start border-b border-hairline lg:sticky lg:top-0 lg:border-b-0 lg:border-r">
-      {feed ? <FeedPreview ad={ad}>{media}</FeedPreview> : media}
+    <div className="flex flex-col gap-4 self-start border-b border-hairline p-6 lg:sticky lg:top-0 lg:border-b-0 lg:border-r">
+      {feed ? (
+        <FeedPreview ad={ad}>{media}</FeedPreview>
+      ) : (
+        <div className="relative overflow-hidden rounded-2xl bg-accent-soft shadow-sm">
+          {media}
+          {/* What kind of creative this is, on the creative. The format line
+              below gives the pixels; this gives the thing you judge first,
+              and it has to be legible against whatever the image happens to
+              be, hence the solid dark pill rather than a tint. */}
+          <span className="absolute bottom-3 left-3 inline-flex items-center rounded-lg bg-bg-inverse px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-content-inverse">
+            {isVideo ? (length > 0 ? `video ${mmss(length)}` : "video") : "still image"}
+          </span>
+        </div>
+      )}
 
-      <div className="flex flex-col gap-3.5 p-5">
-        {/* ── The two things you do to a creative that are not reading it ──
-            Look at it as it was served, and take a copy away. Both were
-            missing: the panel showed the raw file and nothing else, so the
-            question "what did this actually look like in feed" had no answer
-            here, and getting the file meant right-clicking a <video> and
-            hoping the context menu offered Save. */}
-        <div className="flex flex-wrap items-center gap-2">
-          {(ad.copyPrimary || ad.copyHeadline || ad.copyCta) && (
-            <button
-              type="button"
-              onClick={() => setFeed((v) => !v)}
-              aria-pressed={feed}
-              className={`rounded-control border px-2.5 py-1.5 text-[12px] font-medium transition-colors duration-fast ${
-                feed
-                  ? "border-accent bg-accent-tint text-content-strong"
-                  : "border-hairline-strong text-content-body hover:bg-gray-100"
-              }`}
-            >
-              Feed preview
-            </button>
+      {/* ── The two things you do to a creative that are not reading it ────
+          Look at it as it was served, and take a copy away. */}
+      <div className="flex items-stretch gap-2.5">
+        <button
+          type="button"
+          onClick={() => setFeed((v) => !v)}
+          aria-pressed={feed}
+          disabled={!ad.copyPrimary && !ad.copyHeadline && !ad.copyCta}
+          className={`flex-1 rounded-lg border py-3 text-[14px] font-medium transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-40 ${
+            feed
+              ? "border-accent bg-accent-soft text-content-strong"
+              : "border-hairline text-content-strong hover:bg-gray-50"
+          }`}
+        >
+          Feed preview
+        </button>
+        <a
+          href={ad.downloadUrl ?? undefined}
+          aria-disabled={!ad.downloadUrl}
+          aria-label="Download the creative"
+          title="Download the creative"
+          className={`flex w-[52px] items-center justify-center rounded-lg border border-hairline text-[17px] leading-none text-content-strong transition-colors duration-fast ${
+            ad.downloadUrl ? "hover:bg-gray-50" : "pointer-events-none opacity-40"
+          }`}
+        >
+          <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M8 2.5v9m0 0 3.5-3.5M8 11.5 4.5 8"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </a>
+      </div>
+
+      {/* Only when there is something to play. A scrub bar under a placeholder
+          reads as a broken player rather than as an unmirrored asset. */}
+      {ad.assetUrl && isVideo && length > 0 && (
+        <div className="flex items-center gap-2.5">
+          <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-gray-100">
+            <span
+              className="block h-full rounded-full bg-accent transition-[width] duration-100"
+              style={{ width: `${Math.min(100, (t / length) * 100).toFixed(1)}%` }}
+            />
+          </span>
+          <span className="min-w-[66px] text-right font-mono text-[11px] tabular text-content-muted">
+            {mmss(t)} / {mmss(length)}
+          </span>
+        </div>
+      )}
+
+      {!ad.assetUrl && (
+        <p className="m-0 text-[12px] leading-[1.55] text-content-muted">
+          Meta&apos;s own URLs expire within hours, so the dashboard serves a
+          copy from our bucket. This one has not been downloaded yet.
+        </p>
+      )}
+
+      {/* ── The spec line ────────────────────────────────────────────────
+          The three facts that qualify the picture above them: what shape it
+          actually is, how much of the account it is holding, and how much
+          weight its numbers can carry. Delivery status sits up beside the
+          name, where it qualifies the metrics too. */}
+      <dl className="m-0 mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-3.5">
+        <dt className="font-mono text-[11.5px] uppercase tracking-[0.07em] text-content-muted">
+          Format
+        </dt>
+        <dd className="m-0 text-right font-mono text-[13px] tabular text-content-strong">
+          {ad.assetWidth && ad.assetHeight
+            ? `${ad.assetWidth}×${ad.assetHeight}`
+            : DASH}
+        </dd>
+        <dt className="font-mono text-[11.5px] uppercase tracking-[0.07em] text-content-muted">
+          Spend share
+        </dt>
+        <dd className="m-0 text-right font-mono text-[13px] tabular text-content-strong">
+          {csPct(ad.spendShare)}
+        </dd>
+        <dt className="font-mono text-[11.5px] uppercase tracking-[0.07em] text-content-muted">
+          Learning
+        </dt>
+        <dd className="m-0 text-right text-[13px] text-content-strong">
+          {CONFIDENCE_LABELS[ad.confidence]}
+        </dd>
+      </dl>
+
+      {(ad.clickupUrl || ad.briefUrl) && (
+        <div className="flex flex-wrap gap-4 text-[13px]">
+          {ad.clickupUrl && (
+            <a href={ad.clickupUrl} target="_blank" rel="noreferrer" className="text-content-accent underline">
+              ClickUp task
+            </a>
           )}
-          {ad.downloadUrl && (
-            <a
-              href={ad.downloadUrl}
-              className="rounded-control border border-hairline-strong px-2.5 py-1.5 text-[12px] font-medium text-content-body transition-colors duration-fast hover:bg-gray-100"
-            >
-              Download
+          {ad.briefUrl && (
+            <a href={ad.briefUrl} target="_blank" rel="noreferrer" className="text-content-accent underline">
+              Brief
             </a>
           )}
         </div>
-
-        {/* Only when there is something to play. A scrub bar under a
-            placeholder reads as a broken player rather than as an unmirrored
-            asset. */}
-        {ad.assetUrl && ad.assetKind === "video" && length > 0 && (
-          <div className="flex items-center gap-2.5">
-            <span className="h-[5px] flex-1 overflow-hidden rounded-xs bg-gray-100">
-              <span
-                className="block h-full rounded-xs bg-accent transition-[width] duration-100"
-                style={{ width: `${Math.min(100, (t / length) * 100).toFixed(1)}%` }}
-              />
-            </span>
-            <span className="min-w-[66px] text-right font-mono text-[11px] tabular text-content-muted">
-              {mmss(t)} / {mmss(length)}
-            </span>
-          </div>
-        )}
-
-        {!ad.assetUrl && (
-          <p className="m-0 text-[12px] leading-[1.55] text-content-muted">
-            Meta&apos;s own URLs expire within hours, so the dashboard serves a
-            copy from our bucket. This one has not been downloaded yet.
-          </p>
-        )}
-
-        {/* ── The spec line ──────────────────────────────────────────────
-            The three facts that qualify the picture above them: what shape it
-            actually is, how much of the account it is holding, and how much
-            weight its numbers can carry. Delivery status used to sit here and
-            has moved up beside the name, where it qualifies the metrics too. */}
-        <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t border-hairline pt-3.5">
-          <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Format</dt>
-          <dd className="m-0 text-right font-mono text-[12px] tabular text-content-body">
-            {ad.assetWidth && ad.assetHeight
-              ? `${ad.assetWidth}×${ad.assetHeight}`
-              : "—"}
-          </dd>
-          <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Spend share</dt>
-          <dd className="m-0 text-right font-mono text-[12px] tabular text-content-body">
-            {pct(ad.spendShare)}
-          </dd>
-          <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Learning</dt>
-          <dd className="m-0 text-right text-[12px] text-content-body">
-            {CONFIDENCE_LABELS[ad.confidence]}
-          </dd>
-        </dl>
-
-        {(ad.clickupUrl || ad.briefUrl) && (
-          <div className="flex flex-wrap gap-3 text-[12.5px]">
-            {ad.clickupUrl && (
-              <a href={ad.clickupUrl} target="_blank" rel="noreferrer" className="text-content-accent underline">
-                ClickUp task
-              </a>
-            )}
-            {ad.briefUrl && (
-              <a href={ad.briefUrl} target="_blank" rel="noreferrer" className="text-content-accent underline">
-                Brief
-              </a>
-            )}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -783,6 +801,127 @@ function FeedPreview({ ad, children }: { ad: AdView; children: ReactNode }) {
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// Numbers, in the reader's own convention
+// ---------------------------------------------------------------------------
+
+/**
+ * ── Why this panel formats differently from the rest of the app ───────────
+ * The design this panel is built to writes every figure the Czech way: a space
+ * between thousands, a comma for the decimal point, a space before the percent
+ * sign, and the currency as a symbol AFTER the number — `4 769 Kč`, not
+ * `CZK 4,769`. Everywhere else in the dashboard still uses `formatMoney`,
+ * which is en-US.
+ *
+ * That inconsistency is real and it is deliberate for now: the design was
+ * approved as drawn, and it is confined to this one panel until somebody
+ * decides whether the whole product moves. It is stated here rather than
+ * discovered later, because a grid tile reading `CZK 48,210` above a panel
+ * reading `48 210 Kč` for the same ad is otherwise just a bug.
+ */
+const CS = new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 0 });
+const csDec = (v: number, d: number) =>
+  new Intl.NumberFormat("cs-CZ", { minimumFractionDigits: d, maximumFractionDigits: d }).format(v);
+
+/** A number and the small grey thing printed after it, kept apart on purpose. */
+interface Figure {
+  v: string;
+  unit?: string;
+}
+
+const DASH = "\u2014";
+
+/**
+ * Currency as a symbol, because the design sets it in the small grey slot
+ * beside the number and a three-letter code reads as part of the figure there.
+ * Anything unmapped keeps its ISO code, which is ugly and unambiguous.
+ */
+const SYMBOL: Record<string, string> = {
+  CZK: "K\u010d",
+  EUR: "\u20ac",
+  USD: "$",
+  GBP: "\u00a3",
+  PLN: "z\u0142",
+  HUF: "Ft",
+  RON: "lei",
+};
+const symbolOf = (currency: string) => SYMBOL[currency.toUpperCase()] ?? currency.toUpperCase();
+
+const csCount = (v: number | null): Figure =>
+  v === null ? { v: DASH } : { v: CS.format(Math.round(v)) };
+
+const csMoney = (v: number | null, currency: string): Figure =>
+  v === null ? { v: DASH } : { v: CS.format(Math.round(v)), unit: symbolOf(currency) };
+
+/** Whole percent, with the space cs-CZ puts before the sign. */
+const csPct = (v: number | null): string =>
+  v === null ? DASH : `${CS.format(Math.round(v * 100))} %`;
+
+/**
+ * Two decimals on a metric card, one in a breakdown row.
+ *
+ * Not an inconsistency: a card is the figure being judged against a benchmark
+ * of 1,50 %, and at one decimal a 1,44 % and a 1,54 % both print as different
+ * numbers from the benchmark but the same distance from it. A breakdown row is
+ * a share, read for shape down the column, where the second decimal is noise.
+ */
+const csRate = (v: number | null): Figure =>
+  v === null ? { v: DASH } : { v: csDec(v * 100, 2), unit: "%" };
+
+const csRateFlat = (v: number | null): string =>
+  v === null ? DASH : `${csDec(v * 100, 1)} %`;
+
+const csRoas = (v: number | null): Figure =>
+  v === null ? { v: DASH } : { v: csDec(v, 2), unit: "\u00d7" };
+
+/**
+ * The pill beside a section title — INGESTED, STATIC, NOT INGESTED.
+ *
+ * Green when the data is really there, neutral when it is not, because the
+ * whole point of the badge is to say whether the chart under it is drawn from
+ * something or from nothing.
+ */
+function SourcePill({ label, live = true }: { label: string; live?: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center whitespace-nowrap rounded-pill px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.09em] ${
+        live
+          ? "bg-accent-soft text-growth-700"
+          : "border border-hairline-strong text-content-muted"
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** A section title with its provenance pill, and whatever legend sits opposite. */
+function SectionHeading({
+  title,
+  pill,
+  live = true,
+  aside,
+}: {
+  title: string;
+  pill: string;
+  live?: boolean;
+  aside?: ReactNode;
+}) {
+  return (
+    <div className="mb-3.5 flex flex-wrap items-center gap-3">
+      <h5 className="m-0 text-[17px] font-semibold tracking-heading text-content-strong">
+        {title}
+      </h5>
+      <SourcePill label={pill} live={live} />
+      {aside && <div className="ml-auto flex items-center gap-5">{aside}</div>}
+    </div>
+  );
+}
+
+/** The white surface every chart and card on this panel sits on. */
+const CARD = "rounded-2xl border border-hairline bg-surface-card shadow-sm";
+
 /** A ClickUp epoch, as a date somebody can read. */
 function when(ms: number): string {
   return new Date(ms).toLocaleDateString("en-GB", {
@@ -805,11 +944,11 @@ function StatusChip({ status }: { status: string }) {
   const label = status.toLowerCase().replace(/_/g, " ");
   return (
     <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xs px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] ${
+      className={`inline-flex items-center gap-2 whitespace-nowrap rounded-pill px-3 py-1.5 font-mono text-[12px] font-medium uppercase tracking-[0.08em] ${
         live ? "bg-accent-soft text-growth-700" : "bg-gray-100 text-content-muted"
       }`}
     >
-      <span aria-hidden="true" className="h-1 w-1 rounded-full bg-current" />
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
       {label}
     </span>
   );
@@ -836,54 +975,94 @@ const DOT: Record<"good" | "warn" | "bad", string> = {
 };
 
 const TINT: Record<"good" | "warn" | "bad", string> = {
-  good: "bg-accent-soft/50",
-  warn: "bg-warning/[0.07]",
-  bad: "bg-negative/[0.06]",
+  good: "bg-accent-soft",
+  warn: "bg-warning/[0.08]",
+  bad: "bg-negative/[0.07]",
 };
 
 interface Metric {
   k: string;
-  v: string;
-  /** Small unit printed after the value, e.g. a currency or a percent. */
-  unit?: string;
+  /** The figure and the small grey unit that follows it, kept apart. */
+  f: Figure;
   s?: string;
   verdict?: Verdict;
+  /** The three that lead: bigger type, no tint, verdict dot in the corner. */
   big?: boolean;
 }
 
+/**
+ * ── One card per metric, and a dot that says how to read it ───────────────
+ * The panel used to draw three headline tiles and then a run of bare
+ * label/value pairs, which made a CPA over target look exactly like an
+ * impression count.
+ *
+ * The three leading cards carry their verdict in the top-right corner and stay
+ * white; the rest carry it as a dot in front of the label and tint the whole
+ * card. That is not decoration — at a glance the reader sees which half of the
+ * grid is coloured before reading a single number, and the leading three keep
+ * their weight by staying plain.
+ *
+ * A card with nothing to judge still shows a grey dot in the secondary rows,
+ * so the label column stays aligned down the grid. Grey is the absence of a
+ * verdict, and it never appears in the leading row where it would read as one.
+ */
 function MetricCard({ m }: { m: Metric }) {
+  const dot = m.verdict ? DOT[m.verdict] : "var(--gray-250)";
+
+  if (m.big) {
+    return (
+      <div className={`${CARD} flex flex-col justify-between px-5 py-4`}>
+        <div className="flex items-start justify-between gap-2">
+          <span className="font-mono text-[11.5px] uppercase tracking-[0.08em] text-content-muted">
+            {m.k}
+          </span>
+          {m.verdict && (
+            <span
+              aria-hidden="true"
+              className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
+              style={{ background: DOT[m.verdict] }}
+            />
+          )}
+        </div>
+        <Figures f={m.f} size="text-[34px]" unitSize="text-[15px]" />
+        {m.s && <div className="mt-2.5 font-mono text-[12.5px] text-content-muted">{m.s}</div>}
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`glass flex flex-col justify-between px-4 py-3 ${
+      className={`${CARD} flex flex-col justify-between px-5 py-4 ${
         m.verdict ? TINT[m.verdict] : ""
       }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-mono text-[9.5px] uppercase tracking-eyebrow text-content-muted">
+      <div className="flex items-center gap-2">
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 flex-shrink-0 rounded-full"
+          style={{ background: dot }}
+        />
+        <span className="font-mono text-[11.5px] uppercase tracking-[0.08em] text-content-muted">
           {m.k}
         </span>
-        {m.verdict && (
-          <span
-            aria-hidden="true"
-            className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full"
-            style={{ background: DOT[m.verdict] }}
-          />
-        )}
       </div>
-      <div className="mt-1.5 flex items-baseline gap-1">
-        <span
-          className={`font-mono font-medium tracking-heading tabular text-content-strong ${
-            m.big ? "text-[28px] leading-none" : "text-[19px] leading-none"
-          }`}
-        >
-          {m.v}
-        </span>
-        {m.unit && (
-          <span className="font-mono text-[11px] text-content-muted">{m.unit}</span>
-        )}
-      </div>
-      {m.s && (
-        <div className="mt-1.5 font-mono text-[10.5px] text-content-muted">{m.s}</div>
+      <Figures f={m.f} size="text-[26px]" unitSize="text-[13px]" />
+      {m.s && <div className="mt-2 font-mono text-[12.5px] text-content-muted">{m.s}</div>}
+    </div>
+  );
+}
+
+/** The number, and its unit set smaller and greyer beside it. */
+function Figures({ f, size, unitSize }: { f: Figure; size: string; unitSize: string }) {
+  return (
+    <div className="mt-2 flex items-baseline gap-1.5">
+      <span
+        className={`font-mono font-medium leading-none tracking-heading tabular text-content-strong ${size}`}
+      >
+        {f.v}
+      </span>
+      {f.unit && (
+        <span className={`font-mono leading-none text-content-muted ${unitSize}`}>{f.unit}</span>
       )}
     </div>
   );
@@ -922,58 +1101,73 @@ function Metrics({
   const cards: Metric[] = [
     {
       k: "Purchases",
-      v: count(ad.purchases),
+      f: csCount(ad.purchases),
       big: true,
       s:
         ad.impressions > 0
-          ? `${((ad.purchases / ad.impressions) * 1000).toFixed(2)} / 1k impressions`
+          ? `${csDec((ad.purchases / ad.impressions) * 1000, 2)} / 1k impressions`
           : undefined,
-      // Purchases alone carry no target — the CPA card is where that is judged.
+      // Purchases alone carry no target — the CPA card beside it is where that
+      // is judged, and a second dot on the same judgement is not information.
       verdict: null,
     },
     {
-      k: "Cost / purchase",
-      v: money(ad.cpa, currency),
+      k: "Cost / purch.",
+      f: csMoney(ad.cpa, currency),
       big: true,
-      s: thresholds ? `target ≤ ${money(thresholds.targetCpa, currency)}` : "no target set",
+      s: thresholds
+        ? `target ≤ ${csMoney(thresholds.targetCpa, currency).v} ${symbolOf(currency)}`
+        : "no target set",
       verdict: cpaVerdict,
     },
     {
       k: "ROAS",
-      v: roas(ad.roas),
-      unit: "×",
+      f: csRoas(ad.roas),
       big: true,
       // The interval is on the card, not in a tooltip. It is the number that
       // decides whether the headline figure means anything at all.
       s:
         ad.ciLow !== null && ad.ciHigh !== null
-          ? `95% CI ${roas(ad.ciLow)}–${roas(ad.ciHigh)}`
+          ? `95 % CI ${csDec(ad.ciLow, 2)}–${csDec(ad.ciHigh, 2)}`
           : undefined,
       verdict: roasVerdict,
     },
 
-    { k: "Spend", v: money(ad.spend, currency), s: `${pct(ad.spendShare)} of account spend` },
+    {
+      k: "Spend",
+      f: csMoney(ad.spend, currency),
+      s: `${csPct(ad.spendShare)} of account spend`,
+    },
     {
       k: "Revenue",
-      v: money(ad.revenue, currency),
-      s: `${count(ad.purchases)} purchases`,
+      f: csMoney(ad.revenue, currency),
+      s: `${csCount(ad.purchases).v} purchases`,
       verdict: ad.revenue > 0 ? "good" : null,
     },
-    { k: "Impressions", v: count(ad.impressions), s: "delivered" },
+    {
+      k: "Impressions",
+      f: csCount(ad.impressions),
+      // Frequency rather than "delivered": impressions over reach is the fact
+      // that qualifies the impression count, and it is free to compute here.
+      s:
+        ad.reach && ad.reach > 0
+          ? `${csDec(ad.impressions / ad.reach, 2)} frequency`
+          : "delivered",
+    },
 
-    { k: "Reach", v: count(ad.reach), s: "people reached" },
+    { k: "Reach", f: csCount(ad.reach), s: "people reached" },
     {
       k: "CTR (all)",
-      v: ratePct(ad.ctr),
+      f: csRate(ad.ctr),
       // 1.5% is the account-level reference the learnings file uses for a
       // static; it is a benchmark, not a threshold anybody set, and it is
       // labelled as one.
-      s: "benchmark 1.5%",
+      s: "benchmark 1,50 %",
       verdict: ad.ctr === null ? null : ad.ctr >= 0.015 ? "good" : ad.ctr >= 0.01 ? "warn" : "bad",
     },
     {
       k: "Outbound CTR",
-      v: ratePct(ad.outboundCtr),
+      f: csRate(ad.outboundCtr),
       s: "clicks that left Meta",
       verdict:
         ad.outboundCtr === null
@@ -985,20 +1179,20 @@ function Metrics({
               : "bad",
     },
 
-    { k: "CPM", v: money(ad.cpm, currency), s: "per 1k impressions" },
-    { k: "Adds to cart", v: count(ad.addToCart), s: "from this ad" },
+    { k: "CPM", f: csMoney(ad.cpm, currency), s: "per 1k impressions" },
+    { k: "Adds to cart", f: csCount(ad.addToCart), s: "from this ad" },
   ];
 
   if (ad.format === "DYN") {
     cards.push(
       {
         k: "Hook rate",
-        v: ratePct(ad.hookRate),
+        f: csRate(ad.hookRate),
         s: "plays over impressions",
       },
       {
         k: "Hold rate",
-        v: ratePct(ad.holdRate),
+        f: csRate(ad.holdRate),
         s: "thruplays over impressions",
         verdict:
           ad.holdRate === null ? null : ad.holdRate >= 0.05 ? "good" : ad.holdRate >= 0.03 ? "warn" : "bad",
@@ -1007,7 +1201,7 @@ function Metrics({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {cards.map((m) => (
         <MetricCard key={m.k} m={m} />
       ))}
@@ -1103,110 +1297,134 @@ function Breakdowns({
 }: {
   data: AdBreakdowns | null;
   failed: boolean;
+  /** Kept for the empty-state copy, which names how thin the split would be. */
   purchases: number;
   currency: string;
 }) {
   const total = (data?.ages ?? []).reduce((a, s) => a + s.impressions, 0);
   const placeTotal = (data?.placements ?? []).reduce((a, s) => a + s.impressions, 0);
+
   if (failed) {
     return (
-      <Block title="Delivery" source="unavailable">
-        <p className="m-0 text-[13px] text-content-muted">
-          Could not load the breakdowns.
-        </p>
-      </Block>
+      <section>
+        <SectionHeading title="Delivery" pill="unavailable" live={false} />
+        <div className={`${CARD} px-5 py-4`}>
+          <p className="m-0 text-[13.5px] text-content-muted">Could not load the breakdowns.</p>
+        </div>
+      </section>
     );
   }
   if (!data) {
     return (
-      <Block title="Delivery" source="loading">
-        <p className="m-0 text-[13px] text-content-muted">Loading…</p>
-      </Block>
+      <section>
+        <SectionHeading title="Delivery" pill="loading" live={false} />
+        <div className={`${CARD} px-5 py-4`}>
+          <p className="m-0 text-[13.5px] text-content-muted">Loading…</p>
+        </div>
+      </section>
     );
   }
   if (data.ages.length === 0 && data.placements.length === 0) {
     return (
-      <Block title="Delivery" source="not ingested">
-        <p className="m-0 text-[13px] text-content-muted">
-          The age and placement breakdowns are separate Meta calls that have not
-          run for this ad yet.
-        </p>
-      </Block>
+      <section>
+        <SectionHeading title="Delivery" pill="not ingested" live={false} />
+        <div className={`${CARD} px-5 py-4`}>
+          <p className="m-0 max-w-[70ch] text-[13.5px] leading-[1.6] text-content-muted">
+            The age and placement breakdowns are separate Meta calls that have not
+            run for this ad yet. With {purchases} purchases on this ad they would
+            be read for where Meta is putting the creative, not for which bucket
+            converts.
+          </p>
+        </div>
+      </section>
     );
   }
 
+  const ageMax = Math.max(1, ...data.ages.map((x) => x.impressions));
+  const placeMax = Math.max(1, ...data.placements.map((x) => x.impressions));
+
   return (
-    <>
-      <Block
-        title="Demographics"
-        source={data.femaleShare === null ? "no gender split" : "ingested"}
-      >
-        {data.femaleShare !== null && (
-          <div className="mb-3 flex justify-end gap-4 text-[12px] text-content-muted">
-            <span>
-              <i aria-hidden="true" className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]" style={{ background: "var(--growth-500)" }} />
-              Women <b className="font-mono font-medium text-content-strong">{pct(data.femaleShare)}</b>
-            </span>
-            <span>
-              <i aria-hidden="true" className="mr-1.5 inline-block h-2 w-2 rounded-[2px] align-[-1px]" style={{ background: "var(--ink-950)" }} />
-              Men <b className="font-mono font-medium text-content-strong">{pct(1 - data.femaleShare)}</b>
-            </span>
-          </div>
-        )}
+    <div className="flex flex-col gap-8">
+      <section>
+        <SectionHeading
+          title="Demographics"
+          pill={data.femaleShare === null ? "no gender split" : "ingested"}
+          live={data.femaleShare !== null}
+          aside={
+            data.femaleShare !== null ? (
+              <>
+                <span className="flex items-center gap-2 text-[14px] text-content-body">
+                  <i
+                    aria-hidden="true"
+                    className="inline-block h-2.5 w-2.5 rounded-full"
+                    style={{ background: "var(--growth-500)" }}
+                  />
+                  Women{" "}
+                  <b className="font-mono font-medium text-content-strong">
+                    {csPct(data.femaleShare)}
+                  </b>
+                </span>
+                <span className="flex items-center gap-2 text-[14px] text-content-body">
+                  <i
+                    aria-hidden="true"
+                    className="inline-block h-2.5 w-2.5 rounded-full"
+                    style={{ background: "var(--ink-950)" }}
+                  />
+                  Men{" "}
+                  <b className="font-mono font-medium text-content-strong">
+                    {csPct(1 - data.femaleShare)}
+                  </b>
+                </span>
+              </>
+            ) : undefined
+          }
+        />
 
         {/* Two bars per bucket, women over men, both scaled to the largest
             bucket so the rows are comparable down the column rather than each
             normalised to itself. */}
-        <div className="flex flex-col">
-          {data.ages.map((a) => {
-            const max = Math.max(1, ...data.ages.map((x) => x.impressions));
-            const share = total > 0 ? a.impressions / total : 0;
-            return (
-              <div
-                key={a.label}
-                className="grid grid-cols-[54px_1fr_auto] items-center gap-4 border-b border-hairline py-2.5 last:border-b-0"
-              >
-                <span className="text-[13px] text-content-body">{a.label}</span>
-                <span className="flex flex-col gap-1">
-                  <Bar value={(a.female ?? a.impressions) / max} colour="var(--growth-500)" />
-                  <Bar value={(a.male ?? 0) / max} colour="var(--ink-950)" />
-                </span>
-                <span className="min-w-[52px] text-right font-mono text-[13px] tabular text-content-strong">
-                  {pct(share)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+        <div className={`${CARD} px-6 py-2`}>
+          {data.ages.map((a) => (
+            <div
+              key={a.label}
+              className="grid grid-cols-[56px_1fr_auto] items-center gap-5 border-b border-hairline py-3.5"
+            >
+              <span className="font-mono text-[14px] text-content-strong">{a.label}</span>
+              <span className="flex flex-col gap-1.5">
+                <Bar value={(a.female ?? a.impressions) / ageMax} colour="var(--growth-500)" />
+                <Bar value={(a.male ?? 0) / ageMax} colour="var(--ink-950)" />
+              </span>
+              <span className="min-w-[62px] text-right font-mono text-[14px] tabular text-content-strong">
+                {csRateFlat(total > 0 ? a.impressions / total : null)}
+              </span>
+            </div>
+          ))}
 
-        <div className="mt-2.5 flex items-baseline justify-between">
-          <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-            Share of impressions
-          </span>
-          <span className="font-mono text-[11.5px] text-content-muted">
-            {count(total)} total
-          </span>
+          <div className="flex items-baseline justify-between py-3.5">
+            <span className="font-mono text-[11.5px] uppercase tracking-[0.08em] text-content-muted">
+              Share of impressions
+            </span>
+            <span className="font-mono text-[13px] tabular text-content-muted">
+              {csCount(total).v} total
+            </span>
+          </div>
         </div>
+      </section>
 
-        {/* The warning that keeps this panel honest. A single ad split six ways
-            has single-digit purchases per bucket, so "which age group converts
-            better" is a question this data cannot answer however confidently
-            it renders. */}
-        <p className="mt-2.5 border-l-2 border-hairline-strong pl-3 text-[12px] leading-[1.6] text-content-muted">
-          Impression share, not ROAS. {purchases} purchases split six ways is
-          single digits per bucket — read this for where Meta is putting the ad,
-          not for which age group performs.
-        </p>
-      </Block>
+      <section>
+        <SectionHeading
+          title="Placement"
+          pill="ingested"
+          aside={
+            <span className="font-mono text-[11.5px] uppercase tracking-[0.08em] text-content-muted">
+              Share · CPM · CTR
+            </span>
+          }
+        />
 
-      <Block title="Placement" source="ingested">
-        <div className="mb-1 flex justify-end font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-          Share · CPM · CTR
-        </div>
-        <div className="flex flex-col">
+        <div className={`${CARD} px-6 py-2`}>
           {data.placements.map((p) => {
-            const max = Math.max(1, ...data.placements.map((x) => x.impressions));
-            const share = placeTotal > 0 ? p.impressions / placeTotal : 0;
+            const share = placeTotal > 0 ? p.impressions / placeTotal : null;
             const cpm = p.impressions > 0 ? (p.spend / p.impressions) * 1000 : null;
             const ctr = p.impressions > 0 ? p.clicks / p.impressions : null;
             // Against the same 1.5% reference the CTR card uses, so a reader
@@ -1215,22 +1433,28 @@ function Breakdowns({
             return (
               <div
                 key={p.label}
-                className="grid grid-cols-[minmax(96px,1fr)_1.4fr_auto_auto_auto] items-center gap-3 border-b border-hairline py-2.5 last:border-b-0"
+                className="grid grid-cols-[minmax(110px,1fr)_1.5fr_auto_auto_auto] items-center gap-4 border-b border-hairline py-3.5"
               >
-                <span className="truncate text-[13px] text-content-body">{p.label}</span>
-                <Bar value={p.impressions / max} colour="var(--ink-950)" />
-                <span className="min-w-[52px] text-right font-mono text-[13px] tabular text-content-strong">
-                  {pct(share)}
+                <span className="truncate text-[14px] text-content-strong">{p.label}</span>
+                {/* Grey rather than black where the CTR is failing: the row is
+                    still on the same scale, but the bar stops claiming the
+                    reader's eye for delivery that is not working. */}
+                <Bar
+                  value={p.impressions / placeMax}
+                  colour={verdict === "bad" ? "var(--gray-250)" : "var(--ink-950)"}
+                />
+                <span className="min-w-[62px] text-right font-mono text-[14px] tabular text-content-strong">
+                  {csRateFlat(share)}
                 </span>
-                <span className="min-w-[56px] text-right font-mono text-[12px] tabular text-content-muted">
-                  {money(cpm, currency)}
+                <span className="min-w-[70px] text-right font-mono text-[14px] tabular text-content-muted">
+                  {cpm === null ? DASH : `${csMoney(cpm, currency).v} ${symbolOf(currency)}`}
                 </span>
-                <span className="flex min-w-[58px] items-center justify-end gap-1.5 font-mono text-[12px] tabular text-content-body">
-                  {ratePct(ctr)}
+                <span className="flex min-w-[72px] items-center justify-end gap-2 font-mono text-[14px] tabular text-content-strong">
+                  {csRateFlat(ctr)}
                   {verdict && (
                     <i
                       aria-hidden="true"
-                      className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                      className="h-2 w-2 flex-shrink-0 rounded-full"
                       style={{ background: DOT[verdict] }}
                     />
                   )}
@@ -1239,15 +1463,15 @@ function Breakdowns({
             );
           })}
         </div>
-      </Block>
-    </>
+      </section>
+    </div>
   );
 }
 
 /** One bar on a shared scale. Rounded, so a near-zero row still reads. */
 function Bar({ value, colour }: { value: number; colour: string }) {
   return (
-    <span className="block h-[13px] overflow-hidden rounded-full bg-gray-100">
+    <span className="block h-[10px] overflow-hidden rounded-full bg-gray-100">
       <span
         className="block h-full rounded-full"
         style={{ width: `${Math.max(1.5, Math.min(100, value * 100)).toFixed(1)}%`, background: colour }}
@@ -1256,6 +1480,13 @@ function Bar({ value, colour }: { value: number; colour: string }) {
   );
 }
 
+/**
+ * A titled section on the Overview tab, in the same chrome the Breakdowns use.
+ *
+ * `source` is the provenance pill, and it is never decorative: "ingested"
+ * means the chart under it is drawn from data, "static" and "not ingested"
+ * mean it is drawn from the absence of it, and the two must not look alike.
+ */
 function Block({
   title,
   source,
@@ -1263,19 +1494,13 @@ function Block({
 }: {
   title: string;
   source: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
+  const live = source === "ingested" || /measured/.test(source);
   return (
-    <section className="flex min-w-0 flex-col gap-2.5">
-      <div className="flex flex-wrap items-baseline gap-2.5">
-        <h5 className="m-0 text-[12.5px] font-semibold tracking-heading text-content-strong">
-          {title}
-        </h5>
-        <span className="rounded-xs border border-hairline-strong px-1.5 py-px font-mono text-[9px] uppercase tracking-[0.09em] text-content-muted">
-          {source}
-        </span>
-      </div>
-      {children}
+    <section className="min-w-0">
+      <SectionHeading title={title} pill={source} live={live} />
+      <div className={`${CARD} px-5 py-4`}>{children}</div>
     </section>
   );
 }

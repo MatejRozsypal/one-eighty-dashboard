@@ -21,6 +21,7 @@ import { useMemo, useRef, useState } from "react";
 import type { AdView } from "@/lib/creative/view";
 import { focusLabel } from "@/lib/creative/vocabulary";
 import { AdDetail } from "@/components/creative/AdDetail";
+import type { RangeLabel } from "@/lib/params";
 import { ConfidenceChip, SpendBar, Tag, money, pct, ratePct, roas } from "@/components/creative/primitives";
 
 const ALL = "*";
@@ -78,7 +79,7 @@ export function CreativeGrid({
   directionalPurchases: number;
   focus?: GridFocus | null;
   /** The period the grid is showing, passed on to the detail panel's header. */
-  rangeLabel?: string | null;
+  rangeLabel?: RangeLabel | null;
 }) {
   // The display stand-in sets an infinite target, which is how "nobody has set
   // a line" arrives here. The detail panel's verdict dots key off this.

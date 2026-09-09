@@ -59,9 +59,9 @@ const CONFIDENCE_STYLES: Record<Confidence, string> = {
 export function ConfidenceChip({ level }: { level: Confidence }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xs px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] ${CONFIDENCE_STYLES[level]}`}
+      className={`inline-flex items-center gap-2 whitespace-nowrap rounded-pill px-3 py-1.5 font-mono text-[12px] font-medium uppercase tracking-[0.08em] ${CONFIDENCE_STYLES[level]}`}
     >
-      <span aria-hidden="true" className="h-1 w-1 rounded-full bg-current" />
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
       {CONFIDENCE_LABELS[level]}
     </span>
   );
@@ -103,15 +103,15 @@ export function Tag({
 }) {
   if (!value) {
     return (
-      <span className="whitespace-nowrap rounded-xs border border-dashed border-hairline-strong px-1.5 py-0.5 text-[10.5px] text-content-muted">
+      <span className="whitespace-nowrap rounded-pill border border-dashed border-hairline-strong px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.08em] text-content-muted">
         {missing} ?
       </span>
     );
   }
   return (
     <span
-      className={`whitespace-nowrap rounded-xs px-1.5 py-0.5 text-[10.5px] ${
-        tone === "made" ? "bg-info/10 text-info" : "bg-gray-100 text-content-muted"
+      className={`whitespace-nowrap rounded-pill px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.08em] ${
+        tone === "made" ? "bg-info/10 text-info" : "bg-gray-100 text-content-body"
       }`}
     >
       {value}

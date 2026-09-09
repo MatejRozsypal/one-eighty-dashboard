@@ -17,6 +17,7 @@ import { getClientsIncludingInactive, detectRegistryDrift } from "@/lib/clients"
 import { getSourceFreshness, getPipelineRuns } from "@/lib/queries/health";
 import { KNOWN_CAVEATS } from "@/lib/metrics";
 import { optional } from "@/lib/queries/errors";
+import { probeClickUp } from "@/lib/creative/clickup";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
@@ -69,13 +70,16 @@ export default async function HealthPage() {
 
   const clients = await getClientsIncludingInactive();
 
-  const [freshness, drift, runs] = await Promise.all([
+  const [freshness, drift, runs, clickup] = await Promise.all([
     getSourceFreshness(clients),
     optional(
       () => detectRegistryDrift(clients.filter((c) => c.status === "active")),
       []
     ),
     getPipelineRuns(12),
+    // Live, on every load. The alternative is a cached verdict, and a cached
+    // "working" is exactly the thing that was wrong for a day.
+    probeClickUp(),
   ]);
 
   const checkedAt = new Date().toLocaleString("en-US", {
@@ -121,6 +125,31 @@ export default async function HealthPage() {
             ))}
           </section>
         )}
+
+        {/* ── Credentials that are not the warehouse's ───────────────────
+            Source freshness below answers "did data land". This answers "can
+            the app still talk to ClickUp", which nothing else on any screen
+            asks: the Notes tab reports a rejected token accurately, but only
+            on an ad that happens to be mapped to a task, and most are not. */}
+        <section
+          className={`flex flex-col gap-2 rounded-card border p-[16px_20px] ${
+            clickup.ok
+              ? "border-hairline bg-surface-card shadow-sm"
+              : "border-warning/[0.38] bg-[#FFFBF4]"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Eyebrow>ClickUp</Eyebrow>
+            <Badge variant={clickup.ok ? "neutral" : "outline"} size="sm" dot>
+              {clickup.ok ? "Connected" : clickup.configured ? "Rejected" : "Not set"}
+            </Badge>
+          </div>
+          <p className="m-0 max-w-[80ch] text-[12.5px] leading-[1.6] text-content-body">
+            {clickup.ok
+              ? `The token authenticates as ${clickup.user ?? "an unnamed account"}. Creative notes, comments and task activity are readable.`
+              : clickup.problem}
+          </p>
+        </section>
 
         <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">

@@ -219,3 +219,23 @@ export const PRESET_LABELS: Record<PresetKey, string> = {
   "12m": "Last 12 months",
   all: "All time",
 };
+
+/**
+ * Whole months the range covers, for the queries that take a month count
+ * rather than two dates.
+ *
+ * Growth, cohorts and the cohort grid are monthly by construction — a cohort
+ * is a month, and a month-over-month series has nothing to say about half of
+ * one. They took a fixed `monthsBack` and therefore ignored the date picker
+ * entirely, which is why those screens used to carry no picker at all. This
+ * is the translation: the reader picks a range, those screens read the months
+ * inside it.
+ *
+ * Floors at 2, because a single month is not a series and a one-month cohort
+ * grid has nothing to compare against.
+ */
+export function monthsInRange(range: DateRange): number {
+  const [fy, fm] = range.from.split("-").map(Number);
+  const [ty, tm] = range.to.split("-").map(Number);
+  return Math.max(2, (ty - fy) * 12 + (tm - fm) + 1);
+}

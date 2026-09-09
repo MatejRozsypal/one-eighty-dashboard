@@ -21,6 +21,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import { getInventory } from "@/lib/queries/inventory";
 import {
   buildReorderPlan,
@@ -52,10 +53,17 @@ export default async function BuyingPlanPage({
   const money = (v: number | null) => formatMoney(v, client.currency);
 
   const header = (
-    <Header
-      eyebrow={pageEyebrow("/inventory/buying", client.name)}
-      title="Buying plan"
-    />
+    <>
+      <Header
+        eyebrow={pageEyebrow("/inventory/buying", client.name)}
+        title="Buying plan"
+      />
+      {/* Stock is a reading of right now, not of a period. The bar is here
+          because the range is global view state — set it here and it is the
+          period Orders opens on — and `scope` says plainly that it does not
+          filter this page. */}
+      <PageControls client={client} params={params} scope="current stock" />
+    </>
   );
 
   if (rows.length === 0) {

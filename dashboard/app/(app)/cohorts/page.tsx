@@ -15,6 +15,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import { getCohorts } from "@/lib/queries/cohorts";
 import {
   getCohortGrid,
@@ -93,10 +94,13 @@ export default async function CohortsPage({
   const mature = cohorts.filter((c) => c.isMature);
 
   const header = (
-    <Header
-      eyebrow={pageEyebrow("/cohorts", client.name)}
-      title="Cohorts"
-    />
+    <>
+      <Header
+        eyebrow={pageEyebrow("/cohorts", client.name)}
+        title="Cohorts"
+      />
+      <PageControls client={client} params={params} scope="cohort window, set below" />
+    </>
   );
 
   if (cohorts.length === 0) {

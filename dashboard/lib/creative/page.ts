@@ -23,7 +23,7 @@ import {
 import { getCreativeSettings, listConfirmedMappings, toDisplayThresholds, toThresholds, type StoredCreativeSettings } from "@/lib/creative/store";
 import { accountContext, type AccountContext, type Components } from "@/lib/creative/model";
 import { parseViewParams, type ViewParams } from "@/lib/params";
-import { signMany } from "@/lib/creative/assets";
+import { signMany, signManyDownloads } from "@/lib/creative/assets";
 import { toAdView, type AdView } from "@/lib/creative/view";
 import type { CreativeThresholds } from "@/lib/creative/stats";
 
@@ -115,16 +115,22 @@ export async function buildAdViews(
   thresholds: CreativeThresholds
 ): Promise<AdView[]> {
   const assets = ctx.data.ads.map((ad) => ctx.assets.get(ad.adId));
-  const [thumbs, fulls] = await Promise.all([
+  const [thumbs, fulls, downloads] = await Promise.all([
     signMany(assets.map((a) => a?.thumbUri ?? null)),
     signMany(assets.map((a) => a?.assetUri ?? null)),
+    signManyDownloads(
+      ctx.data.ads.map((ad, i) => ({
+        uri: assets[i]?.assetUri ?? null,
+        filename: ad.adName,
+      }))
+    ),
   ]);
 
   return ctx.data.ads.map((ad, i) =>
     toAdView(
       ad,
       assets[i],
-      { thumbUrl: thumbs[i], assetUrl: fulls[i] },
+      { thumbUrl: thumbs[i], assetUrl: fulls[i], downloadUrl: downloads[i] },
       ctx.account.meanRoas,
       ctx.account.spend,
       thresholds

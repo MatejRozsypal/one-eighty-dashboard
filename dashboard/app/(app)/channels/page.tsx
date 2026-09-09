@@ -13,6 +13,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
@@ -72,6 +73,7 @@ export default async function ChannelsPage({
         eyebrow={pageEyebrow("/channels", client.name)}
         title="Channels (GA4)"
       />
+      <PageControls client={client} params={params} scope="no source connected" />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <div className="flex flex-col items-start gap-3.5 rounded-card border border-dashed border-hairline-strong bg-paper p-[20px] lg:flex-row lg:p-[20px_24px]">

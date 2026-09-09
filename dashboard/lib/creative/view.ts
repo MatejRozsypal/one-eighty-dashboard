@@ -83,6 +83,12 @@ export interface AdView {
   /** Signed, short-lived. Null when nothing has been mirrored to the bucket. */
   thumbUrl: string | null;
   assetUrl: string | null;
+  /**
+   * The same object, signed to arrive as an attachment named after the ad.
+   * Separate from `assetUrl` because a `<a download>` on a cross-origin link is
+   * ignored, and every signed URL is cross-origin.
+   */
+  downloadUrl: string | null;
   assetKind: string | null;
   /** Width over height of the creative as served. Null when unrecorded. */
   aspectRatio: number | null;
@@ -162,7 +168,7 @@ export function retentionCurve(
 export function toAdView(
   ad: AdRow,
   asset: CreativeAsset | undefined,
-  signed: { thumbUrl: string | null; assetUrl: string | null },
+  signed: { thumbUrl: string | null; assetUrl: string | null; downloadUrl: string | null },
   accountMeanRoas: number,
   accountSpend: number,
   t: CreativeThresholds
@@ -221,6 +227,7 @@ export function toAdView(
 
     thumbUrl: signed.thumbUrl,
     assetUrl: signed.assetUrl,
+    downloadUrl: signed.downloadUrl,
     assetKind: asset?.assetKind ?? null,
     aspectRatio: asset?.aspectRatio ?? null,
     assetWidth: asset?.assetWidth ?? null,

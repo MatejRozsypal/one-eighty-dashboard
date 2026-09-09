@@ -12,6 +12,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import { getGoalActuals, getGoals } from "@/lib/queries/goals";
 import { GOAL_METRICS, GOAL_METRIC_KEYS, type GoalMetric } from "@/lib/goals/store";
 import {
@@ -127,7 +128,10 @@ export default async function GoalsPage({
   // calendar month, and letting the range picker move it would let someone read
   // "March's goal" against April's numbers.
   const today = new Date().toISOString().slice(0, 10);
-  const year = Number(today.slice(0, 4));
+  // The year the selected range ends in, so the picker reaches this screen
+  // too — goals are annual, so a range is read as "which year", not as a
+  // window. Picking any range inside 2025 shows the 2025 goals.
+  const year = Number(params.range.to.slice(0, 4));
   const thisMonth = `${today.slice(0, 7)}-01`;
 
   const [goals, actuals] = await Promise.all([
@@ -154,6 +158,7 @@ export default async function GoalsPage({
         eyebrow={pageEyebrow("/goals", client.name)}
         title="Goals"
       />
+      <PageControls client={client} params={params} />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {!anyTarget && (

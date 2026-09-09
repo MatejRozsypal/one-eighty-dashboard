@@ -9,6 +9,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import { getLifetimeSummary, getTopCustomers } from "@/lib/queries/lifetime";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { optional } from "@/lib/queries/errors";
@@ -83,6 +84,7 @@ export default async function CustomersPage({
         eyebrow={pageEyebrow("/customers", client.name)}
         title="Customers"
       />
+      <PageControls client={client} params={params} scope="lifetime" />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {/*

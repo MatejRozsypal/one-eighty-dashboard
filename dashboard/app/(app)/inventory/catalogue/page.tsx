@@ -14,6 +14,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import { getInventory } from "@/lib/queries/inventory";
 import { stockState, type StockState } from "@/lib/inventory/model";
 import { formatNumber } from "@/lib/currency";
@@ -37,10 +38,13 @@ export default async function CataloguePage({
   const { rows, summary } = await getInventory(client.clientId);
 
   const header = (
-    <Header
-      eyebrow={pageEyebrow("/inventory/catalogue", client.name)}
-      title="Catalogue"
-    />
+    <>
+      <Header
+        eyebrow={pageEyebrow("/inventory/catalogue", client.name)}
+        title="Catalogue"
+      />
+      <PageControls client={client} params={params} scope="current stock" />
+    </>
   );
 
   if (rows.length === 0) {

@@ -28,7 +28,7 @@ import { buildAdViews, loadCreativeContext } from "@/lib/creative/page";
 import { winnerEconomics } from "@/lib/creative/model";
 import { CONFIRM_THRESHOLD, propose } from "@/lib/creative/matching";
 import { formatMoney } from "@/lib/currency";
-import { comparisonLabel } from "@/lib/params";
+import { comparisonLabel, rangeLabel } from "@/lib/params";
 import { delta } from "@/lib/period";
 import { money, pct, roas } from "@/components/creative/primitives";
 import type { AdView } from "@/lib/creative/view";
@@ -203,6 +203,7 @@ export default async function CreativesPage({
               targetCpa={display.targetCpa}
               directionalPurchases={display.directionalPurchases}
               focus={focus}
+              rangeLabel={rangeLabel(ctx.params)}
             />
           </>
         )}

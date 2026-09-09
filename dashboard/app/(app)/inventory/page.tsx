@@ -23,6 +23,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import { getInventory } from "@/lib/queries/inventory";
 import {
   buildExceptions,
@@ -57,10 +58,13 @@ export default async function StockHealthPage({
   const qs = params.clientId ? `?client=${params.clientId}` : "";
 
   const header = (
-    <Header
-      eyebrow={pageEyebrow("/inventory", client.name)}
-      title="Stock health"
-    />
+    <>
+      <Header
+        eyebrow={pageEyebrow("/inventory", client.name)}
+        title="Stock health"
+      />
+      <PageControls client={client} params={params} scope="current stock" />
+    </>
   );
 
   if (rows.length === 0) {

@@ -11,6 +11,7 @@
  */
 
 import {
+  PRESET_LABELS,
   presetRange,
   resolvePeriod,
   type ComparisonMode,
@@ -116,6 +117,26 @@ export function viewQuery(params: ViewParams): string {
   q.set("compare", params.comparisonMode);
   if (params.displayCurrency !== "native") q.set("currency", params.displayCurrency);
   return q.toString();
+}
+
+/**
+ * What period the reader is looking at, in one chip's worth of words.
+ *
+ * A preset says its own name; a custom range says its two dates, because
+ * "Custom" tells the reader nothing they did not already know. The detail
+ * panel needs this: every number on it is scoped to the picker at the top of
+ * the page, and a panel that opens over the page hides the picker that set it.
+ */
+export function rangeLabel(params: ViewParams): string {
+  if (params.presetKey !== "custom") return PRESET_LABELS[params.presetKey];
+  const day = (iso: string) =>
+    new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  return `${day(params.range.from)} – ${day(params.range.to)}`;
 }
 
 /** Short label for a delta chip, e.g. "vs prev 30d". */

@@ -345,3 +345,80 @@ export async function getActivity(taskId: string): Promise<TaskActivity> {
     statuses: history,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Is the credential actually working?
+// ---------------------------------------------------------------------------
+
+export interface ClickUpProbe {
+  /** True only when ClickUp answered a real request. */
+  ok: boolean;
+  /** Whether the variable is set at all, which is a different failure. */
+  configured: boolean;
+  /** Who the token authenticates as, when it works. */
+  user: string | null;
+  /** What went wrong, in the words the person fixing it needs. */
+  problem: string | null;
+}
+
+/**
+ * One live call, to answer "is ClickUp working" without opening an ad.
+ *
+ * ── Why this is on the health page ────────────────────────────────────────
+ * The Notes tab already reports each failure precisely, but only to somebody
+ * who has opened an ad that happens to be mapped to a task — and most ads are
+ * not mapped, so the far more common message there is "this ad has no task",
+ * which looks identical to a broken integration from the outside. That gap is
+ * how a rejected token went unnoticed: the panel said something reasonable on
+ * every ad anybody clicked.
+ *
+ * `GET /user` is the cheapest call that distinguishes all four states — not
+ * set, set but rejected, set and valid, and ClickUp itself being down — and it
+ * touches no task, so it works on a deployment where nothing is mapped yet.
+ *
+ * The token's own identity is reported because a workspace credential that
+ * belongs to somebody who has left is valid right up to the day it is not.
+ */
+export async function probeClickUp(): Promise<ClickUpProbe> {
+  if (!clickUpConfigured()) {
+    return {
+      ok: false,
+      configured: false,
+      user: null,
+      problem:
+        "CLICKUP_API_TOKEN is not set on this deployment. Creative notes and " +
+        "activity are unavailable until it is.",
+    };
+  }
+
+  try {
+    const data = await call<{ user?: { username?: string; email?: string } }>("/user");
+    return {
+      ok: true,
+      configured: true,
+      user: who(data.user) ?? null,
+      problem: null,
+    };
+  } catch (error) {
+    if (error instanceof ClickUpError) {
+      return {
+        ok: false,
+        configured: true,
+        user: null,
+        problem:
+          error.status === 401
+            ? "ClickUp rejected the token (401). The variable is set but the " +
+              "value is not accepted — re-set it from Secret Manager " +
+              "(clickup-api-token), then redeploy: an environment change does " +
+              "not reach a build that already exists."
+            : `ClickUp refused the request (${error.status}).`,
+      };
+    }
+    return {
+      ok: false,
+      configured: true,
+      user: null,
+      problem: `Could not reach ClickUp: ${(error as Error).message}`,
+    };
+  }
+}

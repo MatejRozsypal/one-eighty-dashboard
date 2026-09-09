@@ -16,6 +16,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import {
   getFirstProductRepeat,
   getProductJourney,
@@ -60,6 +61,7 @@ export default async function RepurchasePage({
         eyebrow={pageEyebrow("/repurchase", client.name)}
         title="Repurchase"
       />
+      <PageControls client={client} params={params} scope="lifetime" />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {/*

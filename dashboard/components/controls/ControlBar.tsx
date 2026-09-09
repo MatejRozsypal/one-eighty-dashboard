@@ -43,6 +43,7 @@ export function ControlBar({
   nativeCurrency,
   displayCurrency,
   conversion,
+  scope,
 }: {
   range: DateRange;
   presetKey: PresetKey | "custom";
@@ -51,6 +52,14 @@ export function ControlBar({
   nativeCurrency: string;
   displayCurrency: string;
   conversion: ConversionCoverage | null;
+  /**
+   * Set on a page whose figures are NOT bounded by the selected range — a
+   * lifetime summary, current stock, a cohort grid. The picker still belongs
+   * there: the range is global view state and it is the period you carry to
+   * the next screen. What must not happen is a page implying the filter was
+   * applied to what is on it, so it says what it is really on instead.
+   */
+  scope?: string | null;
 }) {
   // A client already trading in the rollup currency has nothing to convert, so
   // the control is omitted rather than shown reading "CZK → CZK 🔒", which is
@@ -81,6 +90,13 @@ export function ControlBar({
     <div className="z-20 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline lg:bg-paper">
       <div className="page-frame flex flex-wrap items-center gap-x-4 gap-y-2 px-5 lg:px-8">
       <DateRangeControl range={range} presetKey={presetKey} />
+
+      {scope && (
+        <span className="inline-flex items-center gap-1.5 rounded-pill border border-hairline bg-gray-50 px-2.5 py-1 text-[11.5px] text-content-muted">
+          <span aria-hidden="true" className="h-1 w-1 rounded-full bg-content-muted" />
+          This page: {scope}
+        </span>
+      )}
 
       <span aria-hidden="true" className="hidden h-5 w-px bg-hairline lg:block" />
 

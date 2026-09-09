@@ -11,7 +11,8 @@
     "type-check": "tsc --noEmit",
     "check:creative": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-engine.ts",
     "check:queries": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-queries.ts",
-    "check:warehouse": "tsx --tsconfig scripts/tsconfig.json scripts/check-warehouse.ts"
+    "check:warehouse": "tsx --tsconfig scripts/tsconfig.json scripts/check-warehouse.ts",
+    "check:clickup": "tsx --tsconfig scripts/tsconfig.json scripts/probe-clickup.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.0",

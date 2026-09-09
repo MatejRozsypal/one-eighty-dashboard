@@ -28,6 +28,7 @@ import {
   pct,
 } from "@/components/creative/primitives";
 import { buildAdViews, loadCreativeContext } from "@/lib/creative/page";
+import { rangeLabel } from "@/lib/params";
 import { getConcepts, getPersonas } from "@/lib/queries/creative";
 import { groupBy, read, sum, UNTAGGED } from "@/lib/creative/model";
 import { moneyVerdict, unjudgedVerdict } from "@/lib/creative/verdict";
@@ -312,7 +313,12 @@ export default async function ConceptsPage({
 
       <section>
         <SectionHead title="Live concepts" eyebrow="sorted by spend · click a creative to open it" />
-        <ConceptList cards={cards} currency={currency} clientId={client.clientId} />
+        <ConceptList
+          cards={cards}
+          currency={currency}
+          clientId={client.clientId}
+          rangeLabel={rangeLabel(ctx.params)}
+        />
       </section>
 
       {/* ── The bank ──────────────────────────────────────────────────────

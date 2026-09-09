@@ -105,3 +105,62 @@ export function assetServingConfigured(): boolean {
     process.env.GCP_PROJECT_ID && process.env.GCP_SERVICE_ACCOUNT_KEY_BASE64
   );
 }
+
+/**
+ * Sign one object so that following the link SAVES it rather than plays it.
+ *
+ * ── Why this is a second signature and not the same URL ────────────────────
+ * `<a download>` is ignored cross-origin, and a signed GCS URL is always
+ * cross-origin. A download button built on `ad.assetUrl` therefore does not
+ * download anything: it navigates the tab to the video and leaves the reader
+ * looking at a bare player with the dashboard gone. Fetching the bytes into a
+ * blob instead needs a CORS rule on the bucket that does not exist.
+ *
+ * What does work is asking the signature itself for the header, which is what
+ * `responseDisposition` does — the object comes back as an attachment with a
+ * filename, from a plain link, with no CORS involved. The cost is one extra
+ * local signature per ad.
+ *
+ * The filename is the ad's own name, because a folder of `1039281.mp4` is not
+ * something a creative person can work with. Anything that is not a letter,
+ * digit, dash or underscore is collapsed, since this string reaches a
+ * `Content-Disposition` header and a quote inside it would truncate the value.
+ */
+export async function signedDownloadUrl(
+  gsUri: string | null,
+  filename: string
+): Promise<string | null> {
+  if (!gsUri) return null;
+  const parts = parseGsUri(gsUri);
+  if (!parts) return null;
+
+  const storage = client();
+  if (!storage) return null;
+
+  const extension = parts.name.includes(".") ? parts.name.split(".").pop() : null;
+  const stem = filename.replace(/[^\w-]+/g, "_").slice(0, 80) || "creative";
+  const safe = extension ? `${stem}.${extension}` : stem;
+
+  try {
+    const [url] = await storage
+      .bucket(parts.bucket)
+      .file(parts.name)
+      .getSignedUrl({
+        version: "v4",
+        action: "read",
+        expires: Date.now() + TTL_MS,
+        responseDisposition: `attachment; filename="${safe}"`,
+      });
+    return url;
+  } catch (error) {
+    console.warn(`[creative] could not sign a download for ${gsUri}:`, (error as Error).message);
+    return null;
+  }
+}
+
+/** The download signatures for a whole grid, in one pass. */
+export async function signManyDownloads(
+  items: Array<{ uri: string | null; filename: string }>
+): Promise<Array<string | null>> {
+  return Promise.all(items.map((i) => signedDownloadUrl(i.uri, i.filename)));
+}

@@ -10,6 +10,8 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { monthsInRange } from "@/lib/period";
+import { PageControls } from "@/components/controls/PageControls";
 import { getGrowth } from "@/lib/queries/growth";
 import { getYearOverYear } from "@/lib/queries/yoy";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
@@ -54,7 +56,7 @@ export default async function GrowthPage({
   const view = searchParams.view === "yoy" ? "yoy" : "mom";
 
   const [{ months, avgMonthlyGrowth, cumulativeGrowth }, yoy] = await Promise.all([
-    getGrowth(client.clientId, client.currency),
+    getGrowth(client.clientId, client.currency, monthsInRange(params.range)),
     view === "yoy"
       ? getYearOverYear(client.clientId, client.currency)
       : Promise.resolve(null),
@@ -81,6 +83,7 @@ export default async function GrowthPage({
         eyebrow={pageEyebrow("/growth", client.name)}
         title="Growth"
       />
+      <PageControls client={client} params={params} />
 
       <div className="flex flex-wrap items-center gap-2 px-5 pt-4 lg:px-8">
         <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted">

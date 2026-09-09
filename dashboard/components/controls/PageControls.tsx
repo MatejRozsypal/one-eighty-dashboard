@@ -12,13 +12,17 @@
  * Orders → Paid keeps the period you chose. That is also why a view is
  * shareable: the link *is* the state.
  *
- * ── Deliberately not on every page ──────────────────────────────────────────
- * Only pages whose queries actually read the range get this. Customers,
- * Cohorts and Time-between-orders are lifetime or cohort-grained and ignore
- * dates entirely; Channels has no data source connected at all. A date picker
- * there would be a control that changes nothing, which is worse than no
- * control — it invites you to trust a filter that was never applied. Those
- * pages carry a line of copy saying what scope they are on instead.
+ * ── On every data page, and honest where the range does not apply ───────────
+ * It used to be only on pages whose queries read the range, on the grounds
+ * that a picker which changes nothing is worse than no picker. Half of that
+ * was right and half was wrong: the picker is never inert, because the range
+ * is global view state — set it on Customers and it is the period you land on
+ * when you click Orders. What was wrong was leaving the reader to guess.
+ *
+ * So the bar is everywhere, and a page whose figures are not bounded by the
+ * range passes `scope` and says so in the bar. Consistent chrome, no implied
+ * filter. Admin, Settings, Chat and Data health take no bar at all — they are
+ * not readings of a period in any sense.
  */
 
 import { ControlBar } from "@/components/controls/ControlBar";
@@ -30,9 +34,12 @@ import type { ViewParams } from "@/lib/params";
 export async function PageControls({
   client,
   params,
+  scope,
 }: {
   client: Client;
   params: ViewParams;
+  /** What this page is really scoped to, when it is not the selected range. */
+  scope?: string | null;
 }) {
   const coverage =
     client.currency === ROLLUP_CURRENCY
@@ -52,6 +59,7 @@ export async function PageControls({
       nativeCurrency={client.currency}
       displayCurrency={params.displayCurrency}
       conversion={coverage}
+      scope={scope}
     />
   );
 }

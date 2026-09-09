@@ -13,6 +13,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import { getGapStats } from "@/lib/queries/gaps";
 import { formatNumber } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
@@ -37,10 +38,13 @@ export default async function GapsPage({
   const stats = await getGapStats(client.clientId, client.currency);
 
   const header = (
-    <Header
-      eyebrow={pageEyebrow("/gaps", client.name)}
-      title="Time between orders"
-    />
+    <>
+      <Header
+        eyebrow={pageEyebrow("/gaps", client.name)}
+        title="Time between orders"
+      />
+      <PageControls client={client} params={params} scope="lifetime" />
+    </>
   );
 
   if (!stats) {

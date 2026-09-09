@@ -24,10 +24,13 @@ export function ConceptList({
   cards,
   currency,
   clientId,
+  rangeLabel,
 }: {
   cards: ConceptCardData[];
   currency: string;
   clientId: string;
+  /** The period the cards are built from, for the detail panel's header. */
+  rangeLabel?: string | null;
 }) {
   const [open, setOpen] = useState<AdView | null>(null);
 
@@ -42,6 +45,7 @@ export function ConceptList({
           ad={open}
           currency={currency}
           clientId={clientId}
+          rangeLabel={rangeLabel}
           onClose={() => setOpen(null)}
         />
       )}

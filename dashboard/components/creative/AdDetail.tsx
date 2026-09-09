@@ -16,7 +16,7 @@
  * works fully on an untagged ad.
  */
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { addNote, loadBreakdowns, loadNotes } from "@/app/(app)/creative/actions";
 import type { CreativeNote, TaskActivity } from "@/lib/creative/clickup";
@@ -42,6 +42,7 @@ export function AdDetail({
   currency,
   clientId,
   thresholds,
+  rangeLabel,
   onClose,
 }: {
   ad: AdView;
@@ -53,6 +54,12 @@ export function AdDetail({
    * same rule the rest of the product follows.
    */
   thresholds?: { targetCpa: number; targetRoas: number; killRoas: number } | null;
+  /**
+   * The period every number on this panel is scoped to. The panel covers the
+   * page, and with it the picker that set the range — so without this the
+   * reader is looking at a CPA with no idea which weeks produced it.
+   */
+  rangeLabel?: string | null;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"overview" | "breakdowns" | "notes">("overview");
@@ -170,6 +177,12 @@ export function AdDetail({
               {ad.effectiveStatus && <StatusChip status={ad.effectiveStatus} />}
             </div>
           </div>
+          <div className="flex flex-shrink-0 items-center gap-2.5">
+            {rangeLabel && (
+              <span className="hidden rounded-control border border-hairline bg-gray-50 px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted sm:inline">
+                {rangeLabel}
+              </span>
+            )}
           <button
             ref={closeRef}
             onClick={onClose}
@@ -178,6 +191,7 @@ export function AdDetail({
           >
             ×
           </button>
+          </div>
         </header>
 
         {/* ── Overview / Copy / Notes ──────────────────────────────────────
@@ -215,7 +229,7 @@ export function AdDetail({
         {/* The creative stays put across all three tabs — it is the subject of
             every one of them, and re-rendering it per tab would restart a video
             somebody was halfway through. */}
-        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr]">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(360px,42%)_1fr]">
           <Creative ad={ad} />
 
           <div className="flex min-w-0 flex-col gap-6 p-5">
@@ -513,19 +527,24 @@ function Notes({
  * because the element is exactly the media's box.
  */
 function mediaBox(ratio: number | null): CSSProperties {
-  const bounds: CSSProperties = { width: "auto", maxWidth: "100%", maxHeight: "52vh" };
+  // Full column width, height following the creative's own shape. There is no
+  // height cap: the brief was that the preview fills the entire left side, and
+  // a cap is what stops it — a capped box has to give up either the width or
+  // the ratio, and giving up the ratio is the crop this whole change removed.
+  // The panel scrolls, so a tall 9:16 costs a scroll rather than a crop.
+  const bounds: CSSProperties = { width: "100%", maxWidth: "100%" };
   // No stored shape: say nothing about the ratio and let the media's own
   // natural size drive the box. Measured, an explicit 4:5 fallback produced a
   // 420x376 box — neither 4:5 nor the creative's shape — because a fixed width
   // and a height cap cannot both hold. The cost of leaving it out is a small
   // reflow once the poster loads, on the eighteen assets whose shape was never
   // recorded; the cost of guessing is every one of them drawn wrong.
-  return ratio ? { ...bounds, aspectRatio: String(ratio) } : bounds;
+  return ratio ? { ...bounds, aspectRatio: String(ratio) } : { ...bounds, height: "auto" };
 }
 
 function Creative({ ad }: { ad: AdView }) {
-  const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
+  const [feed, setFeed] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
 
   const onTime = useCallback(() => {
@@ -534,125 +553,231 @@ function Creative({ ad }: { ad: AdView }) {
 
   const length = ad.videoLengthSec ?? 0;
 
+  /*
+    ── The creative is the column, not a thumbnail inside it ────────────────
+    Previously this was a 360px column holding a box capped at 52vh, with the
+    media centred in whatever was left. On a 9:16 that produced a stamp about
+    a third of the panel's height, surrounded by grey, next to two screens of
+    numbers — which inverts what the panel is for. The creative is the subject;
+    the numbers are the annotation.
+
+    So the media now takes the column's full width and its own true height,
+    flush to the panel's edge with no padding around it, and everything else
+    on this side sits underneath in a padded footer. There is no height cap
+    (see `mediaBox`): a tall vertical costs a scroll, and a scroll is a much
+    smaller price than a crop or a stamp.
+  */
+  const media =
+    ad.assetUrl && ad.assetKind === "video" ? (
+      <video
+        ref={video}
+        src={ad.assetUrl}
+        poster={ad.thumbUrl ?? undefined}
+        muted
+        playsInline
+        // `preload="none"` is not a micro-optimisation: without it a grid of
+        // forty tiles would pull 600 MB of video the moment the page rendered.
+        preload="none"
+        controls
+        onTimeUpdate={onTime}
+        style={mediaBox(ad.aspectRatio)}
+        className="block bg-ink-950/[0.04] object-contain"
+      />
+    ) : ad.assetUrl ? (
+      // eslint-disable-next-line @next/next/no-img-element -- signed GCS URL;
+      // next/image would cache one that expires within the hour.
+      <img
+        src={ad.assetUrl}
+        alt=""
+        style={mediaBox(ad.aspectRatio)}
+        className="block bg-ink-950/[0.04] object-contain"
+      />
+    ) : (
+      <div className="flex aspect-[4/5] w-full items-center justify-center bg-ink-950/[0.04] px-5 text-center">
+        <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
+          no asset mirrored
+        </span>
+      </div>
+    );
+
   return (
-    <div className="flex flex-col gap-3.5 self-start border-b border-hairline p-5 lg:sticky lg:top-0 lg:border-b-0 lg:border-r">
-      {/*
-        ── The box takes the creative's shape, not the other way round ──────
-        This was a fixed 4:5 box with `object-fit: cover`. Meta's vertical
-        formats are 9:16, so about 28% of every video — the top and bottom of
-        it, where the hook and the call to action live — was cut off before it
-        reached the screen. The files were never cropped; the mirrored mp4s are
-        720x1280 and 1080x1920. Only this rule was.
+    <div className="flex flex-col self-start border-b border-hairline lg:sticky lg:top-0 lg:border-b-0 lg:border-r">
+      {feed ? <FeedPreview ad={ad}>{media}</FeedPreview> : media}
 
-        `aspectRatio` is stored per asset, read from the file at mirror time, so
-        the box is the right shape before the media loads and the panel does not
-        reflow under the reader — a `preload="none"` video does not report its
-        size until somebody presses play.
+      <div className="flex flex-col gap-3.5 p-5">
+        {/* ── The two things you do to a creative that are not reading it ──
+            Look at it as it was served, and take a copy away. Both were
+            missing: the panel showed the raw file and nothing else, so the
+            question "what did this actually look like in feed" had no answer
+            here, and getting the file meant right-clicking a <video> and
+            hoping the context menu offered Save. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {(ad.copyPrimary || ad.copyHeadline || ad.copyCta) && (
+            <button
+              type="button"
+              onClick={() => setFeed((v) => !v)}
+              aria-pressed={feed}
+              className={`rounded-control border px-2.5 py-1.5 text-[12px] font-medium transition-colors duration-fast ${
+                feed
+                  ? "border-accent bg-accent-tint text-content-strong"
+                  : "border-hairline-strong text-content-body hover:bg-gray-100"
+              }`}
+            >
+              Feed preview
+            </button>
+          )}
+          {ad.downloadUrl && (
+            <a
+              href={ad.downloadUrl}
+              className="rounded-control border border-hairline-strong px-2.5 py-1.5 text-[12px] font-medium text-content-body transition-colors duration-fast hover:bg-gray-100"
+            >
+              Download
+            </a>
+          )}
+        </div>
 
-        Height is still capped: a 9:16 at the panel's full width would be about
-        750px tall, which on a laptop is the whole window for one frame. The cap
-        narrows it instead of cropping it.
-
-        Where the shape is unknown — an older row, or an asset we could not
-        reach — no ratio is asserted at all and the media's own natural size
-        drives the box. It reflows once, and it is never drawn in a shape it
-        does not have.
-      */}
-      <div className="flex justify-center">
-        {ad.assetUrl && ad.assetKind === "video" ? (
-          <video
-            ref={video}
-            src={ad.assetUrl}
-            poster={ad.thumbUrl ?? undefined}
-            muted
-            playsInline
-            // `preload="none"` is not a micro-optimisation: without it a grid
-            // of forty tiles would pull 600 MB of video the moment the page
-            // rendered.
-            preload="none"
-            controls
-            onTimeUpdate={onTime}
-            onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
-            style={mediaBox(ad.aspectRatio)}
-            className="rounded-lg border border-hairline bg-gray-50 object-contain shadow-sm"
-          />
-        ) : ad.assetUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- signed GCS
-          // URL; next/image would cache one that expires within the hour.
-          <img
-            src={ad.assetUrl}
-            alt=""
-            style={mediaBox(ad.aspectRatio)}
-            className="rounded-lg border border-hairline bg-gray-50 object-contain shadow-sm"
-          />
-        ) : (
-          <div className="flex aspect-[4/5] max-h-[52vh] w-full items-center justify-center rounded-lg border border-hairline bg-gray-50 px-5 text-center shadow-sm">
-            <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-              no asset mirrored
+        {/* Only when there is something to play. A scrub bar under a
+            placeholder reads as a broken player rather than as an unmirrored
+            asset. */}
+        {ad.assetUrl && ad.assetKind === "video" && length > 0 && (
+          <div className="flex items-center gap-2.5">
+            <span className="h-[5px] flex-1 overflow-hidden rounded-xs bg-gray-100">
+              <span
+                className="block h-full rounded-xs bg-accent transition-[width] duration-100"
+                style={{ width: `${Math.min(100, (t / length) * 100).toFixed(1)}%` }}
+              />
             </span>
+            <span className="min-w-[66px] text-right font-mono text-[11px] tabular text-content-muted">
+              {mmss(t)} / {mmss(length)}
+            </span>
+          </div>
+        )}
+
+        {!ad.assetUrl && (
+          <p className="m-0 text-[12px] leading-[1.55] text-content-muted">
+            Meta&apos;s own URLs expire within hours, so the dashboard serves a
+            copy from our bucket. This one has not been downloaded yet.
+          </p>
+        )}
+
+        {/* ── The spec line ──────────────────────────────────────────────
+            The three facts that qualify the picture above them: what shape it
+            actually is, how much of the account it is holding, and how much
+            weight its numbers can carry. Delivery status used to sit here and
+            has moved up beside the name, where it qualifies the metrics too. */}
+        <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t border-hairline pt-3.5">
+          <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Format</dt>
+          <dd className="m-0 text-right font-mono text-[12px] tabular text-content-body">
+            {ad.assetWidth && ad.assetHeight
+              ? `${ad.assetWidth}×${ad.assetHeight}`
+              : "—"}
+          </dd>
+          <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Spend share</dt>
+          <dd className="m-0 text-right font-mono text-[12px] tabular text-content-body">
+            {pct(ad.spendShare)}
+          </dd>
+          <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Learning</dt>
+          <dd className="m-0 text-right text-[12px] text-content-body">
+            {CONFIDENCE_LABELS[ad.confidence]}
+          </dd>
+        </dl>
+
+        {(ad.clickupUrl || ad.briefUrl) && (
+          <div className="flex flex-wrap gap-3 text-[12.5px]">
+            {ad.clickupUrl && (
+              <a href={ad.clickupUrl} target="_blank" rel="noreferrer" className="text-content-accent underline">
+                ClickUp task
+              </a>
+            )}
+            {ad.briefUrl && (
+              <a href={ad.briefUrl} target="_blank" rel="noreferrer" className="text-content-accent underline">
+                Brief
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** "SHOP_NOW" as something a person would read. */
+function ctaLabel(raw: string): string {
+  const words = raw.toLowerCase().split("_").filter(Boolean);
+  if (!words.length) return raw;
+  return words[0].charAt(0).toUpperCase() + words[0].slice(1) + (words.length > 1 ? ` ${words.slice(1).join(" ")}` : "");
+}
+
+/**
+ * The creative with its copy around it, in the shape the feed puts them.
+ *
+ * ── Why this is assembled here and not fetched from Meta ──────────────────
+ * Meta will render the real thing: `/{ad_id}/previews` returns an iframe that
+ * is pixel-exact, including the profile picture and the current chrome. Two
+ * things rule it out for this panel. It needs a Meta access token in the
+ * dashboard's own environment — the dashboard has never held one, it reads the
+ * warehouse and nothing else, and adding a token to a Vercel app to draw a
+ * preview is a real widening of what a leak of that app would cost. And the
+ * iframe URL expires, so it cannot be signed alongside the asset and rendered
+ * from a server component; it would need a live call per open.
+ *
+ * What this shows instead is the assembly: the primary text above, the media,
+ * then the headline, description and call to action in the bar beneath. That
+ * is the question a creative person is actually asking here — does the hook
+ * survive the truncation, does the headline still make sense under the frame —
+ * and every field is the one Meta is serving, read from the same creative row.
+ *
+ * It is deliberately not dressed up as a real Facebook card. There is no fake
+ * profile picture and no fake engagement row, because a mock that looks exact
+ * invites people to trust the parts that are not.
+ */
+function FeedPreview({ ad, children }: { ad: AdView; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2.5 border-b border-hairline bg-ink-950/[0.02] p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
+          As assembled
+        </span>
+        <span className="text-[11px] text-content-muted">not Meta&apos;s renderer</span>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-hairline bg-surface shadow-sm">
+        {ad.copyPrimary && (
+          <p className="m-0 whitespace-pre-line px-3.5 pb-3 pt-3.5 text-[13px] leading-[1.5] text-content-body">
+            {ad.copyPrimary}
+          </p>
+        )}
+
+        {children}
+
+        {(ad.copyHeadline || ad.copyDescription || ad.copyCta) && (
+          <div className="flex items-center gap-3 border-t border-hairline px-3.5 py-3">
+            <div className="min-w-0 flex-1">
+              {ad.copyHeadline && (
+                <div className="truncate text-[13px] font-medium text-content-strong">
+                  {ad.copyHeadline}
+                </div>
+              )}
+              {ad.copyDescription && (
+                <div className="truncate text-[12px] text-content-muted">
+                  {ad.copyDescription}
+                </div>
+              )}
+            </div>
+            {ad.copyCta && (
+              <span className="flex-shrink-0 rounded-control bg-gray-100 px-2.5 py-1.5 text-[12px] font-medium text-content-strong">
+                {ctaLabel(ad.copyCta)}
+              </span>
+            )}
           </div>
         )}
       </div>
 
-      {/* Only when there is something to play. A scrub bar under a placeholder
-          reads as a broken player rather than as an unmirrored asset. */}
-      {ad.assetUrl && ad.assetKind === "video" && length > 0 && (
-        <div className="flex items-center gap-2.5">
-          <span className="h-[5px] flex-1 overflow-hidden rounded-xs bg-gray-100">
-            <span
-              className="block h-full rounded-xs bg-accent transition-[width] duration-100"
-              style={{ width: `${Math.min(100, (t / length) * 100).toFixed(1)}%` }}
-            />
-          </span>
-          <span className="min-w-[66px] text-right font-mono text-[11px] text-content-muted">
-            {mmss(t)} / {mmss(length)}
-          </span>
-        </div>
-      )}
-
-      {!ad.assetUrl && (
-        <p className="m-0 text-[12px] leading-[1.55] text-content-muted">
-          Meta&apos;s own URLs expire within hours, so the dashboard serves a
-          copy from our bucket. This one has not been downloaded yet.
+      {ad.copyVariants.length > 0 && (
+        <p className="m-0 text-[11.5px] leading-[1.5] text-content-muted">
+          Advantage+ rotates {ad.copyVariants.length + 1} text variants on this ad.
+          The first is shown; the rest are under Overview.
         </p>
-      )}
-
-      {/* ── The spec line ────────────────────────────────────────────────
-          The three facts that qualify the picture above them: what shape it
-          actually is, how much of the account it is holding, and how much
-          weight its numbers can carry. Delivery status used to sit here and
-          has moved up beside the name, where it qualifies the metrics too. */}
-      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t border-hairline pt-3.5">
-        <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Format</dt>
-        <dd className="m-0 text-right font-mono text-[12px] tabular text-content-body">
-          {ad.assetWidth && ad.assetHeight
-            ? `${ad.assetWidth}\u00d7${ad.assetHeight}`
-            : "—"}
-        </dd>
-        <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Spend share</dt>
-        <dd className="m-0 text-right font-mono text-[12px] tabular text-content-body">
-          {pct(ad.spendShare)}
-        </dd>
-        <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">Learning</dt>
-        <dd className="m-0 text-right text-[12px] text-content-body">
-          {CONFIDENCE_LABELS[ad.confidence]}
-        </dd>
-      </dl>
-
-      {(ad.clickupUrl || ad.briefUrl) && (
-        <div className="flex flex-wrap gap-3 text-[12.5px]">
-          {ad.clickupUrl && (
-            <a href={ad.clickupUrl} target="_blank" rel="noreferrer" className="text-content-accent underline">
-              ClickUp task
-            </a>
-          )}
-          {ad.briefUrl && (
-            <a href={ad.briefUrl} target="_blank" rel="noreferrer" className="text-content-accent underline">
-              Brief
-            </a>
-          )}
-        </div>
       )}
     </div>
   );

@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
+import { PageControls } from "@/components/controls/PageControls";
 import { getRepeatTiming } from "@/lib/queries/repeatTiming";
 import { optional } from "@/lib/queries/errors";
 import { formatNumber, formatPercent } from "@/lib/currency";
@@ -54,6 +55,14 @@ export default async function RepeatTimingPage({
       <Header
         eyebrow={pageEyebrow("/repurchase/timing", client.name)}
         title="Repeat timing"
+      />
+      {/* The horizon below is this page's own control; the range is not.
+          The note under the horizon buttons already said "ignores the date
+          range above", which was written against a bar that was not there. */}
+      <PageControls
+        client={client}
+        params={params}
+        scope="the horizon set below"
       />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">

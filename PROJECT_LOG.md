@@ -4,6 +4,144 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-09-09 (evening) — Creative Engine: the videos play, and the tags arrive
+
+Three things the morning's handover listed as open, and one defect they made
+visible. All of it against Manami's live account.
+
+### The videos were never unreachable — they were on Instagram
+
+Sixty-nine of seventy video ads had a poster frame and a play badge that did
+nothing. The morning session concluded there was no path to the source, and
+against the paths it tried there was not: `/{video_id}` answers `(#10)` for a
+system user, the page post behind `effective_object_story_id` needs
+`pages_read_engagement` at Advanced Access, and `/act_X/advideos` — the ad
+account's own library, the workaround that fixed this for other accounts —
+lists **124 videos and not one of the 46 the ads run**.
+
+That last number is the finding rather than the dead end. A video listed by an
+ad but absent from the account that runs it was never uploaded to that account:
+it was published to Instagram and promoted from there.
+`effective_instagram_media_id` leads to it, and `media_url` on an IG media
+object comes back for the *same token that was refused everywhere else* —
+`instagram_basic` already covers the business account's own media.
+
+| | before | after |
+|---|---:|---:|
+| Manami video ads with an mp4 | 1 of 70 | **66 of 70** |
+| Dobias | — | 12 of 12 |
+| Venev | — | 3 of 3 |
+
+The four that remain are Facebook page posts with no Instagram twin. Nothing
+short of Advanced Access reaches those.
+
+Duration comes off the mp4's own `mvhd` box, because IG does not report one and
+both the retention curve and the scrub bar are gated on it — a video with no
+length silently loses the chart that says whether anyone watched. The IG
+progressive render is an SD encode, ~1 MB for thirty seconds rather than the
+15 MB the sizing note in runbook 28 assumes.
+
+### Half the account was untagged because a field is filled in by hand
+
+`Creative ID` is typed into ClickUp after an ad goes live, and on a real account
+it mostly is not: 15 of 65 Manami tasks carry one. The tag rebuild had no other
+way in, so **72% of the last thirty days' spend was untagged** while the
+pipeline knew exactly what every one of those ads was — the task was named after
+the ad, and the ad was launched under that name.
+
+An exact match on the normalised name is now a second arm of the join. It is not
+a guess about which creative this is; it is the same string, typed once, under
+`Persona - Description | STAGE | FORMAT | DATE | vN | MKT`. The key strips
+diacritics and punctuation and treats a capital `I` as the pipe it stands in
+for. Dates, stages and version numbers are deliberately left alone.
+
+Runbook 27 said "never auto-apply below 1.0", which is why this was not done
+first. What that rule is really protecting against is the *near* match, and
+those still go to a person: every one on this account — `13AUG` against `4SEP`,
+`V1` against `V2` — turned out to be a genuinely different creative.
+
+| Thirty-day spend | before | after |
+|---|---:|---:|
+| Manami, carries a ClickUp task | 28% | **68%** |
+| Manami, carries a concept | 28% | 55% |
+| Manami, carries persona + angle + offer | 28% | 53% |
+| Venev, carries a task | 0% | **78%** |
+
+### A double count the name match uncovered
+
+Two Manami pipeline tasks carried the same ad id in `Creative ID` — what a
+duplicated task leaves behind. `creative_tags` is LEFT JOINed onto daily ad
+insights by `mart_creative_perf`, so the second row did not read as a duplicate
+tag: it **doubled that ad's spend, revenue and impressions** on every Creative
+screen. Manami's thirty-day total falls from 98,094 to 97,850 Kc. One row per
+ad is now enforced in the rebuild, and the collision is reported rather than
+silently resolved.
+
+### Three of the five screens were gated off, and looked unbuilt
+
+Manami has no kill line, target ROAS or CPA on file, and Concepts, Breakdown and
+Production answered that with a single warning strip on an otherwise blank page.
+The Concepts tab in particular reads as never built. It was built, and it
+matches the design artifact exactly — it was simply never rendered.
+
+The strip's own wording gave it away: it says the delivery figures are real and
+only the colour coding is off, which was a promise the screens were not keeping.
+Delivery is not a judgement. Spend, purchases, angle coverage, the concept
+roster, interval widths and what a creative cost are all measured, and they are
+exactly what somebody looks at while deciding what the kill line should be.
+
+So those three now render on the display stand-ins and only the threshold-shaped
+claims come off: a concept's verdict resolves to a new `unjudged` state stated
+plainly, rather than to `hold` — which is what a kill line of zero and an
+infinite target otherwise produce; the interval chart drops its zones and lines
+and reports the interval instead; the weekly review and the cost-to-first-winner
+tiles are withheld whole, because every row of one is a Scale/Kill against lines
+nobody set and every tile of the other counts winners, of which there are none
+by definition.
+
+**The interval chart could not simply be passed the stand-ins.** Its x-scale is
+derived from `targetRoas`, so an infinite target collapses every bar to zero
+width — without erroring, on a chart nobody would think to distrust.
+`check:creative` now renders both charts through `react-dom/server` and asserts
+that no `Infinity` or `NaN` reaches an SVG attribute.
+
+Velocity stays gated. Every number on it is derived from the target CPA, so
+there is genuinely nothing to show without one.
+
+### What is still missing, and it is all in ClickUp
+
+The engine now reads everything ClickUp holds. What it does not hold:
+
+1. **Six of nine Manami concepts have no Angle, Offer or Persona** — `Risk-free
+   tester`, `Syntetika vs. prirodni — reveal`, `Vune nemusi kricet` and three
+   with no ads attached. Filling those three takes angle coverage from three of
+   eighteen to six and lifts tagged spend past the Breakdown screen's 60% floor.
+2. **27 ads holding 32% of thirty-day spend have no pipeline task at all** —
+   `Testovaci sada MAN | BOF | DYN | 14AUG`, `Testovaci sada | MOF | STAT |
+   14AUG` and `BlindBuySkeptic I TOF I DYN I 29JULY-26` are the largest. They
+   were launched without a brief; there is nothing to inherit from.
+3. **`DYN I UGC Dagmar unboxing I 29APR I CZ`** has a task and 12,869 Kc of
+   spend, and the task's Concept relationship is empty.
+4. **Manami's three thresholds are still unset**, so nothing is judged. Runbook
+   29 section 6 has the agreed figures: kill 1.80, target 2.50, CPA 527.
+
+### Files changed
+
+- `infra/creative_assets_job.py` — Instagram fallback, `mp4_duration`.
+- `infra/bigquery/224_sp_rebuild_creative_tags.sql` — `ref.creative_name_key`,
+  the `name_exact` arm, one-row-per-ad, two new sync issues. Applied.
+- `dashboard/app/(app)/creative/{concepts,breakdown,production}/page.tsx`,
+  `components/creative/{BreakdownCharts,primitives}.tsx`,
+  `lib/creative/verdict.ts` — the unjudged path.
+- `dashboard/scripts/check-creative-engine.ts` + `scripts/tsconfig.json`.
+- `runbooks/27`, `28`, `29` — corrected where they were wrong.
+
+**Not deployed.** The app changes are committed on
+`claude/creative-tab-video-tagging-8a1d5f` and production still serves the old
+build; `npx vercel --prod` from the repo root is what moves it.
+
+---
+
 ## 2026-09-09 — Creative Engine: built, deployed, and fed with real data
 
 The whole product from `CREATIVE_ENGINE_BRIEF.md`, plus the rollout. It is live

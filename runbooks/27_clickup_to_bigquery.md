@@ -181,13 +181,60 @@ graduation gives the same creative a second `ad_id`.
 1. Read stg_clickup_tasks for list_kind = 'ad_pipeline'.
 2. Split the Creative ID field on commas. Trim. Drop empties and drop the literal 'Creative ID'.
 3. For each ad_id: match_method = 'creative_id', match_confidence = 1.0.
-4. Ads in stg_meta_ad_insights with no match go to the unmapped queue. Score them:
-     exact ad_name equality with a task name       -> 'name_exact', 0.95
+4. For every ad still unmatched, compare ref.creative_name_key(ad_name) with the
+   same key over task names. An exact hit is 'name_exact', 0.95, and IS applied.
+5. Anything short of that goes to the unmapped queue for a person, scored:
      persona token + date + format token agreement -> 'name_fuzzy', 0.5 to 0.9
-   Never auto-apply below 1.0. A human confirms, and the confirmation writes back.
-5. Denormalise persona, angle and offer FROM THE CONCEPT, never from the ad task.
+   The confirmation writes the id back into ClickUp.
+6. Denormalise persona, angle and offer FROM THE CONCEPT, never from the ad task.
    An ad inherits; it cannot override. Master SOP section 4.4.
 ```
+
+> **Step 4 changed on 9 Sep 2026.** This section originally said "never
+> auto-apply below 1.0", which put `name_exact` in the queue. Against the live
+> account that rule left **72% of Manami's last-30-day spend untagged** while
+> the pipeline knew exactly what every one of those ads was: `Creative ID` was
+> filled on 15 of 65 tasks, and the other 50 tasks were named after the ads they
+> briefed.
+>
+> An exact name match is not a guess. The brief is written as
+> `Persona - Description | STAGE | FORMAT | DATE | vN | MKT` and the ad is
+> launched under that name — it is the same string, typed once. What the rule
+> was really protecting against is the *near* match, and that still goes to a
+> person: `13AUG` against `4SEP`, or `V1` against `V2`, are different creatives
+> every time they came up on this account.
+>
+> Coverage after the change: Manami 28% → 68% of thirty-day spend, Venev 0% → 78%.
+
+### The name key
+
+`ref.creative_name_key(STRING)` is the one normalisation both sides go through.
+Lower case, diacritics stripped, punctuation removed, and the bare token `i`
+dropped — because `Testery I TOF I STAT I CZ` is the same name as
+`Testery | TOF | STAT | CZ` and the two spellings both appear in the account.
+
+**Dates, stages, version numbers and market codes are left alone.** Collapsing
+those would attach one ad's spend to another ad's concept, and no figure on any
+screen would look wrong enough to reveal it.
+
+Two guards, both of which fire on real data:
+
+- A name that resolves to **more than one task** is skipped entirely and logged
+  as `ambiguous_task_name`. Manami has eight tasks still called
+  `PersonaID-NAME | STAGE | FORMAT | DATE | vN | MKT` — the template row — and
+  picking one of them would be a coin flip.
+- `creative_id` always wins. Where somebody stated the id, that statement is the
+  answer and the name is not consulted.
+
+### One row per ad, enforced
+
+`mart_creative_perf` LEFT JOINs `creative_tags` onto daily ad insights. A second
+tag row for one ad therefore does not read as a duplicate tag — it **doubles
+that ad's spend, revenue and impressions** on every Creative screen. Manami had
+one: two pipeline tasks carrying the same id in `Creative ID`, which is what a
+duplicated task leaves behind. The rebuild now keeps the strongest claim (stated
+id over matched name, then the most recent brief) and logs the collision as
+`duplicate_creative_id`.
 
 Rebuild it in full on every run. It is a few thousand rows and incremental logic here buys nothing
 but bugs.

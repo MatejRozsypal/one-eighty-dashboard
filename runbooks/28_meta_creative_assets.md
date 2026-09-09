@@ -120,6 +120,42 @@ Reading the underlying **post** via `effective_object_story_id` does not work:
 it needs `pages_read_engagement` at Advanced Access, and the app is in
 Development mode. The placement rules make it unnecessary.
 
+### Most videos are not on the ad account at all — go via Instagram
+
+> **Corrected 9 Sep 2026, and this is the one that mattered.** The section
+> above is right that `/act_X/advideos` is the way to read a video the ad
+> account owns. It is wrong to stop there. On Manami that edge lists 124 videos
+> and **not one of the 46 the ads actually run**: those were published to
+> Instagram and promoted from there, so they live on the IG media object and
+> the ad merely references them. Every path through the ad account and the page
+> is closed, and the previous pass concluded the sources were unreachable.
+
+`effective_instagram_media_id` on the creative is the way through:
+
+```
+GET /v22.0/{ig_media_id}?fields=id,media_type,media_url,thumbnail_url
+```
+
+`media_url` is the full mp4. It comes back for the **same system-user token**
+that is refused on `/{video_id}` and on the page post, because `instagram_basic`
+already covers the business account's own media — no permission to add, no
+review. Sixty-one of Manami's sixty-nine unmirrored video ads resolve this way,
+across fifty-one distinct IG media, and all fifty-one returned a URL.
+
+The eight that remain are Facebook page posts with no Instagram twin
+(`effective_object_story_id` set, `effective_instagram_media_id` null). Nothing
+short of `pages_read_engagement` at Advanced Access reaches those. They keep
+their poster frame.
+
+**Duration.** An IG media object does not carry one, and the retention curve
+and the scrub bar both need it. `creative_assets_job.mp4_duration()` reads it
+out of the file's own `mvhd` box — walk to `moov`, then `mvhd`, divide duration
+by timescale. No decoding and no dependency.
+
+**Resolution.** The IG progressive render is an SD encode, around 1 MB for a
+thirty-second clip rather than the 15 MB the sizing note above assumes. It is
+the real creative and it is what the panel needs; it is not a master.
+
 Copy lives in different places by ad type:
 
 | Ad type | Primary text | Headline | Description |
@@ -152,6 +188,10 @@ Per ad, if `(client_id, hash|video_id)` is not already in the bucket:
   the video permission on the system user (`runbooks/07_meta_app_and_system_user.md`). If `source`
   is absent, store `picture` as the thumbnail and mark `asset_uri` null rather than failing the run.
 
+  > **Superseded 9 Sep 2026 — see "Most videos are not on the ad account at
+  > all" above.** The refusal below is real, and it is not the end of the road:
+  > the mp4 comes back from the Instagram media object instead.
+  >
   > **Confirmed missing, 9 Sep 2026.** The system user token returns
   > `(#10) Application does not have permission for this action` on every video.
   > Its scopes are `ads_management, ads_read, business_management,

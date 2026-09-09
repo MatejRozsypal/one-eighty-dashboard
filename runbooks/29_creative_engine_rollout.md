@@ -276,8 +276,13 @@ that is a migration, which is the correct amount of friction.
 ## 6. Thresholds — 5 minutes, and nothing works without it
 
 Settings → pick the client → Creative Engine. Until **kill ROAS, target ROAS
-and target CPA** are all set, every creative screen shows delivery and refuses
-to issue a verdict.
+and target CPA** are all set, Creatives, Concepts, Breakdown and Production
+show delivery and refuse to issue a verdict — the grid, the concept cards, the
+angle coverage and the cost table all render; the colour coding, the verdicts,
+the weekly review and the winner counts do not.
+
+Velocity is the exception and stays blank: every number on it is derived from
+the target CPA, so there is nothing to show without one.
 
 Manami's figures from `_clients/manami/learnings/meta-ads.md`:
 

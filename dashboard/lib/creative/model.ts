@@ -265,7 +265,20 @@ export function read(
   t: CreativeThresholds
 ): Reading {
   const raw = div(c.revenue, c.spend);
-  const roas = raw === null ? null : shrink(raw, c.purchases, accountMeanRoas, t.readPurchases);
+
+  // ── Zero purchases reports nothing, not the prior ─────────────────────────
+  // Shrinkage with n = 0 returns the account mean exactly: (0*obs + k*mean)/k.
+  // That is arithmetically right and a lie to look at. A wall of ads that never
+  // sold anything rendered thirty tiles all reading the same ROAS 2.12, which
+  // is not an estimate of any of them — it is the prior, wearing their names.
+  //
+  // With no conversions there is no evidence to shrink, so the honest output is
+  // no number. The tile still shows the spend, the CTR and "0 purchases", which
+  // is the whole of what is known.
+  const roas =
+    raw === null || c.purchases <= 0
+      ? null
+      : shrink(raw, c.purchases, accountMeanRoas, t.readPurchases);
   const [lo, hi] = roas === null ? [null, null] : interval(roas, c.purchases);
   return {
     roas,

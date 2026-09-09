@@ -87,9 +87,25 @@ export function AdDetail({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-ink-950/35 p-5 backdrop-blur-[14px] backdrop-saturate-150"
+      /*
+        The SCRIM scrolls, not the modal.
+        ────────────────────────────────
+        This was a fixed, centred box with max-height and three nested
+        overflow contexts inside it. On any screen shorter than the content it
+        clipped: the creative ended up below the fold and the metrics beside it
+        were cut off mid-panel. Letting the scrim scroll and giving the modal
+        no height cap removes the whole class of problem — tall content simply
+        scrolls, short content stays centred by `min-h-full items-center`.
+
+        The blur is deliberately light. At 14px over a pale page it stopped
+        reading as "something is in front" and started reading as "the page has
+        gone milky"; a firmer dim and a gentler blur says the same thing more
+        clearly.
+      */
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-ink-950/55 backdrop-blur-[5px]"
     >
-      <div className="glass-solid flex max-h-[calc(100vh-56px)] w-full max-w-[1120px] flex-col overflow-hidden rounded-2xl shadow-xl">
+      <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
+      <div className="glass-solid flex w-full max-w-[1080px] flex-col rounded-2xl shadow-xl">
         <header className="flex flex-shrink-0 items-start gap-3.5 border-b border-hairline px-5 py-4">
           <div className="min-w-0 flex-1">
             <div className="break-all font-mono text-[13px] font-medium text-content-strong">
@@ -120,10 +136,13 @@ export function AdDetail({
           </button>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[420px_1fr] lg:overflow-hidden">
+        {/* One flow, no inner scrollers. The creative sticks to the top of its
+            column on wide screens so it stays in view while the numbers scroll
+            past it, which was the point of the two-column split. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr]">
           <Creative ad={ad} />
 
-          <div className="flex min-w-0 flex-col gap-6 p-5 lg:max-h-full lg:overflow-y-auto">
+          <div className="flex min-w-0 flex-col gap-6 p-5">
             <PrimaryMetrics ad={ad} currency={currency} />
             <SecondaryMetrics ad={ad} currency={currency} />
 
@@ -174,6 +193,7 @@ export function AdDetail({
           </div>
         </div>
       </div>
+      </div>
     </div>
   );
 }
@@ -192,8 +212,13 @@ function Creative({ ad }: { ad: AdView }) {
   const length = ad.videoLengthSec ?? 0;
 
   return (
-    <div className="flex flex-col gap-3.5 self-start border-b border-hairline p-5 lg:border-b-0 lg:border-r">
-      <div className="relative aspect-[4/5] overflow-hidden rounded-lg border border-hairline bg-gray-50 shadow-sm">
+    <div className="flex flex-col gap-3.5 self-start border-b border-hairline p-5 lg:sticky lg:top-0 lg:border-b-0 lg:border-r">
+      {/*
+        Capped in viewport units as well as by aspect ratio. A 4:5 box 360px
+        wide is 450px tall, which on a laptop is most of the window for what is
+        often a placeholder — the metrics are what the panel is for.
+      */}
+      <div className="relative mx-auto aspect-[4/5] max-h-[42vh] w-full overflow-hidden rounded-lg border border-hairline bg-gray-50 shadow-sm">
         {ad.assetUrl && ad.assetKind === "video" ? (
           <video
             ref={video}
@@ -216,14 +241,10 @@ function Creative({ ad }: { ad: AdView }) {
           // URL; next/image would cache one that expires within the hour.
           <img src={ad.assetUrl} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-6 text-center">
+          <div className="flex h-full w-full items-center justify-center px-5 text-center">
             <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
               no asset mirrored
             </span>
-            <p className="m-0 text-[12px] leading-[1.6] text-content-muted">
-              Meta&apos;s own URLs expire within hours, so the dashboard serves
-              a copy from our bucket. This one has not been downloaded yet.
-            </p>
           </div>
         )}
       </div>
@@ -242,6 +263,13 @@ function Creative({ ad }: { ad: AdView }) {
             {mmss(t)} / {mmss(length)}
           </span>
         </div>
+      )}
+
+      {!ad.assetUrl && (
+        <p className="m-0 text-[12px] leading-[1.55] text-content-muted">
+          Meta&apos;s own URLs expire within hours, so the dashboard serves a
+          copy from our bucket. This one has not been downloaded yet.
+        </p>
       )}
 
       {ad.effectiveStatus && (

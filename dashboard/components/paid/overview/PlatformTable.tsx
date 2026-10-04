@@ -2,9 +2,10 @@
  * By platform: Meta and Google as the platforms report themselves, then the
  * Total row as the shop sees it.
  *
- * The platform rows and the Total row answer different questions (what each
+ * The platform rows and the Shop total row answer different questions (what each
  * platform claims vs what the shop booked), so the Total's value is shop
- * revenue, its ROAS is MER and its CPA is blended CAC. A platform the client
+ * revenue, its ROAS is MER and its CPA is blended CAC; the row says so in its
+ * own cells ("MER", "CAC") because the column headers are the platforms'. A platform the client
  * does not have is one muted cell spanning the row. GA4 columns exist only when
  * the client has GA4 and its data is readable.
  */
@@ -29,6 +30,15 @@ interface Row {
   value: number | null;
   ga4: number | null;
   strong?: boolean;
+}
+
+/** The metric a Shop total cell really is, set before its figure. */
+function Basis({ children }: { children: string }) {
+  return (
+    <span className="mr-1.5 font-sans text-[10px] font-normal uppercase tracking-[0.08em] text-content-muted">
+      {children}
+    </span>
+  );
 }
 
 export function PlatformTable({
@@ -70,7 +80,7 @@ export function PlatformTable({
     },
     {
       key: "total",
-      label: "Total",
+      label: "Shop total",
       connected: true,
       spend: sums.paidSpend,
       share: sums.paidSpend === null ? null : 1,
@@ -89,10 +99,10 @@ export function PlatformTable({
     { label: "Purchases" },
     {
       label: "Value",
-      info: "Platform rows are what each platform claims, so they can overlap and exceed shop revenue. The total row is shop revenue.",
+      info: "Platform rows are what each platform claims, so they can overlap and exceed shop revenue. The shop total row is shop revenue, all sources.",
     },
-    { label: "ROAS" },
-    { label: "CPA" },
+    { label: "ROAS", info: "Platform rows: claimed value / spend. Shop total row: MER, shop revenue / paid spend." },
+    { label: "CPA", info: "Platform rows: spend / claimed purchases. Shop total row: blended CAC, spend / shop orders." },
     ...(ga4
       ? [
           { label: "GA4 revenue", info: "Last-click revenue GA4 attributes to the platform." },
@@ -165,8 +175,14 @@ export function PlatformTable({
                   <span role="cell" className={`${cell} text-content-body`}>{show(formatPercent(r.share))}</span>
                   <span role="cell" className={`${cell} text-content-strong`}>{show(formatNumber(r.purchases))}</span>
                   <span role="cell" className={`${cell} text-content-strong`}>{show(money(r.value))}</span>
-                  <span role="cell" className={`${cell} text-content-strong`}>{show(formatRatio(roas))}</span>
-                  <span role="cell" className={`${cell} text-content-strong`}>{show(unit(cpa))}</span>
+                  <span role="cell" className={`${cell} text-content-strong`}>
+                    {r.strong && <Basis>MER</Basis>}
+                    {show(formatRatio(roas))}
+                  </span>
+                  <span role="cell" className={`${cell} text-content-strong`}>
+                    {r.strong && <Basis>CAC</Basis>}
+                    {show(unit(cpa))}
+                  </span>
                   {ga4 && (
                     <>
                       <span role="cell" className={`${cell} text-content-strong`}>{show(money(r.ga4))}</span>

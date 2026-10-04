@@ -53,6 +53,16 @@ export function ratioOfSums<T>(
   return ratio(sumOf(used, numerator), sumOf(used, denominator));
 }
 
+/**
+ * A funnel share (step over the previous step, or over the top). Pixel events
+ * are not sequential, so a later step can exceed an earlier one; a share above
+ * 100 percent is not a rate of anything and is null ("n/a"), never drawn.
+ */
+export function funnelShare(value: Num, base: Num): number | null {
+  const r = ratio(value, base);
+  return r === null || r > 1 ? null : r;
+}
+
 /** A cost per thousand: spend / impressions x 1000. */
 export function perThousand(numerator: Num, denominator: Num): number | null {
   const r = ratio(numerator, denominator);

@@ -176,7 +176,7 @@ export function MetaFunnel({ sums, currency }: { sums: MetaSums; currency: strin
 
   return (
     <Section title="Funnel">
-      <Funnel steps={steps.map((s) => ({ label: s.label, value: s.value }))} />
+      <Funnel steps={steps.map((s) => ({ label: s.label, value: s.value }))} nonSequential />
       <dl className="flex flex-wrap gap-x-7 gap-y-3 border-t border-hairline pt-4">
         {steps.map((s) => (
           <div key={s.key} className="flex flex-col gap-1">

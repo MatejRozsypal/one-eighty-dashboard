@@ -32,6 +32,7 @@
 
 import { formatNumber, formatPercent } from "@/lib/currency";
 import { safeDiv } from "@/lib/coerce";
+import { funnelShare } from "@/lib/paid/math";
 import { InfoTip } from "@/components/ui/InfoTip";
 
 export interface FunnelStep {
@@ -48,7 +49,17 @@ const MIN_H = 6;
  */
 const BREAK_RATIO = 2.5;
 
-export function Funnel({ steps }: { steps: FunnelStep[] }) {
+export function Funnel({
+  steps,
+  nonSequential = false,
+}: {
+  steps: FunnelStep[];
+  /**
+   * The steps are independent counts (pixel events), not a nested sequence: a
+   * share above 100 percent renders n/a instead of a number. Off by default.
+   */
+  nonSequential?: boolean;
+}) {
   if (steps.length < 2) return null;
 
   const top = steps[0].value || 1;
@@ -76,7 +87,8 @@ export function Funnel({ steps }: { steps: FunnelStep[] }) {
             const tallest = Math.max(h, nextH);
 
             // Share of the previous step, the actual drop this slope draws.
-            const stepRate = i === 0 ? null : safeDiv(step.value, steps[i - 1].value);
+            const div = nonSequential ? funnelShare : safeDiv;
+            const stepRate = i === 0 ? null : div(step.value, steps[i - 1].value);
 
             return (
               <div
@@ -89,14 +101,14 @@ export function Funnel({ steps }: { steps: FunnelStep[] }) {
                   </span>
                   <span className="flex flex-wrap items-baseline gap-x-2">
                     <span className="font-mono text-[12.5px] tabular text-content-muted">
-                      {formatPercent(safeDiv(step.value, top), { decimals: 1 })}
+                      {formatPercent(div(step.value, top), { decimals: 1 })}
                     </span>
                     <span className="font-mono text-[13.5px] font-semibold tabular text-content-strong">
                       {formatNumber(step.value)}
                     </span>
                   </span>
                   <span className="font-mono text-[10.5px] tabular text-gray-300">
-                    {stepRate === null
+                    {i === 0
                       ? "top of funnel"
                       : `${formatPercent(stepRate, { decimals: 1 })} of previous`}
                   </span>

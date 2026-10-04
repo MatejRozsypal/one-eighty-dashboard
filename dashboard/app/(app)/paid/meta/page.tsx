@@ -11,11 +11,9 @@
  */
 
 import type { Metadata } from "next";
-import { AppLink } from "@/components/ui/AppLink";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
-import { creativeHref } from "@/lib/paid/links";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
 import { NotConnected, NoData } from "@/components/ui/EmptyState";
@@ -137,6 +135,12 @@ export default async function PaidMetaPage({
       <Header title="Paid" />
       <PageControls client={client} params={params} compare />
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+        {currency !== client.currency && (
+          <p className="font-mono text-[11.5px] text-content-muted">
+            Ad account currency: {currency}
+          </p>
+        )}
+
         <MetaKpis
           current={current}
           previous={previous}
@@ -182,13 +186,6 @@ export default async function PaidMetaPage({
         )}
 
         <AudienceBreakdown rows={audienceRows(rows, dim)} dim={dim} currency={currency} />
-
-        <AppLink
-          href={creativeHref(params)}
-          className="self-start text-[13px] text-content-muted hover:text-content-strong hover:underline"
-        >
-          Creatives
-        </AppLink>
       </main>
     </>
   );

@@ -99,7 +99,7 @@ export function CampaignDetail({
     { key: "cpa", label: "CPA", align: "right" },
     { key: "ctr", label: "Link CTR", align: "right" },
     { key: "octr", label: "Outbound CTR", align: "right", info: "Outbound clicks / impressions." },
-    { key: "hook", label: "Hook", align: "right", info: "Video plays / impressions. Video ads only." },
+    { key: "hook", label: "Hook", align: "right", info: "3-second video plays / impressions. Video ads only." },
     { key: "hold", label: "Hold", align: "right", info: "ThruPlays / impressions. Video ads only." },
   ];
   const adRows: DataTableRow[] = ads.map((a) => {
@@ -108,7 +108,7 @@ export function CampaignDetail({
     const cpa = ratio(a.spend, a.purchases);
     const ctr = ratio(a.linkClicks, a.impressions);
     const octr = ratio(a.outboundClicks, a.impressions);
-    const isVideo = a.videoPlays !== null && a.videoPlays > 0;
+    const isVideo = a.isVideo ?? (a.videoPlays !== null && a.videoPlays > 0);
     const hook = isVideo ? ratio(a.videoPlays, a.impressions) : null;
     const hold = isVideo ? ratio(a.videoThruplays, a.impressions) : null;
     const label = a.name ?? a.adId;

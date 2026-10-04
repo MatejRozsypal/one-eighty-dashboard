@@ -270,7 +270,7 @@ export default async function PaidPage({
         <Section
           title="By platform"
           flush
-          info="Meta and Google rows are what each platform reports. The total row is the shop."
+          info="Meta and Google rows are what each platform reports. The shop total row is all sources."
         >
           <PlatformTable
             sums={cur}

@@ -12,13 +12,17 @@ import {
   isLowVolume, unlessLowVolume, LOW_VOLUME_MIN_PURCHASES,
   searchImpressionShare, lostBudgetShare, lostRankShare, topImpressionShare, absTopImpressionShare,
   brandShare, nonBrandRoas, brandLeakage, overClaim, trackingCoverage,
-  bucketGrain, bucketStart,
+  bucketGrain, bucketStart, funnelShare,
 } from "@/lib/paid/math";
 import { tabHref, creativeHref } from "@/lib/paid/links";
 import { navFor, PAID_TABS, activeNavHref, pageTitle } from "@/lib/nav";
 import { pageAvailability } from "@/lib/capabilities";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import type { ClientCapabilities } from "@/lib/clients";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
+import { Funnel } from "@/components/dashboard/Funnel";
+import { funnelSteps, hookRate, sumVideo, type MetaSums } from "@/components/paid/meta/aggregate";
 
 let failures = 0;
 let checks = 0;
@@ -166,9 +170,39 @@ eq("creativeHref custom range", creativeHref({ ...view, presetKey: "custom" }),
   "/creative?client=a&preset=custom&from=2026-09-04&to=2026-10-03&compare=previous_year");
 eq("creativeHref ad focus", creativeHref(view, { field: "adId", value: "123" }),
   "/creative?client=a&preset=30d&compare=previous_year&focus=adId&is=123");
-eq("creativeHref campaign focus is encoded", creativeHref(view, { field: "campaignName", value: "CZ | A&B" }),
-  "/creative?client=a&preset=30d&compare=previous_year&focus=campaignName&is=CZ+%7C+A%26B");
+eq("creativeHref campaign focus is by ID", creativeHref(view, { field: "campaignId", value: "120246928041830098" }),
+  "/creative?client=a&preset=30d&compare=previous_year&focus=campaignId&is=120246928041830098");
+eq("creativeHref focus value is encoded", creativeHref(view, { field: "adId", value: "a b&c" }),
+  "/creative?client=a&preset=30d&compare=previous_year&focus=adId&is=a+b%26c");
 eq("creativeHref no client", creativeHref({ ...view, clientId: undefined }), "/creative?preset=30d&compare=previous_year");
+
+// ── Funnel shares above 100 percent are n/a ─────────────────────────────────
+eq("funnelShare below 1", funnelShare(50, 100), 0.5);
+eq("funnelShare exactly 1", funnelShare(100, 100), 1);
+eq("funnelShare above 1 is null", funnelShare(345, 129), null);
+eq("funnelShare zero base is null", funnelShare(5, 0), null);
+eq("funnelShare null value is null", funnelShare(null, 5), null);
+
+// Dobias-shaped fixture: 129 payment-info events, then 345 purchases (267.4 percent of previous).
+const fx: MetaSums = {
+  spend: 1000, revenue: 4000, purchases: 345, impressions: 100000, reach: 50000, addToCart: 800,
+  initiateCheckout: 400, landingPageViews: 3000, linkClicks: 3500, viewContent: 3600, addPaymentInfo: 129,
+};
+const steps = funnelSteps(fx).map((s) => ({ label: s.label, value: s.value }));
+const html = renderToStaticMarkup(createElement(Funnel, { steps, nonSequential: true }));
+eq("Meta funnel: purchases step shows no 267.4%", html.includes("267.4%"), false);
+eq("Meta funnel: View content (above LPV) shows n/a of previous", html.includes("n/a of previous"), true);
+eq("Meta funnel: a normal step still shows its rate", html.includes("50.0% of previous"), true);
+const plain = renderToStaticMarkup(createElement(Funnel, { steps }));
+eq("default funnel is unchanged (sequential)", plain.includes("267.4% of previous"), true);
+
+// ── Hook rate: 3-second plays over video-ad impressions ─────────────────────
+near("hook rate", hookRate({ plays: 170, thruplays: 40, impressions: 1000 }), 0.17);
+eq("hook rate without video ads", hookRate({ plays: null, thruplays: null, impressions: null }), null);
+near("hook rate sums components, not rates", hookRate(sumVideo([
+  { plays: 100, thruplays: 20, impressions: 1000 },
+  { plays: 10, thruplays: 2, impressions: 9000 },
+])), 0.011);
 
 // ── Nav: Paid is internal only; tabs and titles ─────────────────────────────
 const caps = (on: Partial<ClientCapabilities>) => ({

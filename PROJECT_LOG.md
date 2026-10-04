@@ -4,6 +4,35 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-10-05: Reporting suite in progress (warehouse and docs prepared)
+
+Cross-client Reports product (`/reports`): a builder of saved reports with KPI, line, bar,
+table, ranked and scatter widgets over a metric registry, for internal users only. Work is split
+into packages on separate branches and nothing is deployed. This entry covers the warehouse and
+documentation package (RS10); the contracts package (RS0) is merged.
+
+- **Access (owner decision).** `admin` and `agency` roles on `@oneeighty.cz`, never the client
+  role. Display currency defaults to CZK. Manami VAT is a caveat only. CM3 follows the mart
+  definition (also minus fulfilment cost).
+- **Warehouse files, prepared and tested in `mart_qa` (prefix `rs10_`), NOT run in prod.**
+  - **250** `250_ref_industry_benchmarks.sql`: `ref.industry_benchmarks`, starts empty. Rows need
+    a source and an as_of date; no invented values.
+  - **251** `251_ref_client_verticals.sql`: `ref.client_verticals`, starts empty. No seed: the
+    vertical taxonomy is still an owner decision (draft proposal in the runbook).
+  - **252** `252_ops_v_benchmark_issues.sql`: `ops.v_benchmark_issues`, phase 2 (Data Health).
+    File only for now.
+  - Deploy order 250, 251, 252, after owner OK. No existing view or client is affected.
+- **Docs.** `runbooks/31_reporting_benchmarks.md` (how to add benchmark and vertical rows, region
+  preference client market then EU then GLOBAL, DRAFT vertical taxonomy);
+  `TENANCY_ISOLATION_ASSESSMENT.md` Addendum A (the one data route, `POST /api/reports/query`,
+  and its five enforcement points; its black-box test is still to run); `METRICS.md` "Reporting
+  registry" (metric ids are a permanent contract, ratios recomputed from sums, caveats).
+- **Open:** owner confirms the vertical taxonomy and first benchmark sources; prod deploy of
+  250 to 252; the frontend packages (compiler, gate and route, store, canvas, widgets, pages)
+  are being built and merged separately.
+
+---
+
 ## 2026-10-05: Dashboard clean-slate sprint (frontend merged, warehouse prepared)
 
 One sprint to get Ethia and RawBark fully onboarded and to remove the UI annoyances:

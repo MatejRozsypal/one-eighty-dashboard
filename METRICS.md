@@ -4,7 +4,7 @@ The canonical reference for every metric exposed in the `mart.*` layer. Looker S
 
 **Update this file whenever:** a new metric lands, a formula changes, a placeholder cost gets wired, or a known data gap is resolved.
 
-**Last updated:** 2026-10-05 (WooCommerce fee-line discounts in revenue, Woo COGS NULL when uncosted: migration 228, prepared and not yet deployed; Google Ads columns and `paid_spend` in daily and monthly marts since 2026-10-01)
+**Last updated:** 2026-10-05 (Reporting registry section added: metric ids, ratio recomputation, caveats; WooCommerce fee-line discounts in revenue, Woo COGS NULL when uncosted: migration 228, prepared and not yet deployed; Google Ads columns and `paid_spend` in daily and monthly marts since 2026-10-01)
 
 ---
 
@@ -383,6 +383,145 @@ Ecomail-only subscriber counts. One row per (list, snapshot_date).
 
 ---
 
+## Reporting registry
+
+The Reports product (`/reports`) does not read pre-computed metrics. It reads a **metric registry**
+in the dashboard code (`dashboard/lib/reports/registry/`) that defines each metric from summed
+warehouse components. This section is the warehouse-side contract of that registry. Status
+2026-10-05: Reports is in progress and not deployed; phase 1 reads only `mart.mart_daily_kpis`.
+Once `registry/metrics.ts` is merged it is the source of truth for the formulas, and this section
+must be kept in step with it.
+
+### Metric ids are a permanent contract
+
+A metric id (for example `mer`, `cm3_pct`, `meta_cpm`) is stored in three places that outlive any
+code change: saved report configs in Postgres, `ref.industry_benchmarks.metric_id`, and
+bookmarked URLs. Therefore:
+
+- **Append only.** Never reorder, remove or rename an id (`registry/ids.ts`).
+- A rename adds the new id and keeps the old one as a deprecated alias. The old id keeps working.
+- A metric whose definition changes in meaning gets a NEW id. Changing what `mer` means would
+  silently change every saved report and every benchmark comparison.
+- Phase 1 has 30 ids. Five more are reserved for phase 2 (`email_revenue`, `email_open_rate`,
+  `email_click_rate`, `email_rev_per_email`, `meta_atc_rate`) and become queryable when their
+  mart is wired into the compiler.
+
+### Ratios are recomputed, never averaged
+
+Every ratio metric is built from two sums, over whatever the widget shows: one day, a week bucket,
+a month bucket, a whole range, one client, or several clients combined.
+
+```
+metric = SUM(numerator components) / SUM(denominator components)
+```
+
+- Nothing pre-divided is read: no `*_per_day` column, no per-day ratio. Averaging daily ratios
+  gives the wrong answer (this file, "Derived ratio metrics").
+- **Across clients**, each client's money is converted to the display currency first (default
+  CZK) using `ref.fx_rates` for the month of the bucket, then summed, then divided. A combined MER
+  is total revenue over total paid spend, not the mean of client MERs.
+- **A missing FX rate** makes that bucket NULL (status `fx_missing`), never 0 and never a partial
+  sum. The widget names the months.
+- **Gaps are NULL, never 0.** A client without a connected source is excluded from that metric
+  and the widget shows coverage ("1 of 2 clients"), instead of dragging the figure to zero.
+- **Deltas**: relative change for money, ratio and count metrics; percentage points for percent
+  metrics.
+- A bucket that is not finished (the current week or month) is marked partial.
+
+### Components and metric definitions (phase 1)
+
+Components are `mart_daily_kpis` columns, summed. Metrics:
+
+| Group | Metric id | Definition |
+|---|---|---|
+| Profitability | `revenue`, `net_sales`, `orders`, `cogs` | Sum of the column of the same name. |
+| | `aov` | `net_sales / orders` (ex shipping, ex tax; same as the canonical AOV above). |
+| | `cm1_pct` | `(revenue - cogs) / revenue`. |
+| | `cm3` | `revenue - cogs - fulfillment_cost - paid_spend`, the mart definition. A NULL `paid_spend` or `fulfillment_cost` counts as 0 here, as in the mart. |
+| | `cm3_pct` | `cm3 / revenue`. |
+| Acquisition | `paid_spend` | Sum (Meta + Google). |
+| | `mer` | `revenue / paid_spend`. Low-volume guard: hidden when spend is under 2 % of the largest spend in the range. |
+| | `amer` | `new_customer_revenue / paid_spend`. |
+| | `cac` | `paid_spend / new_customer_orders`. |
+| | `new_customers` | Sum of `new_customer_orders`. |
+| | `aov_new` | `new_customer_net_sales / new_customer_orders`. |
+| | `new_revenue_share` | `new_customer_revenue / revenue`. |
+| Retention | `returning_orders` | Sum of `returning_customer_orders`. |
+| (period based) | `returning_order_share` | `returning_customer_orders / orders`. A period share, NOT a cohort repeat rate. |
+| | `returning_revenue_share` | `returning_customer_revenue / revenue`. |
+| | `aov_returning` | `returning_customer_net_sales / returning_customer_orders`. |
+| Meta | `meta_spend` | Sum, client currency. |
+| | `meta_roas` | `meta_revenue / meta_spend` (same low-volume guard as MER). |
+| | `meta_ctr` | `meta_clicks / meta_impressions`. |
+| | `meta_cpc` | `meta_spend / meta_clicks`. |
+| | `meta_cpm` | `meta_spend / meta_impressions * 1000`. |
+| | `meta_cpa` | `meta_spend / meta_purchases`. |
+| | `meta_spend_share` | `meta_spend / paid_spend`. |
+| Google | `google_spend` | Sum. |
+| | `google_roas` | `google_revenue / google_spend`. |
+| | `google_ctr` | `google_clicks / google_impressions`. |
+| | `google_cpc` | `google_spend / google_clicks`. |
+
+Deliberately NOT read from the mart: `unique_customers` (a sum over days is not a unique count),
+the `*_per_day` and `frequency_per_day` fields (already divided), the mart's `cm1`, `cm2`, `cm3`
+(CM3 is rebuilt from components so the COGS guard below applies), and `mart_email_flow_perf`
+(cumulative snapshots, unsafe over a period).
+
+The mart's `cm1` is `revenue - cogs - 0`: `cm1_other_costs` is not a column, it is a hard-coded
+0 in the view (checked 2026-10-05). `cm1_pct` and `cm3` match the mart because of that. If
+`cm1_other_costs` is ever wired, the registry must add it as a component in the same change.
+
+### Caveats (shown with a `^` marker, detail on hover)
+
+Computed per client from registry fields, never from a hardcoded client id:
+
+| Caveat | When it applies |
+|---|---|
+| Revenue incl. VAT | Shoptet clients (Manami). Flagged only, not estimated ex VAT (owner decision). |
+| Refunds not netted | Shopify clients (see Known data gaps). |
+| Meta not connected, spend is Google only | Client has Google Ads but no Meta (RawBark): MER, aMER, CAC and CM3 cover Google spend only. |
+| All Google conversion actions | Google ROAS: `purchase_value` counts every conversion action. |
+| Platform-attributed | Meta and Google ROAS, CPA, email: the platform's own attribution. |
+| New vs returning within history window | Everything built from new or returning orders (36-month window, see Known data gaps). |
+| Order share, not cohort repeat rate | `returning_order_share`. |
+| Foreign currency rows | A foreign-currency row was converted with the monthly rate. |
+
+The former "Woo fee lines not netted" caveat no longer applies since migration 228 (fee-line
+discounts are netted); its id stays reserved because ids are append-only.
+
+### Statuses a cell can have
+
+| Status | Meaning | Shown as |
+|---|---|---|
+| ok | A value. | The number. |
+| not_connected | The client has no source for the metric (for example RawBark has no Meta). | Not connected |
+| fx_missing | A needed `ref.fx_rates` month is missing. | No FX |
+| not_measured | Revenue exists but no cost data: summed `cogs` is NULL on positive revenue (RawBark, since migration 228). Applies to `cogs`, `cm1_pct`, `cm3`, `cm3_pct`. | No cost data |
+| no_data | Connected, but no rows in the range. | No data |
+
+The no-value glyph in the UI is `n/a`. A NULL is never shown as 0.
+
+### Benchmarks
+
+Benchmarks are manual reference data (`ref.industry_benchmarks`, `ref.client_verticals`), only
+for metrics flagged `benchmarkable` in the registry, and always shown with source and as-of date.
+Units: percents as fractions, ratios as x, money in the row's currency (converted to the display
+currency with the FX rate of the benchmark period's month). How to add rows and the rules
+(never invent values): `runbooks/31_reporting_benchmarks.md`. Definitions differ between sources
+and ours (VAT, blended or per-channel, attribution), which is why each row carries a
+`definition_note`.
+
+### Known limits of cross-client reports
+
+- Manami revenue includes VAT; comparing it with ex-VAT clients overstates it.
+- RawBark has no COGS (CM metrics show "No cost data") and no Meta (Google-only paid spend).
+- Dobias Meta spend is missing Dec 2025 to Mar 2026 (aMER and CAC are NULL there).
+- Money in a report in another currency than the client's is converted per month; a month without
+  a rate is dropped from the result, not guessed (runbook 23).
+- Ad accounts outside Meta and Google (TikTok, Sklik, Heureka and similar) are not in `paid_spend`.
+
+---
+
 ## Looker Studio calc fields (add these on the data source)
 
 ### Margin percentages
@@ -412,6 +551,10 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ---
 
 ## Changelog (most recent first)
+
+### 2026-10-05 (amendment 19): Reporting registry section
+
+Documentation only, no warehouse change. New section "Reporting registry" records the contract of the Reports metric registry: ids are permanent and append-only, ratios are recomputed from summed components (also across clients, with per-month FX), gaps are NULL, cell statuses, caveats. Benchmarks are in `runbooks/31_reporting_benchmarks.md`.
 
 ### 2026-10-05 (amendment 18): WooCommerce fee lines and honest COGS (migration 228, not yet deployed)
 

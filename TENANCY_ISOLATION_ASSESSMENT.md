@@ -225,3 +225,92 @@ by URL manipulation or by the other attack vectors tested.
 - Vector 3 (cookie): `document.cookie` empty (httpOnly).
 - Vector 7 (payload): `manami` appears 0× as a data value; the only `manami`/`czk` string hits are (a) the echoed request parameter, (b) the static "USD → CZK" toggle label, and (c) the caveat copy of Finding A.
 - Enforcement source: `dashboard/lib/clients.ts` (`resolveClient`), `dashboard/lib/auth.ts`, `dashboard/lib/authz.ts`.
+
+---
+
+## Addendum A (2026-10-05): the internal-only Reports query route
+
+**Status: design and enforcement requirements, written while the Reporting Suite is being built
+(branch work in progress, not deployed). The black-box test in A.5 has NOT been run yet and must
+pass before release.** The findings and verdicts in sections 1 to 8 are unchanged: they describe
+the dashboard as tested on 2026-08-03.
+
+### A.1 What changes
+
+Section 4 states "no data API routes". The Reports product (`/reports`) adds exactly one
+exception: `POST /api/reports/query`. It is a data endpoint, and it is **cross-client by design**:
+one request can read several clients' aggregates (revenue, ad spend, margins) for comparison.
+That is the opposite of the client-role model, so the control is not `resolveClient`. It is a
+role and domain gate that client-role sessions can never pass.
+
+Why a route and not a server action or streaming: Next 14 dispatches client-initiated server
+actions one at a time, so a report with 10 widgets would load in sequence, and the builder must
+refetch one widget without re-rendering the page. This is the single exception; no other data
+route is added.
+
+### A.2 Who may use it
+
+- Roles: `REPORTS_ROLES = ["admin", "agency"]` (owner decision 2026-10-05). The `client` role is
+  never allowed.
+- Domain: the account email must be on an internal domain (`ALLOWED_EMAIL_DOMAIN`, default
+  `oneeighty.cz`). An `admin` or `agency` role on any other domain is refused.
+- Check: `canUseReports(access)` in `dashboard/lib/authz.ts`, fed by the same signed JWT and the
+  `app_users` re-resolution described in section 4. Nothing the browser controls influences it.
+
+### A.3 The five enforcement points
+
+The gate is enforced in five independent places, so removing or bypassing one does not open the
+data. Each fails closed.
+
+| # | Where | What it does on failure |
+|---|---|---|
+| 1 | `app/(app)/reports/layout.tsx` calls `requireReportsAccess()` | Redirects to `/snapshot` and logs `[authz]`. Covers every page under `/reports`, including pages added later. |
+| 2 | Each page under `/reports` calls it again | Same. A page moved out of the layout is still gated. |
+| 3 | `app/api/reports/query/route.ts` calls `reportsAccessOrNull()` before it parses the body or touches any cache | Returns **404**, not 403, with no body detail, so the route's existence is not revealed to a client-role user or an anonymous caller. |
+| 4 | Every server action in `app/(app)/reports/actions.ts` calls `assertReportsAccess()` first | Throws "Not authorised." A server action is a callable public endpoint, so this cannot be left to the page. |
+| 5 | `lib/reports/run.ts`, `lib/reports/store.ts` and `lib/reports/clients.ts` each call `assertReportsAccess()` internally | Throws. A future page for client-role users that imports these modules by mistake fails closed instead of leaking. |
+
+Hiding Reports in the product rail and nav is presentation only and is not counted as a control.
+
+### A.4 Further controls on the route
+
+- **Closed query language.** The body is validated by strict zod schemas. Metric ids, grains,
+  splits and clients come from a registry whitelist; an unknown id is rejected with 400. No
+  user-supplied text reaches SQL: identifiers come from the registry, values go in as bound query
+  parameters, and client ids are checked against `getReportClients()` before use.
+- **Read scope.** Phase 1 reads `mart.mart_daily_kpis` (aggregates by client and day, no customer
+  rows, no email addresses, no names) plus `ref.clients`, `ref.client_verticals`,
+  `ref.industry_benchmarks` and `ref.fx_rates`. The reporting service account keeps read access to
+  `mart` and `ref` only, not to raw PII datasets. No personal data is reachable through this
+  route.
+- **Cost and size limits.** Range and point limits (413), a BigQuery bytes-billed ceiling (422), a
+  query timeout (504).
+- **Caching.** Results are cached server side keyed by the validated query. The cache is only
+  reached after gate 3, and the response is `Cache-Control: private, no-store`, so a shared cache
+  or CDN never holds it.
+- **Errors.** Warehouse errors surface as 500 and are never rendered as an empty state.
+- **Audit.** One `access_log` row per report open (`clientId` null, `detail` names the report and
+  the clients).
+- **Unchanged for client-role users.** Every existing page still resolves its tenant through
+  `resolveClient`, which ignores the requested client for a client-role session. Reports does not
+  use `resolveClient` because its users are internal and cross-client by design.
+
+### A.5 Required verification before release (not yet run)
+
+A black-box and white-box check, in the style of section 2:
+
+1. A `client`-role session: `/reports` redirects; `POST /api/reports/query` returns 404; a server
+   action replay throws.
+2. An `agency` session on `@oneeighty.cz`: allowed (this is intended). An `admin` or `agency`
+   session on another domain: 404.
+3. No session: 404 (not 401 or 403).
+4. A malformed body from an allowed session: 400 with issues. An unknown metric id: 400.
+5. Grep gate: no import of `lib/reports/run`, `store` or `clients` outside `app/(app)/reports`,
+   `app/api/reports` and `lib/reports`.
+
+### A.6 Residual risk
+
+A future developer reusing `lib/reports/*` on a client-facing page. Control 5 makes that fail
+closed, and the grep gate in A.5 item 5 should become a CI check (open recommendation, next to
+the regression test in section 6). The PDF copy of this assessment is not regenerated by this
+addendum.

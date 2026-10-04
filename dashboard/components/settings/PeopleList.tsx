@@ -7,7 +7,7 @@
  * between the two is passed in rather than forked.
  *
  * `canManage` decides whether the controls render at all. Agency reaches these
- * screens to edit targets and cost assumptions, and should see who has access —
+ * screens to edit targets and cost assumptions, and should see who has access -
  * but changing it is the one operation that can reach another client's data, so
  * it stays with admin. The server actions each re-check that independently;
  * hiding the buttons is the courtesy, not the control.
@@ -29,7 +29,7 @@ export function PeopleList({
   users,
   clients,
   canManage,
-  /** When set, the role picker is hidden — everyone here is a client account. */
+  /** When set, the role picker is hidden, everyone here is a client account. */
   fixedClient,
   emptyMessage,
 }: {
@@ -89,7 +89,7 @@ export function PeopleList({
                 {fixedClient ? (
                   <>
                     {/*
-                      Inside one client's settings the role is not the question —
+                      Inside one client's settings the role is not the question -
                       everyone listed is a client account for this client, and
                       offering "agency" here would grant every client from a
                       screen about one of them.
@@ -109,8 +109,8 @@ export function PeopleList({
                       className="rounded-control border border-hairline-strong bg-paper px-2.5 py-1.5 text-[12.5px]"
                     >
                       {Object.entries(ROLE_COPY).map(([value, copy]) => (
-                        <option key={value} value={value}>
-                          {copy.label} — {copy.note}
+                        <option key={value} value={value} title={copy.note}>
+                          {copy.label}
                         </option>
                       ))}
                     </select>
@@ -120,7 +120,7 @@ export function PeopleList({
                       defaultValue={user.clientId ?? ""}
                       className="rounded-control border border-hairline-strong bg-paper px-2.5 py-1.5 text-[12.5px]"
                     >
-                      <option value="">— no client —</option>
+                      <option value="">No client</option>
                       {clients.map((c) => (
                         <option key={c.clientId} value={c.clientId}>
                           {c.name}
@@ -154,7 +154,7 @@ export function PeopleList({
                 <input type="hidden" name="email" value={user.email} />
                 <button
                   type="submit"
-                  className="rounded-control border border-negative/35 px-2.5 py-1.5 font-mono text-[11px] text-negative transition-colors duration-fast hover:bg-[#FFF7F7]"
+                  className="rounded-control border border-negative/35 px-2.5 py-1.5 font-mono text-[11px] text-negative transition-colors duration-fast hover:bg-notice-negative"
                 >
                   Remove
                 </button>

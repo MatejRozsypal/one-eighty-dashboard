@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 
 /**
- * PWA manifest — makes the dashboard installable to the macOS dock and the
+ * PWA manifest, makes the dashboard installable to the macOS dock and the
  * iPhone home screen.
  *
  * `display: standalone` is what removes the URL bar and makes it read as an app
@@ -16,7 +16,7 @@ import type { MetadataRoute } from "next";
  * square because iOS composites alpha onto black.
  *
  * `public/icons/*` are generated at real sizes with the black mark already sat
- * on the brand green, and the mark is held to 62% of the width — inside the
+ * on the brand green, and the mark is held to 62% of the width, inside the
  * central 80% that Android crops a maskable icon to, so one piece of artwork
  * serves both `any` and `maskable` without being clipped.
  */
@@ -24,8 +24,6 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "One Eighty Dashboard",
     short_name: "One Eighty",
-    description:
-      "Contribution-margin analytics across every One Eighty client.",
     start_url: "/snapshot",
     display: "standalone",
     background_color: "#0A0A0B",

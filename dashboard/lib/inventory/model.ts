@@ -1,5 +1,5 @@
 /**
- * Inventory domain model — shapes and classification, no data access.
+ * Inventory domain model, shapes and classification, no data access.
  *
  * Deliberately separate from `lib/queries/inventory.ts`, which is server-only
  * because it holds the BigQuery client. Everything here is pure: the same
@@ -8,10 +8,12 @@
  * database client to ask "is this SKU overstocked".
  *
  * Keeping it here also means the rules can be exercised directly, which matters
- * more than usual for this page — the thresholds below are assumptions standing
+ * more than usual for this page, the thresholds below are assumptions standing
  * in for data we do not have yet, and an assumption that silently changes
  * meaning is worse than one that is wrong out loud.
  */
+
+import { NO_VALUE } from "@/lib/format";
 
 /** ABCD grade. `U` = too little history to judge; `null` = ungradeable. */
 export type AbcGrade = "A" | "B" | "C" | "D" | "U" | null;
@@ -22,14 +24,14 @@ export interface InventoryRow {
   productLine: string | null;
   unitsSold: number;
   revenue: number;
-  /** NULL where cost is unknown — never coerced to zero. */
+  /** NULL where cost is unknown, never coerced to zero. */
   margin: number | null;
   marginPct: number | null;
   onHand: number | null;
   unitCost: number | null;
   stockValueAtCost: number | null;
   velocityPerDay: number;
-  /** NULL when nothing sold — cover is undefined, not infinite. */
+  /** NULL when nothing sold, cover is undefined, not infinite. */
   daysCover: number | null;
   sellThrough: number | null;
   abc: AbcGrade;
@@ -42,7 +44,7 @@ export interface InventorySummary {
   snapshotDate: string | null;
   snapshotAgeDays: number | null;
   skuCount: number;
-  /** SKUs whose cost is known — the denominator for every money figure below. */
+  /** SKUs whose cost is known, the denominator for every money figure below. */
   skusWithCost: number;
   negativeStockCount: number;
   stockValueAtCost: number;
@@ -51,7 +53,7 @@ export interface InventorySummary {
   valueAtRisk: number;
   valueOverstocked: number;
   valueDead: number;
-  /** SKUs at zero stock that sold in the window — stocked out, or untracked. */
+  /** SKUs at zero stock that sold in the window, stocked out, or untracked. */
   stockedOutCount: number;
 }
 
@@ -66,7 +68,7 @@ export interface InventoryData {
  * Placeholders standing in for per-SKU supplier lead times, which no client has
  * given us yet (`ref.sku_config` in the proposal). Named constants rather than
  * inline comparisons so that swapping them for real data is a change of source,
- * not a rewrite — and so the UI can say out loud that they are assumptions.
+ * not a rewrite, and so the UI can say out loud that they are assumptions.
  */
 export const COVER_AT_RISK_DAYS = 45;
 export const COVER_OVERSTOCK_DAYS = 180;
@@ -87,7 +89,7 @@ export const COVER_TARGET_DAYS = 90;
 export type StockState = "at-risk" | "healthy" | "overstocked" | "dead";
 
 /**
- * Classify a SKU. Deliberately total — every row lands somewhere, because a
+ * Classify a SKU. Deliberately total, every row lands somewhere, because a
  * silently unclassified row is a row nobody looks at.
  */
 export function stockState(row: InventoryRow): StockState {
@@ -143,16 +145,16 @@ export function assignGrades(rows: InventoryRow[]): void {
  * Days of cover, written so a human can read it.
  *
  * Cover is stock ÷ velocity, and on a nearly-dead SKU the denominator collapses:
- * Venev's "VENEV set" holds 1,012 units against 5 sold in a quarter, which is
+ * a bundle SKU can hold 1,012 units against 5 sold in a quarter, which is
  * 91,080 days. Printing that verbatim is technically honest and practically
- * useless — six digits of false precision that make the page look broken.
+ * useless, six digits of false precision that make the page look broken.
  *
  * Past two years the exact figure carries no information anyway: everything up
  * there means "this will not sell through in any planning horizon", and for a
  * cosmetics SKU it means "this expires first".
  */
 export function formatCover(days: number | null): string {
-  if (days === null) return "—";
+  if (days === null) return NO_VALUE;
   if (days < 730) return `${Math.round(days)} days`;
   const years = days / 365;
   return years >= 100 ? "100+ years" : `${Math.round(years)} years`;
@@ -198,14 +200,9 @@ export function buildExceptions(rows: InventoryRow[]): Exception[] {
         stake: annualisedContribution(row),
         evidence:
           cover <= 0
-            ? `Nothing on hand, but it sold ${n(row.unitsSold)} units and made ` +
-              `${n(row.margin)} in margin over the 90 days to the count. Either it ` +
-              `stocked out or inventory tracking is off for it — worth confirming ` +
-              `which, because only one of those is an emergency.`
+            ? `Nothing on hand. ${n(row.unitsSold)} units sold in 90 days.`
             : `${formatCover(cover)} of cover at ${row.velocityPerDay.toFixed(1)} ` +
-              `units/day. Any supplier lead time longer than that means the ` +
-              `stockout is already unavoidable — and advertising into it spends ` +
-              `CAC on an empty shelf.`,
+              `units/day.`,
       });
     }
 
@@ -221,20 +218,17 @@ export function buildExceptions(rows: InventoryRow[]): Exception[] {
         stake: releasable,
         evidence:
           state === "dead"
-            ? `${n(row.onHand)} units on hand and nothing sold in 90 days — ` +
-              `roughly ${n(releasable)} at cost, doing nothing. For a cosmetics ` +
-              `SKU this is also an expiry clock, not just idle cash.`
+            ? `Nothing sold in 90 days. ${n(row.onHand)} units, about ${n(releasable)} at cost.`
             : `${formatCover(row.daysCover)} of cover at ` +
-              `${row.velocityPerDay.toFixed(2)} units/day. Clearing back to ` +
-              `${COVER_OVERSTOCK_DAYS} days would release about ${n(releasable)} ` +
-              `of the ${n(row.stockValueAtCost)} tied up here.`,
+              `${row.velocityPerDay.toFixed(2)} units/day. Clearing to ` +
+              `${COVER_OVERSTOCK_DAYS} days frees about ${n(releasable)}.`,
       });
     }
   }
 
   return candidates
     .sort((a, b) => {
-      // Urgency first, then size — a hero product about to run out outranks a
+      // Urgency first, then size, a hero product about to run out outranks a
       // larger pile of slow stock, because only one of them has a deadline.
       if (a.severity !== b.severity) return a.severity === "high" ? -1 : 1;
       return b.stake - a.stake;
@@ -252,11 +246,10 @@ export function buildExceptions(rows: InventoryRow[]): Exception[] {
  * scored on one quarter of margin and an overstock on the entire value of the
  * pile. A margin is a recurring flow and stock value is a one-off balance, and
  * scoring a quarter of the flow against all of the balance pushed both errors
- * the same way — slow stock outranked genuinely empty shelves.
+ * the same way, slow stock outranked genuinely empty shelves.
  *
- * On real Dobias data that put two overstocked SKUs above TickHex and
- * LiverTune H+, both of which were at zero. Exactly backwards from what the
- * page is for.
+ * On real data that put two overstocked SKUs above best sellers that were at
+ * zero. Exactly backwards from what the page is for.
  *
  * Four quarters is a ranking device, not a forecast: it does not claim the
  * stockout lasts a year, only that a recurring loss and a one-off release
@@ -267,7 +260,7 @@ function annualisedContribution(row: InventoryRow): number {
 }
 
 /**
- * Cash a markdown could actually free — the excess over a healthy cover level,
+ * Cash a markdown could actually free, the excess over a healthy cover level,
  * not the whole pile.
  *
  * Nobody clears an overstocked SKU to zero; they clear it back to a sensible
@@ -275,7 +268,7 @@ function annualisedContribution(row: InventoryRow): number {
  * whatever the SKU legitimately needs to hold, and overstates it most for the
  * fast movers that need the most.
  *
- * Dead stock has no velocity and so no legitimate holding — the whole value is
+ * Dead stock has no velocity and so no legitimate holding, the whole value is
  * releasable, which is what makes it dead rather than merely slow.
  */
 function releasableCash(row: InventoryRow): number {
@@ -296,7 +289,7 @@ function releasableCash(row: InventoryRow): number {
 // ---------------------------------------------------------------------------
 
 export interface ReorderLine {
-  /** Product name — the grain a purchase order is actually written at. */
+  /** Product name, the grain a purchase order is actually written at. */
   itemName: string;
   abc: AbcGrade;
   /** How many variant SKUs fold into this line. 1 for most products. */
@@ -305,7 +298,7 @@ export interface ReorderLine {
   suggestedUnits: number;
   /** What those units cost at the last known unit cost. */
   cost: number;
-  /** Cover of the *worst* variant, in days — the one that runs out first. */
+  /** Cover of the *worst* variant, in days, the one that runs out first. */
   daysCover: number | null;
   /** Combined sales rate across the variants. */
   velocityPerDay: number;
@@ -321,15 +314,15 @@ export interface ReorderLine {
  * and **what quantity is actually orderable** needs the MOQ and case pack.
  * Neither exists yet, so this returns the raw recommendation only.
  *
- * That split is the one every serious tool makes — Inventory Planner separates
+ * That split is the one every serious tool makes, Inventory Planner separates
  * `Replenishment` from `To order`, Prediko separates `To Buy (Live)` from
- * `Units to Order (Next PO)` — because the gap between them is the MOQ tax and
+ * `Units to Order (Next PO)`, because the gap between them is the MOQ tax and
  * the buyer should see it rather than have it folded in silently.
  *
  * ── Why lines are products, not SKUs ────────────────────────────────────────
- * Dobias sells one leash in twelve colours. Per-SKU, that is twelve order lines
- * of one to seven units and twelve to ninety dollars each — fifteen of the
- * twenty-two lines in the plan, carrying 1.7% of the cash. Nobody writes a
+ * A product sold in twelve colours is twelve SKUs. Per-SKU, that is twelve order
+ * lines of one to seven units each, which filled most of the plan while
+ * carrying under 2% of the cash. Nobody writes a
  * purchase order that way; they order leashes, then split by colour. Grouping
  * on the product title turns the plan back into something a buyer can read,
  * and the per-variant detail is one click away in the catalogue.
@@ -344,7 +337,7 @@ export interface ReorderLine {
  * cannot be added to the total, and a plan with a partial total is worse than
  * one that names what it left out.
  *
- * Dead SKUs fall out naturally — zero velocity gives a zero target, so nothing
+ * Dead SKUs fall out naturally, zero velocity gives a zero target, so nothing
  * is suggested for stock that is not moving. That is correct: the answer for a
  * dead SKU is a markdown, not a purchase order.
  */

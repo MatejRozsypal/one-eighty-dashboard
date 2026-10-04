@@ -3,14 +3,14 @@
 /**
  * The assistant conversation.
  *
- * Two states, one control. Empty, it is a centred column — mark, one line, and
- * the box — which is the shape of the reference and the right one for a screen
+ * Two states, one control. Empty, it is a centred column, mark, one line, and
+ * the box, which is the shape of the reference and the right one for a screen
  * whose only job is to accept a first sentence. Once anything has been said the
  * transcript takes the space and the same box pins to the bottom.
  *
  * The wait is a real round trip to `/api/chat`. The reply is a fixed holding
  * line today, so it would have been easy to render it instantly and ship an
- * interface that had never been exercised against latency at all — the pending
+ * interface that had never been exercised against latency at all, the pending
  * state and the failure path are the parts of a chat that are actually hard.
  */
 
@@ -37,7 +37,7 @@ export function Conversation() {
   async function send() {
     const text = draft.trim();
     const images = attachments;
-    // An image on its own is a question — "what is wrong with this ad?" — so
+    // An image on its own is a question, "what is wrong with this ad?", so
     // the send is allowed with no text at all.
     if ((!text && images.length === 0) || pending) return;
 
@@ -91,7 +91,7 @@ export function Conversation() {
           <div className="flex items-center justify-center gap-3">
             <Logo markOnly size={34} />
             <h1 className="m-0 text-center text-[30px] font-bold leading-[1.15] tracking-heading text-content-strong lg:text-[34px]">
-              What do you want to know?
+              Assistant
             </h1>
           </div>
           {composer}

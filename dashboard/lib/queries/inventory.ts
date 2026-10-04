@@ -1,17 +1,17 @@
 /**
- * Inventory — what is on the shelf, how fast it leaves, and what that costs.
+ * Inventory, what is on the shelf, how fast it leaves, and what that costs.
  *
  * The page this feeds answers one question the rest of the dashboard cannot:
  * not "what did we earn" but "how much of what we sell can we still sell."
  *
  * This module is the data access half only. The shapes, thresholds and
  * classification rules live in `lib/inventory/model.ts`, which is pure and
- * importable without a database client — the demo generator needs the same
+ * importable without a database client, the demo generator needs the same
  * rules and should not have to reach through BigQuery to get them.
  *
  * ── Why the numbers describe a point in the past ────────────────────────────
- * There is one stock snapshot per client in the warehouse — the products
- * webhook is not appending — so `mart_sku_inventory` pairs each snapshot with
+ * There is one stock snapshot per client in the warehouse, the products
+ * webhook is not appending, so `mart_sku_inventory` pairs each snapshot with
  * the 90 days of sales ending on the same date. That makes days-of-cover an
  * internally consistent statement about that date rather than a ratio whose
  * numerator and denominator come from different months. `snapshotAgeDays` is
@@ -22,6 +22,7 @@
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isMissingObject } from "@/lib/queries/errors";
 import { num, isoDate } from "@/lib/coerce";
+import { NO_VALUE } from "@/lib/format";
 import { isDemo } from "@/lib/demo/client";
 import { demoInventory } from "@/lib/demo/inventory";
 import {
@@ -65,7 +66,7 @@ export async function getInventory(clientId: string): Promise<InventoryData> {
     if (raw.length === 0) return { rows: [], summary: EMPTY_SUMMARY };
 
     const rows: InventoryRow[] = raw.map((r) => ({
-      sku: String(r.sku ?? "—"),
+      sku: String(r.sku ?? NO_VALUE),
       itemName: String(r.item_name ?? "Unknown"),
       productLine: r.product_line ? String(r.product_line) : null,
       unitsSold: num(r.units_90d) ?? 0,
@@ -84,7 +85,7 @@ export async function getInventory(clientId: string): Promise<InventoryData> {
       inCatalogue: r.in_catalogue === true,
     }));
 
-    // Sorted by contribution, which is also what the ABCD grade ranks on — so
+    // Sorted by contribution, which is also what the ABCD grade ranks on, so
     // the table reads down in the same order the grades were assigned.
     rows.sort((a, b) => (b.margin ?? 0) - (a.margin ?? 0));
 
@@ -102,7 +103,7 @@ export async function getInventory(clientId: string): Promise<InventoryData> {
       valueAtRisk: sumStockValue(rows, "at-risk"),
       valueOverstocked: sumStockValue(rows, "overstocked"),
       valueDead: sumStockValue(rows, "dead"),
-      // Sold in the window but nothing left. Genuinely ambiguous — a real
+      // Sold in the window but nothing left. Genuinely ambiguous, a real
       // stockout and a SKU with inventory tracking switched off look identical
       // from here, which is why the UI names both possibilities.
       stockedOutCount: rows.filter(

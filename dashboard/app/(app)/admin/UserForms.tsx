@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Client half of the admin screen — the bits that need form state.
+ * Client half of the admin screen, the bits that need form state.
  *
  * The temporary password is the one thing here that cannot be re-read: it is
  * returned by the action, rendered once, and then only exists wherever the
@@ -39,8 +39,7 @@ function TemporaryPassword({ result }: { result: ActionResult }) {
         {result.temporaryPassword}
       </code>
       <span className="text-[12px] leading-[1.5] text-content-body">
-        Shown once and never stored in a readable form — copy it now. They will
-        be asked to choose their own the first time they sign in.
+        Shown once. Copy it now.
       </span>
     </div>
   );
@@ -50,7 +49,7 @@ function TemporaryPassword({ result }: { result: ActionResult }) {
  * `fixedClient` is the per-client variant.
  *
  * Invited from inside a client's settings, the only sensible account is a
- * client-role one confined to that client — so the role and client pickers
+ * client-role one confined to that client, so the role and client pickers
  * disappear rather than being pre-filled and editable. Leaving them editable
  * would make it possible to create an agency account, which sees every client,
  * from a screen whose whole framing is one client.
@@ -98,7 +97,7 @@ export function CreateUserForm({
                   Access
                 </span>
                 <span className="text-[13px] text-content-body">
-                  {fixedClient.name} only — they will not see any other client.
+                  {fixedClient.name} only
                 </span>
               </div>
             </>
@@ -114,9 +113,15 @@ export function CreateUserForm({
                   onChange={(e) => setRole(e.target.value as Role)}
                   className={field}
                 >
-                  <option value="client">Client — one client only</option>
-                  <option value="agency">Agency — every client</option>
-                  <option value="admin">Admin — every client + user management</option>
+                  <option value="client" title="One client only">
+                    Client
+                  </option>
+                  <option value="agency" title="Every client">
+                    Agency
+                  </option>
+                  <option value="admin" title="Every client, plus access management">
+                    Admin
+                  </option>
                 </select>
               </label>
 
@@ -141,7 +146,7 @@ export function CreateUserForm({
         </div>
 
         <div className="flex items-center gap-3">
-          <Submit label="Create user" busy="Creating…" />
+          <Submit label="Create user" busy="Creating..." />
           {result?.ok === false && (
             <span className="text-[12.5px] text-negative">{result.message}</span>
           )}

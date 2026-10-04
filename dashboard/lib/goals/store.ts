@@ -11,7 +11,7 @@ import "server-only";
  * different answers to "what are we aiming at". Summing has one source.
  *
  * The cost is that a genuine annual target cannot be expressed except by
- * dividing it across months. That is the right trade here — the plan the
+ * dividing it across months. That is the right trade here, the plan the
  * business actually runs on is monthly, and it is the grain the Growth page
  * already uses.
  *
@@ -19,7 +19,7 @@ import "server-only";
  * Revenue, orders, new customers and CM3 are all quantities that add up across
  * months, so attainment means the same thing at every level: 87% of a month,
  * of a quarter, of a year. A target on MER or CAC would not survive the same
- * roll-up — you cannot sum a ratio — and "under target" would be *good* for
+ * roll-up, you cannot sum a ratio, and "under target" would be *good* for
  * CAC and bad for revenue, so each would have to carry a direction. Excluded
  * deliberately rather than by omission.
  *
@@ -31,7 +31,7 @@ import "server-only";
 
 import { sql, userStoreConfigured } from "@/lib/users/db";
 
-/** The metrics a target may be set on. Absolute quantities only — see above. */
+/** The metrics a target may be set on. Absolute quantities only, see above. */
 export const GOAL_METRICS = [
   {
     key: "revenue",
@@ -50,7 +50,7 @@ export const GOAL_METRICS = [
     key: "new_customers",
     label: "New customers",
     format: "number" as const,
-    blurb: "First-time customer orders — the acquisition number.",
+    blurb: "First-time customer orders, the acquisition number.",
   },
   {
     key: "cm3",
@@ -130,7 +130,7 @@ function toGoal(r: Row): Goal {
   return {
     clientId: r.client_id,
     metric: r.metric,
-    // Read as UTC — a DATE has no timezone, and letting the server's offset
+    // Read as UTC, a DATE has no timezone, and letting the server's offset
     // shift it turns 2026-03-01 into February for anyone west of UTC.
     month: new Date(r.month).toISOString().slice(0, 10),
     target: Number(r.target),
@@ -163,7 +163,7 @@ export async function listGoals(
  * Set or clear one month's target.
  *
  * A null target deletes the row rather than storing zero. Zero is a target of
- * nothing — a real, if odd, intention — whereas absent means nobody has said,
+ * nothing, a real, if odd, intention, whereas absent means nobody has said,
  * and the Goals page renders those two very differently.
  */
 export async function saveGoal(
@@ -174,7 +174,7 @@ export async function saveGoal(
   updatedBy: string
 ): Promise<void> {
   if (!(await ensureTable())) {
-    throw new Error("The goals table is unavailable; the target was not saved.");
+    throw new Error("Could not save target.");
   }
 
   if (target === null) {

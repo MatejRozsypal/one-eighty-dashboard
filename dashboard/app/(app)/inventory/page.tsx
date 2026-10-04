@@ -1,5 +1,5 @@
 /**
- * Stock health — cash on the shelf, and what is about to go wrong.
+ * Stock health, cash on the shelf, and what is about to go wrong.
  *
  * ── Why this page is an exception list, not a report ────────────────────────
  * The published base rate for BI adoption is bad, and the diagnosed cause is
@@ -22,6 +22,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getClients, resolveClient } from "@/lib/clients";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
 import { getInventory } from "@/lib/queries/inventory";
@@ -35,9 +36,9 @@ import { safeDiv } from "@/lib/coerce";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NoData, NotConnected } from "@/components/ui/EmptyState";
 import { TrustBar } from "@/components/inventory/TrustBar";
-import { NoStockData } from "@/components/inventory/NoStockData";
-import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Stock health" };
 export const dynamic = "force-dynamic";
@@ -49,44 +50,67 @@ export default async function StockHealthPage({
 }) {
   const params = parseViewParams(searchParams);
   const clients = await getClients();
-  // The confinement gate — a client-role account gets its own client here no
+  // The confinement gate, a client-role account gets its own client here no
   // matter what `?client=` asks for.
   const client = await resolveClient(params.clientId, clients);
-  const { rows, summary } = await getInventory(client.clientId);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
   const qs = params.clientId ? `?client=${params.clientId}` : "";
 
   const header = (
     <>
-      <Header
-        eyebrow={pageEyebrow("/inventory", client.name)}
-        title="Stock health"
-      />
-      <PageControls client={client} params={params} scope="current stock" />
+      <Header title="Stock health" />
+      <PageControls client={client} params={params} />
     </>
   );
+
+  // Stock comes from the Shopify products snapshot only.
+  if (pageAvailability(client, "/inventory") !== "available") {
+    return (
+      <>
+        {header}
+        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/inventory") ?? "Shopify"} />
+        </main>
+      </>
+    );
+  }
+
+  const { rows, summary } = await getInventory(client.clientId);
 
   if (rows.length === 0) {
     return (
       <>
         {header}
-        <NoStockData clientName={client.name} />
+        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+          <NoData />
+        </main>
       </>
     );
   }
 
   const exceptions = buildExceptions(rows);
 
-  const buckets = [
+  const buckets: Array<{ label: string; value: number; tone: string; info?: string }> = [
     { label: "Healthy", value: summary.valueHealthy, tone: "text-growth-700" },
-    { label: "At risk", value: summary.valueAtRisk, tone: "text-negative" },
+    {
+      label: "At risk",
+      value: summary.valueAtRisk,
+      tone: "text-negative",
+      info: `Under ${COVER_AT_RISK_DAYS} days of cover.`,
+    },
     {
       label: "Overstocked",
       value: summary.valueOverstocked,
       tone: "text-content-strong",
+      info: `Over ${COVER_OVERSTOCK_DAYS} days of cover.`,
     },
-    { label: "Dead", value: summary.valueDead, tone: "text-content-strong" },
+    {
+      label: "Dead",
+      value: summary.valueDead,
+      tone: "text-content-strong",
+      info: "Nothing sold in the 90 days to the count.",
+    },
   ];
 
   return (
@@ -98,20 +122,12 @@ export default async function StockHealthPage({
         {/* ── The one number ──────────────────────────────────────────────── */}
         <section className="flex flex-col gap-5 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[26px]">
           <div className="flex flex-col gap-1.5">
-            <Eyebrow>Cash in stock · at cost</Eyebrow>
+            <Eyebrow>Cash in stock</Eyebrow>
             <span className="font-mono text-[34px] font-semibold leading-none tracking-heading tabular text-content-strong">
               {money(summary.stockValueAtCost)}
             </span>
             <span className="text-[12.5px] text-content-muted">
               across {formatNumber(summary.skuCount)} SKUs
-              {summary.skusWithCost < summary.skuCount && (
-                <>
-                  {" "}
-                  — excludes{" "}
-                  {formatNumber(summary.skuCount - summary.skusWithCost)} with no
-                  cost on file, so the real figure is higher
-                </>
-              )}
             </span>
           </div>
 
@@ -120,6 +136,12 @@ export default async function StockHealthPage({
               <div key={b.label} className="flex flex-col gap-1.5">
                 <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
                   {b.label}
+                  {b.info && (
+                    <>
+                      {" "}
+                      <InfoTip text={b.info} />
+                    </>
+                  )}
                 </span>
                 <span
                   className={`font-mono text-[19px] font-semibold leading-none tracking-heading tabular ${b.tone}`}
@@ -135,13 +157,6 @@ export default async function StockHealthPage({
             ))}
           </div>
 
-          <p className="border-t border-hairline pt-3.5 text-[12px] leading-[1.6] text-content-muted">
-            At risk = under {COVER_AT_RISK_DAYS} days of cover. Overstocked =
-            over {COVER_OVERSTOCK_DAYS}. Dead = nothing sold in the window. Those
-            two thresholds are placeholders for real supplier lead times, which
-            no client has given us yet — until then they are assumptions, not
-            measurements.
-          </p>
         </section>
 
         {/* ── The ranked action list ──────────────────────────────────────── */}
@@ -149,15 +164,13 @@ export default async function StockHealthPage({
           <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
             <Eyebrow>What to do</Eyebrow>
             <span className="text-[12px] text-content-muted">
-              Top {exceptions.length} by money at stake
+              Top {exceptions.length} by value at risk
             </span>
           </div>
 
           {exceptions.length === 0 ? (
             <div className="px-5 py-6 text-[13px] text-content-body">
-              Nothing is outside its thresholds. Given the age of this snapshot,
-              read that as &ldquo;nothing was wrong when it was taken&rdquo;
-              rather than as an all-clear.
+              Nothing outside thresholds.
             </div>
           ) : (
             <ul className="divide-y divide-hairline">
@@ -187,22 +200,19 @@ export default async function StockHealthPage({
             </ul>
           )}
 
-          <div className="border-t border-hairline px-5 py-3.5 text-[12px] text-content-muted">
-            Check any of these against the{" "}
+          <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-hairline px-5 py-3.5 text-[12px]">
             <Link
               href={`/inventory/catalogue${qs}`}
               className="font-semibold text-content-body underline underline-offset-2"
             >
-              full catalogue
+              Full catalogue
             </Link>
-            , or turn the reorders into quantities on the{" "}
             <Link
               href={`/inventory/buying${qs}`}
               className="font-semibold text-content-body underline underline-offset-2"
             >
-              buying plan
+              Buying plan
             </Link>
-            .
           </div>
         </section>
       </main>

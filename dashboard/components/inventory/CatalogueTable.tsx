@@ -2,13 +2,15 @@
  * The full SKU grid.
  *
  * Lives in a component rather than in the page because it is the evidence for
- * the decisions on the other two screens — a reader checking why something was
+ * the decisions on the other two screens, a reader checking why something was
  * flagged should meet the same table, with the same columns in the same order,
  * whichever way they arrived.
  */
 
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { DataTable } from "@/components/ui/DataTable";
+import { NoValue, Value } from "@/components/ui/EmptyState";
+import { NO_VALUE } from "@/lib/format";
 import {
   formatCover,
   stockState,
@@ -20,22 +22,16 @@ import { Eyebrow } from "@/components/ui/Eyebrow";
 export function CatalogueTable({
   rows,
   currency,
-  caption = true,
 }: {
   rows: InventoryRow[];
   currency: string;
-  /** The explainer under the table. Off when the page explains ABCD itself. */
-  caption?: boolean;
 }) {
   const money = (v: number | null) => formatMoney(v, currency);
 
   return (
     <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
-        <Eyebrow>Catalogue · mart_sku_inventory</Eyebrow>
-        <span className="text-[12px] text-content-muted">
-          Click a heading to sort
-        </span>
+      <div className="border-b border-hairline px-5 py-4">
+        <Eyebrow>Catalogue</Eyebrow>
       </div>
 
       <div className="overflow-x-auto">
@@ -44,12 +40,21 @@ export function CatalogueTable({
             gridClass="grid grid-cols-[2fr_0.5fr_0.7fr_0.7fr_0.8fr_0.9fr_0.8fr_0.9fr] items-center gap-2"
             columns={[
               { key: "product", label: "Product" },
-              { key: "abc", label: "ABCD" },
+              {
+                key: "abc",
+                label: "ABCD",
+                info: "Ranked on contribution margin over 90 days. A is the first 80%, B the next 15%, C the rest. D sold nothing. U has under 8 weeks of history.",
+              },
               { key: "units", label: "Units 90d", align: "right" },
               { key: "perDay", label: "Per day", align: "right" },
               { key: "onHand", label: "On hand", align: "right" },
               { key: "cover", label: "Cover", align: "right" },
-              { key: "str", label: "Sell-thr.", align: "right" },
+              {
+                key: "str",
+                label: "Sell-thr.",
+                align: "right",
+                info: "Units sold divided by units sold plus on hand, over 90 days.",
+              },
               { key: "value", label: "Stock value", align: "right" },
             ]}
             rows={rows.map((r) => ({
@@ -83,23 +88,23 @@ export function CatalogueTable({
                   {formatNumber(r.unitsSold)}
                 </span>,
                 <span className="font-mono text-[12.5px] tabular text-content-muted">
-                  {r.velocityPerDay > 0 ? r.velocityPerDay.toFixed(2) : "—"}
+                  <Value>
+                    {r.velocityPerDay > 0 ? r.velocityPerDay.toFixed(2) : NO_VALUE}
+                  </Value>
                 </span>,
                 <span
                   className={`font-mono text-[12.5px] tabular ${
                     r.negativeStock ? "text-negative" : "text-content-body"
                   }`}
                 >
-                  {r.onHand === null ? "—" : formatNumber(r.onHand)}
+                  <Value>{formatNumber(r.onHand)}</Value>
                 </span>,
                 <CoverCell row={r} />,
                 <span className="font-mono text-[12.5px] tabular text-content-muted">
-                  {r.sellThrough === null
-                    ? "—"
-                    : formatPercent(r.sellThrough, { decimals: 0 })}
+                  <Value>{formatPercent(r.sellThrough, { decimals: 0 })}</Value>
                 </span>,
                 <span className="font-mono text-[12.5px] tabular text-content-strong">
-                  {r.hasCost ? money(r.stockValueAtCost) : "—"}
+                  <Value>{r.hasCost ? money(r.stockValueAtCost) : NO_VALUE}</Value>
                 </span>,
               ],
             }))}
@@ -107,30 +112,13 @@ export function CatalogueTable({
         </div>
       </div>
 
-      {caption && (
-        <div className="px-5 py-3.5 text-[12px] leading-[1.6] text-content-muted">
-          <strong className="font-semibold text-content-body">ABCD</strong> is
-          ours, not Shopify&apos;s: it ranks on contribution margin over 90 days,
-          where Shopify ranks on revenue over a fixed 28 and has no D grade at
-          all. A/B/C are cumulative — first 80% of contribution, next 15%, the
-          rest. <strong className="font-semibold text-content-body">D</strong>{" "}
-          sold nothing in the window;{" "}
-          <strong className="font-semibold text-content-body">U</strong> has
-          under 8 weeks of history and is too new to grade.{" "}
-          <strong className="font-semibold text-content-body">
-            Sell-through
-          </strong>{" "}
-          is units sold ÷ (sold + still on hand) over the same 90 days — one of
-          five definitions in circulation, so compare it only with itself.
-        </div>
-      )}
     </section>
   );
 }
 
 function GradeChip({ grade }: { grade: AbcGrade }) {
   if (!grade) {
-    return <span className="font-mono text-[11px] text-content-muted">—</span>;
+    return <NoValue />;
   }
   const tone =
     grade === "A"
@@ -149,11 +137,7 @@ function GradeChip({ grade }: { grade: AbcGrade }) {
 
 function CoverCell({ row }: { row: InventoryRow }) {
   if (row.daysCover === null) {
-    return (
-      <span className="font-mono text-[12.5px] tabular text-content-muted">
-        —
-      </span>
-    );
+    return <NoValue />;
   }
   const state = stockState(row);
   const tone =

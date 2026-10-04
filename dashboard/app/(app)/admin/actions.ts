@@ -4,7 +4,7 @@
  * Admin mutations.
  *
  * Every action re-checks that the caller is an admin. The nav already hides
- * these screens from everyone else, but hiding a button is not authorisation —
+ * these screens from everyone else, but hiding a button is not authorisation -
  * a server action is a public HTTP endpoint, callable by anyone who knows it
  * exists. The check has to live here, next to the write.
  */
@@ -33,7 +33,7 @@ async function requireAdmin(): Promise<string> {
 function parseRole(value: FormDataEntryValue | null): Role {
   const role = String(value ?? "");
   if (role !== "admin" && role !== "agency" && role !== "client") {
-    throw new Error(`Unknown role: ${role}`);
+    throw new Error("Invalid role.");
   }
   return role;
 }
@@ -41,7 +41,7 @@ function parseRole(value: FormDataEntryValue | null): Role {
 export interface ActionResult {
   ok: boolean;
   message?: string;
-  /** Present only right after a create or reset — shown once, never stored. */
+  /** Present only right after a create or reset, shown once, never stored. */
   temporaryPassword?: string;
   email?: string;
 }
@@ -60,7 +60,7 @@ export async function createUserAction(
     const clientId = String(formData.get("clientId") ?? "") || null;
 
     if (role === "client" && !clientId) {
-      return { ok: false, message: "A client user needs a client to be assigned to." };
+      return { ok: false, message: "Pick a client first." };
     }
 
     const { temporaryPassword } = await createUser({

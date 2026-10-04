@@ -12,13 +12,14 @@
  * ── Why a collapsed section still says something ────────────────────────────
  * An accordion of bare headings makes you open all of them to find the one you
  * want, which is worse than the long page it replaced. So each section carries
- * a one-line `summary` of its own state — "OpEx 28% · fulfilment $4.20",
- * "9 of 12 months set", "3 with access" — and the collapsed screen becomes a
+ * a one-line `summary` of its own state, "OpEx 28% · fulfilment $4.20",
+ * "9 of 12 months set", "3 with access", and the collapsed screen becomes a
  * status overview rather than a menu. Where a section has nothing set, saying
  * so is the most useful thing it can show.
  */
 
 import type { ReactNode } from "react";
+import { InfoTip } from "@/components/ui/InfoTip";
 
 export function SettingsSection({
   title,
@@ -34,7 +35,8 @@ export function SettingsSection({
 }: {
   title: string;
   summary?: ReactNode;
-  description?: ReactNode;
+  /** Optional definition, shown as an (i) tooltip beside the title. At most 40 words. */
+  description?: string;
   children: ReactNode;
   defaultOpen?: boolean;
 }) {
@@ -63,6 +65,7 @@ export function SettingsSection({
           <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
             {title}
           </span>
+          {description && <InfoTip text={description} label={`About ${title}`} />}
           {/*
             Hidden once open: the panel below then states everything this line
             summarised, and leaving it visible reads as a stale duplicate.
@@ -76,11 +79,6 @@ export function SettingsSection({
       </summary>
 
       <div className="flex flex-col gap-4 border-t border-hairline p-[18px_20px_22px] lg:p-[18px_26px_22px]">
-        {description && (
-          <span className="text-[12.5px] leading-[1.5] text-content-muted">
-            {description}
-          </span>
-        )}
         {children}
       </div>
     </details>

@@ -1,12 +1,12 @@
 /**
- * Conversation history — in this browser only, for now.
+ * Conversation history, in this browser only, for now.
  *
  * ── Why localStorage and not Postgres yet ──────────────────────────────────
  * The real thing is per account and belongs in the app database beside
  * `app_users`. It is not there yet because a database path that has never been
  * run is how this app previously shipped an auth bootstrap that locked the only
  * account out of user management. This version is deliberately the shape of the
- * final one — a list of conversations, each a list of messages — so replacing
+ * final one, a list of conversations, each a list of messages, so replacing
  * the storage underneath it touches this file and nothing else.
  *
  * What that costs, stated plainly: history lives in one browser. It is not
@@ -52,14 +52,13 @@ export function titleFrom(text: string, hasImage: boolean): string {
   return hasImage ? "Image" : "New conversation";
 }
 
-const HOLDING =
-  "This function is in progress. Please wait for further information from Matt. Thank you! 🤫";
+const HOLDING = "Coming soon.";
 
 /**
  * Examples, so the list is legible before anyone has typed anything.
  *
  * Marked `example` and removable. They are questions this business would
- * actually ask — attribution, dead stock, the cancelled-order trap — because a
+ * actually ask, attribution, dead stock, the cancelled-order trap, because a
  * seed of "Hello" and "Test 1" teaches a reader nothing about what the thing
  * is for.
  */
@@ -69,10 +68,9 @@ function seed(): Conversation[] {
   const asked: Array<[string, number]> = [
     ["Is our ROAS good, or is Meta just marking its own homework?", 2],
     ["Which product is quietly losing us money on every order?", 9],
-    ["Are Dobias's dog owners better customers than the humans?", 27],
+    ["Which customer segment is worth the most over a year?", 27],
     ["How much cash is sitting on a shelf pretending to be an asset?", 51],
     ["If I switched off every ad tomorrow, what actually happens?", 76],
-    ["Please tell me we're not counting Stornována as revenue again.", 120],
   ];
 
   return asked.map(([text, agoHours], i) => {

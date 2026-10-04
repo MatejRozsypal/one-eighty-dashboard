@@ -79,6 +79,28 @@ approval of 228 to 233 and the view deploys, cost assumptions for Ethia and
 RawBark), the visual walk of the done matrix on the dev server, and the prod deploy
 (`npx vercel --prod --yes` from the repo root, owner OK first).
 
+### Deployed to prod 2026-10-05 (BigQuery)
+
+Owner approved and deployed (BigQuery job times 2026-10-04 17:21 to 17:29 UTC):
+**228, 230, 231, 232, 233, 240, 241, 242**. Not deployed: 229, 230b (scheduled query
+text, so Woo freshness is not monitored yet), 243, DTS backfill, n8n changes.
+Every view was read back from INFORMATION_SCHEMA and its MD5 equals the migration file.
+
+- **228:** zero diff vs the pre-deploy baseline for Manami, Dobias, Venev (one Manami day
+  differs only by FLOAT64 noise in `google_spend`). Ethia and RawBark per-day revenue and
+  net_sales delta equals the fee-line sum exactly (RawBark -1,980,613.22 CZK over 25 months,
+  Ethia -9,857 CZK). RawBark COGS and CM1 to CM3 are NULL on all days.
+- **230 to 233:** 2 Woo rows in `ref.feed_sla`; RawBark `taxes_included` FALSE, no NULL
+  `has_woocommerce`, `has_ga4` TRUE for Dobias and Manami only; FX reaches 2026-10-01 for
+  USD, EUR and CZK pairs (Sept final, Oct provisional); the FX alert is gone from
+  `ops.v_pipeline_alerts`; RawBark October EUR orders have revenue (0 NULL of 94).
+- **240 to 242:** existing Meta columns zero diff (2,855 campaign rows, 12,547 ad rows);
+  client-currency spend equals `mart_daily_kpis` meta_spend for every client-month; Google
+  marts reconcile to `mart_daily_kpis.google_*` in 27 of 27 client-months, device and ad
+  group views match, grain duplicates 0.
+- Rollback: view definitions and table notes under the session scratchpad `rollback/`.
+  Report: `reports/deploy_bq_20261005.md`. Baselines: `mart_qa.base_*_20261005`.
+
 ## 2026-10-01: Google Ads for every client + Phase 4 (MER, aMER, CAC on `paid_spend`)
 
 - `stg_google_ads_campaign_insights` no longer hardcodes accounts: it reads the DTS base tables

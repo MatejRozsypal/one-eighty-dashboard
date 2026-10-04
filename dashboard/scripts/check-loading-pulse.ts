@@ -14,7 +14,11 @@
  *     group, and each is built from the one Skeleton primitive;
  *   - the skeletons render, and carry the pulse class;
  *   - the widget hook reports loading for any request its stored result does
- *     not answer.
+ *     not answer;
+ *   - a client switch hides the page body behind a skeleton (no old figure
+ *     under the new name), query-only navigation keeps the scroll position,
+ *     the range chip shows the pending preset, the mobile menus are exclusive
+ *     and the mobile date control is a bottom sheet.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -22,6 +26,7 @@ import { join, relative } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppLink } from "@/components/ui/AppLink";
+import { ClientSwitchSkeleton, PendingRegionFrame, scrollFor } from "@/components/shell/NavigationPending";
 import { Skeleton, SkeletonPage, type SkeletonBlock } from "@/components/ui/Skeleton";
 import { answerKey } from "@/components/reports/useWidgetData";
 
@@ -111,7 +116,72 @@ check(
 {
   const provider = read(join(ROOT, "components", "shell", "NavigationPending.tsx"));
   check("provider exposes navigate and refresh", provider.includes("navigate,") && provider.includes("refresh"));
-  check("pending region marks data-pending", provider.includes('data-pending={isPending ? "true" : undefined}'));
+  check("pending region marks data-pending", provider.includes('data-pending={pending ? (client ? "client" : "true") : undefined}'));
+}
+
+// ---------------------------------------------------------------------------
+// Navigation state: client switch, scroll, pending labels, mobile shell
+// ---------------------------------------------------------------------------
+
+{
+  // The pending region in each state, rendered without a router.
+  const frame = (pending: boolean, kind: "view" | "client" | null) =>
+    renderToStaticMarkup(createElement(PendingRegionFrame, { pending, kind, children: createElement("main", null, "x") }));
+  const idle = frame(false, null);
+  const view = frame(true, "view");
+  const client = frame(true, "client");
+  const HIDE = "[&amp;_main:not([aria-busy=true])]:invisible";
+  check("region idle: no data-pending", !idle.includes("data-pending") && !idle.includes(HIDE), idle);
+  check("region view change: data-pending=true, main pulses, not hidden", view.includes('data-pending="true"') && !view.includes(HIDE), view);
+  check("region client switch: data-pending=client", client.includes('data-pending="client"'), client);
+  check("region client switch: page main hidden (not a skeleton main)", client.includes(HIDE), client);
+  check("region client switch: main is the skeleton's frame", client.includes("[&amp;_main:not([aria-busy=true])]:relative"), client);
+  check("region client switch: main does not pulse", !css.includes('[data-pending="client"]') && !client.includes('data-pending="true"'));
+  check("region client switch: aria-busy", client.includes('aria-busy="true"'));
+
+  const sk = renderToStaticMarkup(createElement(ClientSwitchSkeleton));
+  check("client skeleton re-shows itself inside the hidden main", /^<div[^>]*class="visible absolute inset-0/.test(sk), sk.slice(0, 160));
+  check("client skeleton is hidden from assistive tech", sk.startsWith('<div aria-hidden="true"'));
+  check("client skeleton pulses through Skeleton blocks", (sk.match(/oe-skeleton/g) ?? []).length >= 8);
+  check("client skeleton sticks under the header", sk.includes("sticky top-[var(--header-h)]"));
+  check("client skeleton clips without becoming a scroll container", /^<div[^>]*class="[^"]*overflow-clip"/.test(sk) && !/^<div[^>]*class="[^"]*overflow-hidden/.test(sk));
+
+  const provider = read(join(ROOT, "components", "shell", "NavigationPending.tsx"));
+  check("pending kind is derived from isPending (never outlives the commit)", provider.includes("const pendingKind = isPending ? kind : null;"));
+  check("client skeleton mounts before paint", /useLayoutEffect\(\(\) => \{[\s\S]*?querySelector<HTMLElement>\(PAGE_MAIN\)/.test(provider));
+  check("client skeleton is portalled into the page main", provider.includes("createPortal(<ClientSwitchSkeleton />, host)"));
+  check("navigate resolves scroll through scrollFor", provider.includes("scrollFor(href, options?.scroll, window.location)") && provider.includes("router.push(href, { scroll })") && provider.includes("router.replace(href, { scroll })"));
+
+  for (const f of [join("components", "shell", "AccountMenu.tsx"), join("components", "shell", "MobileTopBar.tsx")]) {
+    check(`${f}: client switch is a client navigation`, read(join(ROOT, f)).includes('{ kind: "client" }'));
+  }
+}
+
+{
+  const here = { href: "https://x.test/paid/meta?client=a&cols=delivery", origin: "https://x.test", pathname: "/paid/meta" };
+  check("scroll: query-only change on the same path keeps position", scrollFor("/paid/meta?client=a&cols=funnel", undefined, here) === false);
+  check("scroll: client switch keeps position", scrollFor("/paid/meta?client=b&cols=delivery", undefined, here) === false);
+  check("scroll: same path, no query keeps position", scrollFor("/paid/meta", undefined, here) === false);
+  check("scroll: another path keeps the default", scrollFor("/paid/google?client=a", undefined, here) === undefined);
+  check("scroll: a hash keeps the default (jump to it)", scrollFor("/paid/meta?client=a#campaigns", undefined, here) === undefined);
+  check("scroll: explicit true wins", scrollFor("/paid/meta?client=a&cols=funnel", true, here) === true);
+  check("scroll: explicit false wins", scrollFor("/paid/google", false, here) === false);
+  check("scroll: another origin keeps the default", scrollFor("https://y.test/paid/meta", undefined, here) === undefined);
+}
+
+{
+  const date = read(join(ROOT, "components", "controls", "DateRangeControl.tsx"));
+  check("range chip shows the pending preset label", date.includes("pending?.label ??") && date.includes("label: PRESET_LABELS[key]"));
+  check("range trigger shows the pending range", date.includes("const shownRange = pending?.range ?? range;"));
+  check("range trigger and chip both pulse while pending", (date.match(/isPending \? "oe-pulse" : ""/g) ?? []).length >= 2);
+  check("date control is a bottom sheet below sm", date.includes("fixed inset-x-0 bottom-0") && date.includes("sm:absolute"));
+  check("date sheet: one month below sm", date.includes('mi === 0 ? "hidden sm:flex" : "flex"'));
+  check("date sheet: Cancel/Apply foot does not scroll away", /flex flex-none items-center justify-between[^"]*border-t/.test(date));
+
+  const bar = read(join(ROOT, "components", "shell", "MobileTopBar.tsx"));
+  check("mobile menus: one state for both (never open together)", bar.includes('useState<"pages" | "client" | null>(null)') && !/useState\(false\)/.test(bar));
+  check("mobile menus: Escape closes them", /e\.key === "Escape"\) setMenu\(null\)/.test(bar));
+  check("mobile sections wrap instead of scrolling sideways", bar.includes("grid grid-cols-2 gap-1"));
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +256,11 @@ for (const f of walk(APP).filter((x) => x.endsWith("loading.tsx"))) {
 const DASHES = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]`);
 
 const owned = [
+  join(ROOT, "components", "shell", "AccountMenu.tsx"),
+  join(ROOT, "components", "shell", "MobileTopBar.tsx"),
+  join(ROOT, "components", "controls", "DateRangeControl.tsx"),
+  join(ROOT, "components", "controls", "SegmentedControl.tsx"),
+  join(ROOT, "components", "controls", "MarketFilter.tsx"),
   join(ROOT, "components", "ui", "Skeleton.tsx"),
   join(ROOT, "components", "ui", "AppLink.tsx"),
   join(ROOT, "components", "ui", "PendingSubmit.tsx"),

@@ -9,6 +9,11 @@
  *
  * State lives in the URL so the view is shareable and server components can read
  * it without a round trip.
+ *
+ * Below the `sm` breakpoint the popover is a bottom sheet: presets first, the
+ * calendar (one month) behind "Custom range", and Cancel/Apply pinned to the
+ * sheet's foot. As a popover it was about 1,100 px tall on a phone, with Apply
+ * below the fold (QA C-13).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -94,14 +99,28 @@ export function DateRangeControl({
   // looking like the click was dropped.
   const { isPending, navigate } = useNavigation();
 
-  // While a range is in flight the trigger shows the range you asked for, not
-  // the one still on screen.
-  const [pendingRange, setPendingRange] = useState<DateRange | null>(null);
+  // While a range is in flight the trigger and its chip show the range you
+  // asked for, not the one still on screen, and both pulse until the page
+  // commits. The chip used to keep the old preset name, so the two disagreed
+  // for the length of the query (QA A-21).
+  const [pending, setPending] = useState<{ range: DateRange; label: string } | null>(null);
   useEffect(() => {
-    if (!isPending) setPendingRange(null);
+    if (!isPending) setPending(null);
   }, [isPending]);
 
-  const shownRange = pendingRange ?? range;
+  const shownRange = pending?.range ?? range;
+
+  // A tall sheet over a scrollable page invites scrolling the page behind it.
+  // Phones only: on wider screens it is a popover and the page may scroll.
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    if (!window.matchMedia("(max-width: 639.98px)").matches) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
 
   // Close on outside click / Escape, a popover this large is easy to strand open.
   useEffect(() => {
@@ -124,7 +143,7 @@ export function DateRangeControl({
     const next = new URLSearchParams(searchParams.toString());
     for (const [k, v] of Object.entries(params)) next.set(k, v);
     if (params.from && params.to) {
-      setPendingRange({ from: params.from, to: params.to });
+      setPending({ range: { from: params.from, to: params.to }, label: "Custom" });
     }
     setOpen(false);
     setCustomMode(false);
@@ -136,7 +155,7 @@ export function DateRangeControl({
     next.set("preset", key);
     next.delete("from");
     next.delete("to");
-    setPendingRange(presetRange(key));
+    setPending({ range: presetRange(key), label: PRESET_LABELS[key] });
     setOpen(false);
     navigate(`${pathname}?${next.toString()}`);
   }
@@ -154,7 +173,8 @@ export function DateRangeControl({
   }
 
   const label =
-    presetKey === "custom" ? "Custom" : PRESET_LABELS[presetKey as PresetKey];
+    pending?.label ??
+    (presetKey === "custom" ? "Custom" : PRESET_LABELS[presetKey as PresetKey]);
   const draftDays =
     draft.to !== null ? daysInRange({ from: draft.from, to: draft.to }) : null;
 
@@ -169,7 +189,12 @@ export function DateRangeControl({
     <div ref={wrapRef} className="relative flex items-center gap-2">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // Every opening starts on the presets; on a phone the calendar is a
+          // second step behind "Custom range".
+          if (!open) setCustomMode(false);
+          setOpen((v) => !v);
+        }}
         aria-expanded={open}
         aria-busy={isPending}
         className={`inline-flex items-center gap-2.5 rounded-control border border-hairline-strong bg-paper px-3 py-2 text-content-strong transition-colors duration-fast hover:bg-gray-50 ${
@@ -195,8 +220,24 @@ export function DateRangeControl({
       </span>
 
       {open && (
-        <div className="absolute left-0 top-[46px] z-[90] grid w-[min(760px,calc(100vw-2rem))] grid-cols-1 overflow-hidden rounded-lg border border-hairline bg-paper shadow-lg sm:grid-cols-[212px_minmax(0,1fr)]">
-          <div className="flex flex-col gap-0.5 border-hairline bg-gray-50 p-2.5 sm:border-r">
+        <>
+        {/* Phone only: dims the page behind the sheet and closes it on tap. */}
+        <button
+          type="button"
+          aria-label="Close date range"
+          onClick={() => setOpen(false)}
+          className="fixed inset-0 z-[89] block w-full cursor-default bg-ink-950/45 sm:hidden"
+        />
+        <div
+          role="dialog"
+          aria-label="Date range"
+          className="fixed inset-x-0 bottom-0 z-[90] flex max-h-[88dvh] flex-col overflow-hidden rounded-t-2xl border-t border-hairline bg-paper pb-[var(--safe-bottom)] shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-[46px] sm:grid sm:max-h-none sm:w-[min(760px,calc(100vw-2rem))] sm:grid-cols-[212px_minmax(0,1fr)] sm:rounded-lg sm:border sm:pb-0"
+        >
+          <div
+            className={`min-h-0 flex-col gap-0.5 overflow-y-auto border-hairline bg-gray-50 p-2.5 sm:flex sm:overflow-visible sm:border-r ${
+              customMode ? "hidden" : "flex"
+            }`}
+          >
             {PRESETS.map((key) => (
               <button
                 key={key}
@@ -225,7 +266,17 @@ export function DateRangeControl({
             </button>
           </div>
 
-          <div className="flex flex-col">
+          <div
+            className={`min-h-0 flex-1 flex-col sm:flex ${customMode ? "flex" : "hidden"}`}
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto sm:overflow-visible">
+            <button
+              type="button"
+              onClick={() => setCustomMode(false)}
+              className="px-5 pt-3.5 text-left text-[13px] text-content-muted sm:hidden"
+            >
+              ← Presets
+            </button>
             <div className="flex items-center gap-3 px-5 pb-3 pt-[18px]">
               <span className="flex-1 rounded-sm border border-hairline-strong px-3 py-[9px] font-mono text-[12.5px] tabular text-content-strong">
                 {fmt(draft.from)}
@@ -270,8 +321,13 @@ export function DateRangeControl({
             </div>
 
             <div className="grid gap-[22px] px-5 pb-3.5 pt-1.5 sm:grid-cols-2">
-              {months.map(({ year, month }) => (
-                <div key={`${year}-${month}`} className="flex min-w-0 flex-col gap-2">
+              {months.map(({ year, month }, mi) => (
+                <div
+                  key={`${year}-${month}`}
+                  // One month on a phone: the more recent one, which holds the
+                  // likely end of the range.
+                  className={`min-w-0 flex-col gap-2 ${mi === 0 ? "hidden sm:flex" : "flex"}`}
+                >
                   <span className="pb-1 pt-0.5 text-center text-[14px] font-semibold text-content-strong">
                     {new Date(Date.UTC(year, month, 1)).toLocaleDateString("en-US", {
                       month: "long",
@@ -326,8 +382,9 @@ export function DateRangeControl({
                 </div>
               ))}
             </div>
+            </div>
 
-            <div className="flex items-center justify-between gap-3 border-t border-hairline px-5 py-3.5">
+            <div className="flex flex-none items-center justify-between gap-3 border-t border-hairline bg-paper px-5 py-3.5">
               <span className="font-mono text-[11.5px] tabular text-content-muted">
                 {draft.to
                   ? `${fmt(draft.from)} to ${fmt(draft.to)} · ${draftDays} days`
@@ -338,6 +395,7 @@ export function DateRangeControl({
                   type="button"
                   onClick={() => {
                     setDraft({ from: range.from, to: range.to });
+                    setCustomMode(false);
                     setOpen(false);
                   }}
                   className="rounded-control border border-hairline-strong px-3.5 py-2 text-[13px] text-content-body transition-colors duration-fast hover:bg-gray-50"
@@ -359,6 +417,7 @@ export function DateRangeControl({
             </div>
           </div>
         </div>
+        </>
       )}
     </div>
   );

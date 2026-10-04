@@ -49,8 +49,13 @@ export function MobileTopBar({
   /** Decides which sections the sheet lists. */
   role: Role;
 }) {
-  const [open, setOpen] = useState(false);
-  const [clientOpen, setClientOpen] = useState(false);
+  // One menu at a time: the page sheet and the client menu used to stack over
+  // each other at 390 px (QA C-12). A single value cannot hold both open.
+  const [menu, setMenu] = useState<"pages" | "client" | null>(null);
+  const open = menu === "pages";
+  const clientOpen = menu === "client";
+  const toggle = (which: "pages" | "client") =>
+    setMenu((current) => (current === which ? null : which));
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
@@ -78,20 +83,31 @@ export function MobileTopBar({
   const products = railProducts(role, shownClient);
 
   function selectClient(client: Client) {
-    setClientOpen(false);
+    setMenu(null);
     if (client.clientId === shownClient?.clientId) return;
     setOptimisticClient(client);
     const next = new URLSearchParams(qs);
     next.set("client", client.clientId);
-    navigate(`${pathname}?${next.toString()}`);
+    // A "client" navigation hides the page body until the new client's
+    // figures commit, so the new name above never labels the old numbers.
+    navigate(`${pathname}?${next.toString()}`, { kind: "client" });
   }
 
   // Close on route change, without this the sheet stays up over the new page
   // for the whole BigQuery round trip and reads as a stuck menu.
   useEffect(() => {
-    setOpen(false);
-    setClientOpen(false);
+    setMenu(null);
   }, [pathname, qs]);
+
+  // Escape closes whichever menu is open.
+  useEffect(() => {
+    if (menu === null) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenu(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [menu]);
 
   // A sheet this tall over a scrollable page invites scrolling the page behind
   // it by accident.
@@ -109,7 +125,7 @@ export function MobileTopBar({
       <div className="flex h-[var(--header-bar-h)] items-center justify-between gap-3 px-4">
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => toggle("pages")}
           aria-expanded={open}
           aria-haspopup="menu"
           className="flex min-w-0 items-center gap-1.5 text-[21px] font-bold tracking-heading text-content-inverse"
@@ -136,7 +152,7 @@ export function MobileTopBar({
           <div className="relative flex-none">
             <button
               type="button"
-              onClick={() => setClientOpen((v) => !v)}
+              onClick={() => toggle("client")}
               aria-expanded={clientOpen}
               aria-haspopup="menu"
               aria-label={`Client: ${shownClient.name}`}
@@ -157,7 +173,7 @@ export function MobileTopBar({
                 <button
                   type="button"
                   aria-label="Close client menu"
-                  onClick={() => setClientOpen(false)}
+                  onClick={() => setMenu(null)}
                   className="fixed inset-0 z-[55] block w-full cursor-default"
                 />
                 <div
@@ -214,7 +230,7 @@ export function MobileTopBar({
           <button
             type="button"
             aria-label="Close menu"
-            onClick={() => setOpen(false)}
+            onClick={() => setMenu(null)}
             // Same expression as the sheet below rather than `var(--header-h)`:
             // that variable is resolved at :root, so it always carries the
             // root's `--safe-top`, while this needs whatever inset applies here.
@@ -241,14 +257,19 @@ export function MobileTopBar({
               <span className="px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
                 Sections
               </span>
-              <div className="flex gap-1 px-1.5 pb-1">
+              {/*
+                Two columns rather than one row: four sections in one row are
+                wider than the sheet, and the last one (Reports) sat behind an
+                invisible horizontal scroll (QA C-12).
+              */}
+              <div className="grid grid-cols-2 gap-1 px-1.5 pb-1">
                 {products.map((p) => (
                   <AppLink
                     key={p.id}
                     href={qs ? `${p.href}?${qs}` : p.href}
-                    onClick={() => setOpen(false)}
+                    onClick={() => setMenu(null)}
                     aria-current={p.id === activeProduct ? "page" : undefined}
-                    className={`flex-1 rounded-sm px-2 py-[7px] text-center text-[12.5px] tracking-[-0.01em] ${
+                    className={`min-w-0 truncate rounded-sm px-2 py-[7px] text-center text-[12.5px] tracking-[-0.01em] ${
                       p.id === activeProduct
                         ? "bg-growth-500/[0.14] font-semibold text-growth-700"
                         : "text-content-body"

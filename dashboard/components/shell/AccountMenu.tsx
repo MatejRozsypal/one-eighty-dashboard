@@ -86,7 +86,10 @@ export function AccountMenu({
 
   const { isPending, navigate } = useNavigation();
   // Switching re-runs every query on the page; adopting the new client straight
-  // away makes the click read as taken rather than ignored.
+  // away makes the click read as taken rather than ignored. That is only safe
+  // because the switch is a "client" navigation: the page body is hidden behind
+  // a skeleton until the new client's figures commit, so the new name never
+  // sits above the old client's numbers.
   const [optimistic, setOptimistic] = useState<Client | null>(null);
   useEffect(() => {
     if (!isPending) setOptimistic(null);
@@ -130,7 +133,7 @@ export function AccountMenu({
     // reset the date range somebody spent time choosing.
     const params = new URLSearchParams(searchParams.toString());
     params.set("client", clientId);
-    navigate(`${pathname}?${params.toString()}`);
+    navigate(`${pathname}?${params.toString()}`, { kind: "client" });
   }
 
   const activeIndex = Math.max(

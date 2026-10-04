@@ -1,7 +1,7 @@
-/* One Eighty — Typography tokens
+/* One Eighty: Typography tokens
  * Geist Sans for everything UI/editorial; Geist Mono for numbers, metrics,
  * labels and eyebrows. Key-phrase emphasis is set in ITALIC (a core brand
- * motif — headlines lean a phrase into italic for rhythm). */
+ * motif: headlines lean a phrase into italic for rhythm). */
 :root {
   --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;

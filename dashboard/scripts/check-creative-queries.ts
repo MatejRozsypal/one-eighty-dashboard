@@ -7,7 +7,7 @@
  * ── Why this exists ────────────────────────────────────────────────────────
  * `check:creative` proves the arithmetic; `tsc` proves the types; neither one
  * touches BigQuery. Two of the defects that reached production on these screens
- * were invisible to both — a `HAVING SUM(spend)` that BigQuery resolves against
+ * were invisible to both: a `HAVING SUM(spend)` that BigQuery resolves against
  * a SELECT alias into `SUM(SUM(spend))`, and a correlated `UNNEST` join it
  * refuses outright. Both are valid TypeScript producing invalid SQL, and the
  * first request to the screen is where they surfaced.
@@ -18,7 +18,7 @@
  * current period, an ad cannot appear twice.
  *
  * ── Credentials ────────────────────────────────────────────────────────────
- * Application Default Credentials — `gcloud auth application-default login`.
+ * Application Default Credentials: `gcloud auth application-default login`.
  * The service-account key is a production concern and is not needed here; this
  * only reads `mart`.
  *
@@ -70,7 +70,7 @@ async function main() {
         `${kc(spend).padStart(9)}  ${String(purchases).padStart(5)} purchases  ` +
         `${data.adsets.length} ad sets`
     );
-    ok(`${key}: query returns`, data.available, data.missing ?? "");
+    ok(`${key}: query returns`, data.available);
     ok(
       `${key}: no ad appears twice`,
       new Set(data.ads.map((a) => a.adId)).size === data.ads.length
@@ -108,7 +108,7 @@ async function main() {
     `   ${label(custom)}  ${customData.ads.length} ads  ${kc(customSpend)}` +
       (customData.ads.length === 0 ? "   (this client was not running then)" : "")
   );
-  // Not "returns rows" — Venev launched in August, so an empty July is the
+  // Not "returns rows", Venev launched in August, so an empty July is the
   // right answer for it and asserting otherwise would make this script pass
   // only for the client it was written against. What must hold for everyone is
   // that the fortnight is contained in the quarter around it.
@@ -139,7 +139,7 @@ async function main() {
   }
 
   // A comparison range before the account existed must come back null, not
-  // zero — a delta against zero reads as infinite growth.
+  // zero: a delta against zero reads as infinite growth.
   const ancient = await getCreativeTotals(clientId, { from: "2015-01-01", to: "2015-01-31" });
   ok("a period before the account existed returns null, not a zero baseline", ancient === null);
 
@@ -156,7 +156,7 @@ async function main() {
   console.log(
     `   assets ${assets.size}   unmapped ${unmapped.ads.length}   personas ${personas.length}   ` +
       `concepts ${concepts.length}   launches ${launches.length}   ` +
-      `tagged ${coverage.pctSpendTagged === null ? "—" : `${Math.round(coverage.pctSpendTagged * 100)}%`}`
+      `tagged ${coverage.pctSpendTagged === null ? "n/a" : `${Math.round(coverage.pctSpendTagged * 100)}%`}`
   );
   ok("assets resolve", assets.size > 0);
   ok("the unmapped queue answers", unmapped.available);
@@ -180,7 +180,7 @@ async function main() {
   }
 
   console.log(
-    fails ? `\n${fails} check(s) failed — see above.` : "\nEvery query ran, and the ranges agree."
+    fails ? `\n${fails} check(s) failed, see above.` : "\nEvery query ran, and the ranges agree."
   );
   if (fails) process.exit(1);
 }

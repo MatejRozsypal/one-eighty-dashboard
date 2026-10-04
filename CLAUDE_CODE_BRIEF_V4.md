@@ -158,7 +158,7 @@ Jan–Jun was flat. Now uses the **most recent** complete year only.
 
 ## 7. Conventions worth not relearning
 
-- **"No data" is never zero.** Nulls render as em dashes with a reason; unmeasured
+- **"No data" is never zero.** Nulls render as `n/a` plus a state line ("No cost data.", "Meta not connected."); unmeasured
   cost steps draw hatched, not zero-height.
 - Rates are **recomputed from summed components**, never averaged from daily
   ratios (10–30% wrong — METRICS.md).

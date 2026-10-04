@@ -4,7 +4,7 @@
  * ── Why this exists ─────────────────────────────────────────────────────────
  * Several queries here are wrapped in try/catch so that one missing warehouse
  * object can't take down a whole page. That's right for genuinely optional
- * panels — but the first production deploy showed the danger: every mart view
+ * panels, but the first production deploy showed the danger: every mart view
  * was returning 403 (the service account lacked authorization on the underlying
  * `stg` tables), and three screens caught it and rendered a calm "No data yet."
  *
@@ -28,12 +28,12 @@ function asBqError(error: unknown): BigQueryLikeError {
 }
 
 /**
- * True when the failure means "this object hasn't been created yet" — a state
+ * True when the failure means "this object hasn't been created yet", a state
  * the UI can legitimately render as an empty screen with an explanation.
  *
  * Deliberately narrow: a 404, or a 403 whose message says the object may not
- * exist *and* names no dataset the caller should already have. Anything else —
- * notably a plain permission denial — is a misconfiguration, not an empty table.
+ * exist *and* names no dataset the caller should already have. Anything else,
+ * notably a plain permission denial, is a misconfiguration, not an empty table.
  */
 export function isMissingObject(error: unknown): boolean {
   const { code, message = "" } = asBqError(error);
@@ -57,7 +57,7 @@ export async function optional<T>(
   } catch (error) {
     if (isMissingObject(error)) return fallback;
 
-    // Permission denials, timeouts, quota errors — all real problems. Log with
+    // Permission denials, timeouts, quota errors, all real problems. Log with
     // enough context to find them in Vercel's runtime logs, then re-throw.
     const { code, message } = asBqError(error);
     console.error(`[bigquery] query failed (code ${code}): ${message}`);

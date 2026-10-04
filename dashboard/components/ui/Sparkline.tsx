@@ -1,10 +1,10 @@
 /**
- * Sparkline — the small trend line on every metric card.
+ * Sparkline: the small trend line on every metric card.
  *
  * Hand-rolled SVG rather than Recharts, on purpose. Recharts is a client-side
  * charting library: every card carrying one becomes a client component, ships
  * ~90 KB of JS, and renders after hydration rather than in the initial HTML. A
- * sparkline is a polyline with no axes, no tooltip and no interaction — it needs
+ * sparkline is a polyline with no axes, no tooltip and no interaction, it needs
  * none of that. This version renders on the server, costs zero JS, and appears
  * in the first paint.
  *
@@ -13,7 +13,7 @@
  */
 
 export interface SparklineProps {
-  /** Chronological values. Nulls are gaps — days with no data, not zeros. */
+  /** Chronological values. Nulls are gaps, days with no data, not zeros. */
   data: Array<number | null>;
   /** Line color. Defaults to the growth accent. */
   tone?: "accent" | "muted" | "negative";

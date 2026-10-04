@@ -30,7 +30,7 @@ export function pool(): Pool {
 
     if (!connectionString) {
       throw new Error(
-        "No DATABASE_URL / POSTGRES_URL set — the user store is not connected. " +
+        "No DATABASE_URL / POSTGRES_URL set, the user store is not connected. " +
           "Create a Postgres database in the Vercel project (Storage → Create), " +
           "then run the migration in lib/users/schema.sql."
       );
@@ -51,7 +51,7 @@ export function pool(): Pool {
   return globalForPool.oeUserPool;
 }
 
-/** True when a user store is configured at all — lets the UI explain itself. */
+/** True when a user store is configured at all, lets the UI explain itself. */
 export function userStoreConfigured(): boolean {
   return Boolean(
     process.env.DATABASE_URL ??
@@ -65,7 +65,7 @@ export function userStoreConfigured(): boolean {
  *
  * There is no migration runner here and adding one for a single table would be
  * ceremony. The DDL is idempotent, so the first query in each process just
- * ensures it — which also means attaching a fresh database needs no manual
+ * ensures it: which also means attaching a fresh database needs no manual
  * step and no throwaway migration endpoint in production.
  *
  * Kept in step with `schema.sql`, which stays as the readable version.

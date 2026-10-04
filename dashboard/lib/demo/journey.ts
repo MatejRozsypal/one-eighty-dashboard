@@ -2,8 +2,8 @@
  * Demo product journey.
  *
  * Built from the same invented catalogue as the rest of the demo, and fed
- * through `buildJourney` — the identical ranking, bucketing and colouring the
- * warehouse path uses — so the demo cannot drift from the product.
+ * through `buildJourney`, the identical ranking, bucketing and colouring the
+ * warehouse path uses: so the demo cannot drift from the product.
  *
  * The transition weights encode a deliberate story: most customers repurchase
  * what they first bought (replenishment), a smaller share moves to the
@@ -60,7 +60,7 @@ export function demoJourney(maxStep: number): ProductJourney {
 
 export function demoFirstProductRepeat(limit: number): FirstProductRepeat[] {
   return PRODUCTS.map((p) => {
-    // Bundles and higher-priced products hold people better — the pattern the
+    // Bundles and higher-priced products hold people better, the pattern the
     // page exists to reveal, so the demo had better contain one.
     const base = p.line === "bundle" ? 0.58 : p.price > 50 ? 0.47 : 0.34;
     const rate = Math.min(0.82, base * jitter(`repeat:${p.name}`, 0.16));

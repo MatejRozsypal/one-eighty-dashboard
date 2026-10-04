@@ -1,5 +1,5 @@
 /**
- * NextAuth configuration — Google SSO for the agency, email + password for
+ * NextAuth configuration: Google SSO for the agency, email + password for
  * everyone else.
  *
  * Google alone was fine while the only users were @oneeighty.cz. A client who
@@ -9,7 +9,7 @@
  *
  * ── `app_users` is the allow-list ───────────────────────────────────────────
  * There is no domain restriction on ordinary sign-in. There used to be, from
- * when Google was the only way in and every user was @oneeighty.cz — but a
+ * when Google was the only way in and every user was @oneeighty.cz, but a
  * client invited to see their own numbers signs in with their own address, and
  * a domain check refuses them before their row is ever consulted. Having a
  * user table *and* a domain rule means two allow-lists that disagree; the
@@ -18,9 +18,9 @@
  * ── Where the domain check survives, and why it must ────────────────────────
  * Exactly two places, both about the state where nobody can administer the app:
  *
- *  1. **No user store configured** — before Postgres exists there is no table
+ *  1. **No user store configured**: before Postgres exists there is no table
  *     to consult, so an allowed-domain Google account gets in as admin.
- *  2. **No active admin** — an allowed-domain Google sign-in claims admin and
+ *  2. **No active admin**: an allowed-domain Google sign-in claims admin and
  *     writes the row, so the rule closes behind them.
  *
  * Dropping the domain check from *those* would let any Google account on the
@@ -48,7 +48,7 @@ const ALLOWED_DOMAINS = ALLOWED_DOMAIN.split(",").map((d) => d.trim().toLowerCas
 
 export interface SessionAccess {
   role: Role;
-  /** Non-null only for `client` — the one client they may see. */
+  /** Non-null only for `client`, the one client they may see. */
   clientId: string | null;
   mustChangePassword: boolean;
 }
@@ -84,14 +84,14 @@ export async function resolveAccess(email: string): Promise<SessionAccess | null
 
     // Recovery: an allowed-domain account claims admin when there is none.
     if (isAllowedDomain(lower) && (await claimAdminIfNoneExists(lower))) {
-      console.warn(`[auth] ${lower} claimed admin — no active admin existed`);
+      console.warn(`[auth] ${lower} claimed admin, no active admin existed`);
       return { role: "admin", clientId: null, mustChangePassword: false };
     }
 
     return null;
   } catch (error) {
     // A database that is configured but unreachable must not silently downgrade
-    // to "everyone from the domain is an admin" — that would turn an outage
+    // to "everyone from the domain is an admin", that would turn an outage
     // into an authorisation bypass. Refuse instead, loudly.
     console.error("[auth] user store unreachable, refusing sign-in", error);
     return null;
@@ -104,7 +104,7 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
-        // Force the account chooser — several of us have multiple Google logins.
+        // Force the account chooser: several of us have multiple Google logins.
         params: { prompt: "select_account" },
       },
     }),

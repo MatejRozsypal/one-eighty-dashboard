@@ -6,7 +6,7 @@
  * finished one: the client posts a transcript, the server owns the reply, and
  * nothing about the model is decided in the browser. Faking it client-side
  * would have meant rewriting the page later rather than this file, and would
- * have left the interface unproven — latency, the pending state and error
+ * have left the interface unproven, latency, the pending state and error
  * handling are the parts of a chat that are actually hard, and they only exist
  * if there is a server to wait for.
  *
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   }
 
   // The browser already caps and re-encodes these. Checked again here because
-  // the browser is not where a limit is enforced — it is where it is a
+  // the browser is not where a limit is enforced, it is where it is a
   // convenience.
   if (images.length > MAX_IMAGES) {
     return NextResponse.json(

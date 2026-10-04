@@ -22,6 +22,8 @@ export interface MetricDefinition {
   source: string;
   /** Known caveat. Rendered with a warning marker when present. */
   limitation?: string;
+  /** Neutral clarification, not a warning. Rendered plain. */
+  note?: string;
 }
 
 export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
@@ -92,7 +94,7 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     title: "Average order value (net)",
     formula: "Net sales / orders",
     source: "Shop platform",
-    limitation: "Ex-shipping and ex-tax. AOV incl. shipping is a different number.",
+    note: "Ex-shipping and ex-tax. AOV incl. shipping is a different number.",
   },
   "AOV incl. shipping": {
     title: "AOV including shipping",
@@ -127,13 +129,13 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     title: "Gross margin",
     formula: "(Net sales - COGS) / net sales",
     source: "Warehouse",
-    limitation: "Merchandise only, ex-shipping.",
+    note: "Merchandise only, ex-shipping.",
   },
   Payback: {
     title: "Customer payback",
     formula: "90-day gross profit per new customer / CAC",
     source: "Warehouse",
-    limitation:
+    note:
       "Uses customers whose 90 days have closed, over 12 months. Blended CAC covers the same 12 months, so it differs from the CAC card.",
   },
   Fulfilment: {
@@ -146,47 +148,14 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     title: "Attainment",
     formula: "Actual / target",
     source: "Targets in Settings",
-    limitation:
+    note:
       "n/a means no target was set. Open months are judged against an even pace, closed months on the final figure.",
   },
   Growth: {
     title: "Growth",
     formula: "Revenue change vs previous month",
     source: "Warehouse",
-    limitation:
+    note:
       "Averages cover closed months in the range only. The current month is partial and excluded.",
   },
 };
-
-/**
- * Warehouse-wide caveats, listed on the Data Health screen.
- *
- * Kept only because Data Health still imports it; the sprint removes that
- * list and this export with it. Tenant-neutral, no figures.
- */
-export const KNOWN_CAVEATS: Array<{ title: string; body: string }> = [
-  {
-    title: "Refunds are not netted from revenue",
-    body: "Revenue is overstated by the refunded share on platforms that do not net returns, and that carries into CM1, CM2 and CM3.",
-  },
-  {
-    title: "COGS uses current cost",
-    body: "Cost is taken from the latest product costs, not the cost at order time, so it drifts as supplier prices move.",
-  },
-  {
-    title: "Order dates are UTC",
-    body: "Dates use UTC, not the shop timezone, so a day can differ slightly from the shop's own dashboard.",
-  },
-  {
-    title: "Shoptet revenue includes VAT",
-    body: "Shoptet does not split VAT out, so its margin percentages are not comparable to ex-tax shops.",
-  },
-  {
-    title: "New vs returning uses a 60-month window",
-    body: "A customer whose first order predates the window is flagged as new on their first in-window order.",
-  },
-  {
-    title: "Cost lines come from Settings",
-    body: "Other CM1 costs and fulfilment are per-order rates set in Settings. Until set, CM1 and CM2 do not include them.",
-  },
-];

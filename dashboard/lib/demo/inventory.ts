@@ -1,7 +1,7 @@
 /**
  * The demo brand's stock position.
  *
- * Invented, like everything in `lib/demo` — but shaped to show the page doing
+ * Invented, like everything in `lib/demo`, but shaped to show the page doing
  * its job rather than to flatter the brand. A demo catalogue where every SKU is
  * healthy demonstrates nothing: the whole argument for this screen is that real
  * catalogues contain a hero product about to stock out and a slow mover with two
@@ -25,7 +25,7 @@ import {
 
 /** Days of cover per product, by catalogue position. Hand-set, not random. */
 const COVER_DAYS: number[] = [
-  22, // hero product, about to run out — the headline exception
+  22, // hero product, about to run out, the headline exception
   96,
   134,
   61,
@@ -106,7 +106,7 @@ export function demoInventory(): InventoryData {
 
 function summarise(rows: InventoryRow[]): InventorySummary {
   return {
-    // The demo's stock is "counted" yesterday — the point being that a healthy
+    // The demo's stock is "counted" yesterday, the point being that a healthy
     // pipeline shows a one-day-old snapshot, not a 76-day-old one.
     snapshotDate: yesterday(),
     snapshotAgeDays: 1,

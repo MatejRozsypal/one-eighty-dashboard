@@ -32,6 +32,7 @@ import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { NotConnected } from "@/components/ui/EmptyState";
+import { Notice } from "@/components/ui/Notice";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 
 export const metadata: Metadata = { title: "Goals" };
@@ -181,11 +182,7 @@ export default async function GoalsPage({
       <PageControls client={client} params={params} />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-        {!anyTarget && (
-          <p className="m-0 rounded-card border border-hairline bg-surface-card px-5 py-4 text-[13.5px] text-content-body shadow-sm">
-            No targets set. Set targets in Settings.
-          </p>
-        )}
+        {!anyTarget && <Notice>No targets set.</Notice>}
 
         {periods.map((period) => (
           <section

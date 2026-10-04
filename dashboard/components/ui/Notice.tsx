@@ -3,7 +3,9 @@
  *
  * Copy comes from a closed list (sprint plan section 4.7), 12 words or fewer:
  * "{n} {CUR} orders excluded from totals.", "Paid spend is Google only.",
- * "Stock as of {date}.", "No verdicts. Set thresholds in Settings."
+ * "Stock as of {date}.", "No verdicts. Set thresholds in Settings.",
+ * "Quantities only, not orders.", "Demo client: read only.", "No targets set.",
+ * "Only {pct} of spend is tagged.", "Costs are estimates."
  * Anything new needs the lead's OK. Tokens only, no hex.
  */
 

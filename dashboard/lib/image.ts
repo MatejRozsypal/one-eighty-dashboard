@@ -2,10 +2,10 @@
  * Turning a pasted or dropped file into something sendable.
  *
  * ── Why this downscales instead of just refusing ───────────────────────────
- * A retina screenshot is routinely 4–8MB, and base64 inflates it by a third.
+ * A retina screenshot is routinely 4-8MB, and base64 inflates it by a third.
  * Vercel caps a serverless request body at 4.5MB, so a straight "attach the
  * bytes" implementation would reject the single most common thing anyone
- * actually pastes — which is not a working feature, it is a feature that fails
+ * actually pastes: which is not a working feature, it is a feature that fails
  * on the normal case and works on the exception.
  *
  * So every image is re-encoded: longest edge capped, quality dropped to a point
@@ -24,7 +24,7 @@ export interface Attachment {
   id: string;
   name: string;
   mime: string;
-  /** `data:<mime>;base64,…` — small enough to hold in memory and to post. */
+  /** `data:<mime>;base64,…`, small enough to hold in memory and to post. */
   dataUrl: string;
   width: number;
   height: number;
@@ -62,7 +62,7 @@ export async function prepareImage(file: File): Promise<Attachment> {
 
   // WebP keeps transparency and is roughly a third smaller than JPEG here.
   // `toDataURL` silently falls back to PNG when it cannot write the type asked
-  // for, so the result is checked rather than assumed — a silent PNG fallback
+  // for, so the result is checked rather than assumed, a silent PNG fallback
   // on a screenshot is how you get back to megabytes without noticing.
   let dataUrl = canvas.toDataURL("image/webp", 0.85);
   let mime = "image/webp";

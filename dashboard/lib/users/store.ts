@@ -1,7 +1,7 @@
 import "server-only";
 
 /**
- * The user store — who may open the dashboard, and what they may see.
+ * The user store: who may open the dashboard, and what they may see.
  *
  * ── Roles ───────────────────────────────────────────────────────────────────
  *   admin   every client, plus user management
@@ -95,14 +95,14 @@ export async function countUsers(): Promise<number> {
  * Recovery path: claim admin when the app has no active admin at all.
  *
  * The first version of this keyed on the table being *empty*, which locked the
- * app the moment a first user was created as anything other than admin — the
+ * app the moment a first user was created as anything other than admin, the
  * table was no longer empty, so no allowed-domain account could bootstrap, and
  * the only account that existed couldn't reach user management either. Nobody
  * could administer the app and there was no way back in.
  *
  * Keying on "no active admin" instead makes the dangerous state the one that
  * self-heals. It **writes the row**, so the moment one allowed-domain person
- * signs in there is a real admin and this closes behind them — rather than
+ * signs in there is a real admin and this closes behind them, rather than
  * leaving a standing rule that anyone on the domain is an admin.
  *
  * The insert is conditional in SQL, not in JS, so two simultaneous sign-ins
@@ -127,7 +127,7 @@ export async function claimAdminIfNoneExists(
 /**
  * Readable but not guessable: 4 words plus digits beats a 12-char scramble
  * that gets written on a sticky note because nobody can dictate it over a
- * call. `randomInt` is the CSPRNG — `Math.random()` is not.
+ * call. `randomInt` is the CSPRNG, `Math.random()` is not.
  */
 const WORDS = [
   "amber", "basalt", "cedar", "delta", "ember", "fjord", "granite", "harbor",
@@ -186,7 +186,7 @@ export async function resetPassword(id: string): Promise<string> {
   return temporaryPassword;
 }
 
-/** The user choosing their own password — clears the forced-change flag. */
+/** The user choosing their own password, clears the forced-change flag. */
 export async function setOwnPassword(
   email: string,
   password: string
@@ -219,7 +219,7 @@ export async function deleteUser(id: string): Promise<void> {
  * Password check for the credentials sign-in.
  *
  * Returns the user only on a match, and only when active. Deliberately gives
- * the caller nothing to distinguish "no such user" from "wrong password" —
+ * the caller nothing to distinguish "no such user" from "wrong password",
  * that difference is a free account-existence oracle.
  */
 export async function verifyPassword(

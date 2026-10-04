@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Segmented pill control — the shared shape behind the compare and currency
+ * Segmented pill control: the shared shape behind the compare and currency
  * toggles. A disabled segment keeps its slot and explains itself on hover
  * rather than disappearing; a control that silently loses an option looks
  * broken, while a locked one looks deliberate.

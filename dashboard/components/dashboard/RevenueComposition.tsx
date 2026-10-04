@@ -16,7 +16,7 @@
  * The captions that carried real information are kept as a short note under
  * the table rather than one per row.
  *
- * Shoptet doesn't split VAT out cleanly, so for Manami tax reads "Included"
+ * Shoptet doesn't split VAT out cleanly, so for such clients tax reads "Included"
  * rather than a number. That's a real modelling limit, stated where it matters.
  */
 

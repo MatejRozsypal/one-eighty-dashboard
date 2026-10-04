@@ -4,6 +4,81 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-10-05: Dashboard clean-slate sprint (frontend merged, warehouse prepared)
+
+One sprint to get Ethia and RawBark fully onboarded and to remove the UI annoyances:
+too much text, developer notes, dashes, "No data" and zeros that stood in for
+missing data. Branch `cleanup/2026-10`. Frontend only is merged here. Nothing in
+the warehouse was changed in prod. Paid redesign and the cross-client reporting
+suite are out of scope.
+
+### Frontend (done, on the cleanup branch, not yet deployed to prod)
+
+- **Capability model.** `lib/capabilities.ts` decides from the `ref.clients` flags
+  whether a source is connected. Pages that a client has no source for are hidden
+  from the nav, and if opened by URL they show the title plus "{Source} not
+  connected." "Not connected" is never guessed from an empty result, that is a
+  separate "No data in this range." state. `scripts/check-capabilities.ts`
+  covers 6 clients with 323 checks.
+- **One no-value glyph, `n/a`** (`NO_VALUE` in `lib/format.ts`), muted, from every
+  formatter. No dashes, no blanks, no `0` for missing data. Unit costs under 100
+  show 2 decimals. All numbers and dates are en-US through `lib/format`.
+- **Copy cuts.** Page headers are the title only (no eyebrow, no scope label).
+  Section headings are 1 to 3 words. Empty states are one line from three
+  primitives. Footnotes, "how to read" blocks and methodology moved into
+  tooltips. Notices come from a closed list of 12 words or fewer. Developer
+  vocabulary (table names, env vars, runbook paths) and client names are out of
+  the UI. Visible words went from about 9,200 (04 inventory, tooltips included)
+  to about 3,100 visible plus about 1,700 in tooltips and aria-labels.
+- **Em dash sweep.** Zero U+2014 left in `dashboard/app`, `components`, `lib`,
+  `styles`, `scripts`, including comments. En dashes in UI text are now "to" or a
+  hyphen ("0-7").
+- **Paid minimum fix.** Meta tiles, funnel and ad table only when Meta is
+  connected ("Meta not connected." otherwise), Google totals stay. Absent
+  platforms return null, not the mart's 0. The banner and the table name heading
+  are gone. CPC, CPM and CPA use unit decimals. ROAS and CPA notes are in a
+  header tooltip. The Paid redesign will replace this page.
+- **Email totals.** Headline totals now come from a separate query without
+  `LIMIT`, so they no longer cover only the top 30 campaigns. **Ecomail
+  campaigns** (Manami) read `mart_email_campaign_perf` (platform `ecomail`), where
+  the page used to be empty. Ecomail flows show "No data in this range." because
+  the daily flow series is Klaviyo only.
+- **COGS null handling.** A range with revenue and any day without COGS gives
+  COGS, CM1 to CM3 and their percentages as null, shown as "No cost data".
+  Margin steps with no rate stated show "Not measured" (hatched). RawBark no longer
+  reads as CM equals revenue. Goals CM3 is built from the Snapshot's own daily
+  rows, so the two match.
+- **Smaller fixes.** Customers returns null, not 0, when there are no rows.
+  Cohort averages stop turning missing values into 0. Compare and Currency
+  controls are opt-in per page. Today is no longer selectable (ranges end
+  yesterday). Channels is hidden for everyone until GA4 lands. Data Health shows
+  one shop row per client and no longer prints the ClickUp error text.
+  `MetricTooltip` has a neutral `note` field. Dead code removed: `pageEyebrow`,
+  `KNOWN_CAVEATS`, the creative query `missing` field.
+
+### Warehouse (prepared in the repo and tested in `mart_qa`, NOT deployed)
+
+Deploy order and the owner checklist are in `12_cleanup_sprint_plan.md` (scratchpad)
+and in each file header.
+
+- **228** `228_woo_fee_lines_cogs_null.sql`: WooCommerce fee-line discounts reduce
+  net sales and revenue (RawBark about -7 % over 90 days, Ethia about -1.2 %), and
+  Woo COGS is NULL, not 0, when no line is costed. Zero diff for Manami, Dobias, Venev.
+- **229** customer marts read WooCommerce (Ethia and RawBark get Customers,
+  Cohorts, Repurchase). Prepared on branch `wp4-customer-marts`. Deploy after 228.
+- **230 to 233** ops and registry: Woo rows in `ref.feed_sla` (plus the scheduled
+  query text for `ops.feed_freshness`), registry hygiene (RawBark `taxes_included`,
+  `has_ga4`), final September and provisional October FX rows, pipeline alerts for
+  FX and Google Ads coverage. `infra/bigquery/live/` now holds the live DDL snapshot
+  of 2026-10-04 so views are no longer edited from drifted repo files.
+- **240 to 243** Paid redesign marts: Meta marts and naming rules, Google Ads
+  marts and brand terms, GA4 sessions (registry, derived table, loader, mart view).
+
+Still open: the owner checklist (GA4 BigQuery links, RawBark Meta and cost list,
+approval of 228 to 233 and the view deploys, cost assumptions for Ethia and
+RawBark), the visual walk of the done matrix on the dev server, and the prod deploy
+(`npx vercel --prod --yes` from the repo root, owner OK first).
+
 ## 2026-10-01: Google Ads for every client + Phase 4 (MER, aMER, CAC on `paid_spend`)
 
 - `stg_google_ads_campaign_insights` no longer hardcodes accounts: it reads the DTS base tables

@@ -17,7 +17,7 @@
  * The margin order mirrors `mart_daily_kpis` exactly, including the part that
  * looks odd: CM2 equals CM1 because the warehouse pins `fulfillment_cost` and
  * `cm1_other_costs` to zero. Those are stated per-order rates, and they are
- * applied by the query layer for every client alike — so the demo hands over
+ * applied by the query layer for every client alike, so the demo hands over
  * rows in the same shape BigQuery does and goes through the identical
  * deduction. Baking them in here instead would double-count them.
  *
@@ -40,7 +40,7 @@ import { jitter, unit } from "./random";
 
 export const DEMO_CLIENT_ID = "demo";
 export const DEMO_BRAND = "Lumen Botanicals";
-/** Shown in the switcher. The suffix is deliberate — nobody should mistake this for a real account. */
+/** Shown in the switcher. The suffix is deliberate, nobody should mistake this for a real account. */
 export const DEMO_NAME = "Lumen Botanicals (DEMO)";
 export const DEMO_CURRENCY = "USD";
 
@@ -49,7 +49,7 @@ const HISTORY_MONTHS = 30;
 
 /** Orders per day at the start of the history, before growth and seasonality. */
 const BASE_ORDERS_PER_DAY = 34;
-/** Compounding monthly growth — ~34% a year, a brand that is working but not a rocket. */
+/** Compounding monthly growth: ~34% a year, a brand that is working but not a rocket. */
 const MONTHLY_GROWTH = 0.0246;
 
 const AOV_NEW = 61.5;
@@ -69,7 +69,7 @@ const TARGET_MER = 5.9;
 /** Google's share of paid spend; the rest is Meta. */
 const GOOGLE_SHARE = 0.29;
 
-/** Cost assumptions — the inputs a warehouse structurally cannot measure. */
+/** Cost assumptions: the inputs a warehouse structurally cannot measure. */
 export const DEMO_FULFILMENT_PER_ORDER = 4.2;
 export const DEMO_OTHER_CM1_PER_ORDER = 0.85;
 export const DEMO_OPEX_RATE = 0.28;
@@ -99,7 +99,7 @@ export function today(): string {
 
 /**
  * Last day the demo warehouse "has". One day behind, like a real overnight
- * pipeline — so the freshness stamp and the Data Health page have something
+ * pipeline: so the freshness stamp and the Data Health page have something
  * truthful to show rather than claiming data through the current hour.
  */
 export function dataThrough(): string {
@@ -133,7 +133,7 @@ function monthsSinceStart(date: string): number {
 }
 
 /**
- * Seasonality. Q4 carries the year, January pays for it, summer is soft —
+ * Seasonality. Q4 carries the year, January pays for it, summer is soft,
  * the shape most consumer brands actually have, and the reason the dashboard
  * offers a previous-year comparison at all.
  */
@@ -148,7 +148,7 @@ const MONTH_FACTOR = [
   0.94, // Aug
   1.04, // Sep
   1.12, // Oct
-  1.58, // Nov — Black Friday
+  1.58, // Nov. Black Friday
   1.34, // Dec
 ];
 
@@ -268,7 +268,7 @@ export function days(from: string, to: string): DemoDay[] {
  * Convert a money figure into the display currency.
  *
  * Demo mode never reaches `ref.fx_rates`, so the toggle needs its own rate.
- * Counts must never pass through here — an order is an order in any currency.
+ * Counts must never pass through here, an order is an order in any currency.
  */
 export function convertMoney(value: number | null, display: string): number | null {
   if (value === null) return null;

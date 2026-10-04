@@ -7,14 +7,14 @@
  * Each control used to own its own `useTransition`, so the *control* showed it
  * was busy while the numbers it had just invalidated sat there looking settled.
  * Switching comparison from "prev period" to "prev year" changes every delta on
- * the page, and for the 2–5 seconds BigQuery takes, the old deltas stay on
- * screen looking like the answer — which is worse than a spinner, because a
+ * the page, and for the 2-5 seconds BigQuery takes, the old deltas stay on
+ * screen looking like the answer, which is worse than a spinner, because a
  * stale number that looks fresh is indistinguishable from a number that didn't
  * change.
  *
  * With the transition hoisted here, every control feeds one flag and the
- * content can react to it. The controls keep their own crisp selected state —
- * you should see *what you picked* immediately — while the figures pulse to say
+ * content can react to it. The controls keep their own crisp selected state,
+ * you should see *what you picked* immediately, while the figures pulse to say
  * they are being recomputed.
  */
 
@@ -72,7 +72,7 @@ export function NavigationPendingProvider({
 /**
  * Marks the region whose numbers are invalidated by a navigation.
  *
- * The pulse is scoped to `main` — the figures — and deliberately not applied to
+ * The pulse is scoped to `main`, the figures, and deliberately not applied to
  * the control bar, which sits outside it. Pulsing the controls too would blur
  * the selection the user just made at exactly the moment they are checking it
  * registered.

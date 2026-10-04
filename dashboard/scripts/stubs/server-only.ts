@@ -2,7 +2,7 @@
  * A no-op stand-in for the `server-only` package.
  *
  * That package exists to throw at build time if a server module is pulled into
- * a client bundle. The query modules import it, which is right — and it means
+ * a client bundle. The query modules import it, which is right, and it means
  * they cannot be loaded by a plain Node script either, because the real package
  * throws on any import outside a React Server Component.
  *

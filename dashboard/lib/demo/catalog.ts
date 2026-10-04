@@ -3,12 +3,12 @@
  * markets and customers.
  *
  * Everything here is fiction. Customer addresses use `example.com`, which is
- * reserved by RFC 2606 and can never belong to anyone — so even a screenshot
+ * reserved by RFC 2606 and can never belong to anyone, so even a screenshot
  * that escapes the room cannot point at a real person. Product and campaign
  * names are invented for a brand that does not exist.
  *
- * Names are deliberately written in the shape real accounts use — the ad naming
- * convention with pipes and dates, the flow names Klaviyo ships with — because a
+ * Names are deliberately written in the shape real accounts use, the ad naming
+ * convention with pipes and dates, the flow names Klaviyo ships with, because a
  * demo whose labels look nothing like the client's own account fails to make the
  * point that this is their data in here.
  */
@@ -24,7 +24,7 @@ export interface DemoProduct {
   marginPct: number;
 }
 
-/** Shares sum to 1.00 — checked by the consistency script. */
+/** Shares sum to 1.00, checked by the consistency script. */
 export const PRODUCTS: DemoProduct[] = [
   { name: "Radiance Serum 30ml", line: "skincare", share: 0.191, price: 68, marginPct: 0.74 },
   { name: "Daily Renewal Cream", line: "skincare", share: 0.164, price: 54, marginPct: 0.71 },
@@ -78,7 +78,7 @@ export const EMAIL_CAMPAIGNS = [
   "Mid-Summer Restock",
   "The Sleep Edit",
   "Members Early Access",
-  "Founder Letter — Why We Reformulated",
+  "Founder Letter: Why We Reformulated",
   "Last Call: Starter Ritual Set",
   "Ingredient Spotlight: Bakuchiol",
   "Your Skin in August",

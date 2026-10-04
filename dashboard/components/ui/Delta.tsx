@@ -1,25 +1,25 @@
 /**
- * Delta chip — period-over-period change.
+ * Delta chip: period-over-period change.
  *
  * ── Why this isn't just "green when the number went up" ─────────────────────
  * The design system's Stat takes a `deltaDir` and paints up-green / down-red.
  * That's right for revenue and wrong for half the metrics on a P&L page. COGS
  * rising is bad. Ad spend rising is neutral-to-bad. CAC rising is bad. A chart
- * that paints rising CAC green is not a cosmetic slip — it inverts the meaning
+ * that paints rising CAC green is not a cosmetic slip, it inverts the meaning
  * of the page.
  *
  * So direction (which way the number moved) and sentiment (whether that's good)
  * are separate here. `goodWhen` declares the metric's polarity; the arrow always
  * follows the movement, and only the color follows the sentiment.
  *
- * `goodWhen: "neutral"` is for metrics with no inherent better direction —
- * spend, order counts in isolation — where a colored chip would assert a
+ * `goodWhen: "neutral"` is for metrics with no inherent better direction,
+ * spend, order counts in isolation, where a colored chip would assert a
  * judgement the number doesn't support. Those render muted.
  */
 
 // From lib/format, not lib/currency. The re-export in lib/currency is
 // identical, but that module also holds the FX SQL and therefore imports
-// `lib/bigquery`, which is `server-only` — so a single client component
+// `lib/bigquery`, which is `server-only`, so a single client component
 // rendering a delta chip fails the build with an error naming `server-only`
 // rather than this line. lib/format's own header documents the split.
 import { formatPercent } from "@/lib/format";
@@ -38,7 +38,7 @@ export function DeltaChip({
 }) {
   if (delta === null) return null;
 
-  // Sub-0.05% movement is noise — usually a rounding artifact or a single
+  // Sub-0.05% movement is noise, usually a rounding artifact or a single
   // late-landing order. Showing "▲ 0.0%" implies a precision we don't have.
   const isFlat = Math.abs(delta) < 0.0005;
   const direction = isFlat ? "flat" : delta > 0 ? "up" : "down";

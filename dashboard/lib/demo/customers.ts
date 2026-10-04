@@ -42,7 +42,7 @@ const MERCH_MARGIN = 0.681;
 /**
  * Share of a cohort still buying in a given month offset.
  *
- * Month 0 is 1.0 by definition — everyone bought in the month they joined, and
+ * Month 0 is 1.0 by definition, everyone bought in the month they joined, and
  * a grid whose first column is not 100% is a grid with a bug. After that it is
  * a power-law decay with a floor: a loyal core keeps buying indefinitely, which
  * is what makes the far-right columns worth showing at all.
@@ -70,7 +70,7 @@ interface DemoCohort {
   month: string;
   customers: number;
   ageMonths: number;
-  /** New-customer revenue in the joining month — the base for later offsets. */
+  /** New-customer revenue in the joining month, the base for later offsets. */
   firstMonthRevenue: number;
 }
 
@@ -205,7 +205,7 @@ export function demoCohortGrid(options: {
     return { month: c.month, customers, cells };
   });
 
-  // The summary row is weighted by cohort size — a mean of the rows would let a
+  // The summary row is weighted by cohort size, a mean of the rows would let a
   // 40-customer cohort pull as hard as a 4,000-customer one.
   const allCohorts: Array<number | null> = [];
   for (let o = 0; o <= maxOffset; o++) {
@@ -263,7 +263,7 @@ export function demoTopCustomers(limit: number): CustomerRow[] {
 
   return Array.from({ length: limit }, (_, i) => {
     const key = `top:${i}`;
-    // Top customers by definition sit in the tail — many orders, high value.
+    // Top customers by definition sit in the tail, many orders, high value.
     const orders = intBetween(`${key}:orders`, 6, 24) - Math.floor(i / 6);
     const aov = 88 * jitter(`${key}:aov`, 0.34);
     const lifetimeRevenue = r2(Math.max(2, orders) * aov);
@@ -318,13 +318,13 @@ export function demoPayback(monthsBack: number): Payback | null {
  */
 export function demoGapStats(): GapStats | null {
   const shape: Array<{ label: string; weight: number }> = [
-    { label: "0–7 days", weight: 0.094 },
-    { label: "8–14 days", weight: 0.061 },
-    { label: "15–30 days", weight: 0.118 },
-    { label: "31–60 days", weight: 0.229 },
-    { label: "61–90 days", weight: 0.187 },
-    { label: "91–180 days", weight: 0.176 },
-    { label: "181–365 days", weight: 0.096 },
+    { label: "0-7 days", weight: 0.094 },
+    { label: "8-14 days", weight: 0.061 },
+    { label: "15-30 days", weight: 0.118 },
+    { label: "31-60 days", weight: 0.229 },
+    { label: "61-90 days", weight: 0.187 },
+    { label: "91-180 days", weight: 0.176 },
+    { label: "181-365 days", weight: 0.096 },
     { label: "365+ days", weight: 0.039 },
   ];
 

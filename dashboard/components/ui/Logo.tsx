@@ -1,5 +1,5 @@
 /**
- * Logo lock-up — brand mark + "OneEighty" wordmark.
+ * Logo lock-up: brand mark + "OneEighty" wordmark.
  *
  * The mark is a PNG shipped in the design handoff. Per the brand guide it must
  * not be redrawn, so it's used as-is; only the wordmark is set in type.

@@ -14,17 +14,18 @@ Sources → n8n (Hostinger VPS) → BigQuery → Looker Studio (Phase 1-3) + Ver
 | Warehouse | BigQuery (region EU) | `raw`, `raw_google_ads` (Google Ads transfer), `ref`, `stg`, `mart`, `ops`, `mart_qa` (regression sandbox, SOP step 7), plus GA4 exports `analytics_*` |
 | Secrets | Google Secret Manager | Naming: `<source>-<client_slug>-<key_name>` |
 | Dashboard (Phase 1-3) | Looker Studio | Reads BigQuery natively |
-| Dashboard (Phase 4) | Next.js 14 on Vercel | Google SSO restricted to `@oneeighty.cz` |
+| Dashboard (Phase 4) | Next.js 14 on Vercel, `dashboard.oneeighty.cz` | Google SSO for `@oneeighty.cz`, plus email and password accounts (roles admin, agency, client) in Postgres. The session is checked in `app/(app)/layout.tsx`, there is no middleware |
 
 ## Repo layout
 
 ```
 infra/
-├── bigquery/         # DDL files, run in numeric order
+├── bigquery/         # Migrations, run in numeric order
+│   └── live/         # Snapshot of the live views and tables (2026-10-04), the base for any view change
 ├── n8n/              # Workflow JSON exports
 └── secrets/          # Secret Manager organization (no values committed)
 runbooks/             # Click-by-click setup guides
-dashboard/            # Next.js app (Phase 4)
+dashboard/            # Next.js app (Phase 4), see dashboard/README.md
 ```
 
 ## Clients
@@ -48,9 +49,9 @@ Older snapshot kept from the repo (May 2026 seed, `infra/bigquery/003_seed_clien
 1. Run `infra/bigquery/00*.sql` in order (creates datasets, registry, raw tables)
 2. Set up Secret Manager per `runbooks/02_secret_manager.md`
 3. Import n8n workflows from `infra/n8n/*.json`
-4. First backfill — manually trigger each workflow with 24-month window
+4. First backfill: manually trigger each workflow with 24-month window
 5. Connect Looker Studio to mart views
-6. Deploy `dashboard/` to Vercel
+6. Deploy `dashboard/` to Vercel: `npx vercel --prod --yes` from the repo root (the Vercel project root directory is `dashboard/`). Git pushes do not deploy, see `VERCEL_DEPLOYS.md`
 
 ## Non-negotiables
 
@@ -66,5 +67,5 @@ Older snapshot kept from the repo (May 2026 seed, `infra/bigquery/003_seed_clien
 
 ## Owners
 
-- **Matěj Rožyšpal** (matej@oneeighty.cz) — primary
-- **Co-founder** — backup
+- **Matěj Rožyšpal** (matej@oneeighty.cz), primary
+- **Co-founder**, backup

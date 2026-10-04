@@ -47,6 +47,11 @@ export function MetricTooltip({ definition }: { definition: MetricDefinition }) 
           <span className="font-sans text-[12px] text-gray-300">
             Source · {definition.source}
           </span>
+          {definition.note && (
+            <span className="border-t border-hairline-inverse pt-[9px] font-sans text-[12px] leading-[1.5] text-gray-300">
+              {definition.note}
+            </span>
+          )}
           {definition.limitation && (
             <span className="flex gap-2 border-t border-hairline-inverse pt-[9px] font-sans text-[12px] leading-[1.5] text-warning-300">
               <span aria-hidden="true">⚠</span>

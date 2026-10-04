@@ -4,7 +4,7 @@
  * A short cross-fade when the rail changes product.
  *
  * Keyed on the product, not the path: moving between Analytics pages must not
- * animate — those are steps inside one place and a fade on every click would
+ * animate: those are steps inside one place and a fade on every click would
  * be the "invasive" thing, not the cure for it. Switching section is a change
  * of context and is the only move worth marking.
  *

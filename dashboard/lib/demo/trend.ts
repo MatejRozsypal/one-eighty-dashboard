@@ -3,7 +3,7 @@
  *
  * Both callers already do their real work in TypeScript: `getGrowth` decides
  * what counts as a partial month and which months feed the average, and
- * `getYearOverYear` builds the seasonal projection — including the rule that it
+ * `getYearOverYear` builds the seasonal projection, including the rule that it
  * may only use the most recent complete year, which exists because averaging
  * prior years once invented ~24% of growth for a flat business.
  *
@@ -64,7 +64,7 @@ function pct(current: number, previous: number | undefined): number | null {
 }
 
 /**
- * Rows shaped like `mart_monthly_kpis`, newest first — the order `getGrowth`
+ * Rows shaped like `mart_monthly_kpis`, newest first, the order `getGrowth`
  * expects, since it reads the oldest closed month off the end of the array.
  *
  * Month-over-month is precomputed here because the mart precomputes it too;

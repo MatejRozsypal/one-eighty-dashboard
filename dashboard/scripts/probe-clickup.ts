@@ -4,7 +4,7 @@
  *     CLICKUP_API_TOKEN=... npm run check:clickup
  *     npm run check:clickup -- <task id>      # also read one task's activity
  *
- * The same probe the Data Health page runs, from a terminal — so the answer is
+ * The same probe the Data Health page runs, from a terminal, so the answer is
  * available before a deploy rather than after somebody opens an ad.
  */
 
@@ -27,7 +27,7 @@ async function main() {
 
   const [notes, activity] = await Promise.all([listNotes(taskId), getActivity(taskId)]);
   console.log(`\ntask  ${activity.name ?? taskId}`);
-  console.log(`      status ${activity.status ?? "—"}, created by ${activity.createdBy ?? "—"}`);
+  console.log(`      status ${activity.status ?? "n/a"}, created by ${activity.createdBy ?? "n/a"}`);
   console.log(
     `      ${activity.statuses.length} status transitions, ${notes.length} comments, ` +
       `${activity.assignees.length} assignees`

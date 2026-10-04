@@ -7,7 +7,7 @@
  * The targets are generated rather than stored, for the same reason the demo's
  * cost assumptions are: an admin editing a fictional brand's plan would be
  * saving rows that nothing reads. They are set a little above what the brand
- * actually did — some months made, some missed — because a demo where every
+ * actually did: some months made, some missed, because a demo where every
  * target is comfortably beaten shows nothing about how the page behaves when a
  * number is in trouble, which is the case anyone evaluating it cares about.
  */
@@ -40,7 +40,7 @@ export function demoGoals(year: number): Goal[] {
     if (m.year !== year) continue;
 
     const push = (metric: GoalMetric, actual: number) => {
-      // Aim 4% above what happened, ±9% — so roughly a third of months land
+      // Aim 4% above what happened, ±9%, so roughly a third of months land
       // short and the page has something to say.
       const target = actual * 1.04 * jitter(`goal:${metric}:${m.monthStart}`, 0.09);
       out.push({

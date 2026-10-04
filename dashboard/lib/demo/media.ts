@@ -4,7 +4,7 @@
  * Spend and attributed revenue come from the same daily spine as the P&L, so
  * the Paid page's Meta total is the same number the snapshot nets out of CM2.
  *
- * Platform-attributed revenue is deliberately *higher* than the warehouse's —
+ * Platform-attributed revenue is deliberately *higher* than the warehouse's,
  * Meta claims a purchase it merely showed an ad before, and the real dashboard
  * exists partly to say so. A demo where the two agreed perfectly would quietly
  * undersell the point the product is making.
@@ -112,7 +112,7 @@ export function demoTopAds(range: DateRange, limit: number): AdRow[] {
     .map(({ name, weight }, i) => {
       const share = weight / weightSum;
       const spend = r2(spendTotal * share);
-      // Efficiency varies per ad — that variance is the reason to look at the
+      // Efficiency varies per ad: that variance is the reason to look at the
       // table at all. One ad is deliberately below break-even.
       const roasFactor = jitter(`adroas:${name}:${range.from}`, 0.62);
       const revenue = r2(spend * (totals.roas ?? 4) * roasFactor);
@@ -235,7 +235,7 @@ export function demoEmailSummary(
     campaigns,
     totalRevenue,
     totalSent,
-    // Recomputed from the sums — never a mean of the per-campaign rates.
+    // Recomputed from the sums: never a mean of the per-campaign rates.
     avgOpenRate: div(totalOpens, totalDelivered),
     avgClickRate: div(totalClicks, totalDelivered),
     revenuePerRecipient: div(totalRevenue, totalDelivered),
@@ -247,7 +247,7 @@ export function demoEmailSummary(
  * flow series is a lifetime snapshot, so a date filter would misrepresent it.
  */
 export function demoFlows(range: DateRange): FlowSummary | null {
-  // Range-filtered like the real path now is — the demo has a daily spine, so
+  // Range-filtered like the real path now is, the demo has a daily spine, so
   // it can answer for a period rather than reporting life-to-date.
   const rows = days(range.from, range.to);
   const revenue = sum(rows, (d) => d.revenue);
@@ -258,7 +258,7 @@ export function demoFlows(range: DateRange): FlowSummary | null {
     const rev = r2(flowRevenue * f.weight);
     const emailsSent = Math.round((rev / 1.94) * jitter(`${key}:sent`, 0.2));
     const delivered = Math.round(emailsSent * 0.981);
-    // Triggered mail is opened far more than a broadcast — the gap is the point.
+    // Triggered mail is opened far more than a broadcast, the gap is the point.
     const uniqueOpens = Math.round(delivered * (0.44 + unit(`${key}:open`) * 0.22));
     const uniqueClicks = Math.round(uniqueOpens * (0.11 + unit(`${key}:click`) * 0.09));
     const conversions = Math.max(1, Math.round(rev / 86));

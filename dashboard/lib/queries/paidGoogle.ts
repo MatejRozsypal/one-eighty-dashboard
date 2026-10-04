@@ -39,6 +39,12 @@ import {
 
 const MART = `${PROJECT_ID}.mart`;
 
+// BigQuery resolves an unqualified name in HAVING against the SELECT aliases
+// first. Every query here aliases SUM(spend) AS spend, so `HAVING SUM(spend)`
+// expands to SUM(SUM(spend)) and fails with "Aggregations of aggregations are
+// not allowed". Filter on the alias (`HAVING spend > 0`) or qualify the column
+// with a table alias (`SUM(s.spend)`), never an unqualified SUM(<alias>).
+
 // ── Result shapes ───────────────────────────────────────────────────────────
 
 /** Summed components for one campaign (or any set of campaigns) in one period. */
@@ -326,7 +332,7 @@ export async function getGadsPmaxSplit(
      WHERE client_id = @clientId AND date BETWEEN @from AND @to
        AND channel_type = 'PERFORMANCE_MAX'
      GROUP BY campaign_id, network
-     HAVING SUM(spend) > 0 OR SUM(purchase_value) > 0`,
+     HAVING spend > 0 OR value > 0`,
     { clientId, from: range.from, to: range.to }
   );
   return rows.map((r) => ({
@@ -355,7 +361,7 @@ export async function getGadsAdGroups(
      FROM \`${MART}.mart_gads_adgroup_daily\`
      WHERE client_id = @clientId AND date BETWEEN @from AND @to AND campaign_id = @campaignId
      GROUP BY ad_group_id
-     HAVING SUM(spend) > 0
+     HAVING spend > 0
      ORDER BY spend DESC
      LIMIT 100`,
     { clientId, from: range.from, to: range.to, campaignId }
@@ -381,7 +387,7 @@ export async function getGadsDevices(
      FROM \`${MART}.mart_gads_campaign_device_daily\`
      WHERE client_id = @clientId AND date BETWEEN @from AND @to AND campaign_id = @campaignId
      GROUP BY device
-     HAVING SUM(spend) > 0
+     HAVING spend > 0
      ORDER BY spend DESC`,
     { clientId, from: range.from, to: range.to, campaignId }
   );
@@ -500,7 +506,7 @@ export async function getGadsProducts(
      FROM \`${MART}.mart_gads_products_daily\`
      WHERE client_id = @clientId AND date BETWEEN @from AND @to
      GROUP BY grp, channel_type
-     HAVING SUM(spend) > 0 ${zeroOnly ? "AND SUM(conversions) = 0" : ""}
+     HAVING spend > 0 ${zeroOnly ? "AND conversions = 0" : ""}
      ORDER BY spend DESC
      LIMIT 200`,
     { clientId, from: range.from, to: range.to }

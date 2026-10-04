@@ -53,6 +53,36 @@ import { getFirstProductRepeat, getProductJourney } from "@/lib/queries/journey"
 import { getLifetimeSummary, getPayback, getTopCustomers } from "@/lib/queries/lifetime";
 import { getOrdersSummary, getRecentOrders } from "@/lib/queries/orders";
 import { getChannelTotals, getMetaTotals, getTopAds } from "@/lib/queries/paid";
+import {
+  getGadsAdGroups,
+  getGadsCampaignAgg,
+  getGadsCoverage,
+  getGadsDevices,
+  getGadsKeywords,
+  getGadsLeakage,
+  getGadsPmaxSplit,
+  getGadsProducts,
+  getGadsSearchTerms,
+  type GadsProductGroup,
+  type GadsTermMode,
+} from "@/lib/queries/paidGoogle";
+import {
+  getMetaAdsets,
+  getMetaAds,
+  getMetaCampaignDaily,
+  getMetaVideoRates,
+} from "@/lib/queries/paidMeta";
+import {
+  GA4_FUNNEL_CHANNELS,
+  GA4_LANDING_FILTERS,
+  getGa4Channels,
+  getGa4CrossCheck,
+  getGa4Funnel,
+  getGa4Kpis,
+  getGa4LandingPages,
+  getGa4LastDate,
+} from "@/lib/queries/paidGa4";
+import { getCampaignsAcross, getGa4PlatformTotals, getPaidDaily } from "@/lib/queries/paidOverview";
 import { getPnlSnapshot } from "@/lib/queries/pnl";
 import { getProducts } from "@/lib/queries/products";
 import { getRepeatTiming } from "@/lib/queries/repeatTiming";
@@ -139,6 +169,68 @@ async function main() {
   await probe("paid", "getChannelTotals", () =>
     getChannelTotals(id, range, client.capabilities.googleAds)
   );
+
+  // Paid tabs. Google first: `HAVING SUM(spend)` over a `SUM(spend) AS spend`
+  // alias crashed /paid/google in production, and none of these ran before.
+  if (client.capabilities.googleAds) {
+    const campaigns = await getGadsCampaignAgg(id, period);
+    const top = [...campaigns].sort(
+      (a, b) => (b.current?.spend ?? 0) - (a.current?.spend ?? 0)
+    )[0]?.campaignId;
+    await probe("paid/google", "getGadsCampaignAgg", async () => campaigns);
+    await probe("paid/google", "getGadsLeakage", () => getGadsLeakage(id, period));
+    await probe("paid/google", "getGadsPmaxSplit", () => getGadsPmaxSplit(id, range));
+    await probe("paid/google", "getGadsCoverage", () => getGadsCoverage(id, range));
+    await probe("paid/google", "getGadsKeywords", () => getGadsKeywords(id, range));
+    for (const mode of ["all", "brand", "nonbrand", "waste"] as GadsTermMode[]) {
+      await probe("paid/google", `getGadsSearchTerms ${mode}`, () => getGadsSearchTerms(id, range, mode));
+    }
+    for (const group of ["item", "type", "brand", "label0"] as GadsProductGroup[]) {
+      for (const zero of [false, true]) {
+        await probe("paid/google", `getGadsProducts ${group}${zero ? " zero" : ""}`, () =>
+          getGadsProducts(id, range, group, zero)
+        );
+      }
+    }
+    if (top) {
+      await probe("paid/google", "getGadsAdGroups", () => getGadsAdGroups(id, range, top));
+      await probe("paid/google", "getGadsDevices", () => getGadsDevices(id, range, top));
+    }
+  }
+  if (client.capabilities.meta) {
+    const meta = await getMetaCampaignDaily(id, period);
+    const campaign = meta.find((r) => r.campaignId)?.campaignId;
+    await probe("paid/meta", "getMetaCampaignDaily", async () => meta);
+    await probe("paid/meta", "getMetaVideoRates", () => getMetaVideoRates(id, period));
+    if (campaign) {
+      await probe("paid/meta", "getMetaAdsets", () => getMetaAdsets(id, range, campaign));
+      await probe("paid/meta", "getMetaAds", () => getMetaAds(id, range, campaign));
+    }
+  }
+  if (client.capabilities.ga4) {
+    await probe("paid/ga4", "getGa4LastDate", () => getGa4LastDate(id));
+    await probe("paid/ga4", "getGa4Kpis", () => getGa4Kpis(id, period));
+    await probe("paid/ga4", "getGa4CrossCheck", () =>
+      getGa4CrossCheck(id, range, client.shopPlatform === "shopify" ? "gross" : "net", cur)
+    );
+    await probe("paid/ga4", "getGa4Channels", () => getGa4Channels(id, range));
+    for (const channel of GA4_FUNNEL_CHANNELS) {
+      await probe("paid/ga4", `getGa4Funnel ${channel}`, () => getGa4Funnel(id, range, channel));
+    }
+    for (const filter of GA4_LANDING_FILTERS) {
+      await probe("paid/ga4", `getGa4LandingPages ${filter}`, () => getGa4LandingPages(id, range, filter));
+    }
+  }
+  for (const display of ["native", "CZK"]) {
+    await probe("paid", `getPaidDaily ${display}`, () => getPaidDaily(id, period, display, cur));
+    await probe("paid", `getCampaignsAcross ${display}`, () =>
+      getCampaignsAcross(id, period, display, {
+        meta: client.capabilities.meta,
+        google: client.capabilities.googleAds,
+      })
+    );
+    await probe("paid", `getGa4PlatformTotals ${display}`, () => getGa4PlatformTotals(id, range, display));
+  }
 
   await probe("products", "getProducts", () => getProducts(id, range, 40));
   await probe("unit-economics", "getUnitEconomics", () => getUnitEconomics(id, cur, range));

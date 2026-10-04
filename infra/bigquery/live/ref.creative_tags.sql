@@ -1,0 +1,27 @@
+CREATE TABLE `oneeighty-warehouse.ref.creative_tags`
+(
+  client_id STRING,
+  ad_id STRING,
+  clickup_task_id STRING,
+  clickup_url STRING,
+  concept_id STRING,
+  persona_id STRING,
+  angle STRING,
+  offer STRING,
+  stage STRING,
+  production_type STRING,
+  format STRING,
+  body_code STRING,
+  hook_code STRING,
+  production_method STRING,
+  creator_id STRING,
+  creator_type STRING,
+  production_cost NUMERIC,
+  production_cost_source STRING,
+  brief_url STRING,
+  market STRING,
+  launched_at DATE,
+  match_method STRING,
+  match_confidence NUMERIC,
+  synced_at TIMESTAMP
+);

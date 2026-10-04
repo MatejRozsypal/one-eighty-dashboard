@@ -1,0 +1,474 @@
+{
+  "name": "wf_woocommerce",
+  "nodes": [
+    {
+      "id": "9b0237f8-c137-46f1-9b27-8ec2a0d4a223",
+      "name": "Every 3 hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */3 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "64436772-b8bc-4fe4-ab9e-518d28053674",
+      "name": "Read active Woo clients",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        224,
+        96
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "sqlQuery": "SELECT client_id, slug, currency, timezone\nFROM `oneeighty-warehouse.ref.clients`\nWHERE status='active' AND has_woocommerce=TRUE\nORDER BY client_id",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "fb4f1a41-8129-47af-ab1a-d8d545e0af07",
+      "name": "Manual run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        192
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "815eea9b-e3d8-4212-be7d-03cdaffadc06",
+      "name": "Get base_url",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        96
+      ],
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/woocommerce-{{ $('Read active Woo clients').item.json.slug }}-base-url/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "d2c0db2f-0656-4c6c-bac2-f67dd031b7c6",
+      "name": "Get consumer_key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        96
+      ],
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/woocommerce-{{ $('Read active Woo clients').item.json.slug }}-consumer-key/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "083f5c41-dbc5-42a6-924c-6cc746c06301",
+      "name": "Get consumer_secret",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        896,
+        96
+      ],
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/woocommerce-{{ $('Read active Woo clients').item.json.slug }}-consumer-secret/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "bcfc0de6-cfae-4439-9eb3-6d31d94ad37f",
+      "name": "Decode secrets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        96
+      ],
+      "parameters": {
+        "jsCode": "\n// One item per active WooCommerce client. Downstream nodes then run once per\n// client through n8n's native per-item execution, the same shape wf_shopify uses.\nconst dec = b64 => Buffer.from(b64, 'base64').toString('utf8').trim();\n\nconst clients = $('Read active Woo clients').all();\nconst bases   = $('Get base_url').all();\nconst keys    = $('Get consumer_key').all();\nconst secrets = $('Get consumer_secret').all();\n\n// A length mismatch means one client is missing a secret. Fail loudly rather\n// than pairing the wrong shop's credentials to the wrong client_id.\nfor (const [label, arr] of [['base-url', bases], ['consumer-key', keys], ['consumer-secret', secrets]]) {\n  if (arr.length !== clients.length) {\n    throw new Error('Secret fetch mismatch: ' + clients.length + ' active clients but ' + arr.length + ' ' + label + ' results. Check Secret Manager for woocommerce-<slug>-' + label + '.');\n  }\n}\n\nreturn clients.map((c, i) => {\n  const ck = dec(keys[i].json.payload.data);\n  const cs = dec(secrets[i].json.payload.data);\n  return {\n    json: {\n      client_id: c.json.client_id,\n      slug:      c.json.slug,\n      currency:  c.json.currency,\n      timezone:  c.json.timezone || 'Europe/Prague',\n      base_url:  dec(bases[i].json.payload.data).replace(/\\/+$/, ''),\n      // WooCommerce only honours consumer_key/consumer_secret as query\n      // parameters over plain HTTP. Over HTTPS it wants HTTP Basic Auth, and\n      // answers 401 woocommerce_rest_cannot_view otherwise.\n      auth_b64: Buffer.from(ck + ':' + cs).toString('base64')\n    },\n    pairedItem: { item: i }\n  };\n});\n"
+      }
+    },
+    {
+      "id": "e63b2e12-e47c-490e-97bf-4a3fedceaa5b",
+      "name": "Watermark",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1344,
+        96
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "sqlQuery": "=SELECT\n  COALESCE(\n    FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%S', TIMESTAMP_SUB(MAX(date_modified_gmt), INTERVAL 2 HOUR)),\n    '2025-01-01T00:00:00'\n  ) AS modified_after,\n  -- The backfill does not resume from what is already loaded: raw is\n  -- append-only and stg dedups on the newest ingested_at, so re-reading an\n  -- order is free, whereas resuming from MAX(date_created_gmt) after a\n  -- modified-ordered run would skip every older order it had not reached.\n  '2025-01-01T00:00:00' AS created_after\nFROM `oneeighty-warehouse.raw.raw_woo_orders`\nWHERE client_id = '{{ $('Decode secrets').item.json.client_id }}'\n  AND order_date >= DATE '2024-01-01'",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "4f26783f-6dc9-49b9-ac66-1471914bd7d5",
+      "name": "Transform orders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        96
+      ],
+      "parameters": {
+        "jsCode": "\nconst INGESTED_AT = new Date().toISOString();\n\n// BigQuery refuses invalid UTF-8 outright, and a control character or an\n// unpaired surrogate in a product name, city or email would fail a row.\n//\n// This is deliberately written as a charCodeAt scan rather than a regex: the\n// previous version was a character class of \\u escape sequences, the escaping\n// did not survive being stored on the node, and the class degraded into\n// literal characters -- the letter u, every digit, the colon and A-Z -- which\n// it then stripped out of every string it touched. Corrupted 1979 rows before\n// it was caught. No escape sequences here means no escaping layer can break it.\nconst clean = v => {\n  if (v === null || v === undefined) return null;\n  const s = String(v);\n  let out = '';\n  for (let i = 0; i < s.length; i++) {\n    const c = s.charCodeAt(i);\n    if (c === 9 || c === 10 || c === 13) { out += s[i]; continue; }  // tab, LF, CR are fine\n    if (c < 32 || c === 127) continue;                               // other C0 controls are not\n    if (c >= 0xD800 && c <= 0xDBFF) {                                // high surrogate\n      const n = s.charCodeAt(i + 1);\n      if (n >= 0xDC00 && n <= 0xDFFF) { out += s[i] + s[i + 1]; i++; continue; }  // valid pair, keep\n      continue;                                                      // unpaired, drop\n    }\n    if (c >= 0xDC00 && c <= 0xDFFF) continue;                        // stray low surrogate\n    out += s[i];\n  }\n  return out;\n};\n\n// BigQuery rejects NaN and Infinity; NUMERIC carries a scale of 9, so values\n// are rounded well inside it.\nconst num = v => {\n  if (v === null || v === undefined || v === '') return null;\n  const n = Number(v);\n  return Number.isFinite(n) ? Math.round(n * 1e6) / 1e6 : null;\n};\nconst sum = (arr, pick) => {\n  let t = 0;\n  for (const x of (arr || [])) {\n    const n = Number(pick(x));\n    if (Number.isFinite(n)) t += n;\n  }\n  return Math.round(t * 1e6) / 1e6;\n};\n\n// WooCommerce on HPOS can emit PHP zero-dates like '-0001-11-30T00:00:00',\n// which parse to a real Date in year -1 and are refused by BigQuery.\nconst parseTs = v => {\n  if (!v) return null;\n  const raw = String(v).trim();\n  if (!raw || raw.startsWith('0000') || raw.startsWith('-')) return null;\n  const d = new Date(/[Zz]$/.test(raw) ? raw : raw + 'Z');\n  if (isNaN(d.getTime())) return null;\n  const y = d.getUTCFullYear();\n  if (y < 1990 || y > 2200) return null;\n  return d.toISOString();\n};\nconst toLocalDate = (tz, ...candidates) => {\n  for (const c of candidates) {\n    const iso = parseTs(c);\n    if (iso) return new Date(iso).toLocaleDateString('en-CA', { timeZone: tz });\n  }\n  return null;\n};\n\n// GDPR rule 6: meta_data is filtered through a WHITELIST, never a blacklist.\nconst ORDER_META_KEEP = new Set([\n  '_wc_order_attribution_source_type','_wc_order_attribution_utm_source',\n  '_wc_order_attribution_utm_medium','_wc_order_attribution_utm_campaign',\n  '_wc_order_attribution_utm_content','_wc_order_attribution_utm_id',\n  '_wc_order_attribution_utm_term','_wc_order_attribution_referrer',\n  '_wc_order_attribution_device_type','_wc_order_attribution_session_count',\n  '_wc_order_attribution_session_pages',\n  '_woo_pi_data',\n  '_packing_box','_packing_box_id','_packed_by','_packing_status',\n  'tppl_api','tppl_package_api','tppl_package_status','tppl_package_status_id',\n  'tppl_cpl_batch_state','tppl_package_sent',\n  '_comgate_method','_comgate_status',\n  '_ethia_price_overrides_total','_ethia_price_overrides_summary',\n  '_ethia_price_overrides_sources','_ethia_order_card',\n  'is_vat_exempt','_wpify_vat_exempt_reason'\n]);\nconst LINE_META_KEEP = new Set([\n  '_woo_cost_price','_reduced_stock',\n  '_ethia_price_overrides','_ethia_price_override_reason',\n  '_ethia_upsell_original_price','_ethia_upsell_discount_percent','_ethia_upsell_offer_type',\n  'dog_meal_type','pack_kg'   // rawbark meal plans (not personal data), 2026-09-21\n]);\n\nconst mv = (arr, key) => {\n  const m = (arr || []).find(x => x.key === key);\n  return m ? m.value : null;\n};\nconst keepMeta = (arr, set) => (arr || []).filter(m => set.has(m.key))\n  .map(m => ({ key: clean(m.key), value: typeof m.value === 'string' ? clean(m.value) : m.value }));\n\nconst REVENUE_STATUSES = new Set(['processing', 'completed', 'on-hold']);\nconst MAX_PAYLOAD = 800000;   // BigQuery's streaming row limit is 1 MB\n\nconst inputs = $input.all();\nconst rows = [];\nconst skipped = [];\n\nfor (let i = 0; i < inputs.length; i++) {\n  const ctx = $('Decode secrets').itemMatching(i).json;\n  const page = Array.isArray(inputs[i].json.orders) ? inputs[i].json.orders : [];\n\n  for (const o of page) {\n    if (!o || !o.id) continue;\n\n    const orderDate = toLocalDate(ctx.timezone, o.date_created_gmt, o.date_created, o.date_paid_gmt);\n    if (!orderDate) {\n      if (REVENUE_STATUSES.has(o.status)) {\n        throw new Error('Order ' + o.id + ' has status \"' + o.status + '\" but no usable date. '\n          + 'Refusing to drop an order that counts as revenue.');\n      }\n      skipped.push(o.id + ':' + o.status);\n      continue;\n    }\n\n    const lines = o.line_items || [];\n    const costs = lines.map(li => {\n      const c = mv(li.meta_data, '_woo_cost_price');\n      if (c === null || c === '') return null;\n      const unit = Number(c), qty = Number(li.quantity || 0);\n      return (Number.isFinite(unit) && Number.isFinite(qty)) ? unit * qty : null;\n    });\n    const hasImprint = lines.length > 0 && costs.every(c => c !== null);\n\n    const fees = o.fee_lines || [];\n    const codFee = fees.find(f => /dob[ií]rk|cash on delivery/i.test(f.name || ''));\n\n    const basePayload = {\n      id: o.id, number: clean(o.number), status: clean(o.status), currency: clean(o.currency),\n      prices_include_tax: o.prices_include_tax,\n      date_created_gmt: parseTs(o.date_created_gmt), date_modified_gmt: parseTs(o.date_modified_gmt),\n      date_paid_gmt: parseTs(o.date_paid_gmt), date_completed_gmt: parseTs(o.date_completed_gmt),\n      discount_total: o.discount_total, discount_tax: o.discount_tax,\n      shipping_total: o.shipping_total, shipping_tax: o.shipping_tax,\n      cart_tax: o.cart_tax, total: o.total, total_tax: o.total_tax,\n      customer_id: o.customer_id, created_via: clean(o.created_via),\n      payment_method: clean(o.payment_method), payment_method_title: clean(o.payment_method_title),\n      billing: { country: clean(o.billing?.country), city: clean(o.billing?.city), state: clean(o.billing?.state) },\n      line_items: lines.map(li => ({\n        id: li.id, product_id: li.product_id, variation_id: li.variation_id,\n        sku: clean(li.sku), name: clean(li.name), quantity: li.quantity,\n        subtotal: li.subtotal, subtotal_tax: li.subtotal_tax,\n        total: li.total, total_tax: li.total_tax,\n        meta_data: keepMeta(li.meta_data, LINE_META_KEEP)\n      })),\n      shipping_lines: (o.shipping_lines || []).map(s => ({ method_id: clean(s.method_id), method_title: clean(s.method_title), total: s.total, total_tax: s.total_tax })),\n      fee_lines: fees.map(f => ({ name: clean(f.name), total: f.total, total_tax: f.total_tax })),\n      coupon_lines: (o.coupon_lines || []).map(c => ({ code: clean(c.code), discount: c.discount })),\n      refunds: (o.refunds || []).map(r => ({ id: r.id, total: r.total })),\n      tax_lines: (o.tax_lines || []).map(t => ({ rate_percent: t.rate_percent, tax_total: t.tax_total, shipping_tax_total: t.shipping_tax_total })),\n      meta_data: keepMeta(o.meta_data, ORDER_META_KEEP)\n    };\n\n    // Every string inside basePayload has already been cleaned individually.\n    // JSON.stringify is well-formed -- it escapes lone surrogates itself -- so\n    // its output must NOT be cleaned again: doing so can only damage the JSON.\n    let payload = JSON.stringify(basePayload);\n    if (payload.length > MAX_PAYLOAD) {\n      basePayload.meta_data = basePayload.meta_data.filter(m => m.key !== '_woo_pi_data');\n      basePayload._truncated = 'dropped _woo_pi_data';\n      payload = JSON.stringify(basePayload);\n    }\n    if (payload.length > MAX_PAYLOAD) {\n      payload = JSON.stringify({ id: o.id, _truncated: 'payload exceeded ' + MAX_PAYLOAD + ' bytes' });\n    }\n\n    rows.push({\n      json: {\n        client_id: ctx.client_id,\n        ingested_at: INGESTED_AT,\n        ingest_source: 'backfill',\n\n        order_id: String(o.id),\n        order_number: clean(o.number) ?? '',\n        status: clean(o.status) ?? '',\n        currency: clean(o.currency) ?? '',\n        prices_include_tax: Boolean(o.prices_include_tax),\n        order_date: orderDate,\n\n        date_created_gmt: parseTs(o.date_created_gmt),\n        date_modified_gmt: parseTs(o.date_modified_gmt),\n        date_paid_gmt: parseTs(o.date_paid_gmt),\n        date_completed_gmt: parseTs(o.date_completed_gmt),\n\n        total: num(o.total),\n        total_tax: num(o.total_tax),\n        subtotal_ex_tax: sum(lines, li => li.total),\n        shipping_total: num(o.shipping_total),\n        shipping_tax: num(o.shipping_tax),\n        discount_total: num(o.discount_total),\n        discount_tax: num(o.discount_tax),\n        fees_total: sum(fees, f => f.total),\n        cod_fee: codFee ? num(codFee.total) : null,\n        refunds_total: sum(o.refunds, r => Math.abs(Number(r.total || 0))),\n\n        payment_method: clean(o.payment_method) ?? '',\n        shipping_method: clean((o.shipping_lines || [])[0]?.method_id) ?? '',\n        customer_id: String(o.customer_id ?? ''),\n        customer_email: (clean(o.billing?.email) ?? '').toLowerCase().trim(),\n        billing_country: clean(o.billing?.country) ?? '',\n        billing_city: clean(o.billing?.city) ?? '',\n        created_via: clean(o.created_via) ?? '',\n        coupon_codes: JSON.stringify((o.coupon_lines || []).map(c => clean(c.code))),\n\n        attribution_source_type: clean(mv(o.meta_data, '_wc_order_attribution_source_type')),\n        utm_source: clean(mv(o.meta_data, '_wc_order_attribution_utm_source')),\n        utm_medium: clean(mv(o.meta_data, '_wc_order_attribution_utm_medium')),\n        utm_campaign: clean(mv(o.meta_data, '_wc_order_attribution_utm_campaign')),\n        utm_content: clean(mv(o.meta_data, '_wc_order_attribution_utm_content')),\n\n        cogs_total: hasImprint ? Math.round(costs.reduce((s, c) => s + c, 0) * 1e6) / 1e6 : null,\n        packaging_cost: null,\n        shipping_cost: null,\n        gateway_fee: null,\n        has_cost_imprint: hasImprint,\n\n        packing_box_id: clean(mv(o.meta_data, '_packing_box_id')),\n        carrier: clean((o.shipping_lines || [])[0]?.method_id) ?? '',\n        carrier_status_code: clean(mv(o.meta_data, 'tppl_package_status_id')),\n\n        payload_json: payload\n      },\n      pairedItem: { item: i }\n    });\n  }\n}\n\nif (skipped.length) console.log('Skipped ' + skipped.length + ' dateless non-revenue order(s): ' + skipped.join(', '));\n\nreturn rows;\n"
+      }
+    },
+    {
+      "id": "d233fbdc-9ab6-43c4-9c57-b7021e4a5f58",
+      "name": "BQ: insert orders",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        2016,
+        96
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_woo_orders",
+          "mode": "list"
+        },
+        "options": {
+          "skipInvalidRows": true,
+          "ignoreUnknownValues": true
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "9f352fc6-0281-42bc-bdb9-88d1c3592c4b",
+      "name": "Transform items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        96
+      ],
+      "parameters": {
+        "jsCode": "\n// Re-reads the orders built upstream rather than the raw API pages, so the\n// order_date and client_id on a line can never disagree with its order.\nconst orders = $('Transform orders').all();\nconst rows = [];\n\nfor (let i = 0; i < orders.length; i++) {\n  const o = orders[i].json;\n  const payload = JSON.parse(o.payload_json);\n\n  for (const li of (payload.line_items || [])) {\n    const costMeta = (li.meta_data || []).find(m => m.key === '_woo_cost_price');\n    const unitCost = costMeta && costMeta.value !== '' ? Number(costMeta.value) : null;\n    const qty = Number(li.quantity || 0);\n\n    rows.push({\n      json: {\n        client_id: o.client_id,\n        ingested_at: o.ingested_at,\n        ingest_source: o.ingest_source,\n        order_id: o.order_id,\n        order_date: o.order_date,\n        line_item_id: String(li.id),\n        product_id: String(li.product_id ?? ''),\n        variation_id: String(li.variation_id ?? ''),\n        sku: li.sku ?? '',\n        name: li.name ?? '',\n        quantity: qty,\n        subtotal: li.subtotal === undefined ? null : Number(li.subtotal),\n        subtotal_tax: li.subtotal_tax === undefined ? null : Number(li.subtotal_tax),\n        total: li.total === undefined ? null : Number(li.total),\n        total_tax: li.total_tax === undefined ? null : Number(li.total_tax),\n        unit_cost: unitCost,\n        line_cost: unitCost === null ? null : unitCost * qty,\n        payload_json: JSON.stringify(li)\n      },\n      pairedItem: { item: i }\n    });\n  }\n}\n\nreturn rows;\n"
+      }
+    },
+    {
+      "id": "46686d15-ad3e-4691-b5a5-83bd8c783e94",
+      "name": "BQ: insert items",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        2464,
+        96
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_woo_order_items",
+          "mode": "list"
+        },
+        "options": {
+          "skipInvalidRows": true,
+          "ignoreUnknownValues": true
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "fecc6a6d-821b-453d-95c3-3e32b6ed5f23",
+      "name": "Log success",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        2688,
+        96
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "sqlQuery": "=INSERT INTO `oneeighty-warehouse.ops.pipeline_log`\n  (run_id, workflow, client_id, source, started_at, finished_at, status, rows_loaded, trigger)\nVALUES\n{{ $('Decode secrets').all().map(c => { const cid = c.json.client_id; const n = $('Transform orders').all().filter(t => t.json.client_id === cid).length; return \"('\" + $execution.id + \"','wf_woocommerce','\" + cid + \"','woocommerce',CURRENT_TIMESTAMP(),CURRENT_TIMESTAMP(),'success',\" + n + \",'\" + ($execution.mode === 'manual' ? 'manual' : 'cron') + \"')\"; }).join(',\\n') }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "51f12b78-4f49-4af8-9cad-6523908476cb",
+      "name": "Fetch orders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        96
+      ],
+      "parameters": {
+        "jsCode": "\n// Paginates WooCommerce orders for each active client.\n//\n// BACKFILL pages by CREATION date from a fixed start. Modification date is\n// unusable for this: over 100 of Ethia's orders share a date_modified_gmt\n// inside one 8-second bulk edit, so a modified_after cursor lands inside that\n// cluster and never advances -- three consecutive runs re-fetched the same 100\n// orders. Creation dates do not collapse that way.\n//\n// CRON pages by modified_after, which is what an incremental run needs: an\n// order refunded today must be picked up even though it was created months ago.\n//\n// BACKFILL flipped to false on 2026-09-21 once both histories were loaded\n// (ethia via this node on 2026-09-20; rawbark, 51,481 orders = X-WP-Total, via\n// infra/woo_backfill.mjs from Cloud Shell). Load a NEW client's history with that\n// script, not by flipping this back: one run holds every order in one n8n item\n// and stops at MAX_PAGES without raising. $execution.mode is NOT usable to decide\n// this -- it does not return 'manual' for an API-triggered run.\nconst BACKFILL = false;\n\nconst helpers = this.helpers;\nconst sleep = ms => new Promise(r => setTimeout(r, ms));\n\nconst PER_PAGE    = 100;\nconst PAGE_PAUSE  = 1100;   // ~1 req/s, shared hosting\nconst MAX_PAGES   = 200;\nconst MAX_RETRIES = 4;      // 2s, 4s, 8s, 16s\n\nconst inputs = $input.all();\nconst out = [];\n\nfor (let i = 0; i < inputs.length; i++) {\n  const ctx = $('Decode secrets').itemMatching(i).json;\n  const cursorParam = BACKFILL ? 'after' : 'modified_after';\n  const orderBy     = BACKFILL ? 'date'  : 'modified';\n  const cursorValue = BACKFILL ? (inputs[i].json.created_after || '2025-01-01T00:00:00')\n                               : inputs[i].json.modified_after;\n\n  const orders = [];\n  let page = 1;\n  let requests = 0;\n  let reportedTotal = null;\n\n  while (page <= MAX_PAGES) {\n    const url = ctx.base_url + '/wp-json/wc/v3/orders'\n      + '?' + cursorParam + '=' + encodeURIComponent(cursorValue)\n      + '&dates_are_gmt=true&status=any&orderby=' + orderBy + '&order=asc'\n      + '&per_page=' + PER_PAGE + '&page=' + page;\n\n    let r;\n    let attempt = 0;\n    while (true) {\n      r = await helpers.httpRequest({\n        method: 'GET', url,\n        headers: { Authorization: 'Basic ' + ctx.auth_b64, Accept: 'application/json' },\n        returnFullResponse: true, json: true,\n        ignoreHttpStatusErrors: true, timeout: 60000\n      });\n      requests++;\n\n      if (r.statusCode === 429 || r.statusCode >= 500) {\n        attempt++;\n        if (attempt > MAX_RETRIES) {\n          throw new Error('WooCommerce kept returning ' + r.statusCode + ' for ' + ctx.client_id\n            + ' after ' + MAX_RETRIES + ' retries (page ' + page + ').');\n        }\n        await sleep(2000 * Math.pow(2, attempt - 1));\n        continue;\n      }\n      break;\n    }\n\n    if (reportedTotal === null && r.headers && r.headers['x-wp-total']) {\n      reportedTotal = Number(r.headers['x-wp-total']);\n    }\n\n    const body = r.body;\n    if (body && body.code && body.data && typeof body.data.status === 'number') {\n      throw new Error('WooCommerce API returned ' + body.data.status + ' (' + body.code + '): '\n        + (body.message || '') + ' -- no orders were loaded for ' + ctx.client_id + '.');\n    }\n    if (!Array.isArray(body)) {\n      throw new Error('WooCommerce returned an unexpected body type for ' + ctx.client_id\n        + ' on page ' + page + ': ' + typeof body);\n    }\n\n    orders.push(...body);\n    if (body.length < PER_PAGE) break;\n\n    page++;\n    await sleep(PAGE_PAUSE);\n  }\n\n  out.push({\n    json: {\n      client_id: ctx.client_id,\n      mode: BACKFILL ? 'backfill' : 'cron',\n      cursor_param: cursorParam,\n      cursor_value: cursorValue,\n      reported_total: reportedTotal,\n      requests, pages: page,\n      order_count: orders.length,\n      orders\n    },\n    pairedItem: { item: i }\n  });\n}\n\nreturn out;\n",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 3 hours": {
+      "main": [
+        [
+          {
+            "node": "Read active Woo clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read active Woo clients": {
+      "main": [
+        [
+          {
+            "node": "Get base_url",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual run": {
+      "main": [
+        [
+          {
+            "node": "Read active Woo clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get base_url": {
+      "main": [
+        [
+          {
+            "node": "Get consumer_key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get consumer_key": {
+      "main": [
+        [
+          {
+            "node": "Get consumer_secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get consumer_secret": {
+      "main": [
+        [
+          {
+            "node": "Decode secrets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform orders": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert orders": {
+      "main": [
+        [
+          {
+            "node": "Transform items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform items": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert items": {
+      "main": [
+        [
+          {
+            "node": "Log success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode secrets": {
+      "main": [
+        [
+          {
+            "node": "Watermark",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Watermark": {
+      "main": [
+        [
+          {
+            "node": "Fetch orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch orders": {
+      "main": [
+        [
+          {
+            "node": "Transform orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "errorWorkflow": "lslDsvbP8jLKEgw0"
+  },
+  "tags": [],
+  "meta": {
+    "exportedFrom": "n8n workflow sPavCKXZHiXqXCvK, versionId 9ee92345-d799-494a-bdeb-48d104b289f8, updatedAt 2026-09-21T21:22:09.850Z, exported 2026-10-04 via n8n MCP get_workflow_details (credential ids and names only, no secret values)"
+  }
+}

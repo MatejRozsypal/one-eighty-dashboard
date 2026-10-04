@@ -1,5 +1,5 @@
 /**
- * The three products behind the icon rail.
+ * The four products behind the icon rail.
  *
  * Each rail icon opens a different instance of the app. They share exactly two
  * things: the sign-in session and the shell chrome, and nothing else. In
@@ -12,7 +12,10 @@
  * route table is a cost paid by readers for the benefit of no one.
  */
 
-export type ProductId = "chat" | "analytics" | "creative";
+import { REPORTS_ROLES } from "@/lib/reports/contracts";
+import type { Role } from "@/lib/users/store";
+
+export type ProductId = "chat" | "analytics" | "creative" | "reports";
 
 export interface Product {
   id: ProductId;
@@ -23,6 +26,12 @@ export interface Product {
   hint: string;
   /** Client-role users are confined to products marked false. */
   internalOnly: boolean;
+  /**
+   * When set, only these roles see the icon. Presentation only: the real gate
+   * for Reports is server side (`lib/authz.ts`, which also checks the email
+   * domain), so a hidden icon is a courtesy and never the protection.
+   */
+  roles?: readonly Role[];
 }
 
 export const PRODUCTS: Product[] = [
@@ -47,6 +56,14 @@ export const PRODUCTS: Product[] = [
     hint: "Ad creative analysis",
     internalOnly: true,
   },
+  {
+    id: "reports",
+    label: "Reports",
+    href: "/reports",
+    hint: "Build and share reports across clients",
+    internalOnly: true,
+    roles: REPORTS_ROLES,
+  },
 ];
 
 /**
@@ -60,9 +77,17 @@ export const PRODUCTS: Product[] = [
 export function productFor(pathname: string): ProductId {
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return "chat";
   if (pathname === "/creative" || pathname.startsWith("/creative/")) return "creative";
+  if (pathname === "/reports" || pathname.startsWith("/reports/")) return "reports";
   return "analytics";
 }
 
-export function productsFor(isInternal: boolean): Product[] {
-  return isInternal ? PRODUCTS : PRODUCTS.filter((p) => !p.internalOnly);
+/**
+ * The products a role gets a rail icon for. Internal means admin or agency;
+ * `roles`, where a product sets it, narrows that further (Reports).
+ */
+export function productsFor(role: Role): Product[] {
+  const isInternal = role !== "client";
+  return PRODUCTS.filter(
+    (p) => (isInternal || !p.internalOnly) && (!p.roles || p.roles.includes(role))
+  );
 }

@@ -49,7 +49,8 @@ export function Sidebar({
   // a wall of thumbnails, and 252px of dark chrome down the left is 252px not
   // spent on them. Returning null rather than rendering an empty panel means
   // the column collapses instead of leaving a dark gutter.
-  if (product === "creative") return null;
+  // Reports draws its own list panel in its layout, for the same reason.
+  if (product === "creative" || product === "reports") return null;
 
   return (
     <aside className="nav-panel sticky top-0 hidden h-screen w-[var(--nav-w)] flex-none flex-col gap-[22px] bg-bg-inverse px-4 pb-[18px] pt-[22px] lg:flex">

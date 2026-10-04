@@ -97,7 +97,14 @@ export function AccountMenu({
   // looking at" for it to answer. Leaving the switcher visible there offered a
   // choice that changed nothing, and put a client's name above a conversation
   // that had no connection to them.
-  const onChat = productFor(pathname) === "chat";
+  const product = productFor(pathname);
+  const onChat = product === "chat";
+  // Reports has the same problem from the other side: client selection belongs
+  // to each report, so a global client name up here would contradict it. It
+  // shows the account like Chat does. With no panel beside the rail, the bar
+  // is also offset by the rail alone.
+  const onReports = product === "reports";
+  const accountOnly = onChat || onReports;
 
   useEffect(() => {
     if (!open) return;
@@ -132,7 +139,9 @@ export function AccountMenu({
   );
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-40 hidden h-[var(--header-h)] pt-[var(--safe-top)] lg:block lg:pl-[calc(var(--rail-w)+var(--nav-w))]">
+    <div className={`pointer-events-none fixed inset-x-0 top-0 z-40 hidden h-[var(--header-h)] pt-[var(--safe-top)] lg:block ${
+      onReports ? "lg:pl-[var(--rail-w)]" : "lg:pl-[calc(var(--rail-w)+var(--nav-w))]"
+    }`}>
       <div className="page-frame flex h-full items-center justify-end px-5 lg:px-8">
         <div ref={rootRef} className="pointer-events-auto relative">
       <button
@@ -147,15 +156,15 @@ export function AccountMenu({
       >
         <span
           className={`flex h-7 w-7 flex-none items-center justify-center font-mono text-[11px] font-semibold ${
-            onChat
+            accountOnly
               ? "rounded-full bg-accent text-accent-contrast"
               : `rounded-lg ${tintFor(activeIndex)}`
           }`}
         >
-          {initials(onChat ? userName : shown.name)}
+          {initials(accountOnly ? userName : shown.name)}
         </span>
         <span className="max-w-[190px] truncate text-[13px] font-semibold tracking-[-0.01em] text-content-strong">
-          {onChat ? userName : shown.name}
+          {accountOnly ? userName : shown.name}
         </span>
         <svg
           aria-hidden="true"
@@ -178,7 +187,7 @@ export function AccountMenu({
           role="menu"
           className="absolute right-0 top-[calc(100%+10px)] w-[320px] overflow-hidden rounded-card border border-hairline bg-paper shadow-lg"
         >
-          {!onChat && (
+          {!accountOnly && (
           <div className="flex flex-col p-1.5">
             {clients.map((c, i) => {
               const isActive = c.clientId === shown.clientId;

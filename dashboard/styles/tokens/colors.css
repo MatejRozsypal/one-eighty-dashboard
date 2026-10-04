@@ -83,4 +83,27 @@
   --accent-soft:       var(--growth-50);
 
   --focus-ring: var(--growth-500);
+
+  /* ---- Reports: series and benchmark ----
+     A client keeps one slot across every widget (index in the alphabetical
+     client list, mod 6). Beyond six series the widgets add dash patterns.
+     Re-stepped in RS9 with the dataviz validator (light mode, white card
+     surface): lightness band, chroma floor, adjacent CVD separation (worst
+     14.5, target 8), normal-vision floor (worst 19.2, floor 15) and 3:1
+     contrast all pass. Hues stay on the brand: growth green leads, info blue
+     and the amber step are existing tokens; purple, pink and teal are new
+     and sit only here. The order is the CVD safety mechanism, do not
+     reorder. Adjacent-pair validated, so a scatter or a small-multiples form
+     with more than three series also needs its labels. */
+  --series-purple: #7F54B3;
+  --series-pink:   #D6409F;
+  --series-teal:   #0B8FA3;
+  --series-1: var(--growth-600);
+  --series-2: var(--series-purple);
+  --series-3: var(--warning-700);
+  --series-4: var(--series-pink);
+  --series-5: var(--info);
+  --series-6: var(--series-teal);
+  /* Industry benchmark. Always drawn dashed. */
+  --benchmark: var(--gray-300);
 }

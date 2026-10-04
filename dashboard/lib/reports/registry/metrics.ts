@@ -229,6 +229,7 @@ export const METRICS: MetricRegistry = defineMetrics({
     description: "Revenue per unit of paid spend.",
     benchmarkable: true,
     caveats: PAID_CAV,
+    aliases: ["roas"],
     definitionKey: "MER",
     minVolume: { c: "kpis.paid_spend", shareOfMax: 0.02 },
   }),

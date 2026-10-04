@@ -177,7 +177,7 @@ function walk(dir: string): string[] {
   });
 }
 for (const file of walk(join(__dirname, "..", "lib", "reports"))) {
-  check(`no em dash in ${file}`, !readFileSync(file, "utf8").includes("—"));
+  check(`no em dash in ${file}`, !readFileSync(file, "utf8").includes("\u2014"));
 }
 
 
@@ -489,7 +489,14 @@ function firstDiff(a: string, b: string): string {
   throws("bad date", () => compileFixture({ ...W_MER_CAC, period: { ...W_MER_CAC.period, current: { from: "2026-07-06'", to: "2026-10-03" } } }), /YYYY-MM-DD/);
   throws("scan does not cover comparison", () => compileFixture({ ...W_MER_CAC, scan: W_MER_CAC.period.current }), /Scan bounds/);
   throws("bad project id", () => compileWidgetWith(W_MER_CAC, FIXTURE_REGISTRY, { projectId: "x`.y" }), /Project id/);
-  throws("compileWidget fails closed until the registry is bound", () => compileWidget(W_MER_CAC), /No registry bound/);
+  check("compileWidget is bound to the real registry", (() => {
+    try {
+      const q = compileWidget(W_MER_CAC);
+      return q.sql.includes("mart_daily_kpis") && q.marts.includes("kpis");
+    } catch {
+      return false;
+    }
+  })());
   check("componentAlias", componentAlias("kpis.new_customer_orders") === "kpis__new_customer_orders");
 }
 

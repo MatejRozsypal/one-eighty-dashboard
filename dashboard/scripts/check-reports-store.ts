@@ -94,7 +94,7 @@ class FakeDb implements Queryable {
     }
     if (tag === "reports.create.widget" || tag === "reports.widgets.insert") {
       if (!rep(p[0])) throw new Error("fk violation");
-      const w: W = { id: this.id(), report_id: String(p[0]), type: String(p[1]), config: String(p[2]), x: Number(p[3]), y: Number(p[4]), w: Number(p[5]), h: Number(p[6]), created_at: this.tick(), updated_at: this.tick() };
+      const w: W = { id: p[7] ? String(p[7]) : this.id(), report_id: String(p[0]), type: String(p[1]), config: String(p[2]), x: Number(p[3]), y: Number(p[4]), w: Number(p[5]), h: Number(p[6]), created_at: this.tick(), updated_at: this.tick() };
       s.widgets.push(w);
       return rows([{ id: w.id }]);
     }
@@ -357,6 +357,17 @@ async function main() {
   const offGrid = await A.addWidget(id, cur.report.version, { ...WIDGET_KPI, x: 11, w: 3 });
   check("widget must fit the grid", offGrid.ok === false && offGrid.code === "invalid", offGrid);
   eq("invalid widget changed nothing", JSON.stringify(h.db.state), before);
+  const badId = await A.addWidget(id, cur.report.version, { ...WIDGET_KPI, id: "not-a-uuid" });
+  check("client widget id must be a uuid", badId.ok === false && badId.code === "invalid", badId);
+  const chosen = uuid(4242);
+  const withId = await A.addWidget(id, cur.report.version, { ...WIDGET_KPI, id: chosen });
+  check("client-chosen widget id is used (undo of a removal restores the same id)", withId.ok === true && withId.widgetId === chosen, withId);
+  cur = (await A.getReport(id))!;
+  if (withId.ok) {
+    const gone = await A.removeWidget(id, cur.report.version, chosen);
+    check("the chosen widget can be removed again", gone.ok === true, gone);
+    cur = (await A.getReport(id))!;
+  }
 
   const target = cur.widgets[0];
   const bogus = uuid(777);

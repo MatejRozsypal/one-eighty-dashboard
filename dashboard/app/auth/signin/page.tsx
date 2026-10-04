@@ -4,7 +4,7 @@
  * Sign-in. Two ways in, on the brand's dark "product" surface.
  *
  * Google is for the agency, whose accounts are all on the allowed domain.
- * Clients have no such account, so they get email and password — the same
+ * Clients have no such account, so they get email and password, the same
  * screen, not a separate hidden one, because a second sign-in URL is a thing
  * people lose.
  *
@@ -33,7 +33,7 @@ export default function SignInPage() {
     });
 
     if (result?.error) {
-      setError("That email and password don't match an active account.");
+      setError("Wrong email or password.");
       setCredentialsBusy(false);
       return;
     }
@@ -47,15 +47,7 @@ export default function SignInPage() {
     <main className="flex min-h-screen items-center justify-center bg-bg-inverse p-5">
       <div className="flex w-full max-w-[380px] flex-col gap-7">
         <Logo tone="inverse" size={32} />
-
-        <div className="flex flex-col gap-2.5">
-          <h1 className="m-0 text-[26px] font-bold tracking-heading text-content-inverse">
-            Contribution margin, <i className="font-medium">not vanity revenue.</i>
-          </h1>
-          <p className="m-0 text-[13.5px] leading-[1.6] text-gray-300">
-            Shop, paid media and email for every client, in one place.
-          </p>
-        </div>
+        <h1 className="sr-only">Sign in</h1>
 
         <button
           type="button"
@@ -66,7 +58,7 @@ export default function SignInPage() {
           }}
           className="inline-flex items-center justify-center gap-2 rounded-control bg-accent px-4 py-3 text-[14px] font-semibold text-accent-contrast transition-all duration-fast hover:bg-accent-hover hover:shadow-accent active:translate-y-px disabled:opacity-60"
         >
-          {busy ? "Opening Google…" : "Continue with Google"}
+          {busy ? "Opening Google..." : "Continue with Google"}
         </button>
 
         <div className="flex items-center gap-3">
@@ -102,13 +94,9 @@ export default function SignInPage() {
             disabled={credentialsBusy}
             className="rounded-control border border-white/[0.16] px-4 py-2.5 text-[14px] font-medium text-content-inverse transition-colors duration-fast hover:bg-white/[0.08] disabled:opacity-60"
           >
-            {credentialsBusy ? "Signing in…" : "Sign in with password"}
+            {credentialsBusy ? "Signing in..." : "Sign in with password"}
           </button>
 
-          <span className="text-[12px] leading-[1.5] text-gray-400">
-            No password? Ask One Eighty to set one up — accounts are created by
-            an admin, there is no self-service sign-up.
-          </span>
         </form>
       </div>
     </main>

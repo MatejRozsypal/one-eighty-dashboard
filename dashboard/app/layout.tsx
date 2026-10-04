@@ -9,8 +9,6 @@ export const metadata: Metadata = {
     default: "One Eighty",
     template: "%s · One Eighty",
   },
-  description:
-    "Contribution-margin analytics across every One Eighty client — shop, paid media and email in one place.",
   // Installed to a home screen, this is the name under the icon.
   applicationName: "One Eighty",
   appleWebApp: {
@@ -33,7 +31,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Zoom is deliberately left enabled — disabling it on a dashboard full of
+  // Zoom is deliberately left enabled, disabling it on a dashboard full of
   // small tabular figures is an accessibility failure, not a polish win.
   width: "device-width",
   initialScale: 1,

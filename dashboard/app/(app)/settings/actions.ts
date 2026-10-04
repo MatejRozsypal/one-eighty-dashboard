@@ -4,8 +4,8 @@
  * Settings mutations.
  *
  * Every action re-checks the session itself. Server actions are individually
- * addressable POST endpoints — the page they were rendered from is not a gate,
- * and a caller can invoke one without ever loading it — so the role check has
+ * addressable POST endpoints, the page they were rendered from is not a gate,
+ * and a caller can invoke one without ever loading it, so the role check has
  * to live in the action, not in the screen that draws the form.
  */
 
@@ -19,7 +19,7 @@ import { saveCreativeSettings } from "@/lib/creative/store";
  * Parse a target from a form field.
  *
  * An empty box clears the target rather than storing zero. The two are
- * genuinely different — zero is an intention, absent is nobody having said —
+ * genuinely different, zero is an intention, absent is nobody having said -
  * and the Goals page renders them differently, so the distinction has to
  * survive the form.
  */
@@ -28,7 +28,7 @@ function parseTarget(value: FormDataEntryValue | null): number | null {
   if (raw === "") return null;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) {
-    throw new Error(`"${raw}" is not a target. Use a number, or empty to clear.`);
+    throw new Error("Enter a number or leave empty.");
   }
   return n;
 }
@@ -45,7 +45,7 @@ export async function saveGoalsAction(formData: FormData): Promise<void> {
   // The demo's targets are generated in code so they always frame its data.
   // Accepting a save would write rows nothing reads.
   if (isDemo(clientId)) {
-    throw new Error("The demo client's targets are fixed in code.");
+    throw new Error("Demo targets are fixed.");
   }
 
   // One form carries every metric for a month, so a month is saved as a unit

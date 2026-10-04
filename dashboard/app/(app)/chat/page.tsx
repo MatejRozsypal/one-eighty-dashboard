@@ -1,5 +1,5 @@
 /**
- * Assistant — the first product that is not Analytics.
+ * Assistant, the first product that is not Analytics.
  *
  * No BigQuery import anywhere in this subtree, deliberately. The separation is
  * the point of the section, and it is enforced by there being nothing to call

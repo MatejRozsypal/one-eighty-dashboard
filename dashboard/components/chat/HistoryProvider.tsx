@@ -3,8 +3,8 @@
 /**
  * Shared conversation state.
  *
- * The sidebar list and the transcript are in different branches of the tree —
- * one is rendered by the app layout, the other by the page — so they need a
+ * The sidebar list and the transcript are in different branches of the tree -
+ * one is rendered by the app layout, the other by the page, so they need a
  * common owner. Context rather than the URL: the query string here carries the
  * client, range and currency and is appended to every navigation link, so a
  * conversation id put there would ride along to `/snapshot` and every other
@@ -30,7 +30,7 @@ import {
 } from "@/lib/chat/history";
 
 interface Ctx {
-  /** Null until localStorage has been read — the server cannot know it. */
+  /** Null until localStorage has been read, the server cannot know it. */
   conversations: Conversation[] | null;
   activeId: string | null;
   open: (id: string | null) => void;
@@ -53,7 +53,7 @@ export function HistoryProvider({ children }: { children: React.ReactNode }) {
 
   /*
    * The selected conversation is mirrored into a ref because one send writes
-   * twice — the question, then the answer — and both writes happen inside a
+   * twice, the question, then the answer, and both writes happen inside a
    * single `send()` whose closure captured `activeId` before the first write
    * set it. Reading state there meant the reply did not know a conversation had
    * just been created and started a second one, so every first message split
@@ -94,7 +94,7 @@ export function HistoryProvider({ children }: { children: React.ReactNode }) {
 
       // The id is minted and published here, outside the updater. React may
       // invoke an updater twice in development, and an updater that calls
-      // `newId()` would mint a different id each time — leaving the selected
+      // `newId()` would mint a different id each time, leaving the selected
       // conversation pointing at one that was never stored.
       let id = activeIdRef.current;
       if (!id) {

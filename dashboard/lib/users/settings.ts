@@ -3,12 +3,12 @@ import "server-only";
 /**
  * Per-client cost assumptions.
  *
- * These are the figures the warehouse structurally cannot produce — operating
+ * These are the figures the warehouse structurally cannot produce, operating
  * expenses, fulfilment, the other CM1 costs. No connected source reports them,
  * so they are inputs, not measurements.
  *
  * They lived as constants in the app before: a hardcoded 30% OpEx rate and two
- * costs pinned at zero. That is the worst version — a guess in code reads as a
+ * costs pinned at zero. That is the worst version, a guess in code reads as a
  * measurement, and nobody knows to revisit it. Stored here they are visible,
  * attributable and editable, and every consumer treats a missing value as
  * *unknown* rather than substituting a default.
@@ -60,7 +60,7 @@ export async function getClientSettings(
   clientId: string
 ): Promise<ClientSettings | null> {
   // The demo states its own assumptions rather than storing them, so the margin
-  // stack runs all the way to EBITDA without a Postgres row — and without an
+  // stack runs all the way to EBITDA without a Postgres row, and without an
   // admin being able to edit figures that are fiction anyway.
   if (isDemo(clientId)) return DEMO_SETTINGS;
 
@@ -84,7 +84,7 @@ export async function saveClientSettings(
   // accepting a save would write a row that `getClientSettings` then ignores,
   // so the admin screen would show a value that changes nothing.
   if (isDemo(clientId)) {
-    throw new Error("The demo client's cost assumptions are fixed in code.");
+    throw new Error("Demo costs are fixed.");
   }
 
   await sql(

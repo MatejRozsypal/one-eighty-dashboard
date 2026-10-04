@@ -6,14 +6,14 @@
  * ── Why this exists ─────────────────────────────────────────────────────────
  * These forms post to server actions and the page re-renders with the saved
  * values already in the inputs. Nothing visibly moves, so pressing Save looked
- * identical to not pressing it — and the natural response is to press it again,
+ * identical to not pressing it, and the natural response is to press it again,
  * or to assume it did not work.
  *
  * ── Why the tick lingers and then leaves ────────────────────────────────────
  * The pending state alone is not enough: a save against a warm connection is
  * over in well under a second, so a spinner can flash by unseen and the button
  * simply returns to "Save". The confirmation is therefore held for a moment
- * after the action resolves, then fades — long enough to be read, short enough
+ * after the action resolves, then fades, long enough to be read, short enough
  * that it never becomes a stale claim about the current contents of the form.
  */
 
@@ -32,7 +32,7 @@ export function SaveButton({
   const { pending } = useFormStatus();
   const [saved, setSaved] = useState(false);
   // Without this, the tick fires on first mount, announcing a save that never
-  // happened — `pending` starts false, and "no longer pending" is not the same
+  // happened, `pending` starts false, and "no longer pending" is not the same
   // as "was just pending".
   const wasPending = useRef(false);
 

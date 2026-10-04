@@ -1,27 +1,24 @@
 /**
- * Data Health — is the warehouse current, and does it agree with itself?
+ * Data Health: is the data current, and does the registry agree with it?
  *
  * Boring on purpose. This is the page that makes every other number
- * trustworthy: it says how fresh each source is, where the configuration
- * disagrees with the data, and what the known measurement limits are.
- *
- * The registry drift section has two live examples, both real: the registry
- * says Dobias trades in CAD when every warehouse row is USD, and says Manami
- * has no Google Ads when Google has been spending since October. Neither is
- * worked around in code — a workaround buries the problem and rots the moment
- * a third client lands. They're reported, and fixing them is one UPDATE.
+ * trustworthy: it says how fresh each source is and where the configuration
+ * disagrees with the data. Registry drift is reported, never worked around in
+ * code, because a workaround buries the problem and rots the moment a third
+ * client lands. Fixing drift is one registry UPDATE.
  */
 
 import type { Metadata } from "next";
 import { getClientsIncludingInactive, detectRegistryDrift } from "@/lib/clients";
 import { getSourceFreshness, getPipelineRuns } from "@/lib/queries/health";
-import { KNOWN_CAVEATS } from "@/lib/metrics";
 import { optional } from "@/lib/queries/errors";
 import { probeClickUp } from "@/lib/creative/clickup";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable } from "@/components/ui/DataTable";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NoValue } from "@/components/ui/EmptyState";
 import { formatNumber } from "@/lib/currency";
 import { requireInternalRole } from "@/lib/authz";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
@@ -35,6 +32,7 @@ export const dynamic = "force-dynamic";
 const PLATFORM_DOT: Record<string, string> = {
   shopify: "bg-platform-shopify",
   shoptet: "bg-platform-shoptet",
+  woocommerce: "bg-platform-woocommerce",
   meta: "bg-platform-meta",
   google: "bg-platform-google",
   klaviyo: "bg-platform-klaviyo",
@@ -47,13 +45,18 @@ const STATUS_BADGE = {
   stale: { variant: "negative" as const, label: "Stale" },
   blocked: { variant: "outline" as const, label: "Blocked" },
   // Not a fault: no workflow fetches for a client that is not active, so the
-  // data is frozen deliberately. It still has to be visible — a client parked
+  // data is frozen deliberately. It still has to be visible, a client parked
   // mid-onboarding was previously seen by nothing at all.
   paused: { variant: "outline" as const, label: "Not live" },
 };
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "never";
+/** Registry columns as people say them. Unknown fields pass through. */
+const DRIFT_FIELD: Record<string, string> = {
+  currency: "Currency",
+  has_gads: "Google Ads",
+};
+
+function fmtDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
     month: "short",
@@ -64,7 +67,7 @@ function fmtDate(iso: string | null): string {
 
 export default async function HealthPage() {
   // Internal-only: this page names every client and shows the agency's own
-  // pipeline runs. A client-role account has no business reading either — under
+  // pipeline runs. A client-role account has no business reading either, under
   // an NDA, even the roster of who else is a customer is not theirs to see.
   await requireInternalRole();
 
@@ -82,24 +85,19 @@ export default async function HealthPage() {
     probeClickUp(),
   ]);
 
-  const checkedAt = new Date().toLocaleString("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-
   return (
     <>
-      <Header eyebrow="Settings" title="Data Health" />
+      <Header title="Data Health" />
       <SettingsTabs />
 
       <main className="page-frame flex flex-col gap-[22px] px-5 pb-14 pt-6 lg:px-8">
         {drift.length > 0 && (
           <section className="flex flex-col gap-3">
-            <Eyebrow>Registry drift — {drift.length} open</Eyebrow>
+            <Eyebrow>Registry drift ({drift.length})</Eyebrow>
             {drift.map((d) => (
               <div
                 key={`${d.clientId}-${d.field}`}
-                className="flex flex-col items-start gap-3.5 rounded-card border border-warning/[0.38] bg-[#FFFBF4] p-[16px_20px] lg:flex-row lg:items-start"
+                className="flex flex-col items-start gap-3.5 rounded-card border border-warning/[0.38] bg-notice-warning p-[16px_20px] lg:flex-row lg:items-start"
               >
                 <span className="mt-px">
                   <Badge variant="neutral" size="sm" dot>
@@ -108,55 +106,39 @@ export default async function HealthPage() {
                 </span>
                 <span className="flex flex-1 flex-col gap-1.5">
                   <span className="text-[14px] font-semibold tracking-[-0.01em] text-content-strong">
-                    {d.clientId} · <code className="font-mono">{d.field}</code>{" "}
-                    disagrees with the warehouse
+                    {d.clientId} · {DRIFT_FIELD[d.field] ?? d.field} mismatch
                   </span>
                   <span className="text-[12.5px] leading-[1.6] text-content-body">
                     {d.consequence}
                   </span>
                   <span className="font-mono text-[11px] tabular text-content-muted">
-                    registry: {d.registryValue} · warehouse: {d.actualValue}
+                    Registry {d.registryValue} · data {d.actualValue}
                   </span>
-                </span>
-                <span className="whitespace-nowrap font-mono text-[11px] text-content-muted">
-                  Read-only — fix in registry
                 </span>
               </div>
             ))}
           </section>
         )}
 
-        {/* ── Credentials that are not the warehouse's ───────────────────
-            Source freshness below answers "did data land". This answers "can
-            the app still talk to ClickUp", which nothing else on any screen
-            asks: the Notes tab reports a rejected token accurately, but only
-            on an ad that happens to be mapped to a task, and most are not. */}
+        {/* Source freshness answers "did data land". This answers "can the app
+            still talk to ClickUp", which nothing else on any screen asks. */}
         <section
-          className={`flex flex-col gap-2 rounded-card border p-[16px_20px] ${
+          className={`flex items-center gap-3 rounded-card border p-[16px_20px] ${
             clickup.ok
               ? "border-hairline bg-surface-card shadow-sm"
-              : "border-warning/[0.38] bg-[#FFFBF4]"
+              : "border-warning/[0.38] bg-notice-warning"
           }`}
         >
-          <div className="flex items-center gap-3">
-            <Eyebrow>ClickUp</Eyebrow>
-            <Badge variant={clickup.ok ? "neutral" : "outline"} size="sm" dot>
-              {clickup.ok ? "Connected" : clickup.configured ? "Rejected" : "Not set"}
-            </Badge>
-          </div>
-          <p className="m-0 max-w-[80ch] text-[12.5px] leading-[1.6] text-content-body">
-            {clickup.ok
-              ? `The token authenticates as ${clickup.user ?? "an unnamed account"}. Creative notes, comments and task activity are readable.`
-              : clickup.problem}
-          </p>
+          <Eyebrow>ClickUp</Eyebrow>
+          <Badge variant={clickup.ok ? "neutral" : "outline"} size="sm" dot>
+            {clickup.ok ? "Connected" : clickup.configured ? "Rejected" : "Not set"}
+          </Badge>
         </section>
 
         <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
-          <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
+          <div className="flex items-center gap-2 border-b border-hairline px-5 py-4">
             <Eyebrow>Source freshness</Eyebrow>
-            <span className="text-[12px] text-content-muted">
-              Measured by data landed, not by workflow runs
-            </span>
+            <InfoTip text="Judged per source by the latest date of data landed. Shops land same day, ad platforms a day behind, email on send." />
           </div>
 
           <div className="overflow-x-auto">
@@ -172,7 +154,7 @@ export default async function HealthPage() {
                 ]}
                 rows={freshness.map((s) => {
                   const badge = STATUS_BADGE[s.status];
-                  // Worst first when sorted descending — the point of sorting
+                  // Worst first when sorted descending, the point of sorting
                   // this column is to find what is broken, not to alphabetise.
                   // Worst first, with "not live" below OK: it is information,
                   // not a defect, and sorting it to the top would bury the rows
@@ -210,7 +192,7 @@ export default async function HealthPage() {
                           s.status === "ok" ? "text-content-body" : "text-content-muted"
                         }`}
                       >
-                        {fmtDate(s.lastDate)}
+                        {s.lastDate ? fmtDate(s.lastDate) : <NoValue />}
                       </span>,
                       <span className="font-mono text-[12px] text-content-muted">
                         {s.expected}
@@ -225,12 +207,6 @@ export default async function HealthPage() {
             </div>
           </div>
 
-          <div className="px-5 py-3.5 text-[12px] leading-[1.6] text-content-muted">
-            &ldquo;OK&rdquo; means different things per source. Shops land same-day;
-            ad platforms are structurally a day behind and cannot be queried for
-            today at all; email lands on send, so a quiet fortnight is not a
-            failure. Each row is judged against its own expectation.
-          </div>
         </section>
 
         <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
@@ -239,17 +215,12 @@ export default async function HealthPage() {
           </div>
 
           {runs === null ? (
-            <div className="px-5 py-5 text-[12.5px] leading-[1.6] text-content-body">
-              Not readable from here. The frontend service account holds Data
-              Viewer on the <code className="font-mono">mart</code> dataset only —
-              deliberately, so the app cannot reach raw PII — and{" "}
-              <code className="font-mono">ops.pipeline_log</code> sits outside that
-              grant. The freshness table above is the better signal anyway: a
-              workflow can run, succeed, and land nothing.
+            <div className="px-5 py-5 text-[12.5px] text-content-muted">
+              Pipeline log not readable.
             </div>
           ) : runs.length === 0 ? (
             <div className="px-5 py-5 text-[12.5px] text-content-muted">
-              No runs in the last 7 days.
+              No recent runs.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -274,7 +245,7 @@ export default async function HealthPage() {
                       {formatNumber(r.rows)}
                     </span>
                     <span className="font-mono text-[12px] tabular text-content-muted">
-                      {r.durationSeconds !== null ? `${r.durationSeconds}s` : "—"}
+                      {r.durationSeconds !== null ? `${r.durationSeconds}s` : <NoValue />}
                     </span>
                     <span className="justify-self-start">
                       <Badge
@@ -289,34 +260,6 @@ export default async function HealthPage() {
               </div>
             </div>
           )}
-        </section>
-
-        <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-          <div className="flex flex-col gap-1.5">
-            <Eyebrow>Known caveats — surfaced, not buried</Eyebrow>
-            <span className="text-[12.5px] leading-[1.6] text-content-muted">
-              Every one of these also appears in the tooltip of the metric it
-              affects. The dashboard is more trustworthy than the reports it
-              replaces not because the numbers are perfect, but because it says
-              where they aren&apos;t.
-            </span>
-          </div>
-
-          {KNOWN_CAVEATS.map((c) => (
-            <div key={c.title} className="flex gap-3 border-t border-hairline pt-3.5">
-              <span aria-hidden="true" className="text-[13px] leading-[1.4] text-warning">
-                ⚠
-              </span>
-              <span className="flex flex-col gap-1">
-                <span className="text-[13.5px] font-semibold text-content-strong">
-                  {c.title}
-                </span>
-                <span className="text-[12.5px] leading-[1.6] text-content-body">
-                  {c.body}
-                </span>
-              </span>
-            </div>
-          ))}
         </section>
       </main>
     </>

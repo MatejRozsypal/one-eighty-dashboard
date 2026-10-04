@@ -5,8 +5,8 @@
  * whenever `mustChangePassword` is set, so a page inside it would redirect to
  * itself forever.
  *
- * The flag clears in the session automatically — `resolveAccess` runs on every
- * token refresh — so there is nothing to sign out and back in for.
+ * The flag clears in the session automatically, `resolveAccess` runs on every
+ * token refresh, so there is nothing to sign out and back in for.
  */
 
 import { redirect } from "next/navigation";
@@ -65,8 +65,7 @@ export default async function ChangePasswordPage({
             Choose a password
           </h1>
           <p className="text-[13.5px] leading-[1.6] text-gray-300">
-            You signed in with a temporary password. Pick your own to carry on —
-            it&apos;s the only thing on this screen.
+            Choose your own password.
           </p>
         </div>
 

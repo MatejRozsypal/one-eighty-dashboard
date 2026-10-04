@@ -9,8 +9,8 @@
  *
  * ── Images ────────────────────────────────────────────────────────────────
  * Three ways in, because people reach for all three: paste, drag-and-drop, and
- * the button. Paste is the one that matters — it is how a screenshot gets from
- * a Meta dashboard into a question about it — and it is the one that needs no
+ * the button. Paste is the one that matters, it is how a screenshot gets from
+ * a Meta dashboard into a question about it, and it is the one that needs no
  * discoverability, which is why the button exists anyway for the other two.
  *
  * ── The missing focus ring ────────────────────────────────────────────────
@@ -69,7 +69,7 @@ export function Composer({
     setNotice(null);
     const room = MAX_ATTACHMENTS - attachments.length;
     if (room <= 0) {
-      setNotice(`Up to ${MAX_ATTACHMENTS} images at a time.`);
+      setNotice(`Up to ${MAX_ATTACHMENTS} images.`);
       return;
     }
 
@@ -80,18 +80,18 @@ export function Composer({
       try {
         const att = await prepareImage(file);
         if (total + att.bytes > MAX_TOTAL_BYTES) {
-          setNotice("That image is too large even after resizing.");
+          setNotice("Image too large.");
           break;
         }
         total += att.bytes;
         accepted.push(att);
       } catch {
-        setNotice("That image could not be read.");
+        setNotice("Could not read image.");
       }
     }
 
     if (images.length > room) {
-      setNotice(`Only the first ${room} were added — ${MAX_ATTACHMENTS} is the limit.`);
+      setNotice(`Only ${room} images added.`);
     }
     if (accepted.length) onAttach(accepted);
   }

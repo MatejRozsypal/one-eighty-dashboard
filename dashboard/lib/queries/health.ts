@@ -1,5 +1,5 @@
 /**
- * Data Health — is the warehouse actually current, and does it agree with itself?
+ * Data Health, is the warehouse actually current, and does it agree with itself?
  *
  * ── Why freshness is derived from mart, not from the pipeline log ────────────
  * `sa-frontend-reader` holds Data Viewer on the `mart` dataset only, by design:
@@ -12,7 +12,7 @@
  * as a bonus and degrades to empty if the grant isn't there.
  *
  * ── Freshness expectations differ per source ────────────────────────────────
- * Shops report same-day. Ad platforms are structurally D-1 — Google Ads cannot
+ * Shops report same-day. Ad platforms are structurally D-1, Google Ads cannot
  * be queried for today at all, which is why the warehouse rule is
  * `WHERE date < CURRENT_DATE()`. Showing one uniform "last updated" would make
  * every ad platform look permanently late, so each source carries its own
@@ -21,11 +21,12 @@
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isoDate } from "@/lib/coerce";
+import { NO_VALUE } from "@/lib/format";
 import type { Client } from "@/lib/clients";
 import { DEMO_CLIENT_ID, isDemo } from "@/lib/demo/client";
 import { addDays, dataThrough as demoDataThrough } from "@/lib/demo/business";
 
-/** Last demo campaign send — a few days back, so Klaviyo reads healthy. */
+/** Last demo campaign send, a few days back, so Klaviyo reads healthy. */
 function demoLastEmailSend(): string {
   return addDays(demoDataThrough(), -3);
 }
@@ -48,7 +49,7 @@ export interface SourceFreshness {
   /**
    * Registry status of the client this row belongs to. Anything other than
    * "active" means no workflow is fetching for them, so a stale date here is
-   * expected rather than a fault — and the page has to say which it is.
+   * expected rather than a fault, and the page has to say which it is.
    */
   clientStatus: string;
 }
@@ -103,7 +104,7 @@ export async function getSourceFreshness(
      GROUP BY client_id`
   );
 
-  // Klaviyo lands on send, not daily — a gap here means "no campaign sent",
+  // Klaviyo lands on send, not daily, a gap here means "no campaign sent",
   // which is not the same as a broken pipeline. Judged on a looser tolerance.
   const email = await query<{ client_id: string; last_send: { value: string } }>(
     `SELECT client_id, MAX(send_date) AS last_send
@@ -113,7 +114,7 @@ export async function getSourceFreshness(
   ).catch((): Array<{ client_id: string; last_send: { value: string } }> => []);
 
   // The demo client has no mart rows, so it gets a synthesised one here rather
-  // than a branch inside the loop below — that way its sources are classified
+  // than a branch inside the loop below, that way its sources are classified
   // late, stale or healthy by exactly the same rules as everyone else's.
   if (clients.some((c) => isDemo(c.clientId))) {
     const through = { value: demoDataThrough() };
@@ -140,8 +141,18 @@ export async function getSourceFreshness(
       clientStatus: client.status ?? "active",
     };
 
-    if (client.capabilities.shopify || client.capabilities.shoptet) {
-      const platform = client.capabilities.shopify ? "Shopify" : "Shoptet";
+    // One shop row per client. `mart_daily_kpis.revenue` already carries the
+    // WooCommerce branch, so its latest revenue date is the shop freshness for
+    // Shopify, Shoptet and WooCommerce clients alike.
+    const shop = client.capabilities.shopify
+      ? "Shopify"
+      : client.capabilities.shoptet
+        ? "Shoptet"
+        : client.capabilities.woocommerce
+          ? "WooCommerce"
+          : null;
+    if (shop) {
+      const platform = shop;
       const last = isoDate(row?.shop_last ?? null);
       out.push({
         ...base,
@@ -168,7 +179,7 @@ export async function getSourceFreshness(
     }
 
     // Google is listed whenever spend is actually present, even if the registry
-    // flag says otherwise — the registry is known to be wrong about this and the
+    // flag says otherwise, the registry is known to be wrong about this and the
     // drift check below reports it separately.
     const googleLast = isoDate(row?.google_last ?? null);
     if (client.capabilities.googleAds || googleLast) {
@@ -197,7 +208,7 @@ export async function getSourceFreshness(
         status: classify(last, 21, today, active),
       });
 
-      // Subscriber series has never landed — the backfill is blocked on a
+      // Subscriber series has never landed, the backfill is blocked on a
       // Klaviyo segment that hasn't been created. Unknown, not zero.
       out.push({
         ...base,
@@ -207,7 +218,7 @@ export async function getSourceFreshness(
         expected: "Daily",
         toleranceDays: 2,
         status: "blocked",
-        note: "Backfill blocked — needs a Klaviyo segment mirroring the master list.",
+        note: "Backfill blocked.",
       });
     }
 
@@ -220,7 +231,7 @@ export async function getSourceFreshness(
         expected: "On send",
         toleranceDays: 21,
         status: "blocked",
-        note: "No daily mart view yet.",
+        note: "No daily view.",
       });
     }
   }
@@ -237,7 +248,7 @@ export interface PipelineRun {
 }
 
 /**
- * Recent pipeline runs. Returns empty if `ops` isn't readable by this SA —
+ * Recent pipeline runs. Returns empty if `ops` isn't readable by this SA -
  * the page renders a note rather than an error, because a missing grant is a
  * configuration gap, not a failure worth interrupting the whole screen for.
  */
@@ -255,7 +266,7 @@ export async function getPipelineRuns(limit = 12): Promise<PipelineRun[] | null>
 
     return rows.map((r) => ({
       startedAt: String((r.started_at as { value?: string })?.value ?? r.started_at),
-      workflow: String(r.workflow_name ?? "—"),
+      workflow: String(r.workflow_name ?? NO_VALUE),
       rows: r.rows_written === null ? null : Number(r.rows_written),
       durationSeconds: r.duration_s === null ? null : Number(r.duration_s),
       status: String(r.status ?? "unknown"),

@@ -1,17 +1,10 @@
 /**
- * Settings — everything configurable, organised by client.
+ * Settings: everything configurable, organised by client.
  *
- * ── Why this replaced the flat admin screen ─────────────────────────────────
- * The old screen listed every person across every client in one table and every
- * client's cost assumptions in another. With two clients that was merely untidy;
- * it does not survive ten, because the question anyone actually arrives with is
- * "what is set up for *this* client", and the flat list makes you filter it in
- * your head. Here a client is picked once and everything about them — who can
- * see them, what their costs are assumed to be, what they are aiming at — is on
- * one screen.
- *
- * Internal staff are the exception and get their own tab: an admin or agency
- * account belongs to no single client, so filing them under one would be a lie.
+ * A client is picked once and everything about them (who can see them, what
+ * their costs are assumed to be, what they are aiming at) is on one screen.
+ * Internal staff get their own tab: an admin or agency account belongs to no
+ * single client, so filing them under one would be a lie.
  */
 
 import type { Metadata } from "next";
@@ -26,6 +19,9 @@ import { getGoals } from "@/lib/queries/goals";
 import { GOAL_METRICS } from "@/lib/goals/store";
 import { monthsOfYear } from "@/lib/goals/progress";
 import { isDemo } from "@/lib/demo/client";
+import { NO_VALUE } from "@/lib/format";
+import { Notice } from "@/components/ui/Notice";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { saveSettingsAction } from "@/app/(app)/admin/actions";
 import { CreateUserForm } from "@/app/(app)/admin/UserForms";
 import { PeopleList } from "@/components/settings/PeopleList";
@@ -75,21 +71,20 @@ export default async function SettingsPage({
   let loadError: string | null = null;
   try {
     users = await listUsers();
-  } catch (error) {
-    loadError =
-      error instanceof Error ? error.message : "Could not read the user store.";
+  } catch {
+    loadError = "Could not read the user store.";
   }
 
   const header = (
     <>
-      <Header eyebrow="Settings" title="Settings" />
+      <Header title="Settings" />
       <SettingsTabs />
     </>
   );
 
   const error = loadError && (
-    <div className="rounded-card border border-negative/35 bg-[#FFF7F7] p-[16px_18px] text-[13px] text-content-strong">
-      {loadError} — has <code className="font-mono">schema.sql</code> been run?
+    <div className="rounded-card border border-negative/35 bg-notice-negative p-[16px_18px] text-[13px] text-content-strong">
+      {loadError}
     </div>
   );
 
@@ -110,21 +105,18 @@ export default async function SettingsPage({
                     staff.filter((u) => u.role === "admin").length
                   } admin`
             }
-            description="Admin and agency accounts see every client, so they belong to none of them and are listed here rather than under a client. Admin adds access management on top."
           >
             <PeopleList
               users={staff}
               clients={clients}
               canManage={canManage}
-              emptyMessage="No agency or admin accounts yet."
+              emptyMessage="No team accounts yet."
             />
           </SettingsSection>
 
           {canManage && (
             <SettingsSection
-              title="Add someone to the team"
-              summary="Agency or admin access"
-              description="They sign in with the email and the temporary password you hand over, then pick their own."
+              title="Add team member"
             >
               <CreateUserForm clients={clients} />
             </SettingsSection>
@@ -153,23 +145,21 @@ export default async function SettingsPage({
                 ? `${refusals} refused in 30 days`
                 : `${entries.length} recent entries`
             }
-            description="One row per data-page render: who was served which client, and every time an account asked for a client that was not theirs. Read this as evidence, not enforcement — a write failure is swallowed so it cannot take the dashboard down, so a gap means “could not record”, never “nobody accessed”. Demo views are not recorded."
+            description="One row per data page view. A gap means a view could not be recorded, not that nobody looked. Demo views are not recorded."
           >
-
             <div
               className={`rounded-card border p-[14px_16px] text-[13px] ${
                 refusals > 0
-                  ? "border-negative/35 bg-[#FFF7F7] text-content-strong"
+                  ? "border-negative/35 bg-notice-negative text-content-strong"
                   : "border-hairline bg-gray-50 text-content-body"
               }`}
             >
               {refusals > 0 ? (
                 <>
-                  <strong>{refusals}</strong> refused cross-client attempt
-                  {refusals === 1 ? "" : "s"} in the last 30 days.
+                  <strong>{refusals}</strong> refused in 30 days.
                 </>
               ) : (
-                <>No refused cross-client attempts in the last 30 days.</>
+                <>No refused attempts.</>
               )}
             </div>
 
@@ -194,7 +184,7 @@ export default async function SettingsPage({
                     <div
                       key={e.id}
                       className={`grid grid-cols-[150px_1.4fr_90px_1fr] items-center gap-2 border-b border-hairline px-4 py-2.5 text-[12.5px] ${
-                        e.event === "refused" ? "bg-[#FFF7F7]" : ""
+                        e.event === "refused" ? "bg-notice-negative" : ""
                       }`}
                     >
                       <span className="font-mono text-[11.5px] text-content-muted">
@@ -219,11 +209,11 @@ export default async function SettingsPage({
                         {e.event === "refused" ? (
                           <>
                             asked for{" "}
-                            <strong>{e.requestedClientId ?? "—"}</strong>, served{" "}
-                            {e.clientId ?? "—"}
+                            <strong>{e.requestedClientId ?? NO_VALUE}</strong>, served{" "}
+                            {e.clientId ?? NO_VALUE}
                           </>
                         ) : (
-                          (e.clientId ?? "—")
+                          (e.clientId ?? NO_VALUE)
                         )}
                       </span>
                     </div>
@@ -249,7 +239,7 @@ export default async function SettingsPage({
   const demo = isDemo(selected.clientId);
 
   // What each collapsed section says about itself. "Not stated" is the useful
-  // answer where nothing is set — it is exactly what someone opening Settings
+  // answer where nothing is set, it is exactly what someone opening Settings
   // is trying to find out.
   const costSummary = (() => {
     const parts: string[] = [];
@@ -273,8 +263,8 @@ export default async function SettingsPage({
     if (creative.killRoas === null) missing.push("kill line");
     if (creative.targetRoas === null) missing.push("target");
     if (creative.targetCpa === null) missing.push("CPA");
-    if (missing.length === 3) return "No thresholds set — verdicts are off";
-    if (missing.length > 0) return `Missing ${missing.join(", ")} — verdicts are off`;
+    if (missing.length === 3) return "No thresholds set";
+    if (missing.length > 0) return `Missing ${missing.join(", ")}`;
     return `Kill ${creative.killRoas!.toFixed(2)} · target ${creative.targetRoas!.toFixed(2)} · CPA ${creative.targetCpa} ${selected.currency}`;
   })();
 
@@ -317,19 +307,14 @@ export default async function SettingsPage({
         </div>
 
         {demo && (
-          <div className="rounded-card border border-hairline bg-gray-50 p-[14px_16px] text-[13px] text-content-body">
-            Every figure for this client is invented, and its cost assumptions
-            and targets are fixed in code. Saving here is refused rather than
-            silently storing rows nothing reads.
-          </div>
+          <Notice>Demo client: read only.</Notice>
         )}
 
         <SettingsSection
           title="Cost assumptions"
           summary={costSummary}
-          description="No connected source reports operating expenses, fulfilment or the other CM1 costs, so they cannot be derived — they are your input. Leave a field empty and the metric that depends on it is hidden rather than guessed."
+          description="No source reports these costs, so they are your input. Leave a field empty and the metrics that depend on it show n/a."
         >
-
           <form action={saveSettingsAction} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="clientId" value={selected.clientId} />
             <label className="flex flex-col gap-1.5">
@@ -340,7 +325,7 @@ export default async function SettingsPage({
                 name="opexPct"
                 type="text"
                 inputMode="decimal"
-                placeholder="—"
+                placeholder={NO_VALUE}
                 defaultValue={
                   current?.opexRate !== null && current?.opexRate !== undefined
                     ? (current.opexRate * 100).toString()
@@ -357,7 +342,7 @@ export default async function SettingsPage({
                 name="fulfilmentPerOrder"
                 type="text"
                 inputMode="decimal"
-                placeholder="—"
+                placeholder={NO_VALUE}
                 defaultValue={current?.fulfilmentPerOrder?.toString() ?? ""}
                 className={FIELD}
               />
@@ -370,7 +355,7 @@ export default async function SettingsPage({
                 name="otherCm1PerOrder"
                 type="text"
                 inputMode="decimal"
-                placeholder="—"
+                placeholder={NO_VALUE}
                 defaultValue={current?.otherCm1PerOrder?.toString() ?? ""}
                 className={FIELD}
               />
@@ -387,7 +372,7 @@ export default async function SettingsPage({
         <SettingsSection
           title="Creative Engine"
           summary={creativeSummary}
-          description="What the Creative section judges against. The three money lines have no defaults on purpose — without them every creative screen shows delivery and refuses to issue a verdict, which is better than issuing one against a number nobody chose."
+          description="Kill ROAS, target ROAS and target CPA have no defaults. Without all three, Creative screens show delivery only and give no verdicts."
         >
           <CreativeThresholds
             clientId={selected.clientId}
@@ -398,11 +383,10 @@ export default async function SettingsPage({
         </SettingsSection>
 
         <SettingsSection
-          title={`Goals · ${year}`}
+          title={`Goals ${year}`}
           summary={goalSummary}
-          description="Monthly targets. Quarters and the year are summed from these rather than set separately, so there is only ever one answer to what is being aimed at. An empty box is no target — which the Goals page shows as unset, not as a miss."
+          description="Monthly targets. Quarters and the year are summed from them. An empty box is no target, shown as unset, not as a miss."
         >
-
           <div className="overflow-x-auto">
             <div className="min-w-[680px] pb-1">
               <div className="grid grid-cols-[110px_repeat(4,1fr)_90px] gap-2 border-b border-hairline bg-gray-50 px-3 py-2.5">
@@ -412,10 +396,10 @@ export default async function SettingsPage({
                 {GOAL_METRICS.map((m) => (
                   <span
                     key={m.key}
-                    title={m.blurb}
                     className="text-right font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
                   >
-                    {m.label}
+                    {m.label}{" "}
+                    <InfoTip text={m.blurb} label={`About ${m.label}`} />
                   </span>
                 ))}
                 <span />
@@ -442,7 +426,7 @@ export default async function SettingsPage({
                         name={`target_${m.key}`}
                         type="text"
                         inputMode="decimal"
-                        placeholder="—"
+                        placeholder={NO_VALUE}
                         disabled={demo}
                         defaultValue={g ? String(g.target) : ""}
                         aria-label={`${m.label} target for ${monthName(month)}`}
@@ -460,29 +444,20 @@ export default async function SettingsPage({
         <SettingsSection
           title="People with access"
           summary={peopleSummary}
-          description={`Client accounts confined to ${selected.name}. Agency and admin accounts see every client and are listed under Team.`}
         >
           <PeopleList
             users={people}
             clients={clients}
             canManage={canManage}
             fixedClient={selected}
-            emptyMessage={`Nobody outside the agency can open ${selected.name} yet.`}
+            emptyMessage="No client users yet."
           />
 
-          {!canManage && (
-            <p className="text-[12px] text-content-muted">
-              Only an admin can change who has access. Targets and cost
-              assumptions above are yours to edit.
-            </p>
-          )}
         </SettingsSection>
 
         {canManage && !demo && (
           <SettingsSection
-            title={`Invite someone to ${selected.name}`}
-            summary="Creates a client account, this client only"
-            description={`They sign in with the email and the temporary password you hand over, then pick their own. The account is confined to ${selected.name} and cannot reach any other client.`}
+            title="Invite someone"
           >
             <CreateUserForm clients={[selected]} fixedClient={selected} />
           </SettingsSection>

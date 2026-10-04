@@ -2,8 +2,8 @@
  * Route-level loading state.
  *
  * Every page in this group is `force-dynamic` and awaits BigQuery, which runs
- * 2–5 seconds on wide ranges. Without this file the App Router holds the
- * previous page on screen, fully interactive, for that entire time — so
+ * 2 to 5 seconds on wide ranges. Without this file the App Router holds the
+ * previous page on screen, fully interactive, for that entire time, so
  * clicking a nav item looks like nothing happened and users click it again.
  *
  * This covers navigation *between* pages. Changing a search param on the page

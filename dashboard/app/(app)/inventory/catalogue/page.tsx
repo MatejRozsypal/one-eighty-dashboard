@@ -1,11 +1,11 @@
 /**
- * Catalogue — every SKU, sortable.
+ * Catalogue, every SKU, sortable.
  *
  * The evidence half of the section. Stock health names five decisions; this is
  * where you check them, and where you look when the question is "what about
  * everything else".
  *
- * The counts strip above the table is deliberately by *count*, not by value —
+ * The counts strip above the table is deliberately by *count*, not by value -
  * Stock health already owns the money view, and repeating it here would leave
  * two hero numbers competing. What this page adds is how many SKUs are in each
  * state, which is the question a catalogue answers and a P&L does not.
@@ -13,6 +13,7 @@
 
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
 import { getInventory } from "@/lib/queries/inventory";
@@ -21,8 +22,7 @@ import { formatNumber } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
 import { TrustBar } from "@/components/inventory/TrustBar";
 import { CatalogueTable } from "@/components/inventory/CatalogueTable";
-import { NoStockData } from "@/components/inventory/NoStockData";
-import { pageEyebrow } from "@/lib/nav";
+import { NoData, NotConnected } from "@/components/ui/EmptyState";
 
 export const metadata: Metadata = { title: "Catalogue" };
 export const dynamic = "force-dynamic";
@@ -35,23 +35,36 @@ export default async function CataloguePage({
   const params = parseViewParams(searchParams);
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
-  const { rows, summary } = await getInventory(client.clientId);
 
   const header = (
     <>
-      <Header
-        eyebrow={pageEyebrow("/inventory/catalogue", client.name)}
-        title="Catalogue"
-      />
-      <PageControls client={client} params={params} scope="current stock" />
+      <Header title="Catalogue" />
+      <PageControls client={client} params={params} />
     </>
   );
+
+  if (pageAvailability(client, "/inventory/catalogue") !== "available") {
+    return (
+      <>
+        {header}
+        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected
+            source={missingSource(client, "/inventory/catalogue") ?? "Shopify"}
+          />
+        </main>
+      </>
+    );
+  }
+
+  const { rows, summary } = await getInventory(client.clientId);
 
   if (rows.length === 0) {
     return (
       <>
         {header}
-        <NoStockData clientName={client.name} />
+        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+          <NoData />
+        </main>
       </>
     );
   }
@@ -104,18 +117,6 @@ export default async function CataloguePage({
         </section>
 
         <CatalogueTable rows={rows} currency={client.currency} />
-
-        {/* The D bucket is mostly junk on Dobias — 45 of 58 have no cost and 15
-            carry negative stock — and mostly real dead capital on Venev. Saying
-            so beats letting the reader conclude either one from a count. */}
-        <p className="max-w-[860px] text-[12px] leading-[1.6] text-content-muted">
-          A large D count is not automatically dead capital. Rows with no cost,
-          negative stock, or no catalogue entry are usually discontinued lines
-          and data debris rather than money sitting still — they are excluded
-          from every recommendation for that reason. The D rows worth acting on
-          are the ones carrying real stock value, which the Stock health page
-          ranks.
-        </p>
       </main>
     </>
   );

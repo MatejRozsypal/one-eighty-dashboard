@@ -4,8 +4,8 @@
  * The Settings tab bar.
  *
  * Shared by `/settings` and `/health` rather than owned by one of them. Data
- * Health is a genuinely separate route — it spans every client and predates
- * this area — but to the reader it is one of these tabs, and rebuilding its
+ * Health is a genuinely separate route, it spans every client and predates
+ * this area, but to the reader it is one of these tabs, and rebuilding its
  * page inside `/settings` to make that literally true would have meant moving
  * two hundred lines of working JSX for a visual outcome the user cannot
  * distinguish. Both routes render this bar; the highlight follows the path.

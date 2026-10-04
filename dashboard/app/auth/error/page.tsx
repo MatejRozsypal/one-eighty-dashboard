@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
-// NOTE: access is decided by the `app_users` table, not by email domain — see
+// NOTE: access is decided by the `app_users` table, not by email domain, see
 // lib/auth.ts. The copy here must not promise a domain rule that isn't applied.
 
 /**
@@ -8,7 +8,7 @@ import { Logo } from "@/components/ui/Logo";
  *
  * A server component reading the error from searchParams directly. The previous
  * version used `useSearchParams()` in a client component, which requires a
- * Suspense boundary and broke the production build — there's no reason for this
+ * Suspense boundary and broke the production build, there's no reason for this
  * page to be interactive at all.
  *
  * The refusal message is deliberately not blaming, and deliberately vague about
@@ -36,16 +36,7 @@ export default function AuthErrorPage({
             {noAccess ? "This account doesn't have access." : "Sign-in didn't complete."}
           </h1>
           <p className="m-0 text-[13.5px] leading-[1.6] text-gray-300">
-            {noAccess ? (
-              <>
-                Access is granted per account by a One Eighty admin — ask them
-                to add you. If you know you already have access, you may have
-                picked the wrong Google account; choose another on the next
-                screen.
-              </>
-            ) : (
-              "Something went wrong between here and Google. Trying again usually resolves it."
-            )}
+            {noAccess ? "Ask an admin for access." : "Try again."}
           </p>
         </div>
 

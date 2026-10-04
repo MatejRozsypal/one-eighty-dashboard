@@ -61,7 +61,7 @@ export function HistoryList() {
         <span className="px-2.5 py-[9px] text-[12.5px] text-gray-400">Loading…</span>
       ) : conversations.length === 0 ? (
         <span className="px-2.5 py-[9px] text-[12.5px] leading-[1.6] text-gray-400">
-          Nothing yet. Ask something and it will appear here.
+          No conversations yet.
         </span>
       ) : (
         conversations.map((c) => {
@@ -107,10 +107,6 @@ export function HistoryList() {
           );
         })
       )}
-
-      <p className="px-2.5 pt-3 text-[11.5px] leading-[1.6] text-gray-400">
-        Kept in this browser only, not yet on your account.
-      </p>
     </div>
   );
 }

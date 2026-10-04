@@ -112,7 +112,7 @@ export default async function AppLayout({
     <NavigationPendingProvider>
     <HistoryProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
-      <ProductRail isInternal={isInternal} clients={clients} />
+      <ProductRail role={session.user.role} clients={clients} />
       <Sidebar clients={clients} isAdmin={isAdmin} isInternal={isInternal} />
 
       {/*
@@ -136,7 +136,7 @@ export default async function AppLayout({
         underneath it.
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <MobileTopBar clients={clients} isAdmin={isAdmin} isInternal={isInternal} />
+        <MobileTopBar clients={clients} isAdmin={isAdmin} isInternal={isInternal} role={session.user.role} />
 
         {/*
           One continuous surface for everything under the bar, which is why the

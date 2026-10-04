@@ -35,15 +35,19 @@ import { activeNavHref, navFor, pageTitle, railProducts, selectedClient } from "
 import { productFor } from "@/lib/products";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import type { Client } from "@/lib/clients";
+import type { Role } from "@/lib/users/store";
 
 export function MobileTopBar({
   clients = [],
   isAdmin = false,
   isInternal = false,
+  role,
 }: {
   clients?: Client[];
   isAdmin?: boolean;
   isInternal?: boolean;
+  /** Decides which sections the sheet lists. */
+  role: Role;
 }) {
   const [open, setOpen] = useState(false);
   const [clientOpen, setClientOpen] = useState(false);
@@ -66,9 +70,12 @@ export function MobileTopBar({
 
   const shownClient = optimisticClient ?? activeClient;
 
+  // Reports picks its clients per report, so the bar's switcher is hidden there.
+  const showClientSwitcher = activeProduct !== "reports";
+
   // Pages and products the selected client has no source for are hidden.
   const nav = navFor(isAdmin, shownClient, isInternal);
-  const products = railProducts(isInternal, shownClient);
+  const products = railProducts(role, shownClient);
 
   function selectClient(client: Client) {
     setClientOpen(false);
@@ -125,7 +132,7 @@ export function MobileTopBar({
           two clients whose initials collide are a real possibility, and there
           is room for a word.
         */}
-        {shownClient && clients.length > 1 && (
+        {showClientSwitcher && shownClient && clients.length > 1 && (
           <div className="relative flex-none">
             <button
               type="button"

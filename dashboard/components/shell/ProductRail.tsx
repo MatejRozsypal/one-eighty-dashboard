@@ -7,7 +7,9 @@
  * products, so hiding it behind the same toggle that hides the nav panel would
  * make a section of the app unreachable. The panel beside it collapses instead.
  *
- * Creative is hidden when the selected client has no Meta (`railProducts`).
+ * Creative is hidden when the selected client has no Meta (`railProducts`), and
+ * Reports shows only for the roles in `REPORTS_ROLES`. Both are presentation:
+ * the pages and the query route enforce access themselves.
  */
 
 import Link from "next/link";
@@ -15,6 +17,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { productFor, type ProductId } from "@/lib/products";
 import { railProducts, selectedClient } from "@/lib/nav";
 import type { Client } from "@/lib/clients";
+import type { Role } from "@/lib/users/store";
 import { NavCollapseToggle } from "@/components/shell/NavCollapseToggle";
 
 function Icon({ id }: { id: ProductId }) {
@@ -38,6 +41,16 @@ function Icon({ id }: { id: ProductId }) {
         <path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
       </svg>
     );
+  if (id === "reports")
+    // A page with a chart and rules under it: a document you build and share,
+    // distinct from the bar chart that means Analytics.
+    return (
+      <svg {...common}>
+        <path d="M7 3.5h7.5L19 8v12a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 7 20z" />
+        <path d="M14.5 3.5V8H19" />
+        <path d="M9.5 16.5v-2.2M12 16.5v-4M14.5 16.5v-3" />
+      </svg>
+    );
   if (id === "analytics")
     return (
       <svg {...common}>
@@ -57,10 +70,11 @@ function Icon({ id }: { id: ProductId }) {
 }
 
 export function ProductRail({
-  isInternal,
+  role,
   clients = [],
 }: {
-  isInternal: boolean;
+  /** Decides which products get an icon. */
+  role: Role;
   /** The switcher's client list; the selected one decides whether Creative shows. */
   clients?: Client[];
 }) {
@@ -68,7 +82,7 @@ export function ProductRail({
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
   const active = productFor(pathname);
-  const products = railProducts(isInternal, selectedClient(clients, searchParams.get("client")));
+  const products = railProducts(role, selectedClient(clients, searchParams.get("client")));
 
   return (
     <aside className="sticky top-0 hidden h-screen w-[var(--rail-w)] flex-none flex-col items-center border-r border-white/[0.07] bg-bg-inverse pb-[18px] pt-[22px] lg:flex">

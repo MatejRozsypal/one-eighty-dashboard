@@ -32,9 +32,22 @@ export interface Components {
   landingPageViews: number;
   linkClicks: number;
   outboundClicks: number;
+  /**
+   * How many daily rows reported an outbound click figure at all. The column is
+   * NULL for every row until it is ingested, and a SUM of NULLs reads as 0.
+   * Zero here with zero clicks means "not reported", which is not the same
+   * statement as a real zero, so Outbound CTR is hidden rather than 0.0%.
+   */
+  outboundRows: number;
   uniqueOutboundClicks: number;
+  /** 3-second plays (actions[video_view]). The hook-rate numerator. */
   videoViews: number;
-  /** 3s+ plays. The hook-rate numerator. */
+  /**
+   * Video starts (video_play_actions), about three times the 3-second plays.
+   * Not the hook-rate numerator. It classifies an ad as a video ad over the
+   * whole period (any starts at all) and is the first point of the retention
+   * curve.
+   */
   videoPlays: number;
   /** 15s ThruPlays. The hold-rate numerator. */
   videoThruplays: number;
@@ -49,7 +62,7 @@ export interface Components {
 export const ZERO: Components = {
   spend: 0, revenue: 0, purchases: 0, impressions: 0, clicks: 0, reach: 0,
   addToCart: 0, initiateCheckout: 0, landingPageViews: 0, linkClicks: 0,
-  outboundClicks: 0, uniqueOutboundClicks: 0, videoViews: 0, videoPlays: 0,
+  outboundClicks: 0, outboundRows: 0, uniqueOutboundClicks: 0, videoViews: 0, videoPlays: 0,
   videoThruplays: 0, videoP25: 0, videoP50: 0, videoP75: 0, videoP95: 0,
   videoP100: 0, video30s: 0,
 };
@@ -167,7 +180,12 @@ export interface Derived {
   ctr: number | null;
   cpc: number | null;
   cpm: number | null;
-  /** video_play_actions / impressions. Only meaningful for video. */
+  /**
+   * video_views (3-second plays) / impressions. Owner decision D2: the same
+   * numerator as Paid and Reports. Null for an ad with no video starts over the
+   * whole period (a static, or an ad that never played), so a non-video ad does
+   * not read as a 0% hook.
+   */
   hookRate: number | null;
   /** video_thruplays / impressions. */
   holdRate: number | null;
@@ -191,9 +209,9 @@ export function derive(c: Components): Derived {
     ctr: div(c.clicks, c.impressions),
     cpc: div(c.spend, c.clicks),
     cpm: c.impressions > 0 ? (c.spend / c.impressions) * 1000 : null,
-    hookRate: div(c.videoPlays, c.impressions),
+    hookRate: c.videoPlays > 0 ? div(c.videoViews, c.impressions) : null,
     holdRate: div(c.videoThruplays, c.impressions),
-    outboundCtr: div(c.outboundClicks, c.impressions),
+    outboundCtr: c.outboundClicks > 0 || c.outboundRows > 0 ? div(c.outboundClicks, c.impressions) : null,
     linkCtr: div(c.linkClicks, c.impressions),
     atcRate: div(c.addToCart, c.clicks),
   };
@@ -402,4 +420,43 @@ export function accountContext(ads: AdRow[], fallbackRoas: number): AccountConte
     cpa: div(c.spend, c.purchases),
     ads: ads.length,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Names
+// ---------------------------------------------------------------------------
+
+/**
+ * Fill ad set and campaign names from the creative asset mart.
+ *
+ * The performance mart carries ids only, and the ad set mart that used to
+ * supply the names can come back empty, which left every campaign name null and
+ * made a campaign deep link match nothing. The asset mart has both names per
+ * ad. A name already present is never overwritten.
+ */
+export function fillNames<T extends { adId: string; adsetName: string | null; campaignName: string | null }>(
+  ads: T[],
+  assets: Map<string, { adsetName: string | null; campaignName: string | null }>
+): T[] {
+  return ads.map((ad) => {
+    const a = assets.get(ad.adId);
+    if (!a) return ad;
+    const adsetName = ad.adsetName || a.adsetName || null;
+    const campaignName = ad.campaignName || a.campaignName || null;
+    return adsetName === ad.adsetName && campaignName === ad.campaignName
+      ? ad
+      : { ...ad, adsetName, campaignName };
+  });
+}
+
+/**
+ * Share of spend sitting in a tagged group, from the rows a screen is already
+ * showing. Null when there is no spend. The untagged group is the catch-all, so
+ * this is exactly 1 minus the Untagged row's share of spend.
+ */
+export function tagCoverage(groups: Array<{ untagged: boolean; components: { spend: number } }>): number | null {
+  const total = groups.reduce((a, g) => a + g.components.spend, 0);
+  if (total <= 0) return null;
+  const tagged = groups.reduce((a, g) => a + (g.untagged ? 0 : g.components.spend), 0);
+  return tagged / total;
 }

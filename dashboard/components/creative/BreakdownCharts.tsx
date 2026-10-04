@@ -103,7 +103,7 @@ export function SpendRevenueBars({
       {[
         [cV, "SPEND / REVENUE"],
         [cP, "PURCHASES"],
-        [cR, "ROAS"],
+        [cR, "ROAS (ADJ.)"],
       ].map(([x, label]) => (
         <text
           key={label as string}

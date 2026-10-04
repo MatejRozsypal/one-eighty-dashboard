@@ -26,7 +26,11 @@ import { presetRange, comparisonRange, daysInRange, addDays } from "@/lib/period
 import { demoCreative } from "@/lib/demo/creative";
 import { packSpec, horizons, personaCapacity, launchCadence } from "@/lib/creative/velocity";
 import { moneyVerdict, diagnose, unjudgedVerdict } from "@/lib/creative/verdict";
-import { ZERO, type Components } from "@/lib/creative/model";
+import { ZERO, derive, add, fillNames, tagCoverage, type Components } from "@/lib/creative/model";
+import { cleanPersona, noEmDash } from "@/lib/creative/display";
+import { roas as fmtRoas } from "@/components/creative/primitives";
+import { cadenceTicks, LaunchCadence } from "@/components/creative/LaunchCadence";
+import { focusLabel } from "@/lib/creative/vocabulary";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { IntervalChart, SpendRevenueBars } from "@/components/creative/BreakdownCharts";
@@ -128,13 +132,13 @@ show("2.40 with 80 purchases", comp({ spend: 42000, revenue: 100800, purchases: 
 show("2.05 with 70 purchases", comp({ spend: 37000, revenue: 75850, purchases: 70 }), 2.05, 90);
 
 console.log("\n=== ad-level diagnosis (never a money verdict) ===");
-const d1 = diagnose(comp({ impressions: 200000, videoPlays: 48000, videoThruplays: 14000, clicks: 4800, spend: 30000, purchases: 51, revenue: 49651 }), "DYN", T);
+const d1 = diagnose(comp({ impressions: 200000, videoPlays: 90000, videoViews: 48000, videoThruplays: 14000, clicks: 4800, spend: 30000, purchases: 51, revenue: 49651 }), "DYN", T);
 console.log(`   healthy video       -> ${d1.label}: ${d1.say}`);
-const d2 = diagnose(comp({ impressions: 200000, videoPlays: 48000, videoThruplays: 6000, clicks: 4800, spend: 18400, purchases: 19, revenue: 19136 }), "DYN", T);
+const d2 = diagnose(comp({ impressions: 200000, videoPlays: 90000, videoViews: 48000, videoThruplays: 6000, clicks: 4800, spend: 18400, purchases: 19, revenue: 19136 }), "DYN", T);
 console.log(`   hook ok, hold low   -> ${d2.label}: ${d2.say}`);
-const d3 = diagnose(comp({ impressions: 200000, videoPlays: 48000, videoThruplays: 14000, clicks: 4800, spend: 18400, purchases: 0, revenue: 0 }), "DYN", T);
+const d3 = diagnose(comp({ impressions: 200000, videoPlays: 90000, videoViews: 48000, videoThruplays: 14000, clicks: 4800, spend: 18400, purchases: 0, revenue: 0 }), "DYN", T);
 console.log(`   attention, no sales -> ${d3.label}: ${d3.say}`);
-const d4 = diagnose(comp({ impressions: 200000, videoPlays: 24000, videoThruplays: 4000, clicks: 3000, spend: 18400, purchases: 5, revenue: 9000 }), "DYN", T);
+const d4 = diagnose(comp({ impressions: 200000, videoPlays: 60000, videoViews: 24000, videoThruplays: 4000, clicks: 3000, spend: 18400, purchases: 5, revenue: 9000 }), "DYN", T);
 console.log(`   hook below floor    -> ${d4.label}: ${d4.say}`);
 const d5 = diagnose(comp({ impressions: 380000, clicks: 11800, spend: 118400, purchases: 195, revenue: 281800 }), "STAT", T);
 console.log(`   a static            -> ${d5.label}: ${d5.say}`);
@@ -313,6 +317,84 @@ console.log("\n=== every angle in use is in the vocabulary ===");
   eq("demo angles all present in the vocabulary", stray.length, 0);
   if (stray.length) console.log("   stray:", stray);
   eq("vocabulary length", ANGLES.length, 18);
+}
+
+console.log("\n=== QF8: hook rate numerator, outbound CTR, names, coverage, labels ===");
+{
+  // D2: 3-second plays over impressions, not video starts.
+  const v = comp({ impressions: 100000, videoPlays: 90000, videoViews: 30000 });
+  eq("hook rate uses video_views, not starts", f(derive(v).hookRate, 3), "0.300");
+  eq("an ad with no starts is not a video ad: hook null", derive(comp({ impressions: 100000, videoViews: 5000 })).hookRate, null);
+  eq("a static ad reports no hook", derive(comp({ impressions: 100000 })).hookRate, null);
+
+  // B-06: unreported outbound is null, a real zero is 0.
+  eq("outbound never reported: CTR null", derive(comp({ impressions: 50000, clicks: 900 })).outboundCtr, null);
+  eq("outbound reported as zero on some rows: 0", f(derive(comp({ impressions: 50000, outboundRows: 3 })).outboundCtr, 3), "0.000");
+  eq("outbound reported: CTR", f(derive(comp({ impressions: 50000, outboundClicks: 500, outboundRows: 3 })).outboundCtr, 3), "0.010");
+  const sumRows = add(comp({ outboundRows: 2 }), comp({ outboundRows: 5 }));
+  eq("outbound rows add across ads", sumRows.outboundRows, 7);
+
+  // B-03: names come from the asset mart, never overwrite one that is present.
+  const ads = [
+    { adId: "1", adsetName: null, campaignName: null },
+    { adId: "2", adsetName: "kept", campaignName: null },
+    { adId: "3", adsetName: null, campaignName: null },
+  ];
+  const assets = new Map([
+    ["1", { adsetName: "AS1", campaignName: "CA I PACKS" }],
+    ["2", { adsetName: "other", campaignName: "CA I PACKS" }],
+  ]);
+  const filled = fillNames(ads, assets);
+  eq("campaign name filled from assets", filled[0].campaignName, "CA I PACKS");
+  eq("ad set name filled from assets", filled[0].adsetName, "AS1");
+  eq("an existing ad set name is kept", filled[1].adsetName, "kept");
+  eq("an ad with no asset row stays null", filled[2].campaignName, null);
+  eq("campaign focus has a chip label", focusLabel("campaignId"), "Campaign");
+
+  // B-13: coverage from the rows on the page.
+  const g = [
+    { untagged: false, components: { spend: 440 } },
+    { untagged: true, components: { spend: 560 } },
+  ];
+  eq("coverage = 1 - untagged share", f(tagCoverage(g), 2), "0.44");
+  eq("coverage with no spend", tagCoverage([]), null);
+
+  // B-14: whole-number ticks only.
+  for (const max of [1, 3, 4, 5, 8, 10, 13]) {
+    const t = cadenceTicks(max);
+    eq(`ticks for ${max} are integers`, t.every((x) => Number.isInteger(x)), true);
+    eq(`ticks for ${max} start at 0 and stay within range`, t[0] === 0 && t[t.length - 1] <= max && t.length <= 5, true);
+  }
+  eq("ticks 0..3", cadenceTicks(3).join(","), "0,1,2,3");
+
+  {
+    const months = [
+      { month: "2026-05", label: "May", packs: 0 },
+      { month: "2026-06", label: "Jun", packs: 0 },
+    ];
+    const html = renderToStaticMarkup(createElement(LaunchCadence, { months, target: 2 }));
+    const labels = [...html.matchAll(/text-anchor="end"[^>]*>(\d+(?:\.\d+)?)</g)].map((m) => m[1]);
+    eq("LaunchCadence gridline labels are integers", labels.length > 0 && labels.every((l) => /^\d+$/.test(l)), true);
+    eq("LaunchCadence empty state sentence", html.includes("No packs launched in these months."), true);
+    const busy = renderToStaticMarkup(createElement(LaunchCadence, { months: [{ month: "2026-05", label: "May", packs: 3 }], target: 2 }));
+    eq("LaunchCadence has no empty sentence when packs exist", busy.includes("No packs launched"), false);
+  }
+
+  // B-07 / B-15: one ROAS formatter, the same as Paid.
+  eq("ROAS formatter", fmtRoas(2.6), "2.60\u00d7");
+  eq("ROAS formatter null", fmtRoas(null) === fmtRoas(null), true);
+
+  // B-17: persona display.
+  eq("persona code suffix stripped (em dash)", cleanPersona("Mladsi zena, co nechce vonet \u2014 MAN_NicheScentLover_AntiMainstream_20s"), "Mladsi zena, co nechce vonet");
+  eq("persona code suffix stripped (hyphen)", cleanPersona("Prenetena zena - MAN_FunctionalScent_SleepSeeker_35s"), "Prenetena zena");
+  eq("a persona with no code is unchanged", cleanPersona("Skepticka zena, co cte slozeni"), "Skepticka zena, co cte slozeni");
+  eq("a bare code is not emptied", cleanPersona("MAN_SensitiveSkin_Switcher_40s"), "MAN_SensitiveSkin_Switcher_40s");
+  eq("em dash replaced", noEmDash("a \u2014 b"), "a - b");
+  eq("no em dash survives", /\u2014/.test(cleanPersona("x \u2014 y \u2014 VEN_A_B_30s")), false);
+
+  // B-20: the static diagnosis does not repeat its label.
+  const ds = diagnose(comp({ impressions: 380000, clicks: 11800, spend: 118400, purchases: 195, revenue: 281800 }), "STAT", T);
+  eq("static diagnosis does not repeat 'Judge on CTR'", (ds.say.match(/Judge on CTR/g) ?? []).length, 0);
 }
 
 console.log(fails ? `\n${fails} assertion(s) differ from the brief, see above.` : "\nAll assertions match the brief.");

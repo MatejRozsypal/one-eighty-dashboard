@@ -26,6 +26,7 @@ import type { Confidence, CreativeThresholds } from "@/lib/creative/stats";
 import { diagnose, moneyVerdict, type Verdict } from "@/lib/creative/verdict";
 import type { CreativeAsset } from "@/lib/queries/creative";
 import type { Proposal } from "@/lib/creative/matching";
+import { cleanPersona } from "@/lib/creative/display";
 
 export interface RetentionPoint {
   /** Seconds into the video. */
@@ -39,6 +40,8 @@ export interface AdView {
   adId: string;
   adName: string;
   adsetName: string | null;
+  /** Meta's campaign id. The deep-link key (`focus=campaignId`), names can collide or be missing. */
+  campaignId: string | null;
   campaignName: string | null;
 
   spend: number;
@@ -59,8 +62,10 @@ export interface AdView {
   ctr: number | null;
   cpc: number | null;
   cpm: number | null;
+  /** 3-second plays over impressions, video ads only. */
   hookRate: number | null;
   holdRate: number | null;
+  /** Null when the warehouse has no outbound clicks for this ad: the row is hidden, not shown as 0.0%. */
   outboundCtr: number | null;
   /** link_clicks / impressions. See `Derived.linkCtr`, not the same as `ctr`. */
   linkCtr: number | null;
@@ -144,7 +149,6 @@ export function retentionCurve(
   const share = (v: number) => v / c.impressions;
   const points: RetentionPoint[] = [
     { t: 0, y: share(c.videoPlays), label: "start" },
-    { t: 3, y: share(c.videoViews || c.videoPlays), label: "3s" },
     { t: lengthSec * 0.25, y: share(c.videoP25), label: "25%" },
     { t: lengthSec * 0.5, y: share(c.videoP50), label: "50%" },
     { t: 15, y: share(c.videoThruplays), label: "15s" },
@@ -152,6 +156,12 @@ export function retentionCurve(
     { t: lengthSec * 0.95, y: share(c.videoP95), label: "95%" },
     { t: lengthSec, y: share(c.videoP100), label: "end" },
   ];
+
+  // The 3-second point only when 3-second plays were recorded. A zero here
+  // beside a non-zero start would draw a collapse that is really a gap.
+  if (c.videoViews > 0) {
+    points.push({ t: 3, y: share(c.videoViews), label: "3s" });
+  }
 
   if (lengthSec > 30 && c.video30s > 0) {
     points.push({ t: 30, y: share(c.video30s), label: "30s" });
@@ -184,6 +194,7 @@ export function toAdView(
     adId: ad.adId,
     adName: ad.adName,
     adsetName: ad.adsetName,
+    campaignId: ad.campaignId,
     campaignName: ad.campaignName,
 
     spend: r.spend,
@@ -213,7 +224,7 @@ export function toAdView(
     format,
     stage: ad.tags.stage,
     market: ad.tags.market,
-    persona: ad.tags.personaName ?? ad.tags.personaId,
+    persona: ad.tags.personaName ? cleanPersona(ad.tags.personaName) : ad.tags.personaId,
     angle: ad.tags.angle,
     offer: ad.tags.offer,
     conceptId: ad.tags.conceptId,

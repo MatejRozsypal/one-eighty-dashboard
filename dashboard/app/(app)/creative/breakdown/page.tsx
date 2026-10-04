@@ -45,8 +45,7 @@ import { Notice } from "@/components/ui/Notice";
 import { NO_VALUE } from "@/lib/format";
 import { SEPARATION_LABELS } from "@/lib/creative/stats";
 import { loadCreative, type CreativeContext } from "@/lib/creative/page";
-import { getTagCoverage } from "@/lib/queries/creative";
-import { groupBy, read, sum } from "@/lib/creative/model";
+import { groupBy, read, sum, tagCoverage } from "@/lib/creative/model";
 import { BREAKDOWN_DIMENSIONS, FOCUS_FIELD, FORMAT_LABELS, isBreakdownKey, type BreakdownKey, type Format } from "@/lib/creative/vocabulary";
 import { AppLink } from "@/components/ui/AppLink";
 import { DataTable } from "@/components/ui/DataTable";
@@ -105,8 +104,11 @@ export default async function BreakdownPage({
       </Shell>
     );
   }
-  const coverage = await getTagCoverage(client.clientId);
   const groups = groupBy(data.ads, KEY_OF[dimension]);
+  // Coverage of THIS screen: the share of the period's spend that carries a tag
+  // in the selected dimension, read off the same rows as the table. It used to
+  // be an all-time, concept-level figure, which contradicted the Untagged row.
+  const coverage = tagCoverage(groups);
 
   const rows: BreakdownRow[] = groups.map((g) => {
     const c = sum(g.ads);
@@ -188,11 +190,11 @@ export default async function BreakdownPage({
     <Shell ctx={ctx} dimension={dimension}>
       {!judged && <Notice tone="warning">No verdicts. Set thresholds in Settings.</Notice>}
 
-      {coverage.pctSpendTagged !== null && coverage.pctSpendTagged < COVERAGE_FLOOR && (
+      {coverage !== null && coverage < COVERAGE_FLOOR && (
         <Notice tone="warning">
-          Only {pct(coverage.pctSpendTagged)} of spend is tagged.
+          Only {pct(coverage)} of spend in this period is tagged.
           <InfoTip
-            text={`Of the last 90 days, under ${pct(COVERAGE_FLOOR)} carries a concept tag. Rows compare within the tagged share only. Map the unmapped ads before quoting them.`}
+            text={`Spend with a value for ${label} in this period is under ${pct(COVERAGE_FLOOR)}. Rows compare within the tagged share only. Map the unmapped ads before quoting them.`}
             label="About tag coverage"
           />
         </Notice>
@@ -296,7 +298,7 @@ export default async function BreakdownPage({
           { key: "share", label: "Share" },
           { key: "purch", label: "Purch.", align: "right" },
           { key: "cpa", label: "CPA", align: "right" },
-          { key: "roas", label: "ROAS", align: "right", info: "Pulled toward the account mean when purchases are few." },
+          { key: "roas", label: "ROAS (adj.)", align: "right", info: "Pulled toward the account mean when purchases are few." },
           { key: "raw", label: "Raw", align: "right", info: "Observed ROAS, before that adjustment." },
           { key: "ci", label: "95% interval" },
           { key: "conf", label: "Confidence", sortable: false },

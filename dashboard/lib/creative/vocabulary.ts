@@ -183,10 +183,12 @@ export const FOCUS_FIELD: Record<BreakdownKey, string> = {
 /**
  * Chip labels for focus fields that are not a breakdown dimension. The Paid
  * screens deep-link into Creative with `?focus=adId&is=<id>` or
- * `?focus=campaignName&is=<name>`, and the grid names the filter with this.
+ * `?focus=campaignId&is=<id>` (older links used `campaignName`), and the grid
+ * names the filter with this.
  */
 const EXTRA_FOCUS_LABELS: Record<string, string> = {
   adId: "Ad",
+  campaignId: "Campaign",
   campaignName: "Campaign",
 };
 

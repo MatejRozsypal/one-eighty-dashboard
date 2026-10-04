@@ -187,7 +187,7 @@ export function ConceptCard({
           ["Share", pct(data.spendShare)],
           ["Purchases", String(data.purchases)],
           ["CPA", unitMoney(data.cpa, currency)],
-          ["ROAS", roas(data.roas)],
+          ["ROAS (adj.)", roas(data.roas)],
         ].map(([k, v]) => (
           <div key={k} className="flex min-w-[58px] flex-col gap-px">
             <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-content-muted">

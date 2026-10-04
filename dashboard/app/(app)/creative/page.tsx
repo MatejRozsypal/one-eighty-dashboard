@@ -53,6 +53,7 @@ function displayFor(ads: AdView[], field: string, value: string): string | null 
   if (!hit) return null;
   if (field === "conceptId") return hit.conceptName ?? value;
   if (field === "adId") return hit.adName ?? value;
+  if (field === "campaignId") return hit.campaignName ?? value;
   if (field === "format") return hit.format === "DYN" ? "Video" : hit.format === "STAT" ? "Static" : value;
   return value;
 }

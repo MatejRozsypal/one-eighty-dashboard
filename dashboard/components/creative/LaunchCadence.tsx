@@ -18,6 +18,18 @@
 
 import type { LaunchMonth } from "@/lib/creative/velocity";
 
+/**
+ * Whole-number gridlines from 0 up to `max` (itself a whole number): at most
+ * five, evenly spaced. 0..3 gives 0,1,2,3; 0..10 gives 0,3,6,9.
+ */
+export function cadenceTicks(max: number): number[] {
+  const top = Math.max(1, Math.ceil(max));
+  const step = Math.max(1, Math.ceil(top / 4));
+  const out: number[] = [];
+  for (let v = 0; v <= top; v += step) out.push(v);
+  return out;
+}
+
 export function LaunchCadence({
   months,
   target,
@@ -39,7 +51,10 @@ export function LaunchCadence({
 
   // Headroom above the tallest bar so its value label is never clipped by the
   // top of the viewBox, and never below the target so the rule stays on screen.
-  const maxY = Math.max(target, ...months.map((m) => m.packs)) + 1;
+  // A whole number, so every gridline sits on a whole number of packs.
+  const maxY = Math.ceil(Math.max(target, ...months.map((m) => m.packs))) + 1;
+  const ticks = cadenceTicks(maxY);
+  const empty = months.every((m) => m.packs === 0);
   const barW = (pw / months.length) * 0.46;
   const X = (i: number) => ML + (i + 0.5) * (pw / months.length);
   const Y = (v: number) => MT + ph - (v / maxY) * ph;
@@ -54,7 +69,7 @@ export function LaunchCadence({
       role="img"
       aria-label={`Packs launched in each of the last ${months.length} months, against a target of ${target} per month`}
     >
-      {[0, maxY / 2, maxY].map((v) => (
+      {ticks.map((v) => (
         <g key={v}>
           <line x1={ML} x2={W - MR} y1={Y(v)} y2={Y(v)} stroke="var(--border)" />
           <text
@@ -65,7 +80,7 @@ export function LaunchCadence({
             fontSize="10"
             fill="var(--text-muted)"
           >
-            {Math.round(v)}
+            {v}
           </text>
         </g>
       ))}
@@ -107,6 +122,19 @@ export function LaunchCadence({
           </text>
         </g>
       ))}
+
+      {empty && (
+        <text
+          x={ML + pw / 2}
+          y={MT + ph / 2 - 14}
+          textAnchor="middle"
+          fontFamily="var(--font-sans)"
+          fontSize="13"
+          fill="var(--text-muted)"
+        >
+          No packs launched in these months.
+        </text>
+      )}
 
       <line
         x1={ML}

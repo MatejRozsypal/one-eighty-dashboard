@@ -2,7 +2,7 @@
  * Currency display and FX conversion.
  *
  * Warehouse policy is native-currency-at-rest: Manami is CZK end to end, Dobias
- * is USD end to end, and no mart view converts anything. That is deliberate —
+ * is USD end to end, and no mart view converts anything. That is deliberate,
  * converting at ingest destroys the ability to reconcile against Shopify or
  * Shoptet, which report in the shop's own currency.
  *
@@ -20,7 +20,7 @@
  * ── The rate table expires ──────────────────────────────────────────────────
  * `ref.fx_rates` is hand-fed, not derived. USD→CZK now covers 2022-06 onward
  * from ČNB's published monthly averages (migration 013), which is what unlocked
- * this toggle — before that the table held only CAD→USD and conversion was
+ * this toggle: before that the table held only CAD→USD and conversion was
  * impossible.
  *
  * But a table seeded through July is broken in August. ČNB publishes a month's
@@ -29,7 +29,7 @@
  * add next month's row**. `getConversionCoverage` treats partial coverage as no
  * coverage, so a single missing month disables the toggle outright rather than
  * quietly returning a total assembled from converted and unconverted months.
- * That is the right failure, but it is a silent one — it looks like a padlock,
+ * That is the right failure, but it is a silent one, it looks like a padlock,
  * not an error. Refresh procedure: runbooks/23_fx_rates_refresh.md.
  */
 
@@ -47,7 +47,7 @@ export interface ConversionCoverage {
   to: string;
   /** True when every month in the requested range has a rate. */
   complete: boolean;
-  /** Months in the range with no rate — the reason `complete` is false. */
+  /** Months in the range with no rate, the reason `complete` is false. */
   missingMonths: string[];
 }
 
@@ -97,7 +97,7 @@ export async function getConversionCoverage(
  *
  * Returns a JOIN clause and a `wrap()` that turns a column reference into a
  * converted expression. Callers compose them so the conversion happens inside
- * the same query that aggregates — never as a post-hoc multiply in TypeScript.
+ * the same query that aggregates, never as a post-hoc multiply in TypeScript.
  *
  * When `target` is "native" both are no-ops, so the same query builder serves
  * both modes and there is no second, subtly different code path to keep in sync.
@@ -127,7 +127,7 @@ export function fxSql(target: DisplayCurrency, tableAlias = "k"): FxSql {
        AND fx.to_currency   = @displayCurrency`,
 
     // Rows already in the target currency need no rate and must not be dropped
-    // for lacking one — hence the identity branch.
+    // for lacking one: hence the identity branch.
     wrap: (column) =>
       `(${column} * IF(${tableAlias}.currency = @displayCurrency, 1, fx.rate))`,
 

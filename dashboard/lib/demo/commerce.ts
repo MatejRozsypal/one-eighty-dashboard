@@ -3,7 +3,7 @@
  *
  * Every total here is summed from the same daily spine as the P&L, so the
  * Orders page and the headline agree for any range the user picks. That is the
- * property a demo lives or dies on — a prospect who spots the Orders page
+ * property a demo lives or dies on, a prospect who spots the Orders page
  * disagreeing with the snapshot stops believing the whole screen.
  */
 
@@ -26,7 +26,7 @@ const sum = (rows: DemoDay[], f: (d: DemoDay) => number): number =>
 const div = (a: number, b: number): number | null => (b ? a / b : null);
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 
-/** Discounts the brand gives away — a share of gross retail, not a measured field. */
+/** Discounts the brand gives away, a share of gross retail, not a measured field. */
 const DISCOUNT_RATE = 0.081;
 
 // ── Orders ─────────────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ export function demoRecentOrders(range: DateRange, limit: number): OrderRow[] {
 
   const out: OrderRow[] = [];
   // Walk back from the newest day, taking a few orders from each, until the
-  // limit is met — the same "most recent first" shape the real query returns.
+  // limit is met: the same "most recent first" shape the real query returns.
   for (let i = rows.length - 1; i >= 0 && out.length < limit; i--) {
     const d = rows[i];
     const take = Math.min(d.orders, limit - out.length, 6);
@@ -148,7 +148,7 @@ function segment(
       ? sum(rows, (d) => d.newCustomerRevenue)
       : sum(rows, (d) => d.returningCustomerRevenue);
 
-  // Returning customers buy more items per order — the whole reason the page
+  // Returning customers buy more items per order, the whole reason the page
   // splits the two segments at all.
   const upt = which === "first" ? 1.42 : 1.94;
   const units = Math.round(orders * upt);
@@ -158,7 +158,7 @@ function segment(
   const grossProfitPct = 1 - cogsPct;
 
   // All acquisition spend is charged to first-time orders; returning orders
-  // carry none. That is the whole point of splitting the segments — the second
+  // carry none. That is the whole point of splitting the segments, the second
   // order is worth far more than the first, and the page has to show it.
   const paidSpend = which === "first" ? sum(rows, (d) => d.paidSpend) : 0;
   const paidShare = div(paidSpend, revenue) ?? 0;

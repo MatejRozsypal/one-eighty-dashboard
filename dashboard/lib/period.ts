@@ -22,7 +22,7 @@ export interface DateRange {
 
 export interface ResolvedPeriod {
   current: DateRange;
-  /** Null when mode is "none" — the UI then hides all delta chips. */
+  /** Null when mode is "none", the UI then hides all delta chips. */
   comparison: DateRange | null;
   mode: ComparisonMode;
 }
@@ -53,7 +53,7 @@ export function addDays(date: string, days: number): string {
 /**
  * Today in the warehouse's terms.
  *
- * mart dates are UTC, so "today" must be UTC too — otherwise someone in Prague
+ * mart dates are UTC, so "today" must be UTC too, otherwise someone in Prague
  * loading the dashboard at 01:00 CEST asks for a date the warehouse considers
  * tomorrow and gets an empty last row.
  */
@@ -64,9 +64,9 @@ export function todayUtc(): string {
 /**
  * Build the comparison range for a given current range.
  *
- * - `previous_period` — the same number of days, ending the day before `from`.
+ * - `previous_period`, the same number of days, ending the day before `from`.
  *   A 30-day range compares against the 30 days before it.
- * - `previous_year` — the same calendar span shifted back 364 days, not 365.
+ * - `previous_year`, the same calendar span shifted back 364 days, not 365.
  *   364 is exactly 52 weeks, so weekday alignment is preserved. Ecommerce
  *   revenue is strongly weekday-seasonal; comparing a Monday against a Sunday
  *   produces a delta that is an artifact of the calendar, not the business.
@@ -159,7 +159,7 @@ const WAREHOUSE_MONTHS = 60;
  *
  * All of them end **yesterday**, not today. Today is always a partial day, and
  * a partial day dragged into a comparison makes every metric look like it fell
- * off a cliff. Paid-media data is D-1 anyway (Google Ads structurally so — see
+ * off a cliff. Paid-media data is D-1 anyway (Google Ads structurally so, see
  * the "Google Ads always queries WHERE date < CURRENT_DATE()" rule in README),
  * so today's row could never be complete across sources regardless.
  */
@@ -168,7 +168,7 @@ export function presetRange(preset: PresetKey, today = todayUtc()): DateRange {
 
   switch (preset) {
     // The one preset that deliberately breaks the yesterday rule below. Shops
-    // report same-day, so today's revenue and orders are real — but every ad
+    // report same-day, so today's revenue and orders are real, but every ad
     // platform is structurally D-1, so spend, ROAS and CAC will read as zero or
     // near it. `isPartialRange` flags this so the UI can say so rather than
     // letting someone read a 0.0x ROAS as a catastrophe.
@@ -224,7 +224,7 @@ export const PRESET_LABELS: Record<PresetKey, string> = {
  * Whole months the range covers, for the queries that take a month count
  * rather than two dates.
  *
- * Growth, cohorts and the cohort grid are monthly by construction — a cohort
+ * Growth, cohorts and the cohort grid are monthly by construction, a cohort
  * is a month, and a month-over-month series has nothing to say about half of
  * one. They took a fixed `monthsBack` and therefore ignored the date picker
  * entirely, which is why those screens used to carry no picker at all. This

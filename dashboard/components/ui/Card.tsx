@@ -1,12 +1,12 @@
 /**
- * Card — the base surface.
+ * Card: the base surface.
  *
  * Ported from the design system's `components/surfaces/Card.jsx`. Two changes
  * from the handoff version, both deliberate:
  *
  *  1. Hover is pure CSS rather than React state, so this stays a server
  *     component. The handoff used `useState` for the lift, which would force
- *     every card — and therefore every page that renders one — into the client
+ *     every card, and therefore every page that renders one, into the client
  *     bundle for an effect CSS already does.
  *  2. Styling is Tailwind classes bound to the same tokens, not inline styles,
  *     so variants compose with utility overrides at call sites.

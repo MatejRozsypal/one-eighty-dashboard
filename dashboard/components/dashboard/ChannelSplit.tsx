@@ -1,12 +1,12 @@
 /**
- * Channel split — where the paid budget went.
+ * Channel split: where the paid budget went.
  *
  * ── Spend is platform truth; revenue is not ─────────────────────────────────
  * Meta and Google both report attributed revenue, and both over-attribute:
  * Meta will claim a purchase it merely showed an ad before. Placing those
  * figures beside warehouse revenue implies they're the same kind of number,
  * which is exactly the confusion this warehouse was built to end. So this card
- * shows **spend only** per channel, and efficiency is read blended from MER —
+ * shows **spend only** per channel, and efficiency is read blended from MER,
  * one honest number instead of two channel numbers that don't add up.
  */
 
@@ -45,7 +45,7 @@ export function ChannelSplit({
       spend: t.googleSpend,
       dot: "bg-platform-google",
       delta: metric(snapshot, (x) => x.googleSpend).delta,
-      // Trust observed spend over the registry flag — the registry is known to
+      // Trust observed spend over the registry flag, the registry is known to
       // be stale about Google (see the drift check on Data Health).
       connected: t.googleSpend !== null,
       missingNote: `${client.name} has no Google Ads account. This is unknown, not zero.`,
@@ -61,7 +61,7 @@ export function ChannelSplit({
       <div className="flex flex-col gap-[5px]">
         <Eyebrow>Channel split</Eyebrow>
         <span className="text-[12.5px] leading-[1.5] text-content-muted">
-          Spend is platform truth. Revenue is not attributable per channel — read
+          Spend is platform truth. Revenue is not attributable per channel, read
           efficiency blended.
         </span>
       </div>
@@ -99,7 +99,7 @@ export function ChannelSplit({
                   ch.connected ? "text-content-strong" : "text-gray-250"
                 }`}
               >
-                {ch.connected ? formatMoney(ch.spend, currency) : "—"}
+                {ch.connected ? formatMoney(ch.spend, currency) : "n/a"}
               </span>
             </div>
 
@@ -113,7 +113,7 @@ export function ChannelSplit({
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[11px] tabular text-content-muted">
-                    {share !== null ? formatPercent(share, { decimals: 0 }) : "—"} of
+                    {share !== null ? formatPercent(share, { decimals: 0 }) : "n/a"} of
                     paid spend
                   </span>
                   {snapshot.previous && (
@@ -137,7 +137,7 @@ export function ChannelSplit({
 
       {espName && (
         <div className="flex flex-col gap-2.5 border-t border-hairline pt-3.5">
-          <Eyebrow>Email — {espName}</Eyebrow>
+          <Eyebrow>Email: {espName}</Eyebrow>
           <div className="flex flex-col gap-1.5 rounded-control border border-dashed border-hairline-strong p-[12px_14px]">
             <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-gray-400">
               No daily view yet
@@ -145,7 +145,7 @@ export function ChannelSplit({
             <span className="text-[12px] leading-[1.5] text-content-muted">
               Campaign performance is in the warehouse; the daily email screen
               isn&apos;t built. Subscriber growth is separately blocked on a
-              Klaviyo segment — unknown, not zero.
+              Klaviyo segment: unknown, not zero.
             </span>
           </div>
         </div>

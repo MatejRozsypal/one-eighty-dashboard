@@ -4,7 +4,7 @@ The canonical reference for every metric exposed in the `mart.*` layer. Looker S
 
 **Update this file whenever:** a new metric lands, a formula changes, a placeholder cost gets wired, or a known data gap is resolved.
 
-**Last updated:** 2026-10-01 (Google Ads columns and `paid_spend` in daily and monthly marts; MER, aMER, CAC and CM3 on `paid_spend`)
+**Last updated:** 2026-10-05 (WooCommerce fee-line discounts in revenue, Woo COGS NULL when uncosted: migration 228, prepared and not yet deployed; Google Ads columns and `paid_spend` in daily and monthly marts since 2026-10-01)
 
 ---
 
@@ -412,6 +412,13 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ---
 
 ## Changelog (most recent first)
+
+### 2026-10-05 (amendment 18): WooCommerce fee lines and honest COGS (migration 228, not yet deployed)
+
+1. **Fee-line discounts reduce Woo revenue.** `stg_woo_orders.subtotal_price` (net sales) and `net_revenue` now include the negative fee lines (loyalty and bundle discounts). Positive fee lines are exposed as `other_charges` and stay out of revenue (0.009 % of RawBark revenue over 24 months). New columns `fee_discounts`, `other_charges`, and `stg_woo_order_items.fee_discount_alloc`. Effect: RawBark revenue about -7.0 % over 90 days, Ethia about -1.2 %. Shopify and Shoptet clients: zero diff. Details under Global conventions, Revenue.
+2. **Woo COGS is NULL, never 0, when no line is costed.** `mart_daily_kpis` and `mart_cm3_monthly` no longer coalesce Woo `cogs` to 0, so RawBark `cogs`, `cm1`, `cm2`, `cm3` are NULL until costs exist. Dormant cost join from `ref.product_costs` (client, `variation_id` / `product_id` / `sku`, effective-dated) picks them up when rows are loaded.
+3. **Dashboard reads (frontend, same sprint).** A range with revenue and any day without COGS shows COGS, CM1 to CM3 and their percentages as "No cost data" instead of a partial sum. A month that mixes costed and uncosted days cannot be detected in the monthly mart, see Known data gaps.
+4. **2026-10-01 (recorded here, was missing):** Google Ads columns and `paid_spend` in `mart_daily_kpis` and `mart_monthly_kpis`; MER, aMER, CAC and CM3 divide by `paid_spend`.
 
 ### 2026-05-25 (amendment 17) — CA store history unlocked + USD conversion
 

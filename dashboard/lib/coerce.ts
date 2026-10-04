@@ -7,7 +7,7 @@
  *   - INT64                 → number, unless it exceeds Number.MAX_SAFE_INTEGER
  *
  * Every mart column we read is money, a count, or a date, so two helpers cover
- * the whole surface. Use them at the query boundary — never let a raw BQ value
+ * the whole surface. Use them at the query boundary, never let a raw BQ value
  * reach a component, or you get "[object Object]" in the UI and NaN in the math.
  */
 
@@ -24,10 +24,10 @@ type BqDate = string | { value: string } | null | undefined;
 /**
  * Coerce a BigQuery numeric to a JS number.
  *
- * Returns null for NULL/undefined/unparseable rather than 0 — the distinction
+ * Returns null for NULL/undefined/unparseable rather than 0, the distinction
  * matters. A client with no Google Ads has google_spend = NULL, and rendering
  * that as "0" would claim we spent nothing when the truth is we don't know.
- * Let the formatter decide how to show a null (we render "—").
+ * Let the formatter decide how to show a null (we render "n/a").
  */
 export function num(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -42,7 +42,7 @@ export function num(value: unknown): number | null {
 /**
  * Coerce a BigQuery numeric to a number, treating NULL as zero.
  *
- * Only for cases where absent genuinely means zero — e.g. summing spend across
+ * Only for cases where absent genuinely means zero, e.g. summing spend across
  * channels where a missing channel contributes nothing. Don't reach for this by
  * default; `num` is the honest one.
  */
@@ -60,7 +60,7 @@ export function isoDate(value: BqDate): string | null {
  * Divide, returning null when the result would be meaningless.
  *
  * Mirrors BigQuery's SAFE_DIVIDE. Used for every rate and ratio we compute in
- * TypeScript rather than SQL. A null denominator must not become Infinity — MER
+ * TypeScript rather than SQL. A null denominator must not become Infinity. MER
  * with zero ad spend is undefined, not infinitely good.
  */
 export function safeDiv(

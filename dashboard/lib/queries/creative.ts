@@ -4,8 +4,8 @@ import "server-only";
  * Warehouse reads for the Creative Engine.
  *
  * ── The range default, and why it is not 30 days ───────────────────────────
- * These screens take the same date control as the rest of the dashboard —
- * presets, a custom range, and a comparison period — but they open on ALL TIME
+ * These screens take the same date control as the rest of the dashboard,
+ * presets, a custom range, and a comparison period, but they open on ALL TIME
  * rather than the dashboard-wide thirty days.
  *
  * The reason is arithmetic. A persona tested across five months may reach 80
@@ -13,11 +13,11 @@ import "server-only";
  * ±51% interval while 80 carries ±26%. Accumulation is how a small account buys
  * statistical power, and defaulting to a month would throw it away every month.
  * A shorter range is still one click away, and every interval on screen widens
- * when it is chosen — which is the honest depiction of what was given up.
+ * when it is chosen: which is the honest depiction of what was given up.
  *
  * ── What is missing is said, not shown as zero ─────────────────────────────
  * None of these views exist in the warehouse yet. Every query is wrapped so a
- * missing object renders an honest "not ingested yet" state — but only a
+ * missing object renders an honest "not ingested yet" state, but only a
  * missing object. A permission failure is re-thrown, because a dashboard that
  * says "no data" when it means "I was not allowed to look" is worse than one
  * that crashes: the crash gets fixed, the false empty state gets believed.
@@ -51,8 +51,6 @@ export interface CreativeData {
   adsets: AdsetRow[];
   /** False when the warehouse objects have not been created yet. */
   available: boolean;
-  /** Set when `available` is false, for the empty state to quote. */
-  missing: string | null;
   currency: string | null;
   through: string | null;
 }
@@ -127,7 +125,7 @@ function tagsFrom(r: Record<string, unknown>): Tags {
 const RANGE_CLAUSE = "date BETWEEN @from AND @to";
 
 const EMPTY: CreativeData = {
-  ads: [], adsets: [], available: false, missing: null, currency: null, through: null,
+  ads: [], adsets: [], available: false, currency: null, through: null,
 };
 
 /**
@@ -135,7 +133,7 @@ const EMPTY: CreativeData = {
  *
  * Two queries rather than one. Monthly spend cannot be derived from a windowed
  * total, and a single query with GROUPING SETS would return two differently
- * shaped row types that the caller would then have to sort back out — cheaper
+ * shaped row types that the caller would then have to sort back out, cheaper
  * in BigQuery, more expensive in every future read of this file.
  */
 export async function getCreativeAds(
@@ -295,13 +293,12 @@ export async function getCreativeAds(
         frequencyLatest: num(r.frequency_latest),
       })),
       available: true,
-      missing: null,
       currency: totals[0]?.currency ? String(totals[0].currency) : null,
       through: totals[0]?.through ? isoDate(totals[0].through as never) : null,
     };
   } catch (error) {
     if (!isMissingObject(error)) throw error;
-    return { ...EMPTY, missing: "mart.mart_creative_perf" };
+    return EMPTY;
   }
 }
 
@@ -318,7 +315,7 @@ export interface CreativeAsset {
   videoLengthSec: number | null;
   /**
    * Width over height, as the creative was served. Null where the shape was
-   * never recorded — an older row, or an asset we could not reach. The UI must
+   * never recorded: an older row, or an asset we could not reach. The UI must
    * not substitute a number for it: the crop this replaced was a guessed 4:5.
    */
   aspectRatio: number | null;
@@ -591,7 +588,7 @@ export async function getUnmapped(clientId: string): Promise<UnmappedData> {
 }
 
 // ---------------------------------------------------------------------------
-// Tag coverage — the gate on the Breakdown screen
+// Tag coverage: the gate on the Breakdown screen
 // ---------------------------------------------------------------------------
 
 export interface TagCoverage {
@@ -604,7 +601,7 @@ export interface TagCoverage {
 /**
  * Breakdown stays behind a flag until roughly 60% of spend carries a concept
  * tag. Below that it reads less than half the account, and the rows it does
- * show are not a sample of anything — they are whatever happened to get filed.
+ * show are not a sample of anything, they are whatever happened to get filed.
  * Reading the threshold from measured coverage rather than from somebody's
  * recollection of it is the whole point.
  */
@@ -725,8 +722,8 @@ export async function getConcepts(clientId: string): Promise<ConceptRow[]> {
  *
  * ── Why this is its own query ──────────────────────────────────────────────
  * `AdsetRow.firstDate` is `MIN(date)` *inside the selected window*, which is
- * right for the age gate — an ad set's no-touch clock is about how long it has
- * been running — and catastrophic for a cadence chart. Under the 30-day window
+ * right for the age gate, an ad set's no-touch clock is about how long it has
+ * been running, and catastrophic for a cadence chart. Under the 30-day window
  * every ad set's first date clamps into the last thirty days, and the chart
  * would report the whole account as having launched last month: a wrong answer
  * that looks entirely plausible.
@@ -762,8 +759,8 @@ export async function getAdsetLaunchDates(clientId: string): Promise<string[]> {
  * ── Why the comparison period is not fetched as ads ────────────────────────
  * The obvious move is to call `getCreativeAds` twice and diff them. It is the
  * wrong shape twice over. It pulls every ad, its tags and its monthly spend for
- * a period nothing on screen renders — several times the payload for six
- * numbers — and it invites per-ad deltas, which at this account's volume are
+ * a period nothing on screen renders, several times the payload for six
+ * numbers, and it invites per-ad deltas, which at this account's volume are
  * noise wearing a percentage sign. An ad with four purchases against three is
  * not up 33%.
  *
@@ -799,7 +796,7 @@ export async function getCreativeTotals(
       { clientId, from: range.from, to: range.to }
     );
     const r = rows[0];
-    // No spend in the comparison range is not zero — it is "this client was not
+    // No spend in the comparison range is not zero, it is "this client was not
     // running then", and a delta against it would read as infinite growth.
     if (!r || n0(r.spend) === 0) return null;
     return componentsFrom(r);

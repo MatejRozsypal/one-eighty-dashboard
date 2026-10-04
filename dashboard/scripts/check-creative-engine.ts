@@ -12,7 +12,7 @@
  * Each assertion is checked against a figure stated independently in
  * CREATIVE_ENGINE_BRIEF.md or _clients/manami/learnings/meta-ads.md, so this
  * verifies the code against the specification rather than against itself. Where
- * a value differs from the brief the reason is in the assertion's own label —
+ * a value differs from the brief the reason is in the assertion's own label,
  * the brief rounds in two places where this ceils, and ceiling is the
  * defensible direction for "how much more do you need".
  *
@@ -203,7 +203,7 @@ console.log("\n=== the date picker opens on months that have data ===");
 // The regression that blanked every screen on 9 Sep 2026: the calendar
 // anchored on `range.from`, so the Creative screens' all-time default opened it
 // on September 2021. Two clicks later the whole dashboard was showing August
-// 2021 — every card a dash — because the sidebar appends the current query
+// 2021: every card a dash, because the sidebar appends the current query
 // string to every link, so one screen's range became every screen's range.
 //
 // The anchor is the month BEFORE `range.to`, which for any range, however
@@ -281,7 +281,7 @@ console.log("\n=== a client with no kill line still renders ===");
   eq("the same concept, with lines, is judged", judgedSay !== "unjudged", true);
 
   // The charts, actually rendered. A NaN or an Infinity in an SVG attribute
-  // does not throw — it produces an invisible chart — so the assertion is on
+  // does not throw: it produces an invisible chart, so the assertion is on
   // the markup rather than on the absence of an exception.
   const markup = renderToStaticMarkup(
     createElement("div", null,
@@ -302,8 +302,8 @@ console.log("\n=== a client with no kill line still renders ===");
 console.log("\n=== every angle in use is in the vocabulary ===");
 // The angle strings are a join key, not labels: an angle spelled differently
 // from the ClickUp option shows as "never run" on the coverage grid while
-// quietly holding budget. That already happened once — five of the eighteen
-// were paraphrased — so it is checked rather than remembered.
+// quietly holding budget. That already happened once, five of the eighteen
+// were paraphrased, so it is checked rather than remembered.
 {
   const valid = new Set<string>(ANGLES);
   const used = new Set(
@@ -315,5 +315,5 @@ console.log("\n=== every angle in use is in the vocabulary ===");
   eq("vocabulary length", ANGLES.length, 18);
 }
 
-console.log(fails ? `\n${fails} assertion(s) differ from the brief — see above.` : "\nAll assertions match the brief.");
+console.log(fails ? `\n${fails} assertion(s) differ from the brief, see above.` : "\nAll assertions match the brief.");
 if (fails) process.exit(1);

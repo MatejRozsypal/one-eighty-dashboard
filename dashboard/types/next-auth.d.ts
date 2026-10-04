@@ -10,7 +10,7 @@ declare module "next-auth" {
     user: {
       /** Null when the account exists but may not see anything. */
       role: Role | null;
-      /** Set only for `client` — the single client they may see. */
+      /** Set only for `client`, the single client they may see. */
       clientId: string | null;
       mustChangePassword: boolean;
     } & DefaultSession["user"];

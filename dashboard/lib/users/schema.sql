@@ -2,7 +2,7 @@
 --
 -- You do not normally need to run this: the same DDL is applied on demand by
 -- `ensureSchema()` in lib/users/db.ts, so attaching a fresh database is enough.
--- This file is the readable copy — keep the two in step.
+-- This file is the readable copy, keep the two in step.
 --
 -- This holds ONLY who may open the dashboard and what they may see. It is
 -- deliberately separate from BigQuery: `ref.clients` is business configuration
@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS app_users (
 
   name            TEXT,
 
-  -- 'admin'  — everything, plus user management
-  -- 'agency' — every client, no user management
-  -- 'client' — exactly one client, the one in client_id
+  -- 'admin' : everything, plus user management
+  -- 'agency': every client, no user management
+  -- 'client': exactly one client, the one in client_id
   role            TEXT NOT NULL CHECK (role IN ('admin', 'agency', 'client')),
 
   -- Required for 'client', meaningless otherwise. Enforced below rather than

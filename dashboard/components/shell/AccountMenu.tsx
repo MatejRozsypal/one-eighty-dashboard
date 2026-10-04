@@ -44,16 +44,16 @@ function initials(name: string): string {
 /**
  * Avatar tints, assigned by position in the list.
  *
- * Identity only — these never encode a value, so they carry none of the
+ * Identity only: these never encode a value, so they carry none of the
  * obligations a chart palette does. They are here so two clients are told apart
  * at a glance in a menu, which is exactly what the Shopify store switcher this
  * mirrors does.
  */
 const TINTS = [
   "bg-growth-500 text-ink-900",
-  "bg-[#0866ff] text-white",
-  "bg-[#db2777] text-white",
-  "bg-[#a16207] text-white",
+  "bg-info text-white",
+  "bg-platform-woocommerce text-white",
+  "bg-warning-700 text-white",
   "bg-ink-600 text-white",
 ];
 
@@ -79,7 +79,7 @@ export function AccountMenu({
 
   // Resolved here rather than passed in: layouts do not receive searchParams in
   // the App Router, and the selected client lives in the URL. This is display
-  // only — the gate that decides whose data is actually served is
+  // only: the gate that decides whose data is actually served is
   // `resolveClient` on the server.
   const active =
     clients.find((c) => c.clientId === searchParams.get("client")) ?? clients[0];

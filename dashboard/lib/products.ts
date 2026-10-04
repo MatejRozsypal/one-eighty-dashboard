@@ -2,7 +2,7 @@
  * The three products behind the icon rail.
  *
  * Each rail icon opens a different instance of the app. They share exactly two
- * things — the sign-in session and the shell chrome — and nothing else. In
+ * things: the sign-in session and the shell chrome, and nothing else. In
  * particular Chat deliberately loads no warehouse data at all, which is why it
  * is a product rather than another page inside Analytics.
  *
@@ -54,7 +54,7 @@ export const PRODUCTS: Product[] = [
  *
  * Analytics is the fallback rather than an explicit list: it owns every route
  * that predates the rail, so enumerating them here would mean editing this file
- * every time a page is added — and forgetting to would silently unhighlight the
+ * every time a page is added, and forgetting to would silently unhighlight the
  * rail rather than fail loudly.
  */
 export function productFor(pathname: string): ProductId {

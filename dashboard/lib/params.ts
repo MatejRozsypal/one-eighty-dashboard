@@ -143,15 +143,15 @@ export interface RangeLabel {
 
 export function rangeLabel(params: ViewParams): RangeLabel {
   const d = (iso: string, withYear: boolean) =>
-    new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", {
+    new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", {
       day: "numeric",
       month: "short",
       ...(withYear ? { year: "numeric" } : {}),
       timeZone: "UTC",
     });
 
-  // The year is printed once, and only when the range crosses one. "14 Aug to
-  // 21 Aug 2026" is what the reader is holding in their head.
+  // The year is printed once, and only when the range crosses one. "Aug 14 to
+  // Aug 21, 2026" is what the reader is holding in their head.
   const sameYear = params.range.from.slice(0, 4) === params.range.to.slice(0, 4);
   const dates = `${d(params.range.from, !sameYear)} to ${d(params.range.to, true)}`;
 

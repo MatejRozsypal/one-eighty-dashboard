@@ -110,12 +110,6 @@ function allNavItems(): NavItem[] {
   return [...NAV.flatMap((g) => g.items), ...CREATIVE_NAV];
 }
 
-/** Deprecated: pages no longer render an eyebrow. Kept until it has 0 callers (WP9 deletes it). */
-export function pageEyebrow(pathname: string, clientName: string): string {
-  const group = NAV.find((g) => g.items.some((i) => i.href === pathname));
-  return group ? `${group.label} · ${clientName}` : clientName;
-}
-
 /** Page title for a route, by longest prefix match ("/paid/google" reads "Paid"). */
 export function pageTitle(pathname: string): string {
   const item = longestMatch(pathname, [...allNavItems(), ...OTHER_TITLES]);

@@ -1,7 +1,7 @@
 /**
  * Demo repeat timing.
  *
- * Shaped as a right-skewed distribution — a fast cluster in the first fortnight,
+ * Shaped as a right-skewed distribution, a fast cluster in the first fortnight,
  * a broad replenishment hump around the product's consumption cycle, then a
  * thinning tail. That is what a consumable brand actually looks like, and a
  * flat or single-spike demo would show nothing about how the chart reads.

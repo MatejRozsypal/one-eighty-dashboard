@@ -1,4 +1,4 @@
-/* One Eighty — Radii tokens
+/* One Eighty: Radii tokens
  * Soft, modern rounding. Cards ~16px, controls ~10px, pills fully round. */
 :root {
   --radius-xs: 6px;

@@ -2,7 +2,7 @@
  * The demo client's creative data.
  *
  * ── Why this is not the figures from docs/creative-engine/DEMO.html ────────
- * That mockup is built on Manami's REAL reported numbers and real ad names —
+ * That mockup is built on Manami's REAL reported numbers and real ad names,
  * "Něžná - 13MAR - OE", the Founder story ad set, the PACK6 launch. The demo
  * client is a fictional brand shown to prospects, and putting a paying client's
  * creative names and spend into a screen designed to be presented to strangers
@@ -15,7 +15,7 @@
  * across winner / carrier / loser / undecided so every state on every screen
  * has something to render.
  *
- * Figures are deterministic, not random — see `lib/demo/random.ts` for why that
+ * Figures are deterministic, not random, see `lib/demo/random.ts` for why that
  * matters halfway through a presentation.
  */
 
@@ -69,8 +69,8 @@ const CONCEPTS: Record<string, { name: string; persona: string; angle: string; o
 /**
  * Spend is in USD and roughly a tenth of a Czech koruna account's figures, so
  * the demo reads as a small US brand rather than as a converted one. The
- * relationships between the rows — the 34% concentration, the 1.5% hit rate,
- * the one ad set still inside its window — are what the screens are testing.
+ * relationships between the rows: the 34% concentration, the 1.5% hit rate,
+ * the one ad set still inside its window, are what the screens are testing.
  */
 const SEEDS: Seed[] = [
   { id: "1201", name: "Softly - 13MAR - house", adset: "Evergreen prospecting", concept: null, persona: null, angle: null, offer: null,
@@ -164,8 +164,8 @@ function componentsOf(seed: Seed): Components {
  * ── Why they are not scaled independently ──────────────────────────────────
  * The first version multiplied the hook rate by one factor for the quartiles
  * and the hold rate by another. On a 33-second video that put the 50% quartile
- * at 16.5 seconds ABOVE the ThruPlay figure at 15 seconds — a curve that rises
- * — which is not a rendering artefact but an impossible claim: more people
+ * at 16.5 seconds ABOVE the ThruPlay figure at 15 seconds, a curve that rises,
+ * which is not a rendering artefact but an impossible claim: more people
  * cannot reach 16.5 seconds than reached 15.
  *
  * (The approved mockup has the same inconsistency in its illustrative numbers.
@@ -332,7 +332,6 @@ export function demoCreative(range: DateRange): CreativeData {
     ads,
     adsets,
     available: true,
-    missing: null,
     currency: "USD",
     through: "2026-09-08",
   };
@@ -358,7 +357,7 @@ export function demoAssets(): Map<string, CreativeAsset> {
           adId: s.id,
           // Null on purpose. No asset has been mirrored for the demo client, so
           // the grid renders its placeholder tile and the panel says the asset
-          // is not in the bucket — which is exactly what a real client looks
+          // is not in the bucket, which is exactly what a real client looks
           // like before the Cloud Run job has run, and worth seeing.
           assetUri: null,
           thumbUri: null,
@@ -477,7 +476,7 @@ export function demoCoverage(): TagCoverage {
 
 export function demoPersonas(): PersonaRow[] {
   const used = new Set(Object.values(CONCEPTS).map((c) => c.persona));
-  // Twelve declared, six actually spent on — the exact shape the persona
+  // Twelve declared, six actually spent on, the exact shape the persona
   // capacity statement is about.
   const dormant = [
     "BusyParent", "GiftBuyer", "LayeringEnthusiast",
@@ -490,7 +489,7 @@ export function demoPersonas(): PersonaRow[] {
 }
 
 export function demoConcepts(): ConceptRow[] {
-  // Two of the eight are written and never briefed against — the state the
+  // Two of the eight are written and never briefed against, the state the
   // Concepts screen exists to make visible.
   return [
     ...Object.entries(CONCEPTS).map(([id, c]) => ({

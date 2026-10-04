@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Collapses the navigation panel — the second column, not the icon rail.
+ * Collapses the navigation panel: the second column, not the icon rail.
  *
  * State is written straight to `document.documentElement` and mirrored into
  * localStorage, deliberately *not* held in React state or in the URL:
@@ -13,8 +13,8 @@
  *  - Going through React would mean a re-render, and the whole point of a
  *    collapse is that it feels like moving a door, not like loading a page.
  *
- * Everything that has to react to it — the panel, its widths, the account menu
- * in the corner — keys off the same `data-nav` attribute in CSS, so there is
+ * Everything that has to react to it, the panel, its widths, the account menu
+ * in the corner, keys off the same `data-nav` attribute in CSS, so there is
  * one source of truth and no state to keep in sync.
  */
 

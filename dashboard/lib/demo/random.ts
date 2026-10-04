@@ -7,7 +7,7 @@
  * headline card and the table below it on the very same page, because each is
  * its own server render.
  *
- * So nothing here is random at runtime — it is a hash. A value is a pure
+ * So nothing here is random at runtime, it is a hash. A value is a pure
  * function of a string key ("revenue:2026-07-14"), which means any generator
  * can ask for the same number from anywhere in the codebase, in any order,
  * without sharing state or precomputing a series.
@@ -16,7 +16,7 @@
  * well enough for numbers whose only job is to look plausible on a chart.
  */
 
-/** FNV-1a — string → 32-bit seed. */
+/** FNV-1a: string → 32-bit seed. */
 function hashSeed(key: string): number {
   let h = 2166136261;
   for (let i = 0; i < key.length; i++) {
@@ -51,7 +51,7 @@ export function between(key: string, min: number, max: number): number {
  * A multiplier hovering around 1, e.g. jitter("orders:2026-07-14", 0.18).
  *
  * Averaging two draws pulls the distribution toward the centre, so a series
- * wobbles rather than lurching between the extremes on consecutive days —
+ * wobbles rather than lurching between the extremes on consecutive days,
  * daily revenue that swings ±18% at random reads as broken, not as noisy.
  */
 export function jitter(key: string, spread: number): number {
@@ -71,7 +71,7 @@ export function pick<T>(key: string, items: readonly T[]): T {
 }
 
 /**
- * Stable shuffle — used where an order should look arbitrary but never change
+ * Stable shuffle: used where an order should look arbitrary but never change
  * between renders (a customer table, an ad list).
  */
 export function shuffled<T>(key: string, items: readonly T[]): T[] {

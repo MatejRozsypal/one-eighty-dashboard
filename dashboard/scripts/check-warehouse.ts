@@ -13,7 +13,7 @@
  *     which BigQuery expands to `SUM(SUM(spend))` and rejects;
  *   · a correlated `UNNEST` join BigQuery refuses outright;
  *   · `mart_creative_adset_perf` returning zero rows for every client, for
- *     months, because the table under it was never populated — no error, just
+ *     months, because the table under it was never populated, no error, just
  *     four features silently dead.
  *
  * All three are valid TypeScript producing SQL that is wrong. The first
@@ -22,7 +22,7 @@
  *
  * ── What it asserts, and what it deliberately does not ─────────────────────
  * A THROW is a failure: invalid SQL, a missing object, a bad parameter type.
- * An EMPTY result is not — a client with no email platform legitimately has no
+ * An EMPTY result is not: a client with no email platform legitimately has no
  * campaigns, and failing on that would train everyone to ignore the output.
  * Empties are printed instead, so a screen that has quietly gone dark is
  * visible to a person reading the list.
@@ -31,7 +31,7 @@
  * and a muted check is worse than none.
  *
  * ── Credentials ────────────────────────────────────────────────────────────
- * Application Default Credentials — `gcloud auth application-default login`.
+ * Application Default Credentials: `gcloud auth application-default login`.
  * Read-only on `mart`; the production service-account key is not needed.
  *
  * Exits non-zero if any query throws.
@@ -78,7 +78,7 @@ function describe(value: unknown): { text: string; empty: boolean } {
   if (typeof value === "object") {
     const o = value as Record<string, unknown>;
     // Summary objects: report the arrays inside them, and whether every
-    // numeric field is zero or null — the shape a dead view actually takes.
+    // numeric field is zero or null, the shape a dead view actually takes.
     const arrays = Object.entries(o).filter(([, v]) => Array.isArray(v));
     const numbers = Object.values(o).filter((v) => typeof v === "number") as number[];
     const parts: string[] = [];
@@ -169,7 +169,7 @@ async function main() {
   await probe("health", "getPipelineRuns", () => getPipelineRuns(12));
 
   console.log(
-    `\n${failures === 0 ? "No query failed." : `${failures} QUERY FAILURE(S) — see FAIL above.`}` +
+    `\n${failures === 0 ? "No query failed." : `${failures} QUERY FAILURE(S), see FAIL above.`}` +
       `  ${empties} came back empty (not a failure; check any you did not expect).`
   );
   if (failures) process.exit(1);

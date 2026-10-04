@@ -12,6 +12,7 @@
     "check:creative": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-engine.ts",
     "check:queries": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-queries.ts",
     "check:warehouse": "tsx --tsconfig scripts/tsconfig.json scripts/check-warehouse.ts",
+    "check:capabilities": "tsx --tsconfig scripts/tsconfig.json scripts/check-capabilities.ts",
     "check:clickup": "tsx --tsconfig scripts/tsconfig.json scripts/probe-clickup.ts"
   },
   "dependencies": {

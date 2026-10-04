@@ -4,14 +4,14 @@
  * Indeterminate progress bar for server navigations.
  *
  * Every control in this dashboard writes to the URL and lets the server
- * re-render, because the numbers come from BigQuery and BigQuery takes 2–5
+ * re-render, because the numbers come from BigQuery and BigQuery takes 2-5
  * seconds on wide ranges. That is a fine architecture and a terrible feeling:
  * React keeps the *old* page mounted and fully interactive for the whole
  * round trip, so a click looks like it did nothing and users click again.
  *
  * `loading.tsx` doesn't cover this. It fires when the route segment changes,
  * and most of these controls only change search params on the route you are
- * already on — same segment, no fallback, no feedback.
+ * already on: same segment, no fallback, no feedback.
  *
  * So each control drives this bar from its own `useTransition` pending flag.
  * It is `fixed`, so it reads as a page-level signal no matter which control

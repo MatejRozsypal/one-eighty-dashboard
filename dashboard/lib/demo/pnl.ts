@@ -6,7 +6,7 @@
  * so handing it days means the demo's CM1/CM2/CM3, MER, aMER, CAC, AOV and all
  * the period-over-period deltas are produced by the same production code that
  * serves real clients. Writing totals here instead would mean maintaining a
- * second implementation of the arithmetic — and the demo would quietly stop
+ * second implementation of the arithmetic, and the demo would quietly stop
  * matching the product the day either one changed.
  */
 
@@ -23,7 +23,7 @@ export function demoPnlDays(
   const money = (v: number) => convertMoney(v, display);
 
   // The stated rates are applied here, in display currency, exactly as the SQL
-  // does it for a real client — orders x native rate, then converted. The
+  // does it for a real client, orders x native rate, then converted. The
   // subtraction itself happens in the shared caller, so demo and production
   // cannot drift on which margin each cost comes out of.
   const perOrder = (rate: number | null) =>
@@ -48,7 +48,7 @@ export function demoPnlDays(
     metaSpend: money(d.metaSpend),
     googleSpend: money(d.googleSpend),
     paidSpend: money(d.paidSpend),
-    // Counts never convert — an order is an order in any currency.
+    // Counts never convert: an order is an order in any currency.
     fulfilmentCost: fulfilmentOf ? fulfilmentOf(d.orders) : null,
     otherCm1Cost: otherOf ? otherOf(d.orders) : null,
     orders: d.orders,

@@ -1,7 +1,7 @@
 import "server-only";
 
 /**
- * The access log — who saw whose data, and who tried to.
+ * The access log: who saw whose data, and who tried to.
  *
  * ── Why this exists ─────────────────────────────────────────────────────────
  * `resolveClient` already stops a client-role account reading another client's
@@ -15,7 +15,7 @@ import "server-only";
  * Every data page funnels through that one function to turn `?client=` into the
  * client it renders, exactly once per render. So it is the only place that sees
  * every access with the identity, the role, what was asked for and what was
- * actually served — and the only place where adding a row cannot be forgotten
+ * actually served, and the only place where adding a row cannot be forgotten
  * when the fourteenth page is written.
  *
  * ── Why a failure here is swallowed ─────────────────────────────────────────
@@ -37,7 +37,7 @@ import { sql, userStoreConfigured } from "@/lib/users/db";
  *
  * That schema is applied before every single Postgres query, including the one
  * that authenticates a sign-in. A mistake in DDL living there takes the whole
- * application down — nobody can log in — which is a wildly disproportionate
+ * application down: nobody can log in, which is a wildly disproportionate
  * blast radius for an audit table. Created here instead, behind its own
  * try/catch, the worst case is that logging is unavailable while the dashboard
  * carries on working.
@@ -186,7 +186,7 @@ export async function listAccessLog(options: {
   }));
 }
 
-/** Count of refusals in the last N days — the number worth alerting on. */
+/** Count of refusals in the last N days, the number worth alerting on. */
 export async function countRecentRefusals(days = 30): Promise<number> {
   if (!(await ensureTable())) return 0;
 

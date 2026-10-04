@@ -1,5 +1,5 @@
 /**
- * Eyebrow — the small mono, wide-tracked label above a section heading.
+ * Eyebrow: the small mono, wide-tracked label above a section heading.
  * Ported from `components/labels/Eyebrow.jsx`.
  */
 

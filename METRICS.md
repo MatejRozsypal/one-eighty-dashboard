@@ -4,7 +4,7 @@ The canonical reference for every metric exposed in the `mart.*` layer. Looker S
 
 **Update this file whenever:** a new metric lands, a formula changes, a placeholder cost gets wired, or a known data gap is resolved.
 
-**Last updated:** 2026-10-05 (CM1 to CM3 on days with paid spend and no orders: migration 234, deployed 2026-10-04; Reports gaps rule for partially NULL components, amendment 20; WooCommerce fee-line discounts in revenue and Woo COGS NULL when uncosted: migration 228, deployed 2026-10-04; Reporting registry section: metric ids, ratio recomputation, caveats; Google Ads columns and `paid_spend` in daily and monthly marts since 2026-10-01)
+**Last updated:** 2026-10-04 (`ref.ad_spend_zero_days`, migration 235: a NULL spend is missing data unless the day is in that registry, then 0; seeded for Venev Meta; deployed 2026-10-04; CM1 to CM3 on days with paid spend and no orders: migration 234, deployed 2026-10-04; Reports gaps rule for partially NULL components, amendment 20; WooCommerce fee-line discounts in revenue and Woo COGS NULL when uncosted: migration 228, deployed 2026-10-04; Reporting registry section: metric ids, ratio recomputation, caveats; Google Ads columns and `paid_spend` in daily and monthly marts since 2026-10-01)
 
 ---
 
@@ -142,6 +142,11 @@ When cost placeholders get populated, CM1/CM2/CM3 update automatically. No formu
 - Effect on history (SUM of `cm3`, candidate minus previous): Ethia -29,572.13 CZK (55 days, 5 of them in the last 90 days, -4,734.43 CZK), Manami -6,686.76 CZK (17 days, 2025-05-16 to 2026-01-22, none in the last 90 days), Venev -4,446.55 EUR (84 days, 38 in the last 90 days, -2,674.33 EUR). Dobias and RawBark: no change. After 234, `SUM(cm3)` equals `SUM(revenue) - SUM(cogs) - SUM(fulfillment_cost) - SUM(paid_spend)` for every client with cost data.
 - `mart_monthly_kpis` sums the daily view and follows with no text change. `mart_cm3_monthly` was already correct (it subtracts the whole month of spend). The Reports CM3 and the Snapshot, P&L, YoY, Goals and Growth pages now agree.
 
+**Spend NULL means missing, unless the day is in `ref.ad_spend_zero_days` (migration 235, deployed 2026-10-04).** In `mart_daily_kpis`, a NULL `meta_spend`, `google_spend` or `paid_spend` is **missing data**, never a zero. The one exception is a day the owner confirmed as "no ads ran": it is registered in `ref.ad_spend_zero_days` (`client_id`, `platform` `meta` or `google`, `date_from`, `date_to` inclusive and never open ended, `note`, `updated_by`, `updated_at`) and the mart then shows 0 there. Real ingestion holes are not registered and stay NULL (Dobias Meta Dec 2025 to Mar 2026 and April 2026, RawBark Google 2025-12-23 to 2025-12-31, 2026-06-01 and 2026-09-17).
+- Mechanics: fills a NULL with 0 only on a day that already has a row (`meta_spend` for a meta day, `google_spend` for a google day, `paid_spend` for either). It never replaces a spend that has a value, never creates a row (a day with no shop row and no ad row stays absent), and overlapping ranges do not fan out. Ad outcomes (`meta_revenue`, purchases, clicks, impressions, reach, `google_*`) stay NULL; the Reports rule already reads a NULL outcome on a day with spend as zero. `cm1`, `cm2`, `cm3` do not change (they already subtract `COALESCE(paid_spend, 0)`). Schema unchanged.
+- Add a row only for days the owner confirmed. Use ranges in the past: the freshness probes (`ads_last`, `meta_last`) read the last day with a non-NULL spend, so a zero range at the end of the data would make ads look fresh.
+- Seed (owner decision 2026-10-04): Venev, Meta, 2022-07-25 to 2025-12-03 (every shop day before Venev's first Meta spend on 2025-12-04; 606 daily rows, 41 months 2022-07 to 2025-11 go from NULL to 0 in `mart_monthly_kpis`) and 2026-08-10 (confirmed; the mart has no row for that day, so it changes nothing today). The 17 Venev shop days after 2025-12-04 with NULL Meta spend (2025-12-19, 2025-12-26, 2026-01-06, 2026-03-08 to 03-10, 03-12, 03-25, 04-14, 04-18, 04-28, 05-12, 05-18, 06-02, 06-10, 06-23, 2026-08-12) are not registered: they stay missing until the owner confirms them.
+
 ### Orders
 | Column | Type | Formula | Notes |
 |---|---|---|---|
@@ -153,7 +158,7 @@ When cost placeholders get populated, CM1/CM2/CM3 update automatically. No formu
 ### Meta (Facebook/Instagram Ads)
 | Column | Type | Formula | Notes |
 |---|---|---|---|
-| `meta_spend` | $ | `SUM(spend)` from stg_meta_campaign_insights | Dobias Dec'25 – Mar'26 missing (known gap). |
+| `meta_spend` | $ | `SUM(spend)` from stg_meta_campaign_insights | Dobias Dec'25 – Mar'26 missing (known gap). NULL = missing, except 0 on a day registered in `ref.ad_spend_zero_days` (235; Venev before 2025-12-04). |
 | `meta_revenue` | $ | `SUM(purchase_value)` | Meta's view of attributed purchase revenue. |
 | `meta_purchases` | count | `SUM(purchases)` | |
 | `meta_impressions` | count | `SUM(impressions)` | |
@@ -443,7 +448,8 @@ metric = SUM(numerator components) / SUM(denominator components)
   metric that divides by it is `no_data` with the reason "Missing days" for that client, at any grain (day,
   week, month, total). Before, a month with 19 of 30 NULL spend days showed a MER of about 122x because
   the NULL days dropped out of the sum. `cogs` is `gap` only on days with revenue above 0, and one NULL
-  there makes the cell `not_measured` ("No cost data").
+  there makes the cell `not_measured` ("No cost data"). A NULL spend is missing data unless the day is in
+  `ref.ad_spend_zero_days` (migration 235), where the mart already shows 0: that day is a real zero spend, not a gap.
 - **Rollups leave a client out instead of failing** (version 4, owner decision 2026-10-04). In a combined or
   vertical cell, a client that is not connected, or whose own cell for that total or bucket is a gap,
   `fx_missing` or `not_measured`, is not summed at all (none of its components); the rest are summed and the
@@ -581,6 +587,10 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ---
 
 ## Changelog (most recent first)
+
+### 2026-10-04 (amendment 22): `ref.ad_spend_zero_days` (migration 235)
+
+Owner decision 2026-10-04: Venev was not advertising on days with no Meta spend before its ads started, those days count as 0, not missing. New `ref.ad_spend_zero_days`; `mart_daily_kpis` fills a NULL `meta_spend`, `google_spend` and `paid_spend` with 0 on registered days, only there (details under Known data gaps). Deployed 2026-10-04, prod md5 of the view `9a5405191e68a9be6d52f8f6b5e8cfdc`. Effect: Venev only, 606 daily rows and 41 monthly rows (2022-07 to 2025-11) NULL to 0 spend; Dobias, Ethia, Manami, RawBark zero diff. Not covered: Venev NULL Meta days after 2025-12-04 (17, listed under Known data gaps), including 2026-08-12, so the Paid efficiency previous-period delta for Sep 2026 stays n/a until those are confirmed.
 
 ### 2026-10-05 (amendment 19): Reporting registry section
 

@@ -4,6 +4,27 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-10-04: `ref.ad_spend_zero_days` (migration 235): "no ads ran" is zero spend, not missing
+
+Owner decision: a NULL ad spend stays **missing data** (a gap in Reports), except on days registered as
+"no ads ran" in the new `ref.ad_spend_zero_days` (`client_id`, `platform` meta or google, `date_from`,
+`date_to`, note, updated_by, updated_at). `mart.mart_daily_kpis` fills a NULL `meta_spend`, `google_spend` and
+`paid_spend` with 0 on those days, only there (never replaces a value, never creates a row). Deployed to prod
+2026-10-04 (view md5 `9a5405191e68a9be6d52f8f6b5e8cfdc`, rollback text = the 234 body).
+
+- **Seed:** Venev Meta 2022-07-25 to 2025-12-03 (before its first Meta spend on 2025-12-04) and 2026-08-10.
+  Effect: 606 Venev daily rows and 41 monthly rows (2022-07 to 2025-11) NULL to 0 spend. Dobias, Ethia,
+  Manami, RawBark: zero diff. CM1 to CM3 unchanged.
+- **Not fixed, needs the owner:** 17 Venev shop days after 2025-12-04 still have NULL Meta spend (including
+  2026-08-12). The Venev data does not match the premise "ads started 2026-08-11": Meta spend exists
+  2025-12-04 to 2026-03-04 and again from 2026-08-18, and the mart has no 2026-08-10 row at all. So the
+  Sep 2026 previous-period delta in Paid efficiency stays n/a until those days are confirmed or registered.
+  RawBark Google and Dobias Meta holes stay NULL on purpose (real ingestion holes).
+- Files: `infra/bigquery/235_ad_spend_zero_days.sql`, `qa/235_regression.sql`, `live/` (mart_daily_kpis,
+  ref.ad_spend_zero_days), METRICS.md amendment 22. `mart_qa.fx1_*` objects are left for the cleanup (owner go).
+
+---
+
 ## 2026-10-04/05: Cleanup sprint, Paid redesign and Reporting Suite live
 
 Everything prepared in the three October packages is now deployed (frontend on prod, warehouse

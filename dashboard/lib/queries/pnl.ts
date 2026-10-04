@@ -107,6 +107,16 @@ export interface PnlTotals {
   metaSpend: number | null;
   googleSpend: number | null;
   paidSpend: number | null;
+  /** First date in the range with a non-null paid spend. Null when there is none. */
+  spendFrom: string | null;
+  /**
+   * True when a paid-capable client's range starts before its first spend day
+   * (or has no spend at all). Revenue then covers days the spend does not, so
+   * MER, aMER and CAC are null ("Missing days"), never a ratio over a partial
+   * denominator. Interior NULL spend days are not a leading gap and are left
+   * alone.
+   */
+  leadingSpendGap: boolean;
 
   // Volume
   orders: number | null;
@@ -313,7 +323,30 @@ export function hasNoCostData(t: PnlTotals): boolean {
   return t.costCoverage === "none";
 }
 
-function aggregate(rows: PnlDay[]): PnlTotals {
+/** What `aggregate` needs to judge a leading spend gap. */
+export interface AggregateContext {
+  /** The period the rows belong to. */
+  range: DateRange;
+  /** The client has Meta or Google Ads connected, so spend is expected. */
+  paidCapable: boolean;
+}
+
+/** First date among the rows with a non-null paid spend. */
+function firstSpendDate(rows: PnlDay[]): string | null {
+  let first: string | null = null;
+  for (const r of rows) {
+    if (r.paidSpend !== null && (first === null || r.date < first)) first = r.date;
+  }
+  return first;
+}
+
+export function aggregate(rows: PnlDay[], ctx?: AggregateContext): PnlTotals {
+  const spendFrom = firstSpendDate(rows);
+  const leadingSpendGap =
+    ctx !== undefined &&
+    ctx.paidCapable &&
+    (spendFrom === null || ctx.range.from < spendFrom);
+
   // Cost coverage, per day. A day with revenue and a NULL COGS is a day the
   // warehouse could not cost, which is different from a day that cost nothing.
   const revenueDays = rows.filter((r) => r.revenue !== null && r.revenue > 0);
@@ -356,6 +389,8 @@ function aggregate(rows: PnlDay[]): PnlTotals {
     metaSpend: sum(rows, (r) => r.metaSpend),
     googleSpend: sum(rows, (r) => r.googleSpend),
     paidSpend,
+    spendFrom,
+    leadingSpendGap,
 
     orders,
     uniqueCustomers: sum(rows, (r) => r.uniqueCustomers),
@@ -365,9 +400,9 @@ function aggregate(rows: PnlDay[]): PnlTotals {
     aov: safeDiv(revenue, orders),
     aovNew: safeDiv(newCustomerRevenue, newCustomerOrders),
     aovReturning: safeDiv(returningCustomerRevenue, returningCustomerOrders),
-    mer: safeDiv(revenue, paidSpend),
-    amer: safeDiv(newCustomerRevenue, paidSpend),
-    cac: safeDiv(paidSpend, newCustomerOrders),
+    mer: leadingSpendGap ? null : safeDiv(revenue, paidSpend),
+    amer: leadingSpendGap ? null : safeDiv(newCustomerRevenue, paidSpend),
+    cac: leadingSpendGap ? null : safeDiv(paidSpend, newCustomerOrders),
     returningOrderShare: safeDiv(returningCustomerOrders, orders),
     returningRevenueShare: safeDiv(returningCustomerRevenue, revenue),
   };
@@ -382,7 +417,9 @@ export async function getPnlSnapshot(
   nativeCurrency: string,
   period: ResolvedPeriod,
   display: DisplayCurrency = "native",
-  costs: CostRates = { fulfilmentPerOrder: null, otherCm1PerOrder: null }
+  costs: CostRates = { fulfilmentPerOrder: null, otherCm1PerOrder: null },
+  /** Meta or Google Ads connected: spend is expected, so a leading gap is judged. */
+  paidCapable = false
 ): Promise<PnlSnapshot> {
   const rows = await fetchPnlDays(
     clientId,
@@ -400,8 +437,10 @@ export async function getPnlSnapshot(
   return {
     period,
     currency: display === "native" ? nativeCurrency : display,
-    current: aggregate(currentRows),
-    previous: period.comparison ? aggregate(previousRows) : null,
+    current: aggregate(currentRows, { range: period.current, paidCapable }),
+    previous: period.comparison
+      ? aggregate(previousRows, { range: period.comparison, paidCapable })
+      : null,
     series: currentRows,
   };
 }

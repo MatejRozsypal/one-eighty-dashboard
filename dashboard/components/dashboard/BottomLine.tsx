@@ -43,6 +43,9 @@ export function BottomLine({
 
   // Merchandise margin, ex-shipping: (net sales - COGS) / net sales.
   const noCost = hasNoCostData(totals);
+  // Lifetime and payback stay in the client's own currency. When the P&L above
+  // is converted, say so beside them rather than leaving a bare symbol.
+  const lifeNote = lifetimeCurrency !== currency ? `in ${lifetimeCurrency}` : null;
   const grossMargin =
     totals.netSales !== null && totals.cogs !== null
       ? safeDiv(totals.netSales - totals.cogs, totals.netSales)
@@ -70,6 +73,9 @@ export function BottomLine({
       <span className="inline-flex items-center gap-1.5">
         <Eyebrow>Customer payback</Eyebrow>
         <MetricTooltip definition={METRIC_DEFINITIONS.Payback} />
+        {lifeNote && (
+          <span className="font-mono text-[10.5px] text-content-muted">{lifeNote}</span>
+        )}
       </span>
 
       {payback === null ? (
@@ -91,13 +97,15 @@ export function BottomLine({
           <span className="font-mono text-[12px] text-content-muted">
             {payback.recovery30 !== null
               ? `${formatPercent(payback.recovery30, { decimals: 0 })} of CAC in 30 days`
-              : "CAC unknown"}
+              : payback.ltgp30 === null
+                ? "No cost data"
+                : "CAC unknown"}
           </span>
 
           <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-control border border-hairline bg-gray-50 p-[10px_12px]">
             {[
-              { k: "LTGP 30d", v: lifeMoney(payback.ltgp30) },
-              { k: "LTGP 90d", v: lifeMoney(payback.ltgp90) },
+              { k: "LTGP 30d", v: payback.ltgp30 === null ? "No cost data" : lifeMoney(payback.ltgp30) },
+              { k: "LTGP 90d", v: payback.ltgp90 === null ? "No cost data" : lifeMoney(payback.ltgp90) },
               { k: "Blended CAC", v: formatMoney(payback.cac, lifetimeCurrency, { unit: true }) },
             ].map((x) => (
               <span key={x.k} className="flex flex-col gap-1">
@@ -106,7 +114,9 @@ export function BottomLine({
                 </span>
                 <span
                   className={`font-mono text-[13px] font-semibold tabular ${
-                    x.v === "n/a" ? "text-content-muted" : "text-content-strong"
+                    x.v === "n/a" || x.v === "No cost data"
+                      ? "text-content-muted"
+                      : "text-content-strong"
                   }`}
                 >
                   {x.v}
@@ -138,7 +148,7 @@ export function BottomLine({
 
         <span className="flex flex-col gap-[7px]">
           <span className="relative inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-            LTV
+            LTV{lifeNote ? ` ${lifeNote}` : ""}
             <MetricTooltip definition={METRIC_DEFINITIONS.LTV} />
           </span>
           <span
@@ -152,7 +162,7 @@ export function BottomLine({
 
         <span className="flex flex-col gap-[7px]">
           <span className="relative inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-            LTGP
+            LTGP{lifeNote ? ` ${lifeNote}` : ""}
             <MetricTooltip definition={METRIC_DEFINITIONS.LTGP} />
           </span>
           <span

@@ -1,9 +1,9 @@
 /**
- * Loading state. Growth: metric cards, the year-over-year chart and a table.
+ * Loading state. Growth: the month-over-month chart and its table, nothing else.
  */
 
 import { SkeletonPage } from "@/components/ui/Skeleton";
 
 export default function Loading() {
-  return <SkeletonPage blocks={["kpi", "chart", "table"]} />;
+  return <SkeletonPage blocks={["chart", "table"]} />;
 }

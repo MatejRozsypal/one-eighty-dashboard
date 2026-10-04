@@ -1,0 +1,184 @@
+/*
+ * Report canvas: token-based restyle of react-grid-layout's handles and
+ * placeholder (design 5.1). Owner: RS6.
+ *
+ * Import order in app/(app)/reports/layout.tsx (RS9), library first:
+ *   import "react-grid-layout/css/styles.css";
+ *   import "./grid.css";
+ * Every rule is scoped under .report-canvas and one class deeper than the
+ * library's own, so the order only matters for equal specificity and no
+ * !important is needed. Tokens only: no colour literals.
+ *
+ * Variables set inline by ReportCanvas on .report-grid-wrap:
+ *   --grid-cell-w   column width plus gutter
+ *   --grid-cell-h   row height plus gutter
+ *   --grid-gutter   gutter
+ */
+
+.report-canvas {
+  position: relative;
+}
+
+.report-grid-wrap {
+  position: relative;
+  border-radius: var(--radius-card);
+}
+
+/* ---- Edit mode: a dotted cell grid behind the cards (dots at cell centres) ---- */
+
+.report-canvas[data-editing="true"] .report-grid-wrap {
+  min-height: 480px;
+  background-image: radial-gradient(circle at center, var(--border-strong) 1.5px, transparent 1.6px);
+  background-size: var(--grid-cell-w) var(--grid-cell-h);
+  background-position: calc(var(--grid-gutter) / -2) calc(var(--grid-gutter) / -2);
+}
+
+/* ---- Motion: only transform and size move; layout properties never animate ---- */
+
+.report-canvas .react-grid-item {
+  transition-duration: var(--dur-base);
+  transition-timing-function: var(--ease-out);
+}
+
+.report-canvas .react-grid-item.cssTransforms {
+  transition-property: transform, width, height;
+}
+
+.report-canvas .react-grid-item.resizing,
+.report-canvas .react-grid-item.react-draggable-dragging {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-canvas .react-grid-item,
+  .report-canvas .react-grid-layout {
+    transition: none;
+  }
+}
+
+/* ---- Placeholder: where the card will land ---- */
+
+.report-canvas .react-grid-item.react-grid-placeholder {
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-card);
+  opacity: 1;
+  transition-duration: var(--dur-fast);
+}
+
+/* ---- Card states ---- */
+
+.report-widget:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.report-canvas[data-editing="true"] .report-widget {
+  border-color: var(--border-strong);
+}
+
+.report-canvas .react-grid-item.react-draggable-dragging > .report-widget,
+.report-canvas .react-grid-item.resizing > .report-widget {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ---- Resize handles: bottom-right corner, right edge, bottom edge ---- */
+
+.report-canvas .react-grid-item > .react-resizable-handle {
+  z-index: 2;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.report-canvas[data-editing="true"] .react-grid-item:hover > .react-resizable-handle,
+.report-canvas[data-editing="true"] .react-grid-item:focus-within > .react-resizable-handle,
+.report-canvas .react-grid-item.resizing > .react-resizable-handle {
+  opacity: 1;
+}
+
+/* Corner: an L-shaped grip. */
+.report-canvas .react-grid-item > .react-resizable-handle.react-resizable-handle-se {
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  cursor: se-resize;
+}
+
+.report-canvas .react-grid-item > .react-resizable-handle.react-resizable-handle-se::after {
+  right: 7px;
+  bottom: 7px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--gray-300);
+  border-bottom: 2px solid var(--gray-300);
+  border-radius: 0 0 var(--radius-xs) 0;
+}
+
+/* Right edge: a full-height hit area with a short pill in the middle. */
+.report-canvas .react-grid-item > .react-resizable-handle.react-resizable-handle-e {
+  top: 28px;
+  bottom: 28px;
+  right: -5px;
+  left: auto;
+  width: 10px;
+  height: auto;
+  margin: 0;
+  transform: none;
+  cursor: ew-resize;
+}
+
+.report-canvas .react-grid-item > .react-resizable-handle.react-resizable-handle-e::after {
+  top: 50%;
+  right: 4px;
+  bottom: auto;
+  width: 2px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--gray-300);
+  transform: translateY(-50%);
+}
+
+/* Bottom edge: a full-width hit area with a short pill in the middle. */
+.report-canvas .react-grid-item > .react-resizable-handle.react-resizable-handle-s {
+  left: 28px;
+  right: 28px;
+  bottom: -5px;
+  top: auto;
+  width: auto;
+  height: 10px;
+  margin: 0;
+  transform: none;
+  cursor: ns-resize;
+}
+
+.report-canvas .react-grid-item > .react-resizable-handle.react-resizable-handle-s::after {
+  left: 50%;
+  bottom: 4px;
+  right: auto;
+  width: 28px;
+  height: 2px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--gray-300);
+  transform: translateX(-50%);
+}
+
+.report-canvas .react-grid-item > .react-resizable-handle:hover::after,
+.report-canvas .react-grid-item.resizing > .react-resizable-handle::after {
+  border-color: var(--accent);
+  background-color: var(--accent);
+}
+
+.report-canvas .react-grid-item > .react-resizable-handle.react-resizable-handle-se:hover::after,
+.report-canvas .react-grid-item.resizing > .react-resizable-handle.react-resizable-handle-se::after {
+  background-color: transparent;
+}
+
+/* ---- The stack never drags ---- */
+
+.report-stack .widget-drag {
+  cursor: default;
+}

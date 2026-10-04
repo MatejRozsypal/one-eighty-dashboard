@@ -45,15 +45,19 @@ export function tabHref(
   return qs ? `${path}?${qs}` : path;
 }
 
-/** What Creative can be told to filter to. `adId` and `campaignName` are the two Paid uses. */
+/**
+ * What Creative can be told to filter to. `adId` and `campaignId` are the two
+ * Paid uses. Campaigns go by ID, never by name: a name can be missing or
+ * spelled differently on the Creative side, an ID cannot.
+ */
 export interface CreativeFocus {
-  field: "adId" | "campaignName";
+  field: "adId" | "campaignId";
   value: string;
 }
 
 /**
  * The link into Creative: the same client, range and comparison, optionally
- * filtered to one ad or one campaign (`?focus=adId&is=<id>`).
+ * filtered to one ad or one campaign (`?focus=adId&is=<id>`, `?focus=campaignId&is=<id>`).
  *
  * Takes the page's parsed view params rather than the raw query string, because
  * Creative defaults to the whole history where Paid defaults to 30 days. The

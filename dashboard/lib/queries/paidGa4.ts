@@ -381,6 +381,13 @@ export async function getGa4Funnel(
   };
 }
 
+/**
+ * Post-purchase and cart pages (`/orders/<token>`, `/checkouts/cn/<token>`,
+ * `/cart`, optionally under a locale prefix) are not landing pages: a paid
+ * session that "lands" there is the order-status link opened from an email.
+ */
+const NON_LANDING_PATH = String.raw`^(/[a-z]{2}(-[a-z]{2})?)?/(orders|checkouts|cart)(/|\?|$)`;
+
 /** Top 50 landing paths of paid sessions by sessions, optionally one platform. */
 export async function getGa4LandingPages(
   clientId: string,
@@ -401,6 +408,7 @@ export async function getGa4LandingPages(
      FROM ${VIEW}
      WHERE client_id = @clientId AND date BETWEEN @from AND @to AND ${PAID_SQL}
        AND (@platform = 'all' OR platform = @platform)
+       AND NOT REGEXP_CONTAINS(IFNULL(landing_path, ''), r'${NON_LANDING_PATH}')
      GROUP BY path
      HAVING sessions > 0
      ORDER BY sessions DESC

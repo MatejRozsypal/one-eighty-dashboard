@@ -16,6 +16,14 @@ import "server-only";
  * Only summable components are read. The mart's `*_per_day` columns are not
  * selected anywhere: an average of daily ratios is the wrong answer.
  *
+ * ── Hook rate ───────────────────────────────────────────────────────────────
+ * Numerator is `video_views` (Meta actions[video_view], 3-second plays), not
+ * `video_play_actions` (video starts, about 3x as many). An ad is a video ad
+ * when it started any video (`video_play_actions > 0`) anywhere in the period;
+ * all of that ad's impressions then join the denominator, so the same ad is
+ * never in the numerator on one day and out of the denominator on the next.
+ * This is the definition Creative and Reports use.
+ *
  * ── NULL is "not ingested" ──────────────────────────────────────────────────
  * Outbound clicks and the video quartile columns are NULL until the ad-insights
  * ingest requests them. They stay null here and render "n/a".
@@ -97,10 +105,11 @@ export interface MetaVideoRow {
 }
 
 /**
- * Hook and hold components per campaign, over ads that played video in the
- * period (an ad with no plays is not a video ad). Hook rate is plays over the
- * impressions of those ads, the same definition Creative uses restricted to
- * video ads.
+ * Hook and hold components per campaign, over video ads. An ad is a video ad
+ * when it started any video in the period (`video_play_actions > 0`, summed
+ * over the whole period, per ad). Hook rate is 3-second plays (`video_views`)
+ * over the impressions of those ads, the same definition Creative and Reports
+ * use. `VideoSums.plays` carries the 3-second plays.
  */
 export async function getMetaVideoRates(
   clientId: string,
@@ -111,10 +120,12 @@ export async function getMetaVideoRates(
   const rows = await query<Record<string, unknown>>(
     `WITH a AS (
        SELECT campaign_id, ad_id,
-         SUM(IF(date BETWEEN @from AND @to, video_play_actions, NULL)) AS c_plays,
+         SUM(IF(date BETWEEN @from AND @to, video_play_actions, NULL)) AS c_starts,
+         SUM(IF(date BETWEEN @from AND @to, video_views, NULL))        AS c_plays,
          SUM(IF(date BETWEEN @from AND @to, video_thruplays, NULL))    AS c_thru,
          SUM(IF(date BETWEEN @from AND @to, impressions, NULL))        AS c_imp,
-         SUM(IF(date BETWEEN @cFrom AND @cTo, video_play_actions, NULL)) AS p_plays,
+         SUM(IF(date BETWEEN @cFrom AND @cTo, video_play_actions, NULL)) AS p_starts,
+         SUM(IF(date BETWEEN @cFrom AND @cTo, video_views, NULL))        AS p_plays,
          SUM(IF(date BETWEEN @cFrom AND @cTo, video_thruplays, NULL))    AS p_thru,
          SUM(IF(date BETWEEN @cFrom AND @cTo, impressions, NULL))        AS p_imp
        FROM \`${PROJECT_ID}.mart.mart_meta_ad_perf\`
@@ -123,12 +134,12 @@ export async function getMetaVideoRates(
        GROUP BY campaign_id, ad_id
      )
      SELECT campaign_id,
-       SUM(IF(c_plays > 0, c_plays, NULL)) AS c_plays,
-       SUM(IF(c_plays > 0, c_thru, NULL))  AS c_thru,
-       SUM(IF(c_plays > 0, c_imp, NULL))   AS c_imp,
-       SUM(IF(p_plays > 0, p_plays, NULL)) AS p_plays,
-       SUM(IF(p_plays > 0, p_thru, NULL))  AS p_thru,
-       SUM(IF(p_plays > 0, p_imp, NULL))   AS p_imp
+       SUM(IF(c_starts > 0, c_plays, NULL)) AS c_plays,
+       SUM(IF(c_starts > 0, c_thru, NULL))  AS c_thru,
+       SUM(IF(c_starts > 0, c_imp, NULL))   AS c_imp,
+       SUM(IF(p_starts > 0, p_plays, NULL)) AS p_plays,
+       SUM(IF(p_starts > 0, p_thru, NULL))  AS p_thru,
+       SUM(IF(p_starts > 0, p_imp, NULL))   AS p_imp
      FROM a
      GROUP BY campaign_id`,
     { clientId, ...rangeParams(period) }
@@ -176,7 +187,8 @@ const ADSET_SUMS = `SUM(spend) AS spend, SUM(revenue) AS revenue, SUM(purchases)
 /**
  * Ad sets of a campaign. Reads the ad set mart; while that carries no rows for
  * the client (the ad set insights call is not ingested) the ads roll up by
- * `adset_id` instead, with no name.
+ * `adset_id` instead, named from the creative asset mart (`adset_name` per ad
+ * set, latest snapshot). An ad set the asset mart has no name for keeps its ID.
  */
 export async function getMetaAdsets(
   clientId: string,
@@ -202,13 +214,25 @@ export async function getMetaAdsets(
   if (direct.length > 0) return direct.map(adsetFrom);
 
   const rolled = await query<Record<string, unknown>>(
-    `SELECT adset_id, CAST(NULL AS STRING) AS adset_name, ${ADSET_SUMS}
-     FROM \`${PROJECT_ID}.mart.mart_meta_ad_perf\`
-     WHERE client_id = @clientId AND date BETWEEN @from AND @to
-       AND campaign_id = @campaignId AND adset_id IS NOT NULL
-     GROUP BY adset_id
-     HAVING spend > 0
-     ORDER BY spend DESC
+    `WITH r AS (
+       SELECT adset_id, ${ADSET_SUMS}
+       FROM \`${PROJECT_ID}.mart.mart_meta_ad_perf\`
+       WHERE client_id = @clientId AND date BETWEEN @from AND @to
+         AND campaign_id = @campaignId AND adset_id IS NOT NULL
+       GROUP BY adset_id
+       HAVING spend > 0
+     ),
+     names AS (
+       SELECT adset_id,
+              ARRAY_AGG(adset_name IGNORE NULLS ORDER BY as_of DESC LIMIT 1)[SAFE_OFFSET(0)] AS adset_name
+       FROM \`${PROJECT_ID}.mart.mart_creative_asset\`
+       WHERE client_id = @clientId AND campaign_id = @campaignId AND adset_id IS NOT NULL
+       GROUP BY adset_id
+     )
+     SELECT r.adset_id, n.adset_name, r.spend, r.revenue, r.purchases, r.impressions,
+            r.link_clicks, r.add_to_cart
+     FROM r LEFT JOIN names n USING (adset_id)
+     ORDER BY r.spend DESC
      LIMIT 50`,
     params
   );
@@ -225,8 +249,14 @@ export interface MetaAdRow {
   impressions: number | null;
   linkClicks: number | null;
   outboundClicks: number | null;
+  /** 3-second plays (`video_views`): the hook rate numerator. */
   videoPlays: number | null;
   videoThruplays: number | null;
+  /**
+   * Started any video in the range (`video_play_actions > 0`). Absent on demo
+   * rows, which fall back to `videoPlays > 0`.
+   */
+  isVideo?: boolean;
 }
 
 /** Top 20 ads by spend in a campaign, optionally within one ad set. */
@@ -253,7 +283,8 @@ export async function getMetaAds(
             SUM(spend) AS spend, SUM(revenue) AS revenue, SUM(purchases) AS purchases,
             SUM(impressions) AS impressions, SUM(link_clicks) AS link_clicks,
             SUM(outbound_clicks) AS outbound_clicks,
-            SUM(video_play_actions) AS video_plays, SUM(video_thruplays) AS video_thruplays
+            SUM(video_views) AS video_plays, SUM(video_play_actions) AS video_starts,
+            SUM(video_thruplays) AS video_thruplays
      FROM \`${PROJECT_ID}.mart.mart_meta_ad_perf\`
      WHERE client_id = @clientId AND date BETWEEN @from AND @to
        AND campaign_id = @campaignId
@@ -277,5 +308,6 @@ export async function getMetaAds(
     outboundClicks: num(r.outbound_clicks),
     videoPlays: num(r.video_plays),
     videoThruplays: num(r.video_thruplays),
+    isVideo: (num(r.video_starts) ?? 0) > 0,
   }));
 }

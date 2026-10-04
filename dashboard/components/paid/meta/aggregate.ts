@@ -56,8 +56,9 @@ export interface MetaSums {
   addPaymentInfo: Num;
 }
 
-/** Video components for ads that played video in the period. */
+/** Video components for ads that started video in the period. */
 export interface VideoSums {
+  /** 3-second plays (`video_views`, actions[video_view]): the hook rate numerator. */
   plays: Num;
   thruplays: Num;
   impressions: Num;
@@ -125,7 +126,7 @@ export function ratesOf(s: MetaSums): MetaRates {
   };
 }
 
-/** Hook rate: video plays over the impressions of the ads that played video. */
+/** Hook rate: 3-second plays over the impressions of the video ads. */
 export function hookRate(v: VideoSums): Num {
   return ratio(v.plays, v.impressions);
 }

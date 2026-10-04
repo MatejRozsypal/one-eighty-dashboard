@@ -117,7 +117,7 @@ export function MetaCampaigns({
       { key: "cpm", label: "CPM", align: "right" },
       { key: "cpc", label: "CPC (link)", align: "right" },
       { key: "freq", label: "Avg daily frequency", align: "right" },
-      { key: "hook", label: "Hook rate", align: "right", info: "Video ads only." }
+      { key: "hook", label: "Hook rate", align: "right", info: "3-second video plays / impressions. Video ads only." }
     );
   }
 
@@ -145,7 +145,7 @@ export function MetaCampaigns({
           {c.name}
         </AppLink>
         <AppLink
-          href={creativeHref(view, { field: "campaignName", value: c.name })}
+          href={creativeHref(view, { field: "campaignId", value: c.campaignId })}
           aria-label="Open in Creative"
           title="Open in Creative"
           className="flex-none text-[12px] text-content-muted hover:text-content-strong"

@@ -2,8 +2,9 @@
  * Search terms and keywords, top 200 by spend.
  *
  * Terms cover only part of Search spend (Google hides low-volume queries), so
- * the header says how much. The third option, PMax terms, is locked until that
- * data is ingested. Brand is a dot on the term, from the client's brand terms.
+ * the header says how much. PMax terms are not offered until that data is
+ * ingested (a locked option with no way to unlock it only raises questions).
+ * Brand is a dot on the term, from the client's brand terms.
  */
 
 import type { ReactNode } from "react";
@@ -41,7 +42,6 @@ export function SearchTerms({
   const sourceSegments: Segment[] = [
     { value: "terms", label: "Search terms" },
     { value: "keywords", label: "Keywords" },
-    { value: "pmax", label: "PMax terms", disabled: true, disabledReason: "Not ingested" },
   ];
   const modeSegments: Segment[] = [
     { value: "all", label: "All" },

@@ -3,8 +3,8 @@
  *
  * Phase A offers the two dimensions the campaign names can answer, Stage and
  * Market. The four that need a breakdown ingest (Advantage+ segment, Age x
- * gender, Placement, Geo) show as disabled segments with the tooltip
- * "Not ingested"; there is no card text. The dimension is `?aud=`.
+ * gender, Placement, Geo) are not offered until they are ingested. The
+ * dimension is `?aud=`.
  *
  * Each row shows a dual bar (share of spend over share of purchase value), so a
  * row that earns more than it costs stands out without reading numbers. Reach
@@ -19,8 +19,6 @@ import type { AudienceAgg, NamingDimension } from "@/components/paid/meta/aggreg
 import { Fig, LowVolumeFig } from "@/components/paid/meta/cells";
 
 const GRID = "grid grid-cols-[1.4fr_1.6fr_0.9fr_0.7fr_0.8fr_0.7fr_0.8fr] items-center gap-2";
-
-const NOT_INGESTED = "Not ingested";
 
 function DualBar({ spendShare, valueShare }: { spendShare: number | null; valueShare: number | null }) {
   const w = (v: number | null) => `${Math.max(0, Math.min(1, v ?? 0)) * 100}%`;
@@ -105,10 +103,6 @@ export function AudienceBreakdown({
           segments={[
             { value: "stage", label: "Stage" },
             { value: "market", label: "Market" },
-            { value: "segment", label: "Advantage+ segment", disabled: true, disabledReason: NOT_INGESTED },
-            { value: "demo", label: "Age x gender", disabled: true, disabledReason: NOT_INGESTED },
-            { value: "placement", label: "Placement", disabled: true, disabledReason: NOT_INGESTED },
-            { value: "geo", label: "Geo", disabled: true, disabledReason: NOT_INGESTED },
           ]}
         />
       </div>

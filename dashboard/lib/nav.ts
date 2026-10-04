@@ -159,13 +159,11 @@ export function navFor(
 }
 
 /**
- * Rail products for this role and client. Creative is hidden when the client has no Meta.
- * Reports is not client-scoped (each report picks its clients), so it is never filtered here.
+ * Rail products for this role. The rail is stable across clients: Creative stays visible and its
+ * pages show "Meta not connected" for a client without Meta. Reports is not client-scoped.
  */
-export function railProducts(role: Role, client?: HasCapabilities | null): Product[] {
-  return productsFor(role).filter(
-    (p) => p.id !== "creative" || !client || pageAvailability(client, p.href) === "available"
-  );
+export function railProducts(role: Role, _client?: HasCapabilities | null): Product[] {
+  return productsFor(role);
 }
 
 /** The client selected by `?client=`, falling back to the first, exactly as `resolveClient` does. */

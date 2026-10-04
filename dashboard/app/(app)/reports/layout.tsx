@@ -24,7 +24,8 @@ import { requireReportsAccess } from "@/lib/authz";
 import { listReports } from "@/lib/reports/store";
 import { ReportListPanel } from "@/components/reports/ReportListPanel";
 import { ReportSwitcher } from "@/components/reports/ReportSwitcher";
-import { ReportsDirectory, toDirectory } from "@/components/reports/ReportsDirectory";
+import { ReportsDirectory } from "@/components/reports/ReportsDirectory";
+import { toDirectory } from "@/lib/reports/directory";
 
 export default async function ReportsLayout({ children }: { children: React.ReactNode }) {
   await requireReportsAccess();

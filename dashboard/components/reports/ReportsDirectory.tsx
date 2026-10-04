@@ -10,31 +10,12 @@
  */
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import type { ReportListItem } from "@/lib/reports/contracts";
+import type { DirectoryEntry } from "@/lib/reports/directory";
+export type { DirectoryEntry } from "@/lib/reports/directory";
 
-export interface DirectoryEntry {
-  id: string;
-  name: string;
-  pinned: boolean;
-  pinPosition: number;
-  lastOpenedAt: string | null;
-  updatedAt: string;
-  ownerEmail: string;
-}
 
 const DirectoryContext = createContext<readonly DirectoryEntry[]>([]);
 
-export function toDirectory(items: readonly ReportListItem[]): DirectoryEntry[] {
-  return items.map((r) => ({
-    id: r.id,
-    name: r.name,
-    pinned: r.pinned,
-    pinPosition: r.pinPosition,
-    lastOpenedAt: r.lastOpenedAt,
-    updatedAt: r.updatedAt,
-    ownerEmail: r.ownerEmail,
-  }));
-}
 
 export function ReportsDirectory({ entries, children }: { entries: readonly DirectoryEntry[]; children: ReactNode }) {
   return <DirectoryContext.Provider value={entries}>{children}</DirectoryContext.Provider>;

@@ -83,7 +83,7 @@ for (const name of Object.keys(FIXTURES) as Name[]) {
   for (const h of hrefs) eq(`${name} nav ${h} available`, pageAvailability(c, h), "available");
   eq(`${name} nav has /email`, hrefs.includes("/email"), e.email);
   eq(`${name} nav has /inventory`, hrefs.includes("/inventory"), e.inventory);
-  eq(`${name} rail has creative`, railProducts("admin", c).some((p) => p.id === "creative"), e.creative);
+  eq(`${name} rail has creative`, railProducts("admin", c).some((p) => p.id === "creative"), true);
   eq(`${name} rail has analytics`, railProducts("admin", c).some((p) => p.id === "analytics"), true);
 }
 
@@ -94,8 +94,8 @@ eq("rail admin", railIds("admin", FIXTURES.manami), ["chat", "analytics", "creat
 eq("rail agency", railIds("agency", FIXTURES.manami), ["chat", "analytics", "creative", "reports"]);
 eq("rail client", railIds("client", FIXTURES.manami), ["chat", "analytics"]);
 eq("rail admin, no client", railIds("admin"), ["chat", "analytics", "creative", "reports"]);
-eq("rail admin rawbark (no Meta)", railIds("admin", FIXTURES.rawbark), ["chat", "analytics", "reports"]);
-eq("rail agency rawbark (no Meta)", railIds("agency", FIXTURES.rawbark), ["chat", "analytics", "reports"]);
+eq("rail admin rawbark (no Meta)", railIds("admin", FIXTURES.rawbark), ["chat", "analytics", "creative", "reports"]);
+eq("rail agency rawbark (no Meta)", railIds("agency", FIXTURES.rawbark), ["chat", "analytics", "creative", "reports"]);
 eq("productFor /reports", productFor("/reports"), "reports");
 eq("productFor /reports/abc", productFor("/reports/abc"), "reports");
 eq("productFor /reportsx", productFor("/reportsx"), "analytics");

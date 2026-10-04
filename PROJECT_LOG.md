@@ -98,6 +98,7 @@ Every view was read back from INFORMATION_SCHEMA and its MD5 equals the migratio
   client-currency spend equals `mart_daily_kpis` meta_spend for every client-month; Google
   marts reconcile to `mart_daily_kpis.google_*` in 27 of 27 client-months, device and ad
   group views match, grain duplicates 0.
+- **229 deployed later the same day** (owner approved 229 only, supersedes "Not deployed: 229" above): 2 new `stg_customer_*` views plus 7 customer marts, MD5 of all 9 equals the file; zero diff for Manami, Dobias, Venev (only the known Dobias `ANY_VALUE(title)` product flips and `.005` rounding flips); Ethia 1,805 orders and RawBark 50,008, `mart_customer_daily` equals `mart_daily_kpis` on every day, RawBark gross profit NULL. Rollback: `rollback/rollback_229.md`.
 - Rollback: view definitions and table notes under the session scratchpad `rollback/`.
   Report: `reports/deploy_bq_20261005.md`. Baselines: `mart_qa.base_*_20261005`.
 

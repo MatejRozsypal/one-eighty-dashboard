@@ -7,11 +7,12 @@
  * confidence intervals against three shaded decision zones. Bending a library
  * into either costs more code than drawing it.
  *
- * Server components — they take numbers and emit markup, and nothing here
+ * Server components, they take numbers and emit markup, and nothing here
  * responds to a click.
  */
 
-import type { Confidence } from "@/lib/creative/stats";
+import { SEPARATION_LABELS, type Confidence } from "@/lib/creative/stats";
+import { formatNumber, NO_VALUE } from "@/lib/format";
 
 export interface BreakdownRow {
   key: string;
@@ -31,14 +32,14 @@ export interface BreakdownRow {
   readable: boolean;
   /**
    * What the Creatives grid filters on to show this row's ads. Null for the
-   * untagged row, which is a residue rather than a value — there is no filter
+   * untagged row, which is a residue rather than a value, there is no filter
    * that means "everything nobody filed".
    */
   focusValue?: string | null;
 }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-const fmtInt = (v: number) => Math.round(v).toLocaleString("en-US");
+const fmtInt = (v: number) => formatNumber(v);
 
 /**
  * Spend against revenue, two bars per row on ONE shared scale.
@@ -167,7 +168,7 @@ export function SpendRevenueBars({
             <text x={cR} y={y + 11} textAnchor="end" fontFamily="var(--font-mono)"
                   fontSize="13" fontWeight="500"
                   fill={!r.readable ? "var(--text-muted)" : col === "var(--info)" ? "var(--text-strong)" : col}>
-              {r.roas === null ? "—" : r.roas.toFixed(2)}
+              {r.roas === null ? NO_VALUE : r.roas.toFixed(2)}
             </text>
           </g>
         );
@@ -180,8 +181,8 @@ export function SpendRevenueBars({
  * What we can and cannot tell apart.
  *
  * The most important chart in the product. Each row is its 95% interval drawn
- * across three shaded zones — losing money, profitable but under target, at or
- * above target — with a plain-language readout on the right.
+ * across three shaded zones, losing money, profitable but under target, at or
+ * above target, with a plain-language readout on the right.
  *
  * The readout is the payload. "2.15" invites a decision; "2.15, and the true
  * value is somewhere between 1.42 and 2.88, so we cannot separate it from the
@@ -196,8 +197,8 @@ export function IntervalChart({
 }: {
   rows: BreakdownRow[];
   /**
-   * Null when the client has set no lines. The intervals still draw — how far
-   * apart two rows are is a measurement — but the three zones, the two vertical
+   * Null when the client has set no lines. The intervals still draw, how far
+   * apart two rows are is a measurement, but the three zones, the two vertical
    * lines and the verdict wording on the right all come off, because each of
    * them is a claim about a threshold that does not exist.
    *
@@ -249,7 +250,7 @@ export function IntervalChart({
           Without these the axis has two labelled points at most, both of them
           policy rather than measurement, and a reader cannot tell where 2.0
           sits on the bar in front of them. Whole numbers, minus any that would
-          collide with the kill or target label — a tick printed on top of
+          collide with the kill or target label, a tick printed on top of
           "kill 1.80" is worse than no tick. */}
       {ticks.map((v) => (
         <text key={`t${v}`} x={X(v)} y={plotB + 17} textAnchor="middle"
@@ -288,23 +289,23 @@ export function IntervalChart({
           // The width of the interval is still worth stating: it is the one
           // thing here that does not depend on a threshold.
           say = r.readable
-            ? `${lo.toFixed(2)} – ${hi.toFixed(2)}`
-            : "too little data";
+            ? `${lo.toFixed(2)} to ${hi.toFixed(2)}`
+            : SEPARATION_LABELS["too-little-data"];
           colour = "var(--text-muted)";
         } else if (!r.readable) {
-          say = "too little data";
+          say = SEPARATION_LABELS["too-little-data"];
           colour = "var(--text-muted)";
         } else if (lo >= targetRoas) {
-          say = "above target";
+          say = SEPARATION_LABELS["above-target"];
           colour = "var(--growth-700)";
         } else if ((r.ciHigh ?? 0) < killRoas) {
-          say = "below the kill line";
+          say = SEPARATION_LABELS["below-kill"];
           colour = "var(--negative)";
         } else if (lo >= killRoas) {
-          say = "profitable, under target";
+          say = SEPARATION_LABELS["profitable-under-target"];
           colour = "var(--text-body)";
         } else {
-          say = "cannot tell yet";
+          say = SEPARATION_LABELS["cannot-tell"];
           colour = "var(--text-muted)";
         }
 

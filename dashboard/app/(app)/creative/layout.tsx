@@ -5,7 +5,7 @@
  *
  * The first is access. The rail already hides this section from client-role
  * users, but hiding a link is presentation and presentation is not access
- * control — the URL is guessable and has to refuse on its own. Enforcing it in
+ * control, the URL is guessable and has to refuse on its own. Enforcing it in
  * the layout rather than in each of the five pages means a sixth page added
  * later cannot forget.
  *

@@ -10,7 +10,7 @@
  * A manual `Production cost` on the ClickUp task always wins. Below that, the
  * creator's pay model. Below that, the per-method rate from settings. Every
  * result carries which of the three it was, so the Production ROI screen can
- * say what share of its own input was estimated rather than measured — a
+ * say what share of its own input was estimated rather than measured, a
  * contribution-margin figure built on guessed costs is worth exactly as much as
  * the guesses, and the screen should say so rather than imply otherwise.
  */
@@ -49,7 +49,7 @@ export function adCost(input: {
   format: string | null;
   creator: CreatorTerms | null;
   rates: ProductionRate[];
-  /** Revenue attributed to this ad — only `rev_share` needs it. */
+  /** Revenue attributed to this ad, only `rev_share` needs it. */
   attributedRevenue: number;
 }): AdCost {
   if (input.manualCost !== null && input.manualCost > 0) {

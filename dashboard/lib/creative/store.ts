@@ -16,7 +16,7 @@ import "server-only";
  * ── Why the DDL is here and not in lib/users/db.ts ─────────────────────────
  * That module's schema is applied before every single Postgres query, including
  * the one that authenticates a sign-in. A mistake in DDL living there takes the
- * whole application down — nobody can log in — which is a wildly
+ * whole application down, nobody can log in, which is a wildly
  * disproportionate blast radius for four tables one section uses. Created here
  * behind its own guard, the worst case is that the Creative Engine is
  * unavailable while the dashboard carries on working. Same reasoning as
@@ -120,10 +120,10 @@ CREATE TABLE IF NOT EXISTS decisions (
   decided_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   -- The SOP says a kill without a documented learning is invalid. Software can
-  -- enforce that, so it does — at the DATABASE, not only in the form. A UI-only
+  -- enforce that, so it does, at the DATABASE, not only in the form. A UI-only
   -- check is a suggestion: it is bypassed by any future code path, by a script,
   -- and by the next person to add a second kill button. This constraint cannot
-  -- be bypassed by anything short of a migration, which is the correct amount
+  -- be bypassed by anything short of a schema change, which is the correct amount
   -- of friction for deleting the reason a concept died.
   CONSTRAINT kill_needs_a_learning_note CHECK (
     final_verdict <> 'kill'
@@ -285,7 +285,7 @@ export async function getCreativeSettings(
  * Turn stored settings into the thresholds the engine runs on.
  *
  * Returns null when a money line is missing. Every caller must handle that by
- * showing the delivery figures and refusing to render a verdict — which is the
+ * showing the delivery figures and refusing to render a verdict, which is the
  * correct behaviour, because "SCALE" computed against an invented target is
  * indistinguishable on screen from one computed against the client's real one.
  */
@@ -294,8 +294,8 @@ export async function getCreativeSettings(
  *
  * The kill line sits at 0 and the target at infinity, so nothing is ever
  * coloured as winning or losing and no verdict can fire. Everything that does
- * not depend on the money lines — shrinkage, the confidence classes, the
- * attention-metric floors — keeps working, which is what lets the creative
+ * not depend on the money lines, shrinkage, the confidence classes, the
+ * attention-metric floors, keeps working, which is what lets the creative
  * wall render before anybody has been to Settings.
  *
  * The alternative, and what shipped first, was to render no grid at all until
@@ -549,7 +549,7 @@ export interface NewDecision {
  *
  * The kill-without-a-learning-note rejection comes from the database
  * constraint, not from a check here. This function deliberately does not
- * pre-validate it — a caller that bypassed this function would then bypass the
+ * pre-validate it, a caller that bypassed this function would then bypass the
  * rule, and the whole point is that it cannot be bypassed.
  */
 export async function recordDecision(input: NewDecision): Promise<void> {
@@ -621,7 +621,7 @@ export async function latestDecisionByEntity(
  *
  * ── Why this exists when the warehouse is the source of truth ──────────────
  * Confirming a match writes the ad_id into ClickUp, and the sync then rebuilds
- * `ref.creative_tags` from it — but that sync runs hourly. Without this table
+ * `ref.creative_tags` from it, but that sync runs hourly. Without this table
  * the ad you just mapped stays in the Unmapped queue for up to an hour, which
  * reads as "the button did not work" and invites somebody to press it again.
  *

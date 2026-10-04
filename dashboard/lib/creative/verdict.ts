@@ -2,24 +2,24 @@
  * The decision engine.
  *
  * Gate order comes from `agency/_processes/meta-creative-engine/07-analyzing.md`
- * and is not re-derived here — it is executed. What this file adds in front of
+ * and is not re-derived here, it is executed. What this file adds in front of
  * it is the honesty ladder: five states the tool can be in *before* it is
  * entitled to say scale or kill.
  *
  * ── Why the ladder matters more than the gates ─────────────────────────────
  * The gates were written for accounts with enough purchases to read. At
- * Manami's volume most rows never reach that, so a tool that always emits one
+ * The pilot client's volume most rows never reach that, so a tool that always emits one
  * of SCALE / HOLD / ITERATE / KILL is guessing four times out of five while
  * looking equally confident each time. The ladder makes "we cannot tell yet" a
- * first-class answer, and `NEEDS MORE DATA` carries a price — which turns it
- * from an excuse into a decision Lukáš can take.
+ * first-class answer, and `NEEDS MORE DATA` carries a price, which turns it
+ * from an excuse into a decision somebody can take.
  *
  * ── The rule that separates the two halves of the product ──────────────────
  * AD LEVEL NEVER PRODUCES A MONEY VERDICT. Impression-based metrics have 50 to
  * 100 times more samples than purchase-based ones for the same spend, so at
- * 3 000 Kč of Manami spend hook rate is readable to ±1.4% while ROAS is
+ * 3 000 Kč of the pilot client spend hook rate is readable to ±1.4% while ROAS is
  * readable to ±96%. The fast loop therefore produces iteration instructions,
- * and the slow loop — ad set and above — produces money.
+ * and the slow loop, ad set and above, produces money.
  *
  * There is a second reason, and it is the one that costs money when ignored:
  * last-click ROAS hides Meta's multi-view sequencing, so a low-ROAS ad inside a
@@ -37,9 +37,10 @@ import {
 import type { Components } from "@/lib/creative/model";
 import { derive } from "@/lib/creative/model";
 import { hasVideoMetrics } from "@/lib/creative/vocabulary";
+import { formatNumber, NO_VALUE } from "@/lib/format";
 
 // ---------------------------------------------------------------------------
-// Money verdicts — ad set and concept level only
+// Money verdicts, ad set and concept level only
 // ---------------------------------------------------------------------------
 
 export type VerdictCode =
@@ -57,7 +58,7 @@ export type VerdictCode =
 export interface Verdict {
   code: VerdictCode;
   label: string;
-  /** One line of plain text. No prose beyond this — it is software, not a memo. */
+  /** One line of plain text. No prose beyond this, it is software, not a memo. */
   say: string;
   /** Present on `needs-more-data`: what finding out costs. */
   costToDecide: number | null;
@@ -69,41 +70,41 @@ export interface Verdict {
 
 export interface VerdictInput {
   /**
-   * Which grain this is. Only `adset` is subject to Meta's learning phase —
+   * Which grain this is. Only `adset` is subject to Meta's learning phase,
    * see the gate below.
    */
   level?: "adset" | "concept";
   components: Components;
   /** The shrunk ROAS. Verdicts are taken on the defensible number, not the raw one. */
   roas: number | null;
-  /** Days since launch. Null when unknown — treated as outside the window. */
+  /** Days since launch. Null when unknown, treated as outside the window. */
   ageDays: number | null;
   /** Set when the no-touch window has a known end date, for the message. */
   noTouchUntil?: string | null;
 }
 
-const money = (v: number) => Math.round(v).toLocaleString("en-US");
+const money = (v: number) => formatNumber(v);
 
 /**
  * The verdict for a client with no kill line, target ROAS or CPA on file.
  *
  * ── Why this exists rather than an early return in each screen ─────────────
  * Concepts, Breakdown and Production used to render nothing at all in that
- * state — one warning strip on an otherwise blank page. But delivery is not a
+ * state, one warning strip on an otherwise blank page. But delivery is not a
  * judgement: spend, purchases, angle coverage and the concept roster are all
  * measured, not decided, and they are exactly what somebody looks at while
  * working out what the kill line should be. Withholding them made the screen
  * useless precisely when it was most needed.
  *
  * So the screens render on the display thresholds and every verdict resolves
- * here instead: stated plainly as absent, never as `hold` — which is what a
+ * here instead: stated plainly as absent, never as `hold`, which is what a
  * kill line of zero and a target of infinity would otherwise silently produce.
  */
 export function unjudgedVerdict(): Verdict {
   return {
     code: "unjudged",
     label: "Not judged",
-    say: "No kill line, target ROAS or CPA on file for this client. Set the three under Settings → Creative Engine and this row gets a verdict.",
+    say: "Set targets to see verdicts.",
     costToDecide: null,
     purchasesShort: null,
     undecided: true,
@@ -113,7 +114,7 @@ export function unjudgedVerdict(): Verdict {
 /**
  * How many times its own spend a row may need before "spend more to find out"
  * stops being advice. Ten is a judgement: it keeps "this cost 6x what it has
- * already spent to settle" — a real decision somebody might take — and drops
+ * already spent to settle", a real decision somebody might take, and drops
  * the ones that would cost hundreds of times the entity's whole history.
  */
 const UNRESOLVABLE_MULTIPLE = 10;
@@ -145,7 +146,7 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     return v(
       "data-missing",
       "Check tracking",
-      `${money(c.spend)} spent, no purchases recorded. Check the pixel and the landing page before reading this.`,
+      "Spent, no purchases. Check tracking.",
       true
     );
   }
@@ -156,12 +157,12 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     return v(
       "too-early",
       "Too early",
-      `Inside the ${t.noTouchDays}-day no-touch window${until}. Record the data, decide nothing.`,
+      `Inside the ${t.noTouchDays}-day no-touch window${until}. Wait.`,
       true
     );
   }
 
-  // ── 2. NEEDS MORE DATA — below the spend gate ────────────────────────────
+  // ── 2. NEEDS MORE DATA, below the spend gate ────────────────────────────
   // Checked BEFORE the learning gate on purpose, even though the SOP lists
   // learning first. A row with one purchase and 300 Kč of spend is not "in
   // Meta's learning phase" in any useful sense; it simply has not been given
@@ -173,27 +174,27 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     return {
       code: "needs-more-data",
       label: "Needs more data",
-      say: `Below the ${t.holdGateX}x CPA gate. Needs ${money(short)} more spend before it says anything.`,
+      say: `Needs ${money(short)} more spend.`,
       costToDecide: short,
       purchasesShort: null,
       undecided: true,
     };
   }
 
-  // Meta's learning phase — AD SET LEVEL ONLY.
+  // Meta's learning phase, AD SET LEVEL ONLY.
   //
   // The 50-conversion threshold is a property of an ad set's delivery
   // optimisation, not of a creative idea. A concept running across a mature ad
   // set and a fresh one is not "in learning": part of it is, and the mature
   // part is perfectly readable. Applying this gate at concept level produced
-  // the contradiction it was meant to prevent — a row labelled Read confidence
+  // the contradiction it was meant to prevent, a row labelled Read confidence
   // on 40 purchases, sitting next to a verdict saying nothing about it was
   // stable yet.
   if (input.level !== "concept" && c.purchases < 50) {
     return v(
       "too-early",
       "Learning",
-      `${c.purchases} purchase events. Meta leaves an ad set's learning phase at 50; delivery is still being explored.`,
+      `Still learning (${c.purchases} of 50).`,
       true
     );
   }
@@ -204,19 +205,19 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
 
   const [lo, hi] = interval(roas, c.purchases);
 
-  // ── 3. NOT SEPARABLE — past the gate, interval still spans the kill line ──
+  // ── 3. NOT SEPARABLE, past the gate, interval still spans the kill line ──
   //
   // This is the state the whole product exists to be able to report, and it
   // deliberately blocks only the DANGEROUS direction.
   //
   // A row above the kill line whose interval still reaches down through it
-  // cannot be told apart from break-even, so it gets no verdict — but it does
+  // cannot be told apart from break-even, so it gets no verdict, but it does
   // get a price, because "this costs 4 200 Kč to find out" is a decision
   // somebody can take and "insufficient data" is not.
   //
   // The asymmetry below is the point: a wrong SCALE costs a 20% budget
   // increase and is reversible next Monday. A wrong KILL throws away a winner
-  // and is not reversible at all — the creative loses its social proof, its
+  // and is not reversible at all, the creative loses its social proof, its
   // post engagement and its delivery history, and the learnings file has three
   // measured cases of a re-uploaded winner returning a third to a half of what
   // it made in place. Asymmetric costs justify asymmetric evidence bars, so a
@@ -232,7 +233,7 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
       // ── When the price is not a price ──────────────────────────────────
       // The closer an estimate sits to the line, the more data separating them
       // takes, and the cost runs to infinity as the two converge. A row at 1.83
-      // against a 1.80 kill line needs about twenty thousand more purchases —
+      // against a 1.80 kill line needs about twenty thousand more purchases,
       // arithmetically correct, and useless as an instruction. Printing
       // "$524,498 settles it" next to a concept that has spent $884 turns the
       // most useful number on the screen into an obviously silly one, and a
@@ -247,12 +248,8 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
         code: "not-separable",
         label: "Not separable",
         say: unresolvable
-          ? `${fmt(roas)} (${fmt(lo)}–${fmt(hi)}) sits on the ${fmt(t.killRoas)} kill line. ` +
-            `No realistic amount of further spend separates the two. Treat it as break-even ` +
-            `and decide on the ad set it runs in, not on this number.`
-          : `${fmt(roas)}, but the true value is between ${fmt(lo)} and ${fmt(hi)}. ` +
-            `Cannot separate it from the ${fmt(t.killRoas)} kill line. ` +
-            `${short} more purchases, about ${money(cost!)}, settles it.`,
+          ? `${fmt(roas)} sits on the ${fmt(t.killRoas)} kill line. Treat as break-even. Decide at ad set level.`
+          : `${fmt(roas)}, true value ${fmt(lo)} to ${fmt(hi)}. ${short} more purchases, about ${money(cost!)}, settles it.`,
         costToDecide: unresolvable ? null : cost,
         purchasesShort: unresolvable ? null : short,
         undecided: true,
@@ -272,8 +269,8 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
       "kill",
       "Kill",
       clear
-        ? `Interval ${fmt(lo)}–${fmt(hi)} sits entirely below the ${fmt(t.killRoas)} kill line. Pause it, and write the learning note.`
-        : `${fmt(roas)} past the ${t.killGateX}x CPA gate, though the interval still reaches ${fmt(hi)}. Pause it, and say so in the learning note.`,
+        ? `Below the ${fmt(t.killRoas)} kill line. Pause it.`
+        : `Past the ${t.killGateX}x CPA gate. Pause it.`,
       false
     );
   }
@@ -282,7 +279,7 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     return v(
       "aggressive-scale",
       "Scale hard",
-      `Budget +30–40% and graduate the winner by post ID. Never move the original.`,
+      "Raise budget 30-40%. Graduate by post ID.",
       false
     );
   }
@@ -291,7 +288,7 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     return v(
       "scale",
       "Scale",
-      `Budget +20–25%. Do not add creatives to this ad set — that resets learning.`,
+      "Raise budget 20-25%.",
       false
     );
   }
@@ -300,7 +297,7 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     return v(
       "hold",
       "Hold",
-      `Inside the hold zone ${fmt(t.targetRoas * 0.9)}–${fmt(t.targetRoas * t.scaleMultiplier)}. Let Meta optimise.`,
+      `Hold zone ${fmt(t.targetRoas * 0.9)} to ${fmt(t.targetRoas * t.scaleMultiplier)}. Let it run.`,
       false
     );
   }
@@ -309,7 +306,7 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     return v(
       "iterate",
       "Iterate",
-      `Above the floor, under target. Brief an iteration rather than adding budget.`,
+      "Brief an iteration.",
       false
     );
   }
@@ -319,7 +316,7 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
   return v(
     "hold",
     "Hold",
-    `${fmt(roas)} (${fmt(lo)}–${fmt(hi)}). Above the floor but under the ${t.iterateGateX}x CPA gate an iteration would be briefed on noise.`,
+    "Too noisy to iterate yet.",
     false
   );
 }
@@ -338,7 +335,7 @@ export const ACTIONABLE: VerdictCode[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Ad-level diagnosis — the fast loop
+// Ad-level diagnosis, the fast loop
 // ---------------------------------------------------------------------------
 
 export type DiagnosisCode =
@@ -358,7 +355,7 @@ export interface Diagnosis {
 }
 
 /**
- * Diagnose one ad. Never a money verdict — an iteration instruction.
+ * Diagnose one ad. Never a money verdict, an iteration instruction.
  *
  * The four outcomes map straight onto iteration types 1 to 4 in
  * `08-feedback-loop.md`, which is what makes the tool able to draft the brief
@@ -378,7 +375,7 @@ export function diagnose(
     return {
       code: "insufficient-signal",
       label: "Not enough delivery",
-      say: `${c.impressions.toLocaleString("en-US")} impressions. Below about ${MIN_IMPRESSIONS.toLocaleString("en-US")} even the attention metrics are noise.`,
+      say: "Too few impressions.",
       iterationType: null,
     };
   }
@@ -393,14 +390,14 @@ export function diagnose(
       return {
         code: "body-problem",
         label: "Body problem",
-        say: "Delivering and clicked, but not converting. The argument or the offer is the problem, not the hook.",
+        say: "Clicked but not converting. Fix the argument or offer.",
         iterationType: 4,
       };
     }
     return {
       code: "static-no-signal",
       label: "Judge on CTR",
-      say: `Meta reports no video metrics for a static. CTR ${pct(d.ctr)} — branch on the angle or translate the format.`,
+      say: `No video metrics. Judge on CTR ${pct(d.ctr)}.`,
       iterationType: 2,
     };
   }
@@ -409,7 +406,7 @@ export function diagnose(
     return {
       code: "hook-problem",
       label: "Hook problem",
-      say: `Hook rate ${pct(d.hookRate)}, under the ${pct(t.hookRateFloor)} floor. Brief 6 new hooks on the same body.`,
+      say: `Hook rate ${pct(d.hookRate)}, under the ${pct(t.hookRateFloor)} floor. Brief new hooks.`,
       iterationType: 1,
     };
   }
@@ -418,7 +415,7 @@ export function diagnose(
     return {
       code: "bridge-problem",
       label: "Bridge problem",
-      say: `Hook lands at ${pct(d.hookRate)} but hold falls to ${pct(d.holdRate)}. The first ten seconds after the hook are losing them.`,
+      say: `Hook ${pct(d.hookRate)}, hold ${pct(d.holdRate)}. Hold drops after the hook.`,
       iterationType: 2,
     };
   }
@@ -427,7 +424,7 @@ export function diagnose(
     return {
       code: "body-problem",
       label: "Body problem",
-      say: "Attention is fine and nobody buys. Keep the hook, change the argument.",
+      say: "Keep the hook, change the argument.",
       iterationType: 4,
     };
   }
@@ -435,13 +432,13 @@ export function diagnose(
   return {
     code: "healthy",
     label: "Earning attention",
-    say: `Hook ${pct(d.hookRate)}, hold ${pct(d.holdRate)}, both above floor. Nothing to fix at ad level.`,
+    say: "Attention fine. Nothing to fix.",
     iterationType: null,
   };
 }
 
 function pct(v: number | null): string {
-  // CTR, hook rate and hold rate keep a decimal — at these magnitudes it
+  // CTR, hook rate and hold rate keep a decimal, at these magnitudes it
   // carries real signal. Every other percentage in the product is whole.
-  return v === null ? "—" : `${(v * 100).toFixed(1)}%`;
+  return v === null ? NO_VALUE : `${(v * 100).toFixed(1)}%`;
 }

@@ -1,14 +1,16 @@
 import "server-only";
 
+import { NO_VALUE } from "@/lib/format";
+
 /**
- * ClickUp write-back — the step that makes the join fill itself.
+ * ClickUp write-back, the step that makes the join fill itself.
  *
  * ── Why the dashboard writes and the workflow does not ─────────────────────
- * Every other integration in this repo is one-directional: n8n reads, BigQuery
+ * Every other integration in this repo is one-directional: workflows read, BigQuery
  * stores, the dashboard renders. This is the exception, and it is a deliberate
  * one. The `Creative ID` field is the authoritative join between a Meta ad and
  * the concept that produced it, and today it holds the literal string
- * "Creative ID" on all 65 Manami tasks — it has never been filled once. Asking
+ * "Creative ID" on all 65 the pilot client tasks, it has never been filled once. Asking
  * a human to copy eighteen-digit ad ids out of Ads Manager is asking for a
  * field that stays empty forever, and the whole product rests on it.
  *
@@ -18,7 +20,7 @@ import "server-only";
  *
  * ── Rules, in the order they matter ────────────────────────────────────────
  * 1. APPEND, never overwrite. Post-ID graduation gives one creative a second
- *    ad_id — the original in its test ad set, the duplicate in Scale — and both
+ *    ad_id, the original in its test ad set, the duplicate in Scale, and both
  *    belong to the same task. Overwriting silently detaches whichever one was
  *    mapped first, and the spend it carries then reads as untagged.
  * 2. ClickUp first, local record second. If the write fails, nothing changes
@@ -35,10 +37,10 @@ const API = "https://api.clickup.com/api/v2";
 
 export class ClickUpNotConfigured extends Error {
   constructor() {
-    super(
-      "CLICKUP_API_TOKEN is not set, so the dashboard cannot write the ad id " +
-        "back to ClickUp. Add it to the Vercel project's environment."
-    );
+    // The message reaches the UI, so it is one short line. The setup detail
+    // (which variable, where it lives) is logged server-side by whoever catches
+    // this, never shown to a user.
+    super("ClickUp not connected.");
     this.name = "ClickUpNotConfigured";
   }
 }
@@ -54,6 +56,24 @@ export class ClickUpError extends Error {
   }
 }
 
+/**
+ * One short, user-facing line for a failed ClickUp call.
+ *
+ * The status code and response body stay in the server log (`console.error` at
+ * the call site). What the person sees says what to do next, not how the
+ * integration is wired.
+ */
+export function clickUpUserMessage(error: unknown): string {
+  if (error instanceof ClickUpNotConfigured) return error.message;
+  if (error instanceof ClickUpError) {
+    if (error.status === 401) return "ClickUp token rejected.";
+    if (error.status === 403) return "Token cannot access this task.";
+    if (error.status === 404) return "Task not found in ClickUp.";
+    return "ClickUp refused the request.";
+  }
+  return "Could not reach ClickUp.";
+}
+
 export function clickUpConfigured(): boolean {
   return Boolean(process.env.CLICKUP_API_TOKEN);
 }
@@ -62,7 +82,7 @@ function token(): string {
   const t = process.env.CLICKUP_API_TOKEN;
   if (!t) throw new ClickUpNotConfigured();
   // Trimmed, because the usual way this value gets set is by pasting it out of
-  // Secret Manager or a file, and a trailing newline or a stray pair of quotes
+  // a secrets store or a file, and a trailing newline or a stray pair of quotes
   // turns every call into a 401 that reads like a permissions problem.
   return t.trim().replace(/^["']|["']$/g, "");
 }
@@ -114,8 +134,8 @@ export async function getTask(taskId: string): Promise<TaskResponse> {
 /**
  * The ad ids already on a task, cleaned.
  *
- * Two things are stripped. The placeholder — a value equal to the field's own
- * name — is a label somebody typed over, not data. And anything that is not a
+ * Two things are stripped. The placeholder, a value equal to the field's own
+ * name, is a label somebody typed over, not data. And anything that is not a
  * long run of digits is a note, not a Meta ad id; letting one through would
  * create a phantom ad that joins to nothing and shows up in every breakdown as
  * an untagged row nobody can trace.
@@ -139,7 +159,7 @@ export interface WriteBackResult {
 /**
  * Append one Meta ad id to a task's `Creative ID` field.
  *
- * Reads first, appends, writes the whole list back — ClickUp's field endpoint
+ * Reads first, appends, writes the whole list back, ClickUp's field endpoint
  * replaces the value rather than merging, so the merge has to happen here.
  * There is a small race if two people confirm different ads on the same task in
  * the same second; the loser's id is lost and reappears in the queue on the
@@ -152,7 +172,7 @@ export async function appendCreativeId(
   fieldId: string = CREATIVE_ID_FIELD
 ): Promise<WriteBackResult> {
   if (!/^\d{6,}$/.test(adId)) {
-    throw new Error(`Refusing to write "${adId}" — that is not a Meta ad id.`);
+    throw new Error(`Refusing to write "${adId}": that is not a Meta ad id.`);
   }
 
   const task = await getTask(taskId);
@@ -173,7 +193,7 @@ export async function appendCreativeId(
 }
 
 // ---------------------------------------------------------------------------
-// Comments — the note thread on a creative
+// Comments, the note thread on a creative
 // ---------------------------------------------------------------------------
 
 /**
@@ -186,7 +206,7 @@ export async function appendCreativeId(
  *
  * So this reads and writes ClickUp's own thread. Verified against the live
  * workspace on 9 Sep 2026: `GET /task/{id}/comment` returns `comment_text`,
- * `user`, `date` and `reply_count`, and 4 of 25 Manami pipeline tasks already
+ * `user`, `date` and `reply_count`, and 4 of 25 the pilot client pipeline tasks already
  * carry comments.
  */
 export interface CreativeNote {
@@ -215,7 +235,7 @@ export async function listNotes(taskId: string): Promise<CreativeNote[]> {
   return (data.comments ?? []).map((c) => ({
     id: String(c.id),
     text: c.comment_text ?? "",
-    // Falls back to the email's local part, then to a neutral label — a note
+    // Falls back to the email's local part, then to a neutral label, a note
     // with no name attached is still worth showing, and "undefined" is not.
     author:
       c.user?.username ??
@@ -253,13 +273,13 @@ export async function postNote(
 }
 
 // ---------------------------------------------------------------------------
-// Activity — what happened to this creative, and when
+// Activity, what happened to this creative, and when
 // ---------------------------------------------------------------------------
 
 /**
  * ── What ClickUp will and will not tell us ────────────────────────────────
- * There is no audit-log endpoint on the v2 API, so a field-by-field history —
- * "Angle changed from X to Y" — is not available at any price. What is:
+ * There is no audit-log endpoint on the v2 API, so a field-by-field history,
+ * "Angle changed from X to Y", is not available at any price. What is:
  *
  *   · the task's creation, with the person who created it
  *   · every status it has been in and how long it sat there
@@ -309,7 +329,7 @@ export async function getActivity(taskId: string): Promise<TaskActivity> {
   const [task, timing] = await Promise.all([
     call<TaskDetail>(`/task/${id}`),
     // A task that has only ever held one status returns no history, and that
-    // is not a failure — it resolves to an empty list rather than taking the
+    // is not a failure, it resolves to an empty list rather than taking the
     // whole tab down with it.
     call<TimeInStatus>(`/task/${id}/time_in_status`).catch(() => ({} as TimeInStatus)),
   ]);
@@ -318,7 +338,7 @@ export async function getActivity(taskId: string): Promise<TaskActivity> {
     .slice()
     .sort((a, b) => Number(a.orderindex ?? 0) - Number(b.orderindex ?? 0))
     .map((h) => ({
-      status: h.status ?? "—",
+      status: h.status ?? NO_VALUE,
       minutes: Number(h.total_time?.by_minute ?? 0),
       current: false,
     }));
@@ -366,14 +386,14 @@ export interface ClickUpProbe {
  *
  * ── Why this is on the health page ────────────────────────────────────────
  * The Notes tab already reports each failure precisely, but only to somebody
- * who has opened an ad that happens to be mapped to a task — and most ads are
+ * who has opened an ad that happens to be mapped to a task, and most ads are
  * not mapped, so the far more common message there is "this ad has no task",
  * which looks identical to a broken integration from the outside. That gap is
  * how a rejected token went unnoticed: the panel said something reasonable on
  * every ad anybody clicked.
  *
- * `GET /user` is the cheapest call that distinguishes all four states — not
- * set, set but rejected, set and valid, and ClickUp itself being down — and it
+ * `GET /user` is the cheapest call that distinguishes all four states, not
+ * set, set but rejected, set and valid, and ClickUp itself being down, and it
  * touches no task, so it works on a deployment where nothing is mapped yet.
  *
  * The token's own identity is reported because a workspace credential that
@@ -385,9 +405,7 @@ export async function probeClickUp(): Promise<ClickUpProbe> {
       ok: false,
       configured: false,
       user: null,
-      problem:
-        "CLICKUP_API_TOKEN is not set on this deployment. Creative notes and " +
-        "activity are unavailable until it is.",
+      problem: "ClickUp not connected.",
     };
   }
 
@@ -400,25 +418,15 @@ export async function probeClickUp(): Promise<ClickUpProbe> {
       problem: null,
     };
   } catch (error) {
-    if (error instanceof ClickUpError) {
-      return {
-        ok: false,
-        configured: true,
-        user: null,
-        problem:
-          error.status === 401
-            ? "ClickUp rejected the token (401). The variable is set but the " +
-              "value is not accepted — re-set it from Secret Manager " +
-              "(clickup-api-token), then redeploy: an environment change does " +
-              "not reach a build that already exists."
-            : `ClickUp refused the request (${error.status}).`,
-      };
-    }
+    // The remedy for a 401 is operational (re-set the token, then redeploy:
+    // an environment change does not reach a build that already exists). That
+    // detail belongs in the log, not on a screen.
+    console.error("[creative] ClickUp probe failed", error);
     return {
       ok: false,
       configured: true,
       user: null,
-      problem: `Could not reach ClickUp: ${(error as Error).message}`,
+      problem: clickUpUserMessage(error),
     };
   }
 }

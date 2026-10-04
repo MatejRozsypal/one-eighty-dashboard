@@ -6,7 +6,7 @@
  * ── What this actually is ──────────────────────────────────────────────────
  * The join between a Meta ad and the concept that produced it is the ad_id
  * written into the ClickUp task's `Creative ID` field. That field has never
- * been filled once — it holds the literal string "Creative ID" on all 65 Manami
+ * been filled once, it holds the literal string "Creative ID" on all 65 the pilot client
  * tasks. Every tag breakdown in this product is blind to any ad missing from
  * it.
  *
@@ -18,7 +18,7 @@
  * ── Nothing is applied automatically ───────────────────────────────────────
  * A proposal above 70% offers a one-click Confirm; anything below makes you
  * pick. Neither writes without a press. A wrong match does not look wrong
- * afterwards — it attributes real spend to the wrong persona, and the number it
+ * afterwards, it attributes real spend to the wrong persona, and the number it
  * produces is entirely plausible.
  */
 
@@ -27,6 +27,7 @@ import { confirmMapping } from "@/app/(app)/creative/actions";
 import type { Candidate } from "@/lib/creative/matching";
 import type { QueueRow } from "@/lib/creative/view";
 import { money } from "@/components/creative/primitives";
+import { InfoTip } from "@/components/ui/InfoTip";
 
 export function UnmappedQueue({
   rows,
@@ -71,11 +72,12 @@ export function UnmappedQueue({
         <h3 className="m-0 text-[14px] font-bold tracking-heading text-warning">
           Unmapped ads
         </h3>
-        <p className="m-0 min-w-[230px] flex-1 text-[12.5px] text-content-muted">
-          No ClickUp task carries these ad ids, so their spend is invisible to
-          every tag breakdown. Confirm and the dashboard writes the id into the
-          task&apos;s <span className="font-mono">Creative ID</span> field
-          itself.
+        <p className="m-0 flex min-w-[230px] flex-1 items-center gap-1.5 text-[12.5px] text-content-muted">
+          Link each ad to a task.
+          <InfoTip
+            text="Spend on unmapped ads is missing from tag breakdowns. Confirm writes the ad id into the task's Creative ID field."
+            label="About unmapped ads"
+          />
         </p>
         <span className="font-mono text-[11.5px] text-content-muted">
           {outstanding.length} outstanding
@@ -117,10 +119,7 @@ export function UnmappedQueue({
                       )}
                     </>
                   ) : (
-                    <span>
-                      No task name resembles this one — it may predate the
-                      Persona Bank.
-                    </span>
+                    <span>No similar task found.</span>
                   )}
                 </div>
 
@@ -178,11 +177,11 @@ export function UnmappedQueue({
                         }}
                         className="min-w-[280px] flex-1 rounded-control border border-hairline-strong bg-paper/70 px-2.5 py-1.5 text-[13px]"
                       >
-                        <option value="">Choose a ClickUp task…</option>
+                        <option value="">Choose a task</option>
                         {candidates.map((c) => (
                           <option key={c.taskId} value={c.taskId}>
                             {c.taskName}
-                            {c.conceptId ? ` — ${c.conceptId}` : ""}
+                            {c.conceptId ? ` · ${c.conceptId}` : ""}
                           </option>
                         ))}
                       </select>

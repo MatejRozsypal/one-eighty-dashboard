@@ -2,7 +2,7 @@
  * The controlled vocabularies the Creative Engine reads.
  *
  * These live in code rather than in the warehouse on purpose. The angle list in
- * particular has to render *before* any data arrives — the Concepts screen
+ * particular has to render *before* any data arrives, the Concepts screen
  * shows all eighteen angles and marks the unused ones "never run", which is the
  * single most useful thing on that screen and would be impossible if the list
  * were derived from what has already been spent on. A vocabulary derived from
@@ -20,8 +20,8 @@
  * ── These strings are a join key, not labels ───────────────────────────────
  * The coverage grid marks an angle "never run" by looking for its exact string
  * among the angles that have taken spend. Five of these were paraphrased in an
- * earlier draft — "Comparison / objection" for "Comparison / objection
- * handling", "Disqualification" for "Disqualification / reverse psychology" —
+ * earlier draft, "Comparison / objection" for "Comparison / objection
+ * handling", "Disqualification" for "Disqualification / reverse psychology",
  * and every one of those angles would have shown as never run while quietly
  * holding budget, which is the exact opposite of what this screen is for.
  *
@@ -53,12 +53,12 @@ export const ANGLES = [
 export type Angle = (typeof ANGLES)[number];
 
 /**
- * Funnel stage. TOF / MOF / BOF only — `RT` was removed from the SOP because
+ * Funnel stage. TOF / MOF / BOF only, `RT` was removed from the SOP because
  * retargeting is a property of the campaign the ad runs in, not of the
  * creative.
  *
  * ⚠ NO CLICKUP FIELD HOLDS THIS TODAY. `Content Purpose` looks like it should
- * and does not — its options are Net-new / Offer-Promo / Winner Variant, which
+ * and does not, its options are Net-new / Offer-Promo / Winner Variant, which
  * is production type, not funnel position. Until a `Funnel stage` field exists,
  * stage is parsed out of the ad name and is null wherever the name does not
  * carry it. See runbooks/29.
@@ -67,7 +67,7 @@ export const STAGES = ["TOF", "MOF", "BOF"] as const;
 export type Stage = (typeof STAGES)[number];
 
 /**
- * `Content Purpose` on the ad pipeline — what the ad is FOR, not where in the
+ * `Content Purpose` on the ad pipeline, what the ad is FOR, not where in the
  * funnel it sits.
  *
  * This turns out to be the better signal for the 80/20 rule than anything
@@ -112,7 +112,7 @@ export type CreatorType = (typeof CREATOR_TYPES)[number];
 
 /**
  * How a creator is paid, and therefore how cost-per-ad is derived. See
- * `lib/creative/cost.ts` — the derivation is there so the Production ROI screen
+ * `lib/creative/cost.ts`, the derivation is there so the Production ROI screen
  * and any future report cannot disagree about what an ad cost.
  */
 export const PAY_MODELS = [
@@ -161,7 +161,7 @@ export function isBreakdownKey(v: string | undefined): v is BreakdownKey {
  * Breakdown answers "which angle earned the spend"; the only useful next
  * question is "show me those ads", and the Creatives grid is where that is
  * answered. Linking the two needs the raw value the grid filters on, not the
- * label the table prints — `Concept` reads as "Curiosity gap" and matches on a
+ * label the table prints, `Concept` reads as "Curiosity gap" and matches on a
  * concept id; `Format` reads as "Video" and matches on `DYN`.
  *
  * Keyed by the same strings the picker uses, so a new dimension cannot be added
@@ -180,7 +180,19 @@ export const FOCUS_FIELD: Record<BreakdownKey, string> = {
   adset: "adsetName",
 };
 
+/**
+ * Chip labels for focus fields that are not a breakdown dimension. The Paid
+ * screens deep-link into Creative with `?focus=adId&is=<id>` or
+ * `?focus=campaignName&is=<name>`, and the grid names the filter with this.
+ */
+const EXTRA_FOCUS_LABELS: Record<string, string> = {
+  adId: "Ad",
+  campaignName: "Campaign",
+};
+
 export function focusLabel(key: string): string {
+  const extra = EXTRA_FOCUS_LABELS[key];
+  if (extra) return extra;
   const dim = BREAKDOWN_DIMENSIONS.find((d) => FOCUS_FIELD[d.key] === key);
   return dim ? dim.label : key;
 }

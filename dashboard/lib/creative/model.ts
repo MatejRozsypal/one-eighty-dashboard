@@ -1,7 +1,7 @@
 /**
  * Shapes and aggregation for the Creative Engine.
  *
- * Pure — no database client, no React. The demo generator and the BigQuery
+ * Pure, no database client, no React. The demo generator and the BigQuery
  * reader both produce `AdRow[]` and everything downstream works the same way,
  * which is what lets the screens be verified without a warehouse.
  *
@@ -17,7 +17,7 @@
 import { confidenceOf, interval, shrink, type Confidence, type CreativeThresholds } from "@/lib/creative/stats";
 
 // ---------------------------------------------------------------------------
-// Components — the only things allowed to cross a join or a GROUP BY
+// Components, the only things allowed to cross a join or a GROUP BY
 // ---------------------------------------------------------------------------
 
 export interface Components {
@@ -74,7 +74,7 @@ export function sum(rows: Array<{ components: Components }>): Components {
  * What ClickUp says this ad is.
  *
  * Every field is nullable, and that is the normal case rather than an edge one:
- * on Manami today 34% of spend sits on a single untagged creative that predates
+ * on the pilot client today 34% of spend sits on a single untagged creative that predates
  * the Persona Bank. The UI renders a missing tag as a dashed "persona ?" chip
  * rather than hiding the ad, because an ad taking a third of the budget is the
  * most important row on the screen whether or not anybody filed it.
@@ -154,7 +154,7 @@ export interface AdsetRow {
 }
 
 // ---------------------------------------------------------------------------
-// Derived metrics — computed AFTER aggregation, never carried through one
+// Derived metrics, computed AFTER aggregation, never carried through one
 // ---------------------------------------------------------------------------
 
 function div(a: number, b: number): number | null {
@@ -175,9 +175,9 @@ export interface Derived {
   /**
    * link_clicks / impressions.
    *
-   * Distinct from `ctr`, which is ALL clicks — likes, comments, shares, photo
+   * Distinct from `ctr`, which is ALL clicks, likes, comments, shares, photo
    * expands and profile taps included. On these accounts all-CTR runs about
-   * 1.6x link CTR (2.72% vs 1.69% on Manami over 180 days), so the two are not
+   * 1.6x link CTR (2.72% vs 1.69% on the pilot client over 180 days), so the two are not
    * interchangeable and a threshold written for one is wrong for the other.
    */
   linkCtr: number | null;
@@ -212,7 +212,8 @@ export interface Group {
   components: Components;
 }
 
-export const UNTAGGED = "— untagged —";
+/** The one label for spend that carries no tag, everywhere it is shown. */
+export const UNTAGGED = "Untagged";
 
 /**
  * Group ads by a tag, keeping untagged spend as its own visible row.
@@ -282,7 +283,7 @@ export function read(
   // Shrinkage with n = 0 returns the account mean exactly: (0*obs + k*mean)/k.
   // That is arithmetically right and a lie to look at. A wall of ads that never
   // sold anything rendered thirty tiles all reading the same ROAS 2.12, which
-  // is not an estimate of any of them — it is the prior, wearing their names.
+  // is not an estimate of any of them, it is the prior, wearing their names.
   //
   // With no conversions there is no evidence to shrink, so the honest output is
   // no number. The tile still shows the spend, the CTR and "0 purchases", which
@@ -312,8 +313,8 @@ export function read(
  * The four buckets on the Creatives scorecard.
  *
  * `winner` requires Read confidence, not just a high number. That is the whole
- * point: Manami's measured net-new hit rate is 1.5% — one winner from 67 ads,
- * against Nathan's ~5% reference — and that single figure is the argument for
+ * point: the pilot client's measured net-new hit rate is 1.5%, one winner from 67 ads,
+ * against Nathan's ~5% reference, and that single figure is the argument for
  * the 80/20 production split, for hook variants over new bodies, and for
  * cutting the active persona set. It only means anything if "winner" is a
  * defensible category rather than whatever happened to sort first.
@@ -378,7 +379,7 @@ export function winnerEconomics(
  * The account-level figures every row is judged against.
  *
  * `meanRoas` is the shrinkage target, and it is computed from the SUM of
- * revenue over the SUM of spend — not the mean of per-ad ROAS, which would let
+ * revenue over the SUM of spend, not the mean of per-ad ROAS, which would let
  * a 300 Kč freak at 17x drag the anchor that every other row is pulled toward.
  * The learnings file has that exact ad in it.
  */

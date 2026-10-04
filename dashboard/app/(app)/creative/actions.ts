@@ -25,6 +25,7 @@ import {
   appendCreativeId,
   clickUpConfigured,
   ClickUpError,
+  clickUpUserMessage,
   ClickUpNotConfigured,
   getActivity,
   listNotes,
@@ -85,7 +86,7 @@ export interface ConfirmResult {
  *
  * ── Order of operations, and why it is not the other way round ─────────────
  * ClickUp first, local record second. If the ClickUp write fails, nothing has
- * changed anywhere and the ad stays in the queue — which is correct, because
+ * changed anywhere and the ad stays in the queue, which is correct, because
  * the alternative is a dashboard that believes a mapping exists while ClickUp
  * does not, and the disagreement would only surface as a persistently
  * "untagged" ad that the queue no longer offers.
@@ -105,12 +106,8 @@ export async function confirmMapping(input: {
   const c = await client(input.clientId);
 
   if (!clickUpConfigured()) {
-    return {
-      ok: false,
-      message:
-        "CLICKUP_API_TOKEN is not set on this deployment, so the ad id cannot " +
-        "be written back. Nothing was changed.",
-    };
+    console.error("[creative] ClickUp write-back skipped: API token is not configured");
+    return { ok: false, message: "ClickUp not connected." };
   }
 
   try {
@@ -128,7 +125,7 @@ export async function confirmMapping(input: {
     );
 
     // The ClickUp token is a workspace-wide WRITE credential. Every use of it
-    // is recorded with the person who caused it — the same standard the
+    // is recorded with the person who caused it, the same standard the
     // cross-client read log holds itself to.
     await recordAccess({
       email,
@@ -143,26 +140,17 @@ export async function confirmMapping(input: {
     return {
       ok: true,
       message: result.alreadyPresent
-        ? "That ad id was already on the task. Nothing was sent."
-        : `Written to ClickUp. The task now carries ${result.ids.length} ad ${result.ids.length === 1 ? "id" : "ids"}.`,
+        ? "Already on the task."
+        : "Written to ClickUp.",
     };
   } catch (error) {
-    if (error instanceof ClickUpNotConfigured) {
-      return { ok: false, message: error.message };
-    }
-    if (error instanceof ClickUpError) {
-      // Surfaced verbatim rather than softened. A 401 here means the token is
-      // wrong and a 404 means the task moved, and those need different fixes.
-      return {
-        ok: false,
-        message: `ClickUp refused the write (${error.status}). Nothing was changed. ${error.body}`,
-      };
-    }
+    // The status and response body go to the server log. A 401 means the token
+    // is wrong and a 404 means the task moved, and the log keeps that apart.
     console.error("[creative] write-back failed", error);
-    return {
-      ok: false,
-      message: "The write failed and nothing was changed. See the server log.",
-    };
+    if (error instanceof ClickUpNotConfigured || error instanceof ClickUpError) {
+      return { ok: false, message: clickUpUserMessage(error) };
+    }
+    return { ok: false, message: "Write failed." };
   }
 }
 
@@ -229,16 +217,13 @@ export async function logDecision(input: {
       return {
         ok: false,
         message:
-          "A kill needs a learning note of at least ten characters. The SOP " +
-          "says a kill without a documented learning is invalid, and the " +
-          "database enforces it.",
+          "A kill needs a learning note.",
       };
     }
     if (message.includes("override_needs_a_reason")) {
       return {
         ok: false,
-        message:
-          "Overriding the engine is allowed; doing it silently is not. Give a reason.",
+        message: "Give a reason for the override.",
       };
     }
     console.error("[creative] could not log decision", error);
@@ -247,12 +232,12 @@ export async function logDecision(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Notes — the ClickUp thread, in the panel
+// Notes, the ClickUp thread, in the panel
 // ---------------------------------------------------------------------------
 
 export interface NotesResult {
   notes: CreativeNote[];
-  /** Creation, status history, assignees — what the task itself records. */
+  /** Creation, status history, assignees, what the task itself records. */
   activity: TaskActivity | null;
   /** Why there is nothing to show, when there is nothing to show. */
   unavailable: string | null;
@@ -267,7 +252,7 @@ export interface NotesResult {
  *
  * Every failure resolves to a message rather than an exception. A creative
  * with no ClickUp task, a workspace without a token, a task deleted since the
- * last sync — none of those are errors worth taking the panel down for, and
+ * last sync, none of those are errors worth taking the panel down for, and
  * each wants a different sentence.
  */
 export async function loadNotes(taskId: string | null): Promise<NotesResult> {
@@ -276,16 +261,12 @@ export async function loadNotes(taskId: string | null): Promise<NotesResult> {
     return {
       notes: [],
       activity: null,
-      unavailable:
-        "This ad is not mapped to a ClickUp task yet, so it has no thread. Map it in the unmapped queue and the activity appears here.",
+      unavailable: "Ad not mapped to a task yet.",
     };
   }
   if (!clickUpConfigured()) {
-    return {
-      notes: [],
-      activity: null,
-      unavailable: "CLICKUP_API_TOKEN is not set on this deployment.",
-    };
+    console.error("[creative] ClickUp notes unavailable: API token is not configured");
+    return { notes: [], activity: null, unavailable: "ClickUp not connected." };
   }
   try {
     const [notes, activity] = await Promise.all([
@@ -294,23 +275,13 @@ export async function loadNotes(taskId: string | null): Promise<NotesResult> {
     ]);
     return { notes, activity, unavailable: null };
   } catch (error) {
-    if (error instanceof ClickUpNotConfigured) {
-      return { notes: [], activity: null, unavailable: error.message };
-    }
-    if (error instanceof ClickUpError) {
+    if (error instanceof ClickUpNotConfigured || error instanceof ClickUpError) {
       // Each status means something different and only one of them is about
       // the task. Telling somebody their task was deleted when the real
-      // problem is a rejected token sends them to fix the wrong thing —
-      // which is exactly what happened on 9 Sep.
-      const say =
-        error.status === 401
-          ? "ClickUp rejected the token (401). CLICKUP_API_TOKEN is set on this deployment but the value is not accepted — re-paste it from Secret Manager, without quotes or a trailing newline."
-          : error.status === 404
-            ? "ClickUp has no such task (404). It may have been deleted since the last sync."
-            : error.status === 403
-              ? "The token is valid but not permitted to read this task (403)."
-              : `ClickUp refused the request (${error.status}).`;
-      return { notes: [], activity: null, unavailable: say };
+      // problem is a rejected token sends them to fix the wrong thing, so the
+      // message differs per status and the status itself goes to the log.
+      console.error("[creative] ClickUp read failed", error);
+      return { notes: [], activity: null, unavailable: clickUpUserMessage(error) };
     }
     throw error;
   }
@@ -320,7 +291,7 @@ export async function loadNotes(taskId: string | null): Promise<NotesResult> {
  * Add a note, onto the ClickUp task itself.
  *
  * Returns the reloaded thread rather than just an ok, so the panel shows the
- * comment as ClickUp actually stored it — including the author prefix — rather
+ * comment as ClickUp actually stored it, including the author prefix, rather
  * than a local echo that might not match what everyone else will see.
  */
 export async function addNote(input: {
@@ -337,11 +308,8 @@ export async function addNote(input: {
   try {
     await postNote(input.taskId, text, who.email);
   } catch (error) {
-    const message =
-      error instanceof ClickUpNotConfigured || error instanceof ClickUpError
-        ? error.message
-        : "Could not reach ClickUp.";
-    return { ok: false, message, notes: [] };
+    console.error("[creative] posting note failed", error);
+    return { ok: false, message: clickUpUserMessage(error), notes: [] };
   }
 
   await recordAccess({

@@ -14,9 +14,10 @@
  */
 
 import type { ReactNode } from "react";
-import { formatMoney, NO_VALUE, isNoValue } from "@/lib/format";
-import { NoData, NotConnected } from "@/components/ui/EmptyState";
-import { Notice } from "@/components/ui/Notice";
+import { formatMoney, formatNumber, NO_VALUE, isNoValue } from "@/lib/format";
+import { Header } from "@/components/shell/Header";
+import { NotConnected } from "@/components/ui/EmptyState";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { CONFIDENCE_LABELS, type Confidence } from "@/lib/creative/stats";
 import type { VerdictCode } from "@/lib/creative/verdict";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
@@ -36,10 +37,14 @@ export const ratePct = (v: number | null): string =>
   v === null ? NO_VALUE : `${(v * 100).toFixed(1)}%`;
 
 export const count = (v: number | null): string =>
-  v === null ? NO_VALUE : Math.round(v).toLocaleString("en-US");
+  v === null ? NO_VALUE : formatNumber(v);
 
 export const money = (v: number | null, currency: string): string =>
   formatMoney(v, currency);
+
+/** Unit costs (CPA, CPC, CPM): two decimals below 100, whole above. */
+export const unitMoney = (v: number | null, currency: string): string =>
+  formatMoney(v, currency, { unit: true });
 
 // ---------------------------------------------------------------------------
 // Chips
@@ -69,8 +74,16 @@ export function ConfidenceChip({ level }: { level: Confidence }) {
   );
 }
 
+/**
+ * The three "no verdict" states are outlined rather than filled: they say the
+ * engine declined to judge, and a filled chip would borrow the authority of a
+ * real verdict. The outline is solid. Dashed borders are reserved for the empty
+ * states (components/ui/EmptyState), so a dashed box always means "nothing here".
+ */
+const OUTLINE = "border border-hairline-strong text-content-muted";
+
 const VERDICT_STYLES: Record<VerdictCode, string> = {
-  unjudged: "border border-dashed border-hairline-strong text-content-muted",
+  unjudged: OUTLINE,
   scale: "bg-accent-soft text-growth-700",
   "aggressive-scale": "bg-accent-soft text-growth-700",
   hold: "bg-gray-100 text-content-muted",
@@ -78,8 +91,8 @@ const VERDICT_STYLES: Record<VerdictCode, string> = {
   kill: "bg-negative/10 text-negative",
   "too-early": "bg-info/10 text-info",
   "data-missing": "bg-negative/10 text-negative",
-  "needs-more-data": "border border-dashed border-hairline-strong text-content-muted",
-  "not-separable": "border border-dashed border-hairline-strong text-content-muted",
+  "needs-more-data": OUTLINE,
+  "not-separable": OUTLINE,
 };
 
 export function VerdictChip({ code, label }: { code: VerdictCode; label: string }) {
@@ -92,21 +105,24 @@ export function VerdictChip({ code, label }: { code: VerdictCode; label: string 
   );
 }
 
-/** A tag value, or a dashed placeholder when nothing has been filed. */
+/** A tag value, or a muted "n/a" chip when nothing has been filed. */
 export function Tag({
   value,
   missing,
   tone = "default",
 }: {
   value: string | null;
-  /** What to call the gap, e.g. "persona". */
+  /** What to call the gap, e.g. "persona". Shown as "persona: n/a". */
   missing: string;
   tone?: "default" | "made";
 }) {
   if (!value) {
     return (
-      <span className="whitespace-nowrap rounded-pill border border-dashed border-hairline-strong px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.08em] text-content-muted">
-        {missing} ?
+      <span
+        title={`No ${missing}`}
+        className="whitespace-nowrap rounded-pill border border-hairline px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.08em] text-content-muted"
+      >
+        {missing}: {NO_VALUE}
       </span>
     );
   }
@@ -129,6 +145,8 @@ export interface Tile {
   label: string;
   value: string;
   sub?: string;
+  /** Definition or caveat, shown in an (i) tooltip beside the label. 40 words at most. */
+  info?: string;
   /**
    * Period-over-period change, when a comparison range is selected. Only the
    * four delivery figures carry one, spend, ROAS, CPA and purchases have
@@ -158,8 +176,9 @@ export function StatLine({ tiles }: { tiles: Tile[] }) {
     <dl className="m-0 flex flex-wrap items-baseline gap-x-7 gap-y-2.5 border-y border-hairline py-3">
       {tiles.map((t) => (
         <div key={t.label} className="flex items-baseline gap-2">
-          <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
+          <dt className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
             {t.label}
+            {t.info && <InfoTip text={t.info} label={`About ${t.label}`} />}
           </dt>
           <dd
             className={`m-0 whitespace-nowrap font-mono text-[13.5px] font-medium tabular ${
@@ -198,8 +217,9 @@ export function Scorecard({ tiles }: { tiles: Tile[] }) {
     <div className={`grid grid-cols-1 gap-3 ${cols}`}>
       {tiles.map((t) => (
         <div key={t.label} className="glass px-4 py-3.5">
-          <div className="truncate font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
-            {t.label}
+          <div className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
+            <span className="truncate">{t.label}</span>
+            {t.info && <InfoTip text={t.info} label={`About ${t.label}`} />}
           </div>
           {/* `whitespace-nowrap` is not decoration: a wrapped headline figure
               changes the tile's height and breaks the row's alignment, which
@@ -238,11 +258,12 @@ export function Scorecard({ tiles }: { tiles: Tile[] }) {
  */
 export function SectionHead({
   title,
-  eyebrow,
+  info,
   children,
 }: {
   title: string;
-  eyebrow?: string;
+  /** Definition or caveat, shown in an (i) tooltip. Never a subtitle. */
+  info?: string;
   children?: ReactNode;
 }) {
   return (
@@ -250,11 +271,7 @@ export function SectionHead({
       <h3 className="m-0 text-[16px] font-semibold tracking-heading text-content-strong">
         {title}
       </h3>
-      {eyebrow && (
-        <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
-          {eyebrow}
-        </span>
-      )}
+      {info && <InfoTip text={info} label={`About ${title}`} />}
       {children}
     </div>
   );
@@ -292,24 +309,16 @@ export function SpendBar({
 }
 
 /**
- * Deprecated wrapper around the shared empty states (components/ui/EmptyState).
- *
- * `object` set (a creative object is missing) renders "Creative data not connected.";
- * no `object` (connected, nothing in the window) renders "No data in this
- * range.". `what` and `hint` are ignored: empty states are one line. WP7
- * replaces the call sites with `NotConnected` / `NoData` directly.
+ * The whole page for a client with no Meta account: the title and one line.
+ * `source` comes from `missingSource` (lib/capabilities), never from a guess.
  */
-export function NotIngested({
-  object,
-}: {
-  what?: string;
-  object?: string | null;
-  hint?: string;
-}) {
-  return object ? <NotConnected source="Creative data" /> : <NoData />;
-}
-
-/** Shown when a client has no kill line, target ROAS or CPA on file. `clientName` is ignored. */
-export function ThresholdsMissing(_props: { clientName?: string }) {
-  return <Notice tone="warning">No verdicts. Set thresholds in Settings.</Notice>;
+export function CreativeNotConnected({ title, source }: { title: string; source: string }) {
+  return (
+    <>
+      <Header title={title} />
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-4 lg:px-8">
+        <NotConnected source={source} />
+      </main>
+    </>
+  );
 }

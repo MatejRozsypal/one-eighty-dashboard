@@ -3,8 +3,8 @@
  *
  * ── The problem it exists for ───────────────────────────────────────────────
  * One Eighty's clients spend roughly two orders of magnitude less than the
- * accounts Motion and Blue Sense Digital's framework are built for. Manami runs
- * about 91 000 Kč a month at a 527 Kč CPA — about 173 purchases a month across
+ * accounts Motion and Blue Sense Digital's framework are built for. The pilot client runs
+ * about 91 000 Kč a month at a 527 Kč CPA, about 173 purchases a month across
  * the entire account.
  *
  * Purchases are the denominator of every money metric, so at that volume a
@@ -19,7 +19,7 @@
  */
 
 /**
- * Relative standard error on ROAS is about `1.17 / sqrt(purchases)` — Poisson
+ * Relative standard error on ROAS is about `1.17 / sqrt(purchases)`, Poisson
  * arrivals combined with order-value variance at a coefficient of variation
  * around 0.6. The 95% half-width is 1.96 times that, so:
  *
@@ -34,7 +34,7 @@ export const Z = 2.29;
  * Everything the engine needs to judge a number, per client.
  *
  * Defaults come from CREATIVE_ENGINE_BRIEF.md 4.2. They are defaults for a
- * *new* client only — a client with a settings row uses its own, and the
+ * *new* client only, a client with a settings row uses its own, and the
  * money-line values (kill, target, CPA) deliberately have no default at all,
  * because a guessed kill line silently reclassifies every ad in the account.
  */
@@ -45,7 +45,7 @@ export interface CreativeThresholds {
   targetRoas: number;
   /** Median cost per purchase. Drives every spend gate. No default. */
   targetCpa: number;
-  /** Gross margin, 0..1. Only used above ad level — see the note in verdict.ts. */
+  /** Gross margin, 0..1. Only used above ad level, see the note in verdict.ts. */
   grossMargin: number | null;
 
   scaleMultiplier: number;
@@ -73,7 +73,7 @@ export interface CreativeThresholds {
 }
 
 /**
- * Shrinkage toward the account mean — defence one.
+ * Shrinkage toward the account mean, defence one.
  *
  *     reported = (n x observed + k x account_mean) / (n + k)
  *
@@ -138,7 +138,7 @@ export const CONFIDENCE_LABELS: Record<Confidence, string> = {
  *     n >= (Z / (1 - line/roas))^2
  *
  * Null when the estimate is already at or below the line, because no amount of
- * data makes a losing number clear the line it is under — it makes it *more*
+ * data makes a losing number clear the line it is under, it makes it *more*
  * certainly under it, which is a different (and also useful) answer.
  */
 export function purchasesToClear(roas: number, line: number): number | null {
@@ -149,9 +149,9 @@ export function purchasesToClear(roas: number, line: number): number | null {
 /**
  * Purchases needed to pull the half-width under `maxCiHalfWidth`.
  *
- * At the default 0.25 and Z = 2.29 this is 84 purchases — which is the number
+ * At the default 0.25 and Z = 2.29 this is 84 purchases, which is the number
  * behind the persona-capacity statement in the brief: reading a persona to ±25%
- * costs about 44 300 Kč at Manami's CPA, and Manami spends about 273 000 Kč a
+ * costs about 44 300 Kč at the pilot client's CPA, and it spends about 273 000 Kč a
  * quarter, so it can properly read about six personas a quarter. Twelve are
  * active.
  */
@@ -204,9 +204,9 @@ export function separation(
 }
 
 export const SEPARATION_LABELS: Record<Separation, string> = {
-  "above-target": "above target",
-  "profitable-under-target": "profitable, under target",
-  "below-kill": "below the kill line",
-  "cannot-tell": "cannot tell yet",
-  "too-little-data": "too little data",
+  "above-target": "At target",
+  "profitable-under-target": "Under target",
+  "below-kill": "Below kill line",
+  "cannot-tell": "Cannot tell",
+  "too-little-data": "Too little data",
 };

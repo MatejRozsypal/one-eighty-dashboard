@@ -3,8 +3,8 @@
  *
  * ── Why there is a view model at all ───────────────────────────────────────
  * Filtering the grid and opening the detail panel are interactions, so those
- * components run on the client. Everything they display — the shrunk ROAS, the
- * interval, the diagnosis, the signed asset URL — is computed on the server,
+ * components run on the client. Everything they display, the shrunk ROAS, the
+ * interval, the diagnosis, the signed asset URL, is computed on the server,
  * because the thresholds come from Postgres, the asset URLs are signed with a
  * private key, and none of that belongs in a browser bundle.
  *
@@ -62,7 +62,7 @@ export interface AdView {
   hookRate: number | null;
   holdRate: number | null;
   outboundCtr: number | null;
-  /** link_clicks / impressions. See `Derived.linkCtr` — not the same as `ctr`. */
+  /** link_clicks / impressions. See `Derived.linkCtr`, not the same as `ctr`. */
   linkCtr: number | null;
   addToCart: number;
 
@@ -126,8 +126,8 @@ export interface AdView {
  * it at the same fidelity is not, and the reader cannot tell the difference by
  * looking.
  *
- * Returns null unless there is a real curve to draw. A partial curve — quartiles
- * missing because the ad predates Meta's ~37-month insights retention wall —
+ * Returns null unless there is a real curve to draw. A partial curve, quartiles
+ * missing because the ad predates Meta's ~37-month insights retention wall,
  * renders as nothing, because a curve with a hole in it reads as a collapse in
  * retention rather than as absent data.
  */
@@ -256,7 +256,7 @@ export function toAdView(
 /**
  * Fall back to what Meta says the creative is when ClickUp has not been filled.
  *
- * An untagged ad still has a format — the object type is on the creative
+ * An untagged ad still has a format, the object type is on the creative
  * itself. Leaving it null would grey out the format filter for a third of the
  * account for no reason.
  */
@@ -269,7 +269,7 @@ function inferFormat(asset: CreativeAsset | undefined): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Ad sets and concepts — the levels that produce money verdicts
+// Ad sets and concepts, the levels that produce money verdicts
 // ---------------------------------------------------------------------------
 
 export interface VerdictView {
@@ -349,7 +349,7 @@ export function toAdsetView(
  *
  * Declared here rather than in the component because a plain function exported
  * from a `"use client"` module is a reference on the server, not something the
- * server can call — so the narrowing below has to live outside it. The proposal
+ * server can call, so the narrowing below has to live outside it. The proposal
  * is scored on the server anyway: the candidate list is every task in the ad
  * pipeline, and shipping it to the browser to run string similarity would be
  * both slower and a needless disclosure of every task name.

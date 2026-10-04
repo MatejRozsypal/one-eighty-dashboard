@@ -1,5 +1,5 @@
 /**
- * Screen 4 — Velocity.
+ * Screen 4, Velocity.
  *
  * Whether enough creative is being made, and whether the packs it goes into are
  * funded well enough to produce a verdict before the no-touch window closes.
@@ -20,12 +20,15 @@ import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
 import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { PageControls } from "@/components/controls/PageControls";
-import { NotIngested, Scorecard, SectionHead, ThresholdsMissing } from "@/components/creative/primitives";
-import { loadCreativeContext } from "@/lib/creative/page";
+import { CreativeNotConnected, Scorecard, SectionHead } from "@/components/creative/primitives";
+import { NotConnected } from "@/components/ui/EmptyState";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { Notice } from "@/components/ui/Notice";
+import { loadCreative, type CreativeContext } from "@/lib/creative/page";
 import { getAdsetLaunchDates } from "@/lib/queries/creative";
 import { gauges, horizons, launchCadence, packSpec, type PackSettings } from "@/lib/creative/velocity";
 import { LaunchCadence } from "@/components/creative/LaunchCadence";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, isNoValue } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Velocity" };
 export const dynamic = "force-dynamic";
@@ -35,7 +38,11 @@ export default async function VelocityPage({
 }: {
   searchParams: { [k: string]: string | string[] | undefined };
 }) {
-  const ctx = await loadCreativeContext(searchParams);
+  const loaded = await loadCreative(searchParams);
+  if (loaded.status === "not-connected") {
+    return <CreativeNotConnected title="Velocity" source={loaded.source} />;
+  }
+  const { ctx } = loaded;
   const { client, currency, data, thresholds, display, settings } = ctx;
 
   // ── What survives without a target CPA, and what does not ───────────────
@@ -45,7 +52,7 @@ export default async function VelocityPage({
   //
   // The cadence does. How many packs shipped in each of the last six months is
   // counted off the ad sets, and it is the single most useful thing on this
-  // screen for an account that has not been configured yet — a team that
+  // screen for an account that has not been configured yet, a team that
   // stopped shipping looks exactly like a team that is fine, until you draw it.
   const judged = thresholds !== null;
 
@@ -74,15 +81,9 @@ export default async function VelocityPage({
 
   return (
     <Shell ctx={ctx}>
-      {!judged && <ThresholdsMissing clientName={client.name} />}
+      {!judged && <Notice tone="warning">No verdicts. Set thresholds in Settings.</Notice>}
 
-      {!data.available && (
-        <NotIngested
-          what="No delivery data, so the cadence gauges have nothing to measure."
-          object={data.missing}
-          hint="The pack arithmetic below still holds — it is derived from the settings, not from delivery."
-        />
-      )}
+      {!data.available && <NotConnected source="Creative data" />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {tiles.map((g) => (
@@ -96,14 +97,16 @@ export default async function VelocityPage({
               <span className="truncate font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
                 {g.label}
               </span>
+              <InfoTip text={sentence(g.against)} label={`About ${g.label}`} />
             </div>
             <div className="flex items-baseline gap-2 whitespace-nowrap">
-              <b className="font-mono text-[26px] font-medium leading-none tracking-heading tabular text-content-strong">
+              <b
+                className={`font-mono text-[26px] font-medium leading-none tracking-heading tabular ${
+                  isNoValue(g.value) ? "text-content-muted" : "text-content-strong"
+                }`}
+              >
                 {g.value}
               </b>
-              <span className="truncate font-mono text-[11.5px] text-content-muted">
-                {g.against}
-              </span>
             </div>
             <div className="relative h-1.5 overflow-hidden rounded-xs bg-gray-100">
               <span
@@ -113,7 +116,7 @@ export default async function VelocityPage({
                   background: STATE_COLOUR[g.state],
                 }}
               />
-              {/* The target tick. Without it a half-full bar means nothing —
+              {/* The target tick. Without it a half-full bar means nothing,
                   half of what? */}
               <span
                 aria-hidden="true"
@@ -125,19 +128,13 @@ export default async function VelocityPage({
         ))}
       </div>
 
-      {/* The mockup's second block, and the one that was never built. */}
       <section>
         <SectionHead
-          title="Packs launched per month"
-          eyebrow="weekly to biweekly batch cadence"
+          title="Packs per month"
+          info="A pack is an ad set, dated by the month it first delivered. Ad sets that never spent are not counted."
         />
         <div className="glass p-5">
           <LaunchCadence months={cadence} target={pack.packsPerMonthTarget} />
-          <p className="mt-3 max-w-[78ch] text-[12.5px] leading-[1.6] text-content-muted">
-            A pack is an ad set, dated by the month it first delivered. An ad set
-            that never spent is not a launch — nothing ran, so nothing can be
-            judged, and counting it would let a folder of drafts read as output.
-          </p>
         </div>
       </section>
 
@@ -147,33 +144,28 @@ export default async function VelocityPage({
       {judged && (
       <>
       <section>
-        <SectionHead title="One pack, start to verdict" eyebrow="current configuration" />
+        <SectionHead title="One pack" />
         <Scorecard
           tiles={[
-            { label: "Pack budget", value: `${m(pack.minPackDaily)}/day`, sub: "2× CPA floor" },
-            { label: "Ads in the pack", value: String(spec.adsPerPack), sub: `${m(pack.perAdFloorDaily)}/day each` },
-            { label: "Runs for", value: `${pack.noTouchDays} days`, sub: "no-touch window" },
-            { label: "Pack costs", value: m(spec.packCost), sub: "to the decision" },
-            { label: "Purchases reached", value: String(spec.purchasesReached), sub: `at ${m(pack.targetCpa)} CPA` },
-            { label: "Purchases needed", value: String(spec.purchasesNeeded), sub: "test size" },
+            { label: "Pack budget", value: `${m(pack.minPackDaily)}/day`, info: "2× CPA floor." },
+            { label: "Ads per pack", value: String(spec.adsPerPack), info: `${m(pack.perAdFloorDaily)}/day each.` },
+            { label: "Runs for", value: `${pack.noTouchDays} days`, info: "The no-touch window." },
+            { label: "Pack costs", value: m(spec.packCost), info: "Cost to the decision." },
+            { label: "Purchases reached", value: String(spec.purchasesReached), info: `At ${m(pack.targetCpa)} CPA.` },
+            { label: "Purchases needed", value: String(spec.purchasesNeeded), info: "The test size." },
           ]}
         />
         {/*
           The horizon does not quite close, and this is the one line on the
           screen that says so. A 14-day pack at the 2× CPA floor reaches 23
-          purchases against a test size of 25 — two short, every pack — which
+          purchases against a test size of 25, two short, every pack, which
           means either the verdict is taken on thinner data than the standard
           claims or the no-touch window quietly runs long. One decision, two
           answers, stated as a sentence rather than buried in a table.
         */}
         <p className="mt-3 max-w-[78ch] border-l-2 border-hairline-strong pl-4 text-[13.5px] leading-[1.7] text-content-body">
           {spec.closes ? (
-            <>
-              <strong className="font-medium text-content-strong">
-                The pack reaches its verdict inside the no-touch window.
-              </strong>{" "}
-              No change needed.
-            </>
+            <>No change needed.</>
           ) : (
             <>
               <strong className="font-medium text-content-strong">
@@ -190,10 +182,7 @@ export default async function VelocityPage({
       </section>
 
       <section>
-        <SectionHead
-          title="If you change the horizon"
-          eyebrow="the verdict costs the same, only the pace changes"
-        />
+        <SectionHead title="Horizon options" />
         <div className="glass-solid overflow-x-auto">
           <table className="w-full min-w-[620px] border-collapse">
             <thead>
@@ -233,12 +222,6 @@ export default async function VelocityPage({
             </tbody>
           </table>
         </div>
-        <p className="mt-3 max-w-[78ch] border-l-2 border-hairline-strong pl-4 text-[13px] leading-[1.7] text-content-muted">
-          Anything shorter than the current window spends more than half the
-          account on testing. Anything longer outruns the no-touch window and
-          starves the pack, because under CBO the carriers take what the test
-          pack is not holding.
-        </p>
       </section>
       </>
       )}
@@ -251,6 +234,11 @@ const STATE_COLOUR = {
   warn: "var(--warning)",
   bad: "var(--negative)",
 } as const;
+
+/** "target 6" becomes "Target 6." for a tooltip. */
+function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1) + ".";
+}
 
 function Cell({ children }: { children: React.ReactNode }) {
   return (
@@ -268,7 +256,7 @@ function Cell({ children }: { children: React.ReactNode }) {
  * denominator would turn a healthy 25% into a red 60% with nothing on screen
  * explaining why.
  */
-function estimateMonthlyBudget(ctx: Awaited<ReturnType<typeof loadCreativeContext>>): number {
+function estimateMonthlyBudget(ctx: CreativeContext): number {
   const months = new Set(
     ctx.data.ads.flatMap((a) => a.monthlySpend.filter((m) => m.spend > 0).map((m) => m.month))
   ).size;
@@ -279,12 +267,12 @@ function Shell({
   ctx,
   children,
 }: {
-  ctx: Awaited<ReturnType<typeof loadCreativeContext>>;
+  ctx: CreativeContext;
   children: React.ReactNode;
 }) {
   return (
     <>
-      <Header eyebrow={`Creative · ${ctx.client.name}`} title="Velocity" />
+      <Header title="Velocity" />
       <PageControls client={ctx.client} params={ctx.params} />
       <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-4 lg:px-8">
         <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
@@ -294,11 +282,6 @@ function Shell({
           currency={ctx.currency}
           href="/creative#unmapped"
         />
-        {/* The screen's own definition, where the mockup puts it. The app shell
-            spends the header's eyebrow on the client, so it sits here. */}
-        <p className="-mt-1 m-0 font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
-          pack cadence against what the budget can carry
-        </p>
         {children}
       </main>
     </>

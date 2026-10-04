@@ -23,7 +23,9 @@ import {
   money,
   pct,
   roas,
+  unitMoney,
 } from "@/components/creative/primitives";
+import { NO_VALUE } from "@/lib/format";
 import type { VerdictCode } from "@/lib/creative/verdict";
 
 export interface ConceptCardData {
@@ -114,12 +116,12 @@ export function ConceptCard({
             <Link
               href={data.adsHref}
               title={`All ${data.ads.length} creatives in this concept`}
-              className="flex h-[50px] w-10 items-center justify-center rounded-[7px] border border-dashed border-hairline-strong font-mono text-[11px] text-content-muted transition-colors duration-fast hover:border-accent/50 hover:text-content-accent"
+              className="flex h-[50px] w-10 items-center justify-center rounded-[7px] border border-hairline-strong font-mono text-[11px] text-content-muted transition-colors duration-fast hover:border-accent/50 hover:text-content-accent"
             >
               +{extra}
             </Link>
           ) : (
-            <span className="flex h-[50px] w-10 items-center justify-center rounded-[7px] border border-dashed border-hairline-strong font-mono text-[11px] text-content-muted">
+            <span className="flex h-[50px] w-10 items-center justify-center rounded-[7px] border border-hairline-strong font-mono text-[11px] text-content-muted">
               +{extra}
             </span>
           ))}
@@ -138,8 +140,8 @@ export function ConceptCard({
           {data.name}
         </span>
         {/* ── One per line, each labelled, each its own colour ───────────
-            These three ARE the concept — persona x angle x offer is the
-            definition the whole screen is built on — and as an unlabelled row
+            These three ARE the concept, persona x angle x offer is the
+            definition the whole screen is built on, and as an unlabelled row
             of identical grey chips they read as a list of tags, which is
             exactly the misreading the page header warns about. Naming the
             field on every chip removes the guess, and the three colours make
@@ -184,7 +186,7 @@ export function ConceptCard({
           ["Spend", money(data.spend, currency)],
           ["Share", pct(data.spendShare)],
           ["Purchases", String(data.purchases)],
-          ["CPA", money(data.cpa, currency)],
+          ["CPA", unitMoney(data.cpa, currency)],
           ["ROAS", roas(data.roas)],
         ].map(([k, v]) => (
           <div key={k} className="flex min-w-[58px] flex-col gap-px">
@@ -199,7 +201,7 @@ export function ConceptCard({
       {/* Fixed width and pushed right, rather than a flex item that grows.
           A long "not separable" sentence used to make this wrap onto its own
           full-width row, so one card in a column of otherwise identical cards
-          was laid out differently — which reads as a rendering bug rather than
+          was laid out differently, which reads as a rendering bug rather than
           as a longer message. */}
       <div className="ml-auto flex w-full flex-none flex-col items-end gap-1.5 text-right lg:w-[280px]">
         <span className="flex gap-1.5">
@@ -218,11 +220,11 @@ export function ConceptCard({
  * One of the three fields that define a concept.
  *
  * The colours are the app's blue, green and amber. The token file reserves
- * red/amber/blue for status and this is not status, which is a real tension —
+ * red/amber/blue for status and this is not status, which is a real tension,
  * it is resolved by the label: a chip that begins "Offer:" is not read as a
  * warning, and no verdict on this screen is ever rendered as a soft tint.
- * An unset field goes dashed and grey, which is how every other gap in the
- * product is drawn.
+ * An unset field is an outlined grey chip reading "n/a", the same no-value
+ * glyph every other gap in the product uses.
  */
 const FACET: Record<"persona" | "angle" | "offer", string> = {
   persona: "bg-info/10 text-info",
@@ -241,8 +243,8 @@ function Facet({
 }) {
   if (!value) {
     return (
-      <span className="max-w-full rounded-pill border border-dashed border-hairline-strong px-2.5 py-1 text-[11.5px] text-content-muted">
-        {field}: not set
+      <span className="max-w-full rounded-pill border border-hairline px-2.5 py-1 text-[11.5px] text-content-muted">
+        {field}: {NO_VALUE}
       </span>
     );
   }

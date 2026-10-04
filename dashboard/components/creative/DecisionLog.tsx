@@ -7,12 +7,12 @@
  * Money verdicts are taken at ad-set level: that is where the budget lives,
  * where the no-touch window applies, and where Meta's learning phase is a real
  * thing. It is also the level the SOP names. The concept cards deliberately
- * carry no buttons — a card that offers "Scale" and "Kill" one click apart
+ * carry no buttons, a card that offers "Scale" and "Kill" one click apart
  * turns a weekly review into a clicking exercise, and no budget in Ads Manager
  * changes because somebody clicked something here.
  *
  * ── What this actually records ─────────────────────────────────────────────
- * What the engine said, what the human did, and — when the two differ — why.
+ * What the engine said, what the human did, and, when the two differ, why.
  * `overridden` is derived from the two values rather than being a checkbox,
  * because it is a fact about them and not an opinion.
  *
@@ -150,7 +150,7 @@ function ReviewItem({
           <span className="text-content-strong">ROAS {roas(row.roas)}</span>
           {row.ciLow !== null && row.ciHigh !== null && (
             <span>
-              {roas(row.ciLow)}–{roas(row.ciHigh)}
+              {roas(row.ciLow)} to {roas(row.ciHigh)}
             </span>
           )}
           {row.ageDays !== null && <span>{row.ageDays}d</span>}
@@ -223,32 +223,27 @@ function ReviewItem({
           {killing && (
             <label className="flex flex-col gap-1.5">
               <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-                Learning note — required
+                Learning note (required)
               </span>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={2}
-                placeholder="Angle tested, persona, offer, spend, ROAS. What the next brief should do differently."
+                placeholder="What did you learn?"
                 className="w-full rounded-control border border-hairline-strong bg-paper px-2.5 py-2 text-[13px]"
               />
-              {/* The SOP's words, because the constraint is the SOP's rule. */}
-              <span className="text-[11.5px] text-content-muted">
-                A kill without a documented learning is invalid. The database
-                rejects one, not just this form.
-              </span>
             </label>
           )}
 
           {overriding && (
             <label className="flex flex-col gap-1.5">
               <span className="font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-                Why you overrode it — required
+                Reason for override (required)
               </span>
               <input
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="What you knew that the numbers did not."
+                placeholder="Why override?"
                 className="w-full rounded-control border border-hairline-strong bg-paper px-2.5 py-2 text-[13px]"
               />
             </label>

@@ -1,5 +1,5 @@
 /**
- * Screen 3 — Breakdown.
+ * Screen 3, Breakdown.
  *
  * Pick a dimension, see what earned the spend. Lifetime to date, because
  * accumulation is how a small account buys statistical power.
@@ -7,7 +7,7 @@
  * ── The coverage gate ──────────────────────────────────────────────────────
  * Below roughly 60% of spend carrying a concept tag, this screen reads less
  * than half the account and the rows it does show are not a sample of anything
- * — they are whatever happened to get filed. It still renders, because hiding
+ *, they are whatever happened to get filed. It still renders, because hiding
  * it would be its own kind of dishonesty, but it says so at the top and it says
  * so with the measured number rather than a recollection of it.
  *
@@ -31,15 +31,20 @@ import {
 } from "@/components/creative/BreakdownCharts";
 import {
   ConfidenceChip,
-  NotIngested,
+  CreativeNotConnected,
   SectionHead,
   SpendBar,
-  ThresholdsMissing,
   money,
   pct,
   roas,
+  unitMoney,
 } from "@/components/creative/primitives";
-import { loadCreativeContext } from "@/lib/creative/page";
+import { NoData, NotConnected } from "@/components/ui/EmptyState";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { Notice } from "@/components/ui/Notice";
+import { NO_VALUE } from "@/lib/format";
+import { SEPARATION_LABELS } from "@/lib/creative/stats";
+import { loadCreative, type CreativeContext } from "@/lib/creative/page";
 import { getTagCoverage } from "@/lib/queries/creative";
 import { groupBy, read, sum } from "@/lib/creative/model";
 import { BREAKDOWN_DIMENSIONS, FOCUS_FIELD, FORMAT_LABELS, isBreakdownKey, type BreakdownKey, type Format } from "@/lib/creative/vocabulary";
@@ -77,7 +82,11 @@ export default async function BreakdownPage({
 }: {
   searchParams: { [k: string]: string | string[] | undefined };
 }) {
-  const ctx = await loadCreativeContext(searchParams);
+  const loaded = await loadCreative(searchParams);
+  if (loaded.status === "not-connected") {
+    return <CreativeNotConnected title="Breakdown" source={loaded.source} />;
+  }
+  const { ctx } = loaded;
   const { client, currency, data, thresholds, display, account } = ctx;
   // A breakdown is arithmetic on delivery: which angle took the spend, what it
   // returned, how wide the interval is. None of that needs a kill line. Only
@@ -92,11 +101,7 @@ export default async function BreakdownPage({
   if (!data.available || data.ads.length === 0) {
     return (
       <Shell ctx={ctx} dimension={dimension}>
-        <NotIngested
-          what="Nothing to break down yet."
-          object={data.missing}
-          hint="This screen groups the same rows the Creatives grid shows."
-        />
+        {data.available ? <NoData /> : <NotConnected source="Creative data" />}
       </Shell>
     );
   }
@@ -106,7 +111,7 @@ export default async function BreakdownPage({
   const rows: BreakdownRow[] = groups.map((g) => {
     const c = sum(g.ads);
     // The value the Creatives grid matches on, taken off a member of the group
-    // rather than parsed back out of the label — the label for a concept is
+    // rather than parsed back out of the label, the label for a concept is
     // "id name" and for a format is "Video", and neither is what filters.
     const first = g.ads[0];
     const focusValue = g.untagged
@@ -118,7 +123,7 @@ export default async function BreakdownPage({
     const r = read(c, account.meanRoas, account.spend, display);
     return {
       key: g.key,
-      label: g.untagged ? "— untagged —" : g.label,
+      label: g.label,
       untagged: g.untagged,
       ads: g.ads.length,
       spend: c.spend,
@@ -148,7 +153,7 @@ export default async function BreakdownPage({
   );
   const series = groups.slice(0, 5).map((g) => ({
     key: g.key,
-    label: g.untagged ? "— untagged —" : g.label,
+    label: g.label,
     values: months.map((m, i) => {
       const spend = g.ads.reduce(
         (acc, a) => acc + (a.monthlySpend.find((x) => x.month === m)?.spend ?? 0),
@@ -164,7 +169,7 @@ export default async function BreakdownPage({
   // silently reset the reader to another client's lifetime figures.
   // Built from the INCOMING params, not from `viewQuery(ctx.params)`.
   // viewQuery serialises the resolved preset, and on these screens that
-  // resolves to `all` even when nobody chose it — so following a row wrote
+  // resolves to `all` even when nobody chose it, so following a row wrote
   // `preset=all` into the URL, and the sidebar then carried it onto Snapshot,
   // Orders and everything else. A link may preserve a choice; it must not
   // invent one.
@@ -181,22 +186,16 @@ export default async function BreakdownPage({
 
   return (
     <Shell ctx={ctx} dimension={dimension}>
-      {!judged && <ThresholdsMissing clientName={client.name} />}
+      {!judged && <Notice tone="warning">No verdicts. Set thresholds in Settings.</Notice>}
 
       {coverage.pctSpendTagged !== null && coverage.pctSpendTagged < COVERAGE_FLOOR && (
-        <div className="glass flex flex-col gap-2 border-warning/40 p-5">
-          <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-warning">
-            Reads {pct(coverage.pctSpendTagged)} of the account
-          </span>
-          <p className="m-0 max-w-[74ch] text-[13px] leading-[1.7] text-content-body">
-            Only {pct(coverage.pctSpendTagged)} of the last 90 days&apos; spend carries a
-            concept tag, against a working floor of {pct(COVERAGE_FLOOR)}. Every row below is
-            real, and the untagged row is shown at its true size — but a comparison between
-            two tagged rows is a comparison inside the tagged minority, and it is not a
-            statement about the account. Work the unmapped queue before quoting anything
-            here.
-          </p>
-        </div>
+        <Notice tone="warning">
+          Only {pct(coverage.pctSpendTagged)} of spend is tagged.
+          <InfoTip
+            text={`Of the last 90 days, under ${pct(COVERAGE_FLOOR)} carries a concept tag. Rows compare within the tagged share only. Map the unmapped ads before quoting them.`}
+            label="About tag coverage"
+          />
+        </Notice>
       )}
 
       <div className="glass p-5">
@@ -212,9 +211,9 @@ export default async function BreakdownPage({
           {(judged
             ? [
                 ["var(--text-muted)", "Spend"],
-                ["var(--accent)", "Revenue, at or above target"],
-                ["var(--info)", "Revenue, profitable under target"],
-                ["var(--negative)", "Revenue, below the kill line"],
+                ["var(--accent)", SEPARATION_LABELS["above-target"]],
+                ["var(--info)", SEPARATION_LABELS["profitable-under-target"]],
+                ["var(--negative)", SEPARATION_LABELS["below-kill"]],
               ]
             : [
                 ["var(--text-muted)", "Spend"],
@@ -231,8 +230,12 @@ export default async function BreakdownPage({
       </div>
 
       <div className="glass p-5">
-        <h4 className="m-0 mb-3 text-[13px] font-semibold tracking-heading text-content-strong">
-          What we can and cannot tell apart
+        <h4 className="m-0 mb-3 flex items-center gap-1.5 text-[13px] font-semibold tracking-heading text-content-strong">
+          ROAS range
+          <InfoTip
+            text="Each bar is the range the true ROAS could fall in. A wide bar means less certainty about that row."
+            label="About ROAS range"
+          />
         </h4>
         <IntervalChart
           rows={rows}
@@ -241,8 +244,8 @@ export default async function BreakdownPage({
         />
         {/*
           The bar is the payload of this chart and nothing on it says so.
-          Without this line a reader takes the bar for a magnitude — a longer
-          bar reading as a better row — when it means the opposite: a wide bar
+          Without this line a reader takes the bar for a magnitude, a longer
+          bar reading as a better row, when it means the opposite: a wide bar
           is a row we know less about.
 
           The swatches are the zones as the chart actually paints them: the
@@ -252,9 +255,9 @@ export default async function BreakdownPage({
         <div className="mt-2.5 flex flex-wrap gap-4 text-[12px] text-content-muted">
           {(judged
             ? [
-                [`Losing money, under ${thresholds.killRoas.toFixed(2)}`, "var(--negative)", 0.06],
-                ["Profitable, under target", "var(--text-muted)", 0.05],
-                [`At or above target ${thresholds.targetRoas.toFixed(2)}`, "var(--accent)", 0.07],
+                [`${SEPARATION_LABELS["below-kill"]} ${thresholds.killRoas.toFixed(2)}`, "var(--negative)", 0.06],
+                [SEPARATION_LABELS["profitable-under-target"], "var(--text-muted)", 0.05],
+                [`${SEPARATION_LABELS["above-target"]} ${thresholds.targetRoas.toFixed(2)}`, "var(--accent)", 0.07],
               ]
             : []
           ).map(([label, colour, alpha]) => (
@@ -270,22 +273,14 @@ export default async function BreakdownPage({
               {label}
             </span>
           ))}
-          <span>
-            <i
-              aria-hidden="true"
-              className="mr-1.5 inline-block h-[9px] w-[9px] rounded-[2px] align-[-1px]"
-              style={{ background: "var(--border-strong)" }}
-            />
-            Bar = the range the true value could be in
-          </span>
         </div>
       </div>
 
       {/*
         The same sortable, resizable table every other screen in the app uses.
-        A breakdown is read by ordering it — by spend to see where the money
+        A breakdown is read by ordering it, by spend to see where the money
         went, by ROAS to see what came back, by purchases to see what is even
-        readable — and a fixed sort by spend answers only the first of those.
+        readable, and a fixed sort by spend answers only the first of those.
 
         The dimension cell is a link into the Creatives grid, filtered to this
         row. "Curiosity gap returns 1.25" is not a finding until you have seen
@@ -294,7 +289,6 @@ export default async function BreakdownPage({
       */}
       <DataTable
         gridClass="grid grid-cols-[2.4fr_0.5fr_0.9fr_1fr_0.6fr_0.8fr_0.7fr_0.6fr_1.2fr_1fr] items-center gap-2"
-        emptyMessage="No delivery to break down in this window."
         columns={[
           { key: "dim", label },
           { key: "ads", label: "Ads", align: "right" },
@@ -302,8 +296,8 @@ export default async function BreakdownPage({
           { key: "share", label: "Share" },
           { key: "purch", label: "Purch.", align: "right" },
           { key: "cpa", label: "CPA", align: "right" },
-          { key: "roas", label: "ROAS", align: "right" },
-          { key: "raw", label: "Raw", align: "right" },
+          { key: "roas", label: "ROAS", align: "right", info: "Pulled toward the account mean when purchases are few." },
+          { key: "raw", label: "Raw", align: "right", info: "Observed ROAS, before that adjustment." },
           { key: "ci", label: "95% interval" },
           { key: "conf", label: "Confidence", sortable: false },
         ]}
@@ -328,7 +322,7 @@ export default async function BreakdownPage({
               title={
                 r.readable
                   ? undefined
-                  : `Under ${display.directionalPurchases} purchases. The interval is wider than the gap between the kill line and the target, so this row cannot support a decision.`
+                  : "Too few purchases to decide."
               }
             >
               {r.focusValue ? (
@@ -368,14 +362,14 @@ export default async function BreakdownPage({
               <span className="font-mono text-[11px] text-content-muted">{pct(r.spendShare)}</span>
             </span>,
             <span key="p" className="font-mono text-[13px] tabular text-content-body">{r.purchases}</span>,
-            <span key="c" className="font-mono text-[13px] tabular text-content-body">{money(r.cpa, currency)}</span>,
+            <span key="c" className="font-mono text-[13px] tabular text-content-body">{unitMoney(r.cpa, currency)}</span>,
             <span key="r" className="font-mono text-[13px] font-medium tabular text-content-strong">{roas(r.roas)}</span>,
             /* The raw ratio beside the shrunk one, always. Hiding it would make
                the shrinkage feel like a correction applied behind the reader's
                back. */
             <span key="rw" className="font-mono text-[13px] tabular text-content-muted">{roas(r.roasRaw)}</span>,
             <span key="ci" className="font-mono text-[12px] tabular text-content-muted">
-              {r.ciLow !== null && r.ciHigh !== null ? `${roas(r.ciLow)} – ${roas(r.ciHigh)}` : "—"}
+              {r.ciLow !== null && r.ciHigh !== null ? `${roas(r.ciLow)} to ${roas(r.ciHigh)}` : NO_VALUE}
             </span>,
             <ConfidenceChip key="cf" level={r.confidence} />,
           ],
@@ -383,7 +377,7 @@ export default async function BreakdownPage({
       />
 
       <section>
-        <SectionHead title="Share of spend over time" eyebrow="top five, monthly" />
+        <SectionHead title="Share over time" info="Top five rows, by month." />
         <div className="glass p-5">
           <ShareOverTime series={series} months={months} />
         </div>
@@ -397,14 +391,15 @@ function Shell({
   dimension,
   children,
 }: {
-  ctx: Awaited<ReturnType<typeof loadCreativeContext>>;
+  ctx: CreativeContext;
   dimension: BreakdownKey;
   children: React.ReactNode;
 }) {
   return (
     <>
-      <Header eyebrow={`Creative · ${ctx.client.name}`} title="Breakdown" />
-      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-0 lg:px-8">
+      <Header title="Breakdown" />
+      <PageControls client={ctx.client} params={ctx.params} />
+      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-4 lg:px-8">
         <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
         <CreativeBar
           unmapped={0}

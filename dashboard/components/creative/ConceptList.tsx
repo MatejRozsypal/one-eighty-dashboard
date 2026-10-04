@@ -7,7 +7,7 @@
  * A concept card carries a strip of the creatives inside it, and the strip is
  * the obvious way in: a concept reading 1.25 is a question, and the answer is
  * always in the four thumbnails beside the number. Opening one needs client
- * state, and the Concepts screen is a server component — so the state lives
+ * state, and the Concepts screen is a server component, so the state lives
  * here, one panel for the whole list rather than one per card.
  *
  * The panel is the same component the Creatives grid opens, so an ad looks the

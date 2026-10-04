@@ -87,16 +87,25 @@ export interface DataTableRow {
  */
 const ROW_RESIZED = "grid w-max min-w-full items-center gap-2";
 
-function compare(
+/**
+ * Row order for one column. Nulls are placed first of all, then the direction
+ * is applied to the real values only. Negating the whole comparison for
+ * "desc" would flip the nulls to the top, which is the bug this shape avoids.
+ */
+export function compareSortKeys(
   a: number | string | null,
-  b: number | string | null
+  b: number | string | null,
+  direction: "desc" | "asc"
 ): number {
   // Nulls last, independent of direction, see the header note.
   if (a === null && b === null) return 0;
   if (a === null) return 1;
   if (b === null) return -1;
-  if (typeof a === "number" && typeof b === "number") return a - b;
-  return String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
+  const r =
+    typeof a === "number" && typeof b === "number"
+      ? a - b
+      : String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
+  return direction === "desc" ? -r : r;
 }
 
 export function DataTable({
@@ -172,8 +181,11 @@ export function DataTable({
     // unsorted order unrecoverable when the user cycles back to default.
     const out = [...rows];
     out.sort((x, y) => {
-      const r = compare(x.sort[sortIndex] ?? null, y.sort[sortIndex] ?? null);
-      return direction === "desc" ? -r : r;
+      return compareSortKeys(
+        x.sort[sortIndex] ?? null,
+        y.sort[sortIndex] ?? null,
+        direction
+      );
     });
     return out;
   }, [rows, sortIndex, direction]);

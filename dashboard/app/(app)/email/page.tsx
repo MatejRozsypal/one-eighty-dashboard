@@ -18,7 +18,8 @@ import { Eyebrow } from "@/components/ui/Eyebrow";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { NotConnected, NoData, Value } from "@/components/ui/EmptyState";
 import { DataTable } from "@/components/ui/DataTable";
-import { NO_VALUE } from "@/lib/format";
+import { NO_VALUE, plainDashes } from "@/lib/format";
+import { EmptyNote } from "@/components/ui/PageNotes";
 
 export const metadata: Metadata = { title: "Email" };
 export const dynamic = "force-dynamic";
@@ -148,9 +149,9 @@ export default async function EmailPage({
                   cells: [
                     <span
                       className="block truncate text-[13px] text-content-strong"
-                      title={c.campaignName}
+                      title={plainDashes(c.campaignName)}
                     >
-                      {c.campaignName}
+                      {plainDashes(c.campaignName)}
                     </span>,
                     <span className="font-mono text-[12px] tabular text-content-muted">
                       <Value>{c.sendDate ?? NO_VALUE}</Value>
@@ -212,7 +213,11 @@ export default async function EmailPage({
               </div>
             ) : (
               <div className="pb-5">
-                <NoData />
+                {client.emailPlatform === "ecomail" ? (
+                  <EmptyNote>Flows are not available for Ecomail.</EmptyNote>
+                ) : (
+                  <NoData />
+                )}
               </div>
             )}
           </div>
@@ -247,9 +252,9 @@ export default async function EmailPage({
                     cells: [
                       <span
                         className="block truncate text-[13px] text-content-strong"
-                        title={f.flowName}
+                        title={plainDashes(f.flowName)}
                       >
-                        {f.flowName}
+                        {plainDashes(f.flowName)}
                       </span>,
                       <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-content-muted">
                         <Value>{f.status ?? NO_VALUE}</Value>

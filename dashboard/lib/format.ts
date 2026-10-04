@@ -16,6 +16,9 @@
  * UI copy is English throughout, so `en-US` grouping is used for every
  * currency: the symbol changes, the separators do not.
  *
+ * Negative money uses U+2212 (see `tidySign`); a negative that rounds to zero
+ * prints without a sign.
+ *
  * Missing values: every formatter returns `NO_VALUE` ("n/a") for null. Never a
  * dash, never "0". Render sites mute it (`<Value>` in components/ui/EmptyState,
  * and DataTable / MetricCard / KpiTile do it automatically).
@@ -23,6 +26,20 @@
 
 /** The one "no value" glyph. Muted at render time; never a dash, never "0". */
 export const NO_VALUE = "n/a";
+
+/** The minus sign used for every negative money value (U+2212, not a hyphen). */
+export const MINUS = "\u2212";
+
+/**
+ * Sign rule shared by the formatters. A negative that rounds to zero ("-$0",
+ * "-0.0%") loses its sign; a real negative money value gets the U+2212 minus so
+ * the margin stack, discounts and deltas all read alike.
+ */
+function tidySign(formatted: string, money: boolean): string {
+  if (!formatted.includes("-")) return formatted;
+  if (!/[1-9]/.test(formatted)) return formatted.replace("-", "");
+  return money ? formatted.replace("-", MINUS) : formatted;
+}
 
 /** True when a formatted string is the no-value glyph (for muting). */
 export function isNoValue(text: unknown): boolean {
@@ -57,14 +74,17 @@ export function formatMoney(
           ? 2
           : 0;
 
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    notation: compact ? "compact" : "standard",
-    ...(digits === null
-      ? { maximumFractionDigits: 1 }
-      : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
-  }).format(value);
+  return tidySign(
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      notation: compact ? "compact" : "standard",
+      ...(digits === null
+        ? { maximumFractionDigits: 1 }
+        : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
+    }).format(value),
+    true
+  );
 }
 
 /** Plain number, en-US grouping. `decimals` is a maximum. */
@@ -73,10 +93,13 @@ export function formatNumber(
   { compact = false, decimals = 0 }: { compact?: boolean; decimals?: number } = {}
 ): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return NO_VALUE;
-  return new Intl.NumberFormat("en-US", {
-    notation: compact ? "compact" : "standard",
-    maximumFractionDigits: decimals,
-  }).format(value);
+  return tidySign(
+    new Intl.NumberFormat("en-US", {
+      notation: compact ? "compact" : "standard",
+      maximumFractionDigits: decimals,
+    }).format(value),
+    false
+  );
 }
 
 /** Percentages arrive as fractions (0.35), render as "35.0%". */
@@ -85,11 +108,14 @@ export function formatPercent(
   { decimals = 1 }: { decimals?: number } = {}
 ): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return NO_VALUE;
-  return new Intl.NumberFormat("en-US", {
-    style: "percent",
-    maximumFractionDigits: decimals,
-    minimumFractionDigits: decimals,
-  }).format(value);
+  return tidySign(
+    new Intl.NumberFormat("en-US", {
+      style: "percent",
+      maximumFractionDigits: decimals,
+      minimumFractionDigits: decimals,
+    }).format(value),
+    false
+  );
 }
 
 /** Ratios like MER / aMER: "4.20×". */
@@ -99,4 +125,13 @@ export function formatRatio(
 ): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return NO_VALUE;
   return `${value.toFixed(decimals)}×`;
+}
+
+/**
+ * Em dashes (U+2014) in client data, such as Klaviyo flow names, become a
+ * hyphen at render. The data itself is untouched. Spaces around the dash are
+ * kept as they were.
+ */
+export function plainDashes(text: string): string {
+  return text.replace(/\u2014/g, "-");
 }

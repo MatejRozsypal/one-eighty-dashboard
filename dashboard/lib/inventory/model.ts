@@ -13,7 +13,7 @@
  * meaning is worse than one that is wrong out loud.
  */
 
-import { NO_VALUE } from "@/lib/format";
+import { NO_VALUE, formatMoney } from "@/lib/format";
 
 /** ABCD grade. `U` = too little history to judge; `null` = ungradeable. */
 export type AbcGrade = "A" | "B" | "C" | "D" | "U" | null;
@@ -141,6 +141,9 @@ export function assignGrades(rows: InventoryRow[]): void {
   }
 }
 
+/** Past this many years of cover the figure is printed as ">5 years". */
+const COVER_YEARS_CAP = 5;
+
 /**
  * Days of cover, written so a human can read it.
  *
@@ -149,15 +152,33 @@ export function assignGrades(rows: InventoryRow[]): void {
  * 91,080 days. Printing that verbatim is technically honest and practically
  * useless, six digits of false precision that make the page look broken.
  *
- * Past two years the exact figure carries no information anyway: everything up
- * there means "this will not sell through in any planning horizon", and for a
- * cosmetics SKU it means "this expires first".
+ * Past two years the figure is shown in whole years, and past five it is capped
+ * at ">5 years": everything up there means "this will not sell through in any
+ * planning horizon", and for a cosmetics SKU it means "this expires first".
  */
 export function formatCover(days: number | null): string {
   if (days === null) return NO_VALUE;
   if (days < 730) return `${Math.round(days)} days`;
   const years = days / 365;
-  return years >= 100 ? "100+ years" : `${Math.round(years)} years`;
+  return years > COVER_YEARS_CAP ? `>${COVER_YEARS_CAP} years` : `${Math.round(years)} years`;
+}
+
+/**
+ * Stock counts older than this stop driving purchasing advice. The Buying plan
+ * and the reorder lines on Stock health are hidden: a quantity computed on a
+ * months-old count reads as a current instruction.
+ */
+export const STALE_ACTIONS_AFTER_DAYS = 30;
+
+/** True when the snapshot is too old to base a purchase on. */
+export function snapshotTooOldForBuying(
+  summary: Pick<InventorySummary, "snapshotAgeDays" | "snapshotDate">
+): boolean {
+  return (
+    summary.snapshotDate !== null &&
+    summary.snapshotAgeDays !== null &&
+    summary.snapshotAgeDays > STALE_ACTIONS_AFTER_DAYS
+  );
 }
 
 export interface Exception {
@@ -177,19 +198,28 @@ export interface Exception {
  * human absorbs, and scaled to a weekly review they land at about five, of
  * which one may be urgent.
  *
+ * `includeReorder: false` drops the reorder and out-of-stock lines, used when
+ * the stock count is too old to buy from (see `snapshotTooOldForBuying`).
+ *
  * SKUs with no cost are skipped entirely. We cannot size the consequence, and a
  * recommendation whose magnitude is unknown is exactly the kind of confident
  * wrong number that costs a dashboard its credibility.
  */
-export function buildExceptions(rows: InventoryRow[]): Exception[] {
+export function buildExceptions(
+  rows: InventoryRow[],
+  currency: string,
+  { includeReorder = true }: { includeReorder?: boolean } = {}
+): Exception[] {
   const candidates: Array<Exception & { stake: number }> = [];
+  // Counts are plain numbers; every cash figure goes through the money formatter.
   const n = (v: number | null) => Math.round(v ?? 0).toLocaleString("en-US");
+  const money = (v: number | null) => formatMoney(v, currency);
 
   for (const row of rows) {
     if (!row.hasCost) continue;
     const state = stockState(row);
 
-    if (state === "at-risk") {
+    if (state === "at-risk" && includeReorder) {
       const cover = row.daysCover ?? 0;
       candidates.push({
         sku: row.sku,
@@ -218,10 +248,10 @@ export function buildExceptions(rows: InventoryRow[]): Exception[] {
         stake: releasable,
         evidence:
           state === "dead"
-            ? `Nothing sold in 90 days. ${n(row.onHand)} units, about ${n(releasable)} at cost.`
+            ? `Nothing sold in 90 days. ${n(row.onHand)} units, about ${money(releasable)} at cost.`
             : `${formatCover(row.daysCover)} of cover at ` +
               `${row.velocityPerDay.toFixed(2)} units/day. Clearing to ` +
-              `${COVER_OVERSTOCK_DAYS} days frees about ${n(releasable)}.`,
+              `${COVER_OVERSTOCK_DAYS} days frees about ${money(releasable)}.`,
       });
     }
   }

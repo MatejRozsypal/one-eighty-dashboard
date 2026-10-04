@@ -16,6 +16,7 @@ import { getClients, resolveClient } from "@/lib/clients";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
+import { RangeNote } from "@/components/ui/PageNotes";
 import { getInventory } from "@/lib/queries/inventory";
 import { stockState, type StockState } from "@/lib/inventory/model";
 import { formatNumber } from "@/lib/currency";
@@ -40,6 +41,7 @@ export default async function CataloguePage({
     <>
       <Header title="Catalogue" />
       <PageControls client={client} params={params} />
+      <RangeNote />
     </>
   );
 

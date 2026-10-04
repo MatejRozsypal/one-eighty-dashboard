@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
+import { RangeNote } from "@/components/ui/PageNotes";
 import { getLifetimeSummary, getTopCustomers } from "@/lib/queries/lifetime";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { optional } from "@/lib/queries/errors";
@@ -71,6 +72,7 @@ export default async function CustomersPage({
       <>
         <Header title="Customers" />
         <PageControls client={client} params={params} />
+      <RangeNote />
         <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           <NoData />
         </main>
@@ -89,9 +91,9 @@ export default async function CustomersPage({
     },
     { label: "Avg AOV", value: money(summary.avgAov) },
     {
-      label: "Repeat rate",
+      label: "Repeat rate, lifetime",
       value: formatPercent(summary.repeatRate),
-      info: "Share of customers with 2 or more orders.",
+      info: "Share of customers with 2 or more orders, over the 36-month window.",
     },
     {
       label: "Days active",
@@ -104,6 +106,7 @@ export default async function CustomersPage({
     <>
       <Header title="Customers" />
       <PageControls client={client} params={params} />
+      <RangeNote />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">

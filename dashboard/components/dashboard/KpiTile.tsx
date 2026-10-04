@@ -7,6 +7,9 @@
  * A null or "n/a" value renders a muted "n/a". A `state` renders one short line
  * in place of the figure ("Not connected", or a reason of 3 words or fewer).
  *
+ * Below sm the tile can shrink (min-w-0) and its header wraps, so nothing runs
+ * past the card edge on a phone.
+ *
  * Optional, for the Paid tabs: `delta` (a fraction, with `goodWhen` saying which
  * direction is good) renders a change chip under the figure, and `metricKey`
  * adds the (i) tooltip with that metric's definition from `lib/metrics.ts`.
@@ -41,9 +44,9 @@ export function KpiTile({ label, value, scope, state, delta, goodWhen = "up", me
   const definition = metricKey ? METRIC_DEFINITIONS[metricKey] : undefined;
 
   return (
-    <div className="flex flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm">
-      <span className="flex items-center justify-between gap-2">
-        <span className="relative inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+    <div className="flex min-w-0 flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm">
+      <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <span className="relative inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
           {label}
           {definition && <MetricTooltip definition={definition} />}
         </span>
@@ -67,7 +70,9 @@ export function KpiTile({ label, value, scope, state, delta, goodWhen = "up", me
         </span>
       )}
       {line === null && delta !== undefined && delta !== null && (
-        <DeltaChip delta={delta} goodWhen={goodWhen} />
+        <span className="flex min-w-0 max-w-full flex-wrap">
+          <DeltaChip delta={delta} goodWhen={goodWhen} />
+        </span>
       )}
     </div>
   );

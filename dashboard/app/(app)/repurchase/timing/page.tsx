@@ -14,6 +14,7 @@ import { AppLink } from "@/components/ui/AppLink";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
+import { RangeNote, EmptyNote } from "@/components/ui/PageNotes";
 import { getRepeatTiming } from "@/lib/queries/repeatTiming";
 import { optional } from "@/lib/queries/errors";
 import { formatNumber, formatPercent } from "@/lib/currency";
@@ -67,6 +68,7 @@ export default async function RepeatTimingPage({
     <>
       <Header title="Repeat timing" />
       <PageControls client={client} params={params} />
+      <RangeNote />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <div className="flex flex-wrap items-center gap-2">
@@ -86,7 +88,7 @@ export default async function RepeatTimingPage({
         </div>
 
         {!timing || timing.repeaters === 0 ? (
-          <NoData />
+          <EmptyNote>Too few repeat orders.</EmptyNote>
         ) : (
           <>
             <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
@@ -121,7 +123,7 @@ export default async function RepeatTimingPage({
                   </>
                 )}
                 {formatNumber(timing.repeaters)} of {formatNumber(timing.cohort)}{" "}
-                came back ({formatPercent(timing.repeaters / timing.cohort, { decimals: 1 })}).
+                customers first ordering {horizon} to {horizon + 365} days ago came back ({formatPercent(timing.repeaters / timing.cohort, { decimals: 1 })}).
               </p>
             </section>
 

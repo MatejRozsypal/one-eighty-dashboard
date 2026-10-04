@@ -16,6 +16,7 @@ import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
+import { RangeNote } from "@/components/ui/PageNotes";
 import { getCohorts } from "@/lib/queries/cohorts";
 import {
   getCohortGrid,
@@ -118,6 +119,7 @@ export default async function CohortsPage({
     <>
       <Header title="Cohorts" />
       <PageControls client={client} params={params} />
+      <RangeNote />
     </>
   );
 
@@ -218,7 +220,7 @@ export default async function CohortsPage({
                 info: "Gross profit per customer, mean across mature cohorts.",
               },
               {
-                label: "Repeat rate",
+                label: "Repeat rate, mature cohorts",
                 value: formatPercent(meanOf(mature.map((c) => c.repeatRate))),
                 info: "Mature cohorts only.",
               },
@@ -263,7 +265,12 @@ export default async function CohortsPage({
                   { key: "ltgp", label: "LTGP", align: "right" },
                   { key: "y1ltv", label: "Y1 LTV", align: "right" },
                   { key: "y1ltgp", label: "Y1 LTGP", align: "right" },
-                  { key: "repeat", label: "Repeat rate", align: "right" },
+                  {
+                    key: "repeat",
+                    label: "Repeat rate",
+                    align: "right",
+                    info: "Share of the cohort with a second order, to date.",
+                  },
                 ]}
                 rows={cohorts.map((c) => ({
                   key: c.cohortMonth,

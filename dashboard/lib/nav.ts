@@ -1,17 +1,18 @@
 /**
  * Sidebar navigation.
  *
- * Items with `href` are built. Items without are shown greyed with a "Soon"
- * badge — deliberately visible rather than hidden, so the shape of the product
- * is legible and it's obvious what the warehouse could already feed.
+ * Pure (no server imports): the Sidebar, MobileTopBar and ProductRail run it in
+ * the browser. A page the selected client can never have data for is hidden,
+ * not greyed out; opened by URL it renders its title plus "{Source} not
+ * connected." (see `lib/capabilities.ts`).
  */
+
+import { matchesPrefix, pageAvailability, type HasCapabilities } from "@/lib/capabilities";
+import { productsFor, type Product } from "@/lib/products";
 
 export interface NavItem {
   label: string;
-  /** Absent = not built yet. */
-  href?: string;
-  /** Tooltip explaining why an unbuilt item is unbuilt. */
-  note?: string;
+  href: string;
   /** Hidden entirely from non-admins, rather than shown and refused. */
   adminOnly?: boolean;
 }
@@ -20,8 +21,6 @@ export interface NavGroup {
   label: string;
   items: NavItem[];
 }
-
-const NOT_BUILT = "Not built yet — the warehouse can feed it, the page doesn't exist.";
 
 export const NAV: NavGroup[] = [
   {
@@ -47,7 +46,6 @@ export const NAV: NavGroup[] = [
     label: "Marketing",
     items: [
       { label: "Paid", href: "/paid" },
-      { label: "Channels (GA4)", href: "/channels" },
       { label: "Email", href: "/email" },
     ],
   },
@@ -67,14 +65,9 @@ export const NAV: NavGroup[] = [
  * The Creative section's own navigation.
  *
  * A separate tree rather than a group inside NAV: Creative is a product behind
- * the rail, not a category of Analytics pages, and its five screens answer a
- * different question from everything in NAV. Mixing them would put "Velocity"
- * one row below "Cohorts" in the same list, which is the shape of a menu nobody
- * can find anything in.
- *
- * The order is the build order and the reading order: what ran, what it
- * belonged to, how it compares, whether enough of it is being made, and what it
- * cost. `note` explains a screen that is present but not yet answerable.
+ * the rail, not a category of Analytics pages. The order is the reading order:
+ * what ran, what it belonged to, how it compares, whether enough of it is being
+ * made, and what it cost.
  */
 export const CREATIVE_NAV: NavItem[] = [
   { label: "Creatives", href: "/creative" },
@@ -84,50 +77,80 @@ export const CREATIVE_NAV: NavItem[] = [
   { label: "Production ROI", href: "/creative/production" },
 ];
 
-/**
- * Settings lives behind the gear in the sidebar footer, not in this tree.
- *
- * It was two rows in an "Admin" group — Data Health and Users & access — which
- * put internal plumbing in the same list as the pages a client reads, and gave
- * the flat all-users screen equal billing with the analysis. Everything
- * configurable now hangs off one icon and is organised by client inside it.
- */
+/** Settings lives behind the gear in the sidebar footer, not in this tree. */
 export const SETTINGS_HREF = "/settings";
 
-/** Eyebrow shown above the page title, e.g. "Profitability · Dr. Dobias". */
-export function pageEyebrow(pathname: string, clientName: string): string {
-  const group = NAV.find((g) => g.items.some((i) => i.href === pathname));
-  if (!group) return clientName;
-  return group.label === "Admin" ? "Admin" : `${group.label} · ${clientName}`;
+/** Titles for routes outside NAV and CREATIVE_NAV (used by the mobile bar). */
+const OTHER_TITLES: Array<{ href: string; label: string }> = [
+  { href: "/chat", label: "Assistant" },
+  { href: "/channels", label: "Channels" },
+  { href: "/health", label: "Data health" },
+  { href: "/settings", label: "Settings" },
+  { href: "/admin", label: "Admin" },
+];
+
+/** Longest item whose href is `pathname` or a prefix of it ("/paid" matches "/paid/meta"). */
+function longestMatch<T extends { href: string }>(pathname: string, items: T[]): T | null {
+  let best: T | null = null;
+  for (const item of items) {
+    if (matchesPrefix(pathname, item.href) && (!best || item.href.length > best.href.length)) {
+      best = item;
+    }
+  }
+  return best;
 }
 
+/** The nav href to highlight for a path: the longest prefix match, so "/repurchase/timing" does not also light up "/repurchase". */
+export function activeNavHref(pathname: string, items: NavItem[] = allNavItems()): string | null {
+  return longestMatch(pathname, items)?.href ?? null;
+}
+
+/** Every Analytics and Creative nav item, flattened. */
+function allNavItems(): NavItem[] {
+  return [...NAV.flatMap((g) => g.items), ...CREATIVE_NAV];
+}
+
+/** Deprecated: pages no longer render an eyebrow. Kept until it has 0 callers (WP9 deletes it). */
+export function pageEyebrow(pathname: string, clientName: string): string {
+  const group = NAV.find((g) => g.items.some((i) => i.href === pathname));
+  return group ? `${group.label} · ${clientName}` : clientName;
+}
+
+/** Page title for a route, by longest prefix match ("/paid/google" reads "Paid"). */
 export function pageTitle(pathname: string): string {
-  for (const group of NAV) {
-    const item = group.items.find((i) => i.href === pathname);
-    if (item) return item.label;
-  }
-  // The rail's products are not in NAV — they are sections that *contain* a
-  // nav, not entries in one — so they are named here rather than by adding a
-  // phantom group that the sidebar would then have to filter back out.
-  if (pathname.startsWith("/chat")) return "Assistant";
-  const creative = CREATIVE_NAV.find((i) => i.href === pathname);
-  if (creative) return creative.label;
-  if (pathname.startsWith("/creative")) return "Creative";
-  return "Dashboard";
+  const item = longestMatch(pathname, [...allNavItems(), ...OTHER_TITLES]);
+  return item?.label ?? "Dashboard";
 }
 
 /**
- * The navigation a given user should see.
+ * The navigation a given user should see for the selected client.
  *
- * Admin items are removed from the tree rather than rendered disabled: an
- * agency user has no business knowing the user-management screen exists, and a
- * greyed-out row invites someone to ask for access they don't need. Groups that
- * empty out disappear with their heading.
+ * Admin-only items are removed for non-admins. With a client, pages it has no
+ * source for are removed too. Groups that empty out disappear with their
+ * heading. Without a client (registry not loaded) only the admin filter runs.
  */
-export function navFor(isAdmin: boolean): NavGroup[] {
-  if (isAdmin) return NAV;
+export function navFor(isAdmin: boolean, client?: HasCapabilities | null): NavGroup[] {
   return NAV.map((g) => ({
     ...g,
-    items: g.items.filter((i) => !i.adminOnly),
+    items: g.items.filter(
+      (i) =>
+        (isAdmin || !i.adminOnly) &&
+        (!client || pageAvailability(client, i.href) === "available")
+    ),
   })).filter((g) => g.items.length > 0);
+}
+
+/** Rail products for this user and client. Creative is hidden when the client has no Meta. */
+export function railProducts(isInternal: boolean, client?: HasCapabilities | null): Product[] {
+  return productsFor(isInternal).filter(
+    (p) => p.id !== "creative" || !client || pageAvailability(client, p.href) === "available"
+  );
+}
+
+/** The client selected by `?client=`, falling back to the first, exactly as `resolveClient` does. */
+export function selectedClient<T extends { clientId: string }>(
+  clients: T[],
+  requested: string | null | undefined
+): T | null {
+  return clients.find((c) => c.clientId === requested) ?? clients[0] ?? null;
 }

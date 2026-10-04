@@ -1,5 +1,5 @@
 /**
- * Search-param parsing — the app's entire view state.
+ * Search-param parsing, the app's entire view state.
  *
  * Client, date range, comparison mode and display currency all live in the URL.
  * That makes every view shareable and bookmarkable, lets server components read
@@ -12,6 +12,8 @@
 
 import {
   PRESET_LABELS,
+  addDays,
+  todayUtc,
   presetRange,
   resolvePeriod,
   type ComparisonMode,
@@ -23,6 +25,7 @@ import { ROLLUP_CURRENCY } from "@/lib/currency";
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
+/** No "today": every range ends yesterday at the latest (locked rule). */
 const PRESETS: PresetKey[] = ["7d", "28d", "30d", "90d", "mtd", "ytd", "12m", "all"];
 const MODES: ComparisonMode[] = ["previous_period", "previous_year", "none"];
 
@@ -62,7 +65,11 @@ export function parseViewParams(
 
   const presetParam = first(searchParams.preset);
   const from = first(searchParams.from);
-  const to = first(searchParams.to);
+  // A hand-edited custom range is clamped to end yesterday: today is partial
+  // for every ad platform, so it is never part of a range.
+  const yesterday = addDays(todayUtc(), -1);
+  const rawTo = first(searchParams.to);
+  const to = rawTo && rawTo > yesterday ? yesterday : rawTo;
 
   let presetKey: PresetKey | "custom" = defaultPreset;
   let range: DateRange;
@@ -130,7 +137,7 @@ export function viewQuery(params: ViewParams): string {
 export interface RangeLabel {
   /** The preset's own name, or "Custom". */
   label: string;
-  /** The actual days, always — a preset name alone hides which weeks these are. */
+  /** The actual days, always, a preset name alone hides which weeks these are. */
   dates: string;
 }
 
@@ -143,11 +150,10 @@ export function rangeLabel(params: ViewParams): RangeLabel {
       timeZone: "UTC",
     });
 
-  // The year is printed once, and only when the range crosses one. "14-21 Aug"
-  // is what the reader is holding in their head; "14 Aug 2026 - 21 Aug 2026"
-  // is the same fact spelled out twice.
+  // The year is printed once, and only when the range crosses one. "14 Aug to
+  // 21 Aug 2026" is what the reader is holding in their head.
   const sameYear = params.range.from.slice(0, 4) === params.range.to.slice(0, 4);
-  const dates = `${d(params.range.from, !sameYear)} – ${d(params.range.to, true)}`;
+  const dates = `${d(params.range.from, !sameYear)} to ${d(params.range.to, true)}`;
 
   return {
     label: params.presetKey === "custom" ? "Custom" : PRESET_LABELS[params.presetKey],

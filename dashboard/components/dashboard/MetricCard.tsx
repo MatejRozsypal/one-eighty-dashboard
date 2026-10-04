@@ -3,13 +3,16 @@
  *
  * Carries every state the data actually produces, because on this warehouse the
  * unusual states are common: a client with no Google account, a source that's
- * connected but never backfilled, a last day that's structurally incomplete.
+ * connected but never loaded, a last day that's structurally incomplete.
  *
  * The two rules it enforces:
  *
- *  1. **"No data" is not "zero."** Dobias has no Google Ads account, so Google
- *     spend is unknown — rendering `$0` would claim we checked and found none.
- *     A null value renders as an em dash with a reason.
+ *  1. **"No data" is not "zero."** A client with no Google Ads account has
+ *     unknown Google spend; rendering `$0` would claim we checked and found
+ *     none. A null value renders as a muted "n/a", and a state renders one
+ *     short line instead of the figure:
+ *       - `{ kind: "no-account" }`              -> "Not connected"
+ *       - `{ kind: "no-data", reason: "No cost data" }` -> the reason (3 words or fewer)
  *
  *  2. **Direction is not sentiment.** The arrow follows the movement; the color
  *     follows whether that movement is good. Revenue up is green, CAC up is red,
@@ -22,10 +25,12 @@ import { Sparkline } from "@/components/ui/Sparkline";
 import { Badge } from "@/components/ui/Badge";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
+import { NO_VALUE, isNoValue } from "@/lib/format";
 
 const PLATFORM_COLORS: Record<string, string> = {
   shopify: "bg-platform-shopify",
   shoptet: "bg-platform-shoptet",
+  woocommerce: "bg-platform-woocommerce",
   meta: "bg-platform-meta",
   google: "bg-platform-google",
   klaviyo: "bg-platform-klaviyo",
@@ -33,12 +38,24 @@ const PLATFORM_COLORS: Record<string, string> = {
   warehouse: "bg-ink-700",
 };
 
+/** What a card shows instead of (or beside) its figure. Every non-ok state is one line. */
 export type MetricState =
   | { kind: "ok" }
-  | { kind: "no-account"; badge: string; reason: string }
-  | { kind: "no-data"; reason: string }
+  /** The source is not connected for this client: "Not connected". */
+  | { kind: "no-account" }
+  /** Connected, but this figure cannot be computed. `reason` is 3 words or fewer, e.g. "No cost data". Default "No data". */
+  | { kind: "no-data"; reason?: string }
+  /** Figure shown, plus a one-line reason it is incomplete. */
   | { kind: "partial"; reason: string }
-  | { kind: "error"; message: string; jobId?: string };
+  /** The query failed. One line. */
+  | { kind: "error"; message: string };
+
+/** The one line a no-account or no-data state renders in place of the figure. */
+export function stateLine(state: MetricState): string | null {
+  if (state.kind === "no-account") return "Not connected";
+  if (state.kind === "no-data") return state.reason ?? "No data";
+  return null;
+}
 
 export function MetricCard({
   label,
@@ -52,7 +69,7 @@ export function MetricCard({
   state = { kind: "ok" },
 }: {
   label: string;
-  /** Preformatted value. Null renders the em dash. */
+  /** Preformatted value. Null (or "n/a") renders a muted "n/a". */
   value: string | null;
   delta?: number | null;
   goodWhen?: GoodWhen;
@@ -66,14 +83,16 @@ export function MetricCard({
   const definition = METRIC_DEFINITIONS[label];
   const dotClass = PLATFORM_COLORS[source.toLowerCase()] ?? "bg-gray-400";
 
-  const isEmpty = state.kind === "no-account" || state.kind === "no-data";
+  const emptyLine = stateLine(state);
+  const isEmpty = emptyLine !== null;
+  const missing = value === null || isNoValue(value);
 
   const shell = [
     "flex min-w-0 flex-col gap-4 rounded-card p-[18px_20px_16px]",
     state.kind === "error"
-      ? "border border-negative/35 bg-[#FFF7F7]"
+      ? "border border-negative/35 bg-notice-negative"
       : state.kind === "no-account"
-        ? "border border-dashed border-hairline-strong bg-paper"
+        ? "border border-hairline-strong bg-paper"
         : state.kind === "partial"
           ? "border border-warning/40 bg-surface-card shadow-sm"
           : "border border-hairline bg-surface-card shadow-sm",
@@ -87,11 +106,7 @@ export function MetricCard({
           {definition && <MetricTooltip definition={definition} />}
         </span>
 
-        {state.kind === "no-account" ? (
-          <Badge variant="outline" size="sm">
-            {state.badge}
-          </Badge>
-        ) : state.kind === "partial" ? (
+        {state.kind === "partial" ? (
           <Badge variant="neutral" size="sm" dot>
             Partial
           </Badge>
@@ -108,19 +123,14 @@ export function MetricCard({
       </div>
 
       {state.kind === "error" ? (
-        <div className="flex flex-col gap-2.5">
-          <span className="text-[13px] font-semibold text-content-strong">
-            {state.message}
-          </span>
-          {state.jobId && (
-            <span className="font-mono text-[10.5px] text-content-muted">
-              {state.jobId}
-            </span>
-          )}
-        </div>
+        <span className="text-[13px] font-semibold text-content-strong">
+          {state.message}
+        </span>
+      ) : isEmpty ? (
+        <span className="text-[15px] leading-[1.35] text-content-muted">{emptyLine}</span>
       ) : (
         /*
-         * Value, then delta, then sparkline — three stacked rows.
+         * Value, then delta, then sparkline, three stacked rows.
          *
          * The sparkline used to sit beside the value, taking a fixed 92px out
          * of the card's width while the value was `whitespace-nowrap` in a
@@ -137,17 +147,13 @@ export function MetricCard({
           <div className="flex min-w-0 flex-col gap-[9px]">
             <span
               className={`whitespace-nowrap font-mono text-[clamp(20px,1.9vw,28px)] font-semibold leading-none tracking-display tabular ${
-                isEmpty || value === null ? "text-gray-250" : "text-content-strong"
+                missing ? "text-content-muted" : "text-content-strong"
               }`}
             >
-              {value ?? "—"}
+              {missing ? NO_VALUE : value}
             </span>
 
-            {isEmpty ? (
-              <span className="text-[12px] leading-[1.5] text-content-muted">
-                {state.reason}
-              </span>
-            ) : state.kind === "partial" ? (
+            {state.kind === "partial" ? (
               <span className="text-[12px] leading-[1.5] text-content-body">
                 {state.reason}
               </span>
@@ -161,13 +167,13 @@ export function MetricCard({
                 )}
               </span>
             ) : (
-              // Comparison off — hold the vertical space so the card grid
+              // Comparison off, hold the vertical space so the card grid
               // doesn't reflow when the user switches comparison to None.
               <span className="block h-3" aria-hidden="true" />
             )}
           </div>
 
-          {series && series.length > 1 && !isEmpty && (
+          {series && series.length > 1 && (
             <Sparkline
               data={series}
               tone={sparkTone}
@@ -182,7 +188,7 @@ export function MetricCard({
   );
 }
 
-/** Skeleton shown while BigQuery runs — 2–5s on wide ranges. */
+/** Skeleton shown while BigQuery runs (2 to 5 s on wide ranges). */
 export function MetricCardSkeleton({ label }: { label?: ReactNode }) {
   const shimmer =
     "bg-[linear-gradient(90deg,var(--gray-100)_25%,var(--gray-150)_37%,var(--gray-100)_63%)] bg-[length:320px_100%] animate-[oe-shimmer_1.3s_linear_infinite]";

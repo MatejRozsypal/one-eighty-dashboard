@@ -4,8 +4,8 @@
  * Sortable table.
  *
  * ── Why the cells arrive pre-rendered ───────────────────────────────────────
- * Every page here is a server component, and its formatting — currency,
- * platform badges, delta chips, masked emails — already lives there. A generic
+ * Every page here is a server component, and its formatting, currency,
+ * platform badges, delta chips, masked emails, already lives there. A generic
  * table that took `render: (row) => ReactNode` would force all of that across
  * the client boundary, where functions cannot go.
  *
@@ -17,14 +17,14 @@
  *
  * ── Why sorting is client-side ──────────────────────────────────────────────
  * The alternative is a search param and a re-query, which on this warehouse
- * means 2–5 seconds of BigQuery to reorder rows already on screen. These tables
+ * means 2 to 5 seconds of BigQuery to reorder rows already on screen. These tables
  * are capped at tens to low hundreds of rows, so a comparator in the browser is
  * instant and costs nothing.
  *
  * ── Resizable columns ───────────────────────────────────────────────────────
  * Column widths are dragged, not fixed by a `fr` template. Ad and campaign
  * names here run to sixty characters and product names to forty, so any ratio
- * chosen up front is wrong for somebody — the grid ends up with names truncated
+ * chosen up front is wrong for somebody, the grid ends up with names truncated
  * to nothing beside a Spend column padded with air.
  *
  * Widths start from the caller's template, measured once after first paint, and
@@ -40,16 +40,21 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NoValue } from "@/components/ui/EmptyState";
+import { isNoValue } from "@/lib/format";
 
 export type SortDirection = "desc" | "asc" | null;
 
 export interface DataTableColumn {
   key: string;
   label: string;
-  /** Right-align — use for every numeric column. */
+  /** Right-align, use for every numeric column. */
   align?: "right";
   /** Omit or set false for columns with no meaningful order (badges, actions). */
   sortable?: boolean;
+  /** Definition shown in an (i) tooltip beside the heading. At most 40 words. */
+  info?: string;
 }
 
 export interface DataTableRow {
@@ -66,7 +71,7 @@ export interface DataTableRow {
  * Once widths are explicit pixels, the row must size to its own columns.
  *
  * Rows sit inside a `min-w-[…]` block within an `overflow-x-auto` parent, so a
- * plain grid takes that block's width — 1000px, say — while dragged columns can
+ * plain grid takes that block's width, 1000px, say, while dragged columns can
  * total 1260px. The `px-5` then belongs to the 1000px box and the overflow
  * escapes it: scrolled fully right, the last column lands exactly on the
  * container edge with zero padding, and the row's bottom border and hover
@@ -78,7 +83,7 @@ export interface DataTableRow {
  *
  * This applies only to the resized branch. The default branch uses `fr` columns,
  * which resolve against available space and would collapse to min-content under
- * `w-max` — and it has no such bug, because `fr` never overflows the box.
+ * `w-max`, and it has no such bug, because `fr` never overflows the box.
  */
 const ROW_RESIZED = "grid w-max min-w-full items-center gap-2";
 
@@ -86,7 +91,7 @@ function compare(
   a: number | string | null,
   b: number | string | null
 ): number {
-  // Nulls last, independent of direction — see the header note.
+  // Nulls last, independent of direction, see the header note.
   if (a === null && b === null) return 0;
   if (a === null) return 1;
   if (b === null) return -1;
@@ -98,7 +103,7 @@ export function DataTable({
   columns,
   rows,
   gridClass,
-  emptyMessage = "Nothing in this range.",
+  emptyMessage = "No data in this range.",
 }: {
   columns: DataTableColumn[];
   rows: DataTableRow[];
@@ -233,15 +238,21 @@ export function DataTable({
                 className={`${base} relative text-content-muted`}
               >
                 {c.label}
+                {c.info && (
+                  <span className="ml-1">
+                    <InfoTip text={c.info} label={`About ${c.label}`} />
+                  </span>
+                )}
                 {i < columns.length - 1 && handle}
               </span>
             );
           }
 
+          // The header cell is a span, not the button itself: the (i) tooltip is
+          // its own button and buttons cannot nest.
           return (
-            <button
+            <span
               key={c.key}
-              type="button"
               role="columnheader"
               aria-sort={
                 active
@@ -250,33 +261,41 @@ export function DataTable({
                     : "ascending"
                   : "none"
               }
-              onClick={() => cycle(i)}
-              title={
-                active
-                  ? direction === "desc"
-                    ? "Sorted highest first — click for lowest first"
-                    : "Sorted lowest first — click to clear"
-                  : `Sort by ${c.label}`
-              }
-              className={`${base} inline-flex items-center gap-1 transition-colors duration-fast hover:text-content-strong ${
+              className={`${base} relative inline-flex min-w-0 items-center gap-1 ${
                 c.align === "right" ? "justify-end" : "justify-start"
-              } relative ${active ? "text-content-strong" : "text-content-muted"}`}
+              } ${active ? "text-content-strong" : "text-content-muted"}`}
             >
-              <span className="truncate">{c.label}</span>
-              {/*
-                The caret holds its slot whether or not the column is active, so
-                turning sorting on doesn't shove every other heading sideways.
-              */}
-              <span
-                aria-hidden="true"
-                className={`w-[7px] flex-none text-[8px] leading-none ${
-                  active ? "opacity-100" : "opacity-0"
+              <button
+                type="button"
+                onClick={() => cycle(i)}
+                title={
+                  active
+                    ? direction === "desc"
+                      ? "Sorted highest first. Click for lowest first."
+                      : "Sorted lowest first. Click to clear."
+                    : `Sort by ${c.label}`
+                }
+                className={`inline-flex min-w-0 items-center gap-1 uppercase tracking-[0.08em] transition-colors duration-fast hover:text-content-strong ${
+                  c.align === "right" ? "justify-end" : "justify-start"
                 }`}
               >
-                {direction === "asc" ? "▲" : "▼"}
-              </span>
+                <span className="truncate">{c.label}</span>
+                {/*
+                  The caret holds its slot whether or not the column is active, so
+                  turning sorting on doesn't shove every other heading sideways.
+                */}
+                <span
+                  aria-hidden="true"
+                  className={`w-[7px] flex-none text-[8px] leading-none ${
+                    active ? "opacity-100" : "opacity-0"
+                  }`}
+                >
+                  {direction === "asc" ? "▲" : "▼"}
+                </span>
+              </button>
+              {c.info && <InfoTip text={c.info} label={`About ${c.label}`} />}
               {i < columns.length - 1 && handle}
-            </button>
+            </span>
           );
         })}
       </div>
@@ -294,7 +313,7 @@ export function DataTable({
               role="cell"
               className={`min-w-0 truncate ${columns[i]?.align === "right" ? "text-right" : ""}`}
             >
-              {cell}
+              {isNoValue(cell) ? <NoValue /> : cell}
             </span>
           ))}
         </div>

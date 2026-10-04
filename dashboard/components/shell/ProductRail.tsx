@@ -1,16 +1,20 @@
 "use client";
 
 /**
- * The icon rail — the outermost column, one icon per product.
+ * The icon rail: the outermost column, one icon per product.
  *
- * Always visible, never collapsible. It is the only way back to the other two
+ * Always visible, never collapsible. It is the only way back to the other
  * products, so hiding it behind the same toggle that hides the nav panel would
  * make a section of the app unreachable. The panel beside it collapses instead.
+ *
+ * Creative is hidden when the selected client has no Meta (`railProducts`).
  */
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { productsFor, productFor, type ProductId } from "@/lib/products";
+import { productFor, type ProductId } from "@/lib/products";
+import { railProducts, selectedClient } from "@/lib/nav";
+import type { Client } from "@/lib/clients";
 import { NavCollapseToggle } from "@/components/shell/NavCollapseToggle";
 
 function Icon({ id }: { id: ProductId }) {
@@ -27,7 +31,7 @@ function Icon({ id }: { id: ProductId }) {
   };
   if (id === "chat")
     // A spark, not a speech bubble: the section is an agent, and a bubble would
-    // read as team chat — which this is not.
+    // read as team chat, which this is not.
     return (
       <svg {...common}>
         <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
@@ -52,12 +56,19 @@ function Icon({ id }: { id: ProductId }) {
   );
 }
 
-export function ProductRail({ isInternal }: { isInternal: boolean }) {
+export function ProductRail({
+  isInternal,
+  clients = [],
+}: {
+  isInternal: boolean;
+  /** The switcher's client list; the selected one decides whether Creative shows. */
+  clients?: Client[];
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
   const active = productFor(pathname);
-  const products = productsFor(isInternal);
+  const products = railProducts(isInternal, selectedClient(clients, searchParams.get("client")));
 
   return (
     <aside className="sticky top-0 hidden h-screen w-[var(--rail-w)] flex-none flex-col items-center border-r border-white/[0.07] bg-bg-inverse pb-[18px] pt-[22px] lg:flex">
@@ -65,7 +76,7 @@ export function ProductRail({ isInternal }: { isInternal: boolean }) {
         The collapse control lives in one of two places and the rail reserves
         the top slot for it either way. Open, it sits at the panel's right edge
         beside the logo; closed, the panel is gone and it lands here, at the
-        same height, on the other side of where the panel was — so it crosses a
+        same height, on the other side of where the panel was, so it crosses a
         short gap rather than jumping to the far bottom corner, which is where
         it used to go and why it read as a different control.
 
@@ -87,7 +98,7 @@ export function ProductRail({ isInternal }: { isInternal: boolean }) {
             // when switching products would silently reset whose numbers you
             // were looking at.
             href={qs ? `${p.href}?${qs}` : p.href}
-            title={`${p.label} — ${p.hint}`}
+            title={p.label}
             aria-label={p.label}
             aria-current={isActive ? "page" : undefined}
             className={`flex h-9 w-9 items-center justify-center rounded-sm transition-colors duration-fast ${

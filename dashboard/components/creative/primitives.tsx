@@ -1,20 +1,22 @@
 /**
  * The small, repeated pieces of the Creative Engine's surface.
  *
- * Server components throughout — none of them hold state, and keeping them off
+ * Server components throughout, none of them hold state, and keeping them off
  * the client boundary means a page of forty tiles ships no JavaScript for its
  * chrome.
  *
  * ── The formatting rules these encode ──────────────────────────────────────
  * Percentages are WHOLE NUMBERS everywhere except CTR, hook rate and hold rate,
- * where a decimal carries real signal at those magnitudes — the difference
+ * where a decimal carries real signal at those magnitudes, the difference
  * between a 22.4% and a 19.8% hook rate is a decision, and "22%" against "20%"
  * hides it. ROAS always carries two decimals, because the whole product turns
  * on the gap between 1.80 and 2.50.
  */
 
 import type { ReactNode } from "react";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, NO_VALUE, isNoValue } from "@/lib/format";
+import { NoData, NotConnected } from "@/components/ui/EmptyState";
+import { Notice } from "@/components/ui/Notice";
 import { CONFIDENCE_LABELS, type Confidence } from "@/lib/creative/stats";
 import type { VerdictCode } from "@/lib/creative/verdict";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
@@ -23,18 +25,18 @@ import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 // Numbers
 // ---------------------------------------------------------------------------
 
-export const roas = (v: number | null): string => (v === null ? "—" : v.toFixed(2));
+export const roas = (v: number | null): string => (v === null ? NO_VALUE : v.toFixed(2));
 
 /** Whole-number percent. The default everywhere. */
 export const pct = (v: number | null): string =>
-  v === null ? "—" : `${Math.round(v * 100)}%`;
+  v === null ? NO_VALUE : `${Math.round(v * 100)}%`;
 
 /** One decimal. Only CTR, hook rate and hold rate. */
 export const ratePct = (v: number | null): string =>
-  v === null ? "—" : `${(v * 100).toFixed(1)}%`;
+  v === null ? NO_VALUE : `${(v * 100).toFixed(1)}%`;
 
 export const count = (v: number | null): string =>
-  v === null ? "—" : Math.round(v).toLocaleString("en-US");
+  v === null ? NO_VALUE : Math.round(v).toLocaleString("en-US");
 
 export const money = (v: number | null, currency: string): string =>
   formatMoney(v, currency);
@@ -129,7 +131,7 @@ export interface Tile {
   sub?: string;
   /**
    * Period-over-period change, when a comparison range is selected. Only the
-   * four delivery figures carry one — spend, ROAS, CPA and purchases have
+   * four delivery figures carry one, spend, ROAS, CPA and purchases have
    * enough events behind them to move for a reason. A "winners" count that went
    * from 1 to 2 is not up 100%.
    */
@@ -143,7 +145,7 @@ export interface Tile {
  *
  * ── Why a screen would want this instead ───────────────────────────────────
  * Six tiles at 21px each is a screen's worth of chrome for six small integers,
- * and on Concepts it pushed the concept roster — the thing the page is for —
+ * and on Concepts it pushed the concept roster, the thing the page is for,
  * below the fold. None of these six is a headline: "3 of 18 angles in use" is
  * context you read once on the way past, not a number you come to the page to
  * check.
@@ -159,7 +161,11 @@ export function StatLine({ tiles }: { tiles: Tile[] }) {
           <dt className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
             {t.label}
           </dt>
-          <dd className="m-0 whitespace-nowrap font-mono text-[13.5px] font-medium tabular text-content-strong">
+          <dd
+            className={`m-0 whitespace-nowrap font-mono text-[13.5px] font-medium tabular ${
+              isNoValue(t.value) ? "text-content-muted" : "text-content-strong"
+            }`}
+          >
             {t.value}
           </dd>
           {t.sub && (
@@ -198,7 +204,11 @@ export function Scorecard({ tiles }: { tiles: Tile[] }) {
           {/* `whitespace-nowrap` is not decoration: a wrapped headline figure
               changes the tile's height and breaks the row's alignment, which
               makes the whole strip look accidental. */}
-          <div className="mt-1 whitespace-nowrap font-mono text-[21px] font-medium tracking-heading tabular text-content-strong">
+          <div
+            className={`mt-1 whitespace-nowrap font-mono text-[21px] font-medium tracking-heading tabular ${
+              isNoValue(t.value) ? "text-content-muted" : "text-content-strong"
+            }`}
+          >
             {t.value}
           </div>
           <div className="mt-0.5 flex items-baseline gap-2">
@@ -220,7 +230,7 @@ export function Scorecard({ tiles }: { tiles: Tile[] }) {
  *
  * ── Why this is an h3 at 16px and not an h2 at 19 ──────────────────────────
  * The design has two heading levels and they carry different jobs: the screen's
- * own name — Concepts, Breakdown — and the sections within it. The screen's
+ * own name, Concepts, Breakdown, and the sections within it. The screen's
  * name is set by the app shell's sticky header, so everything reaching this
  * component is the second level, and rendering it a couple of points under the
  * page title is what makes a screen read as one thing with parts rather than a
@@ -282,64 +292,24 @@ export function SpendBar({
 }
 
 /**
- * The honest empty state.
+ * Deprecated wrapper around the shared empty states (components/ui/EmptyState).
  *
- * Used wherever a warehouse object does not exist yet. It names the object, so
- * the reader can tell "this has not been built" from "this client has no data"
- * — which is the distinction the whole `isMissingObject` machinery exists to
- * preserve, and it would be wasted if the UI rendered both as "No data".
+ * `object` set (a creative object is missing) renders "Creative data not connected.";
+ * no `object` (connected, nothing in the window) renders "No data in this
+ * range.". `what` and `hint` are ignored: empty states are one line. WP7
+ * replaces the call sites with `NotConnected` / `NoData` directly.
  */
 export function NotIngested({
-  what,
   object,
-  hint,
 }: {
-  what: string;
+  what?: string;
   object?: string | null;
   hint?: string;
 }) {
-  return (
-    <div className="glass flex flex-col gap-2 border-dashed p-6">
-      <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-content-muted">
-        Not ingested yet
-      </span>
-      <h3 className="m-0 text-[16px] font-bold tracking-heading text-content-strong">
-        {what}
-      </h3>
-      {object && (
-        <p className="m-0 font-mono text-[12px] text-content-muted">{object}</p>
-      )}
-      {hint && (
-        <p className="m-0 max-w-[62ch] text-[13px] leading-[1.7] text-content-body">
-          {hint}
-        </p>
-      )}
-    </div>
-  );
+  return object ? <NotConnected source="Creative data" /> : <NoData />;
 }
 
-/**
- * Shown when a client has no kill line, target or CPA on file.
- *
- * ── Why this is one line and not a card ────────────────────────────────────
- * It was a card. On a real account it filled the top third of the screen and
- * pushed the wall of creative — the entire point of the page — below the fold,
- * so the first impression of the product was a warning about a setting. The
- * message has not changed; its share of the screen has. A notice that crowds
- * out the thing it is annotating is worse at its job, not better.
- */
-export function ThresholdsMissing({ clientName }: { clientName: string }) {
-  return (
-    <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-md border border-warning/30 bg-warning/[0.07] px-4 py-2.5 text-[13px] leading-[1.6] text-content-body">
-      <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-warning">
-        No verdicts
-      </span>
-      <span>
-        {clientName} has no kill line, target ROAS or CPA on file, so nothing
-        below is judged — the delivery figures are real, the colour coding and
-        the winner counts are switched off. Set the three under Settings →
-        Creative Engine.
-      </span>
-    </p>
-  );
+/** Shown when a client has no kill line, target ROAS or CPA on file. `clientName` is ignored. */
+export function ThresholdsMissing(_props: { clientName?: string }) {
+  return <Notice tone="warning">No verdicts. Set thresholds in Settings.</Notice>;
 }

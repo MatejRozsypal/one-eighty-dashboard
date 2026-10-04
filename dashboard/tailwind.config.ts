@@ -5,7 +5,7 @@ import type { Config } from "tailwindcss";
  *
  * Every value here points at a CSS custom property defined in styles/tokens/*.
  * Those token files are copied verbatim from the design system handoff and are
- * the single source of truth — when the brand ships an update, they get replaced
+ * the single source of truth, when the brand ships an update, they get replaced
  * and nothing in this config or in any component needs to change.
  *
  * That indirection is the point: no hex code should ever appear in a component.
@@ -15,7 +15,7 @@ import type { Config } from "tailwindcss";
  * Tailwind cannot apply an opacity modifier to a plain `var()` colour: it does
  * not know the channels, so it silently emits **no rule at all**. Classes like
  * `border-negative/35`, `border-warning/40` and `bg-growth-500/20` were used
- * across the app and never rendered — the error and warning cards had been
+ * across the app and never rendered, the error and warning cards had been
  * drawing invisible borders, and the sidebar avatar an invisible tint.
  *
  * `token()` returns the raw `var()` when no opacity is asked for, and a
@@ -25,7 +25,7 @@ import type { Config } from "tailwindcss";
  * The cast is needed because Tailwind's `colors` type only admits strings, while
  * the runtime has always also accepted this callback. Returning a plain
  * `color-mix(...)` string with `<alpha-value>` would type cleanly, but then
- * *every* colour in the app would route through `color-mix` — so a browser
+ * *every* colour in the app would route through `color-mix`, so a browser
  * without support loses the entire palette instead of only the translucent
  * few. The callback keeps full-opacity colours as a bare `var()`.
  */
@@ -40,7 +40,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Ink / near-black scale — brand black comes from the logo mark
+        // Ink / near-black scale, brand black comes from the logo mark
         ink: {
           950: token("--ink-950"),
           900: token("--ink-900"),
@@ -71,17 +71,18 @@ const config: Config = {
           50: token("--growth-50"),
         },
 
-        // Semantic status — red/amber/blue exist ONLY as status, never decoration
+        // Semantic status, red/amber/blue exist ONLY as status, never decoration
         positive: token("--positive"),
         negative: token("--negative"),
         warning: {
           DEFAULT: token("--warning"),
           700: token("--warning-700"),
+          300: token("--warning-300"),
         },
         info: token("--info"),
 
         // Platform colors. Per the brand guide these appear *only* inside
-        // product/dashboard UI — which is exactly what this app is. They tag a
+        // product/dashboard UI, which is exactly what this app is. They tag a
         // metric with the system it came from, mirroring the source badges on
         // the reference dashboard.
         platform: {
@@ -91,9 +92,16 @@ const config: Config = {
           google: token("--google"),
           shoptet: token("--shoptet"),
           ecomail: token("--ecomail"),
+          woocommerce: token("--woocommerce"),
         },
 
-        // Semantic aliases — prefer these in components over raw scale steps
+        // One-line notice and error-card tints (components/ui/Notice, MetricCard).
+        notice: {
+          warning: token("--notice-warning"),
+          negative: token("--notice-negative"),
+        },
+
+        // Semantic aliases, prefer these in components over raw scale steps
         bg: {
           DEFAULT: token("--bg"),
           subtle: token("--bg-subtle"),
@@ -128,7 +136,7 @@ const config: Config = {
 
       fontFamily: {
         sans: ["var(--font-sans)"],
-        // Mono carries every number, metric, label and eyebrow — a core brand
+        // Mono carries every number, metric, label and eyebrow, a core brand
         // motif, not a stylistic flourish.
         mono: ["var(--font-mono)"],
       },
@@ -207,7 +215,7 @@ const config: Config = {
       },
 
       keyframes: {
-        // The "LIVE" pulse — a signature motion from the brand system.
+        // The "LIVE" pulse, a signature motion from the brand system.
         "live-pulse": {
           "0%": { transform: "scale(1)", opacity: "0.5" },
           "70%": { transform: "scale(2.2)", opacity: "0" },
@@ -215,7 +223,7 @@ const config: Config = {
         },
         // Save confirmation. Draws itself on rather than popping in, so the
         // eye reads it as "that just happened" instead of "that was always
-        // there" — the whole point is confirming an action, not labelling a
+        // there", the whole point is confirming an action, not labelling a
         // state.
         tick: {
           "0%": { transform: "scale(0.4)", opacity: "0" },

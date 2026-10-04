@@ -1,8 +1,8 @@
 /**
- * Unit economics — first-time vs returning, at order-line grain.
+ * Unit economics, first-time vs returning, at order-line grain.
  *
  * ── Two rows are not measurable, and say so rather than showing a number ────
- * **Return rate.** The warehouse holds no refund data at all — there is no
+ * **Return rate.** The warehouse holds no refund data at all, there is no
  * refund or return column anywhere in `stg_shopify_orders`, which is the known
  * gap in METRICS.md ("refetch orders with totalRefundedSet"). The row is kept
  * and marked unmeasured, because dropping it would hide that the leakage
@@ -10,13 +10,13 @@
  *
  * **Discounts on Shoptet.** Shoptet exposes a per-item discount *percentage*,
  * not an amount, and reconstructing the amount from it means dividing by
- * (100 − pct) — which blows up on a 100% line and quietly invents money
+ * (100 − pct), which blows up on a 100% line and quietly invents money
  * elsewhere. Left null, exactly as `mart_orders` already treats it.
  *
  * ── Contribution margin allocates all paid spend to new customers ───────────
  * Paid spend cannot be attributed to an individual order, so it cannot be split
- * between the two segments from the data. The convention here — chosen
- * deliberately, not derived — is that acquisition cost belongs entirely to the
+ * between the two segments from the data. The convention here, chosen
+ * deliberately, not derived, is that acquisition cost belongs entirely to the
  * customers it acquired, so returning customers carry none and their CM equals
  * gross profit. It is the standard treatment and it flatters returning
  * customers by construction; the page says so where the number is shown.
@@ -32,12 +32,12 @@ import { demoUnitEconomics } from "@/lib/demo/commerce";
 export interface SegmentEconomics {
   orders: number | null;
   units: number | null;
-  /** Average unit retail — before discount. */
+  /** Average unit retail, before discount. */
   aur: number | null;
   /** Units per transaction. */
   upt: number | null;
   grossRetailPerOrder: number | null;
-  /** Net sales ÷ orders — what the customer actually paid, ex-shipping. */
+  /** Net sales ÷ orders, what the customer actually paid, ex-shipping. */
   trueAov: number | null;
   discountRate: number | null;
   cogsPct: number | null;
@@ -74,7 +74,8 @@ export async function getUnitEconomics(
                 SUM(orders) AS orders, SUM(units) AS units,
                 SUM(gross_retail) AS gross_retail, SUM(discounts) AS discounts,
                 SUM(net_sales) AS net_sales, SUM(cogs) AS cogs,
-                SUM(gross_profit) AS gross_profit
+                SUM(gross_profit) AS gross_profit,
+                COUNTIF(net_sales > 0 AND cogs IS NULL) AS uncosted_rows
          FROM \`${PROJECT_ID}.mart.mart_unit_economics\`
          WHERE client_id = @clientId AND currency = @currency
            AND date BETWEEN @from AND @to
@@ -82,12 +83,14 @@ export async function getUnitEconomics(
         { clientId, currency, from: range.from, to: range.to }
       ),
       // Paid spend is not in the line-grain view and cannot be, so it comes
-      // from the daily KPIs and is applied whole to the new-customer segment.
+      // from the daily KPIs (same currency filter as the Snapshot, so both pages
+      // agree) and is applied whole to the new-customer segment.
       query<Record<string, unknown>>(
         `SELECT SUM(paid_spend) AS paid_spend
          FROM \`${PROJECT_ID}.mart.mart_daily_kpis\`
-         WHERE client_id = @clientId AND date BETWEEN @from AND @to`,
-        { clientId, from: range.from, to: range.to }
+         WHERE client_id = @clientId AND currency = @currency
+           AND date BETWEEN @from AND @to`,
+        { clientId, currency, from: range.from, to: range.to }
       ),
     ]);
 
@@ -105,11 +108,14 @@ export async function getUnitEconomics(
       const grossRetail = num(r.gross_retail);
       const discounts = num(r.discounts);
       const netSales = num(r.net_sales);
-      const cogs = num(r.cogs);
-      const grossProfit = num(r.gross_profit);
+      // Coverage rule: any revenue row without COGS means no cost figures for
+      // the segment, never a partial sum.
+      const uncosted = (num(r.uncosted_rows) ?? 0) > 0;
+      const cogs = uncosted ? null : num(r.cogs);
+      const grossProfit = uncosted ? null : num(r.gross_profit);
       if (discounts !== null) hasDiscounts = true;
 
-      // All acquisition cost sits on the new segment — see the header note.
+      // All acquisition cost sits on the new segment, see the header note.
       const spend = segment === "new" ? paidSpend : 0;
       const cm =
         grossProfit === null ? null : grossProfit - (spend ?? 0);

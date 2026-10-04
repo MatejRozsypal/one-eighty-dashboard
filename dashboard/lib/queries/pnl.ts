@@ -1,12 +1,12 @@
 /**
- * Profitability / P&L snapshot — the headline page's data.
+ * Profitability / P&L snapshot, the headline page's data.
  *
  * ── One scan, everything ────────────────────────────────────────────────────
  * A snapshot needs, per metric: the current-period total, the comparison-period
  * total, and a daily series for the sparkline. The naive shape is one query per
  * metric per period. `mart.mart_daily_kpis` is a *view* over 60 months of orders
  * joined to ads data, so every query against it scans on the order of 1.5 MB per
- * day of range — measured 138 MB for a 90-day, two-client read. Twenty small
+ * day of range, measured 138 MB for a 90-day, two-client read. Twenty small
  * queries would be twenty full scans.
  *
  * Instead this module issues exactly one query returning daily rows across the
@@ -17,7 +17,7 @@
  * ── Rates are recomputed, never summed ──────────────────────────────────────
  * Per METRICS.md, no percentage or ratio is pre-computed in the warehouse, and
  * pre-divided columns must not be summed across rows. Every rate here is derived
- * from summed components — MER is SUM(revenue)/SUM(paid_spend), never an average
+ * from summed components, MER is SUM(revenue)/SUM(paid_spend), never an average
  * of daily MERs, which would weight a quiet Sunday the same as Black Friday.
  */
 
@@ -39,7 +39,7 @@ import { demoPnlDays } from "@/lib/demo/pnl";
  * `mart_daily_kpis` hardcodes `cm1_other_costs` and `fulfillment_cost` to zero,
  * so CM1 and CM2 arrive from BigQuery as though neither cost exists. These
  * rates are what turns them into real numbers. Null means nobody has stated
- * one — which is rendered as an admitted gap, never as zero.
+ * one, which is rendered as an admitted gap, never as zero.
  */
 export interface CostRates {
   fulfilmentPerOrder: number | null;
@@ -80,7 +80,7 @@ export interface PnlTotals {
   netSales: number | null;
   grossRevenueInclTax: number | null;
   shippingRevenue: number | null;
-  /** Null for Shoptet — it doesn't split VAT out, so revenue is gross of it. */
+  /** Null for Shoptet, it doesn't split VAT out, so revenue is gross of it. */
   taxCollected: number | null;
   newCustomerRevenue: number | null;
   returningCustomerRevenue: number | null;
@@ -96,6 +96,12 @@ export interface PnlTotals {
   cm1Pct: number | null;
   cm2Pct: number | null;
   cm3Pct: number | null;
+  /**
+   * Coverage rule: "none" when any day in the range has revenue but no COGS.
+   * COGS, CM1 to CM3 and the CM rates are then null (never a partial sum, never
+   * 0), and every consumer renders "No cost data".
+   */
+  costCoverage: "full" | "none";
 
   // Paid media
   metaSpend: number | null;
@@ -137,7 +143,7 @@ export interface PnlSnapshot {
   currency: string;
   current: PnlTotals;
   previous: PnlTotals | null;
-  /** Daily rows for the current period only — sparkline input. */
+  /** Daily rows for the current period only, sparkline input. */
   series: PnlDay[];
 }
 
@@ -172,7 +178,7 @@ interface PnlRow {
  * Money columns are multiplied by the month's FX rate inside SQL when a display
  * currency is requested; counts (orders, customers) never are.
  */
-async function fetchDays(
+export async function fetchPnlDays(
   clientId: string,
   bounds: DateRange,
   display: DisplayCurrency,
@@ -188,7 +194,7 @@ async function fetchDays(
   const m = fx.wrap; // money column → converted expression
 
   // `mart_daily_kpis` is grained by currency, and Dobias carries a handful of
-  // CAD orders alongside USD. In native mode those rows must be excluded —
+  // CAD orders alongside USD. In native mode those rows must be excluded -
   // adding CAD to USD produces a number that means nothing. In conversion mode
   // they're kept, because the FX join gives every row a common unit.
   const currencyFilter =
@@ -284,9 +290,9 @@ async function fetchDays(
 /**
  * Sum a column across rows, preserving the null/zero distinction.
  *
- * Returns null only when *every* row is null — meaning the source never
+ * Returns null only when *every* row is null, meaning the source never
  * reported. If any day has a value, the rest are treated as zero. This is what
- * makes `google_spend` read "—" for a client with no Google Ads, but a real
+ * makes `google_spend` read "n/a" for a client with no Google Ads, but a real
  * total for one that has it with quiet days.
  */
 function sum(rows: PnlDay[], pick: (r: PnlDay) => number | null): number | null {
@@ -302,13 +308,26 @@ function sum(rows: PnlDay[], pick: (r: PnlDay) => number | null): number | null 
   return seen ? total : null;
 }
 
+/** True when revenue exists but cost data does not: CM figures must say so. */
+export function hasNoCostData(t: PnlTotals): boolean {
+  return t.costCoverage === "none";
+}
+
 function aggregate(rows: PnlDay[]): PnlTotals {
+  // Cost coverage, per day. A day with revenue and a NULL COGS is a day the
+  // warehouse could not cost, which is different from a day that cost nothing.
+  const revenueDays = rows.filter((r) => r.revenue !== null && r.revenue > 0);
+  const costedDays = revenueDays.filter((r) => r.cogs !== null);
+  const costCoverage: PnlTotals["costCoverage"] =
+    costedDays.length === revenueDays.length ? "full" : "none";
+  const costed = costCoverage === "full";
+
   const revenue = sum(rows, (r) => r.revenue);
   const newCustomerRevenue = sum(rows, (r) => r.newCustomerRevenue);
   const returningCustomerRevenue = sum(rows, (r) => r.returningCustomerRevenue);
-  const cm1 = sum(rows, (r) => r.cm1);
-  const cm2 = sum(rows, (r) => r.cm2);
-  const cm3 = sum(rows, (r) => r.cm3);
+  const cm1 = costed ? sum(rows, (r) => r.cm1) : null;
+  const cm2 = costed ? sum(rows, (r) => r.cm2) : null;
+  const cm3 = costed ? sum(rows, (r) => r.cm3) : null;
   const paidSpend = sum(rows, (r) => r.paidSpend);
   const orders = sum(rows, (r) => r.orders);
   const newCustomerOrders = sum(rows, (r) => r.newCustomerOrders);
@@ -323,7 +342,7 @@ function aggregate(rows: PnlDay[]): PnlTotals {
     newCustomerRevenue,
     returningCustomerRevenue,
 
-    cogs: sum(rows, (r) => r.cogs),
+    cogs: costed ? sum(rows, (r) => r.cogs) : null,
     fulfilmentCost: sum(rows, (r) => r.fulfilmentCost),
     otherCm1Cost: sum(rows, (r) => r.otherCm1Cost),
     cm1,
@@ -332,6 +351,7 @@ function aggregate(rows: PnlDay[]): PnlTotals {
     cm1Pct: safeDiv(cm1, revenue),
     cm2Pct: safeDiv(cm2, revenue),
     cm3Pct: safeDiv(cm3, revenue),
+    costCoverage,
 
     metaSpend: sum(rows, (r) => r.metaSpend),
     googleSpend: sum(rows, (r) => r.googleSpend),
@@ -364,7 +384,7 @@ export async function getPnlSnapshot(
   display: DisplayCurrency = "native",
   costs: CostRates = { fulfilmentPerOrder: null, otherCm1PerOrder: null }
 ): Promise<PnlSnapshot> {
-  const rows = await fetchDays(
+  const rows = await fetchPnlDays(
     clientId,
     scanBounds(period),
     display,

@@ -1,5 +1,5 @@
 /**
- * Profitability Snapshot — the headline page.
+ * Profitability Snapshot, the headline page.
  *
  * Answers one question: is this client actually making money, and is that
  * getting better or worse? Everything else in the product is a drill-down from
@@ -11,8 +11,9 @@
 
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, viewQuery, comparisonLabel, type SearchParams } from "@/lib/params";
-import { getPnlSnapshot, metric } from "@/lib/queries/pnl";
+import { getPnlSnapshot, hasNoCostData, metric } from "@/lib/queries/pnl";
 import { getLifetimeSummary, getPayback } from "@/lib/queries/lifetime";
 import { getClientSettings } from "@/lib/users/settings";
 import { getDiscounts, getExcludedCurrencies } from "@/lib/queries/context";
@@ -21,13 +22,14 @@ import { safeDiv } from "@/lib/coerce";
 import { optional } from "@/lib/queries/errors";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
-import { MetricCard } from "@/components/dashboard/MetricCard";
+import { NotConnected } from "@/components/ui/EmptyState";
+import { Notice } from "@/components/ui/Notice";
+import { MetricCard, type MetricState } from "@/components/dashboard/MetricCard";
 import { MarginStack } from "@/components/dashboard/MarginStack";
 import { AcquisitionEconomics } from "@/components/dashboard/AcquisitionEconomics";
 import { RevenueMix } from "@/components/dashboard/RevenueMix";
 import { RevenueComposition } from "@/components/dashboard/RevenueComposition";
 import { BottomLine } from "@/components/dashboard/BottomLine";
-import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Snapshot" };
 
@@ -45,6 +47,17 @@ export default async function SnapshotPage({
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
 
+  if (pageAvailability(client, "/snapshot") !== "available") {
+    return (
+      <>
+        <Header title="Snapshot" />
+        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/snapshot") ?? "Shop"} />
+        </main>
+      </>
+    );
+  }
+
   const display =
     params.displayCurrency === ROLLUP_CURRENCY ? ROLLUP_CURRENCY : "native";
 
@@ -58,7 +71,7 @@ export default async function SnapshotPage({
     otherCm1PerOrder: settings?.otherCm1PerOrder ?? null,
   };
 
-  const [snapshot, lifetime, payback, discounts, excluded] =
+  const [snapshot, lifetime, payback, nativeDiscounts, excluded] =
     await Promise.all([
       getPnlSnapshot(client.clientId, client.currency, params.period, display, costs),
       optional(() => getLifetimeSummary(client.clientId, client.currency), null),
@@ -76,51 +89,40 @@ export default async function SnapshotPage({
   const hasComparison = snapshot.previous !== null;
   const qs = viewQuery({ ...params, clientId: client.clientId });
 
+  // Discounts are a native-currency figure. Next to a converted P&L it would be
+  // mislabelled, so it is withheld instead. Lifetime and payback are formatted
+  // in the native currency by BottomLine.
+  const discounts = display === "native" ? nativeDiscounts : null;
+
   const shopSource = client.shopPlatform ?? "Shop";
-  const paidSource =
-    t.googleSpend !== null && t.metaSpend !== null
-      ? "Meta"
-      : t.googleSpend !== null
-        ? "google"
-        : "meta";
+  const { meta, googleAds } = client.capabilities;
+  const paidSource = meta && googleAds ? "Meta + Google" : googleAds ? "Google" : meta ? "Meta" : "Warehouse";
+
+  // Cost-dependent figures say "No cost data" when revenue exists without COGS.
+  const noCost = hasNoCostData(t);
+  const costState: MetricState = noCost
+    ? { kind: "no-data", reason: "No cost data" }
+    : { kind: "ok" };
 
   const newShare = safeDiv(t.newCustomerRevenue, t.revenue);
 
   return (
     <>
-      <Header
-        eyebrow={pageEyebrow("/snapshot", client.name)}
-        title="Snapshot"
-      />
+      <Header title="Snapshot" />
 
-      <PageControls client={client} params={params} />
+      <PageControls client={client} params={params} compare currency />
 
       <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-6 lg:px-8">
         {excluded.length > 0 && display === "native" && (
-          <div className="flex items-start gap-3 rounded-card border border-warning/40 bg-[#FFF9EE] p-[14px_18px]">
-            <span
-              aria-hidden="true"
-              className="mt-1.5 h-2 w-2 flex-none rounded-full bg-warning"
-            />
-            <span className="flex flex-col gap-[3px]">
-              <span className="text-[13.5px] font-semibold leading-[1.5] text-content-strong">
-                Mixed currencies in this range —{" "}
-                {excluded.map((e) => `${formatNumber(e.orders)} orders in ${e.currency}`).join(", ")}{" "}
-                excluded from every total below.
-              </span>
-              <span className="text-[12.5px] leading-[1.5] text-content-body">
-                Summing{" "}
-                {excluded.map((e) => e.currency).join(" and ")} with{" "}
-                {client.currency} without a rate would be meaningless. Excluded
-                value:{" "}
-                {excluded
-                  .map((e) => formatMoney(e.revenue, e.currency))
-                  .join(", ")}
-                .
-              </span>
-            </span>
-          </div>
+          <Notice tone="warning">
+            {excluded
+              .map((e) => `${formatNumber(e.orders)} ${e.currency} orders`)
+              .join(", ")}{" "}
+            excluded from totals.
+          </Notice>
         )}
+
+        {googleAds && !meta && <Notice>Paid spend is Google only.</Notice>}
 
         <section className="grid grid-cols-[repeat(auto-fit,minmax(252px,1fr))] gap-4">
           <MetricCard
@@ -140,10 +142,11 @@ export default async function SnapshotPage({
             comparisonLabel={compareLabel}
             source="Warehouse"
             series={snapshot.series.map((d) => d.cm3)}
+            state={costState}
           />
           <MetricCard
             label="CM3 %"
-            value={t.cm3Pct !== null ? formatPercent(t.cm3Pct) : null}
+            value={formatPercent(t.cm3Pct)}
             delta={hasComparison ? metric(snapshot, (x) => x.cm3Pct).delta : undefined}
             goodWhen="up"
             comparisonLabel={compareLabel}
@@ -152,12 +155,13 @@ export default async function SnapshotPage({
               d.revenue && d.cm3 !== null ? d.cm3 / d.revenue : null
             )}
             sparkTone="muted"
+            state={costState}
           />
           <MetricCard
             label="Paid spend"
             value={formatMoney(t.paidSpend, currency)}
             delta={hasComparison ? metric(snapshot, (x) => x.paidSpend).delta : undefined}
-            // Spend rising is neither good nor bad on its own — it depends
+            // Spend rising is neither good nor bad on its own. It depends
             // entirely on what it bought. Colouring it would assert a judgement
             // the number doesn't support.
             goodWhen="neutral"
@@ -180,7 +184,6 @@ export default async function SnapshotPage({
           <RevenueComposition
             totals={t}
             currency={currency}
-            shopPlatform={shopSource}
             discounts={discounts}
           />
           <BottomLine
@@ -189,22 +192,15 @@ export default async function SnapshotPage({
             totals={t}
             currency={currency}
             lifetime={lifetime}
+            lifetimeCurrency={client.currency}
             customersHref={`/customers?${qs}`}
           />
         </section>
 
-        <p className="m-0 max-w-[760px] text-[12px] leading-[1.6] text-content-muted">
-          Figures are contribution margin after cost of goods and paid media,
-          excluding fixed costs, salaries and platform fees. Meta and Google spend
-          is platform-reported; revenue is shop-reported.
-        </p>
-
         {/*
           Last on the page on purpose. The stack explains how revenue becomes
-          CM3, which is worth having but is reference material — you read it
-          once to understand the model, not every time you open the page. Two
-          of its seven steps are hardcoded to zero as well, so it currently
-          spends a third of its width on cost lines nobody is measuring.
+          CM3, which is worth having but is reference material: you read it
+          once to understand the model, not every time you open the page.
         */}
         <MarginStack snapshot={snapshot} />
       </main>

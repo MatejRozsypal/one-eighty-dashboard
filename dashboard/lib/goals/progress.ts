@@ -17,7 +17,7 @@
  * ── Missing is not zero ─────────────────────────────────────────────────────
  * A month with no target set is not a month with a target of zero, and a month
  * with no actuals yet is not a month of no sales. Both stay null and render as
- * "not set" / "—", per the house rule.
+ * "not set" / "-", per the house rule.
  */
 
 import type { Goal, GoalMetric } from "@/lib/goals/store";
@@ -64,7 +64,7 @@ function paceOf(
 ): "ahead" | "on" | "behind" | null {
   if (actual === null || expected === null || expected === 0) return null;
   const ratio = actual / expected;
-  // A five-point band around the line — without it, every period flickers
+  // A five-point band around the line, without it, every period flickers
   // between "ahead" and "behind" on noise nobody would act on.
   if (ratio >= 1.05) return "ahead";
   if (ratio <= 0.95) return "behind";
@@ -99,7 +99,7 @@ export interface PeriodProgress {
  * Roll a set of months up into one period.
  *
  * Targets and actuals are summed because every goal metric is an absolute
- * quantity — that is precisely why ratios were excluded from the metric list.
+ * quantity, that is precisely why ratios were excluded from the metric list.
  * A period's target is null only when *no* month in it has one; a partial plan
  * is still a plan, and summing what exists beats refusing to show anything.
  */

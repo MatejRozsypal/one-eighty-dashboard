@@ -1,23 +1,22 @@
 /**
  * Actuals to measure targets against.
  *
- * ── Why this aggregates daily rows rather than reading a monthly mart ───────
- * `mart_monthly_kpis` exists and the Growth page uses it, but it is read there
- * for revenue, new-customer counts and CM3 only — nothing in this codebase
- * reads a total order count from it, so whether it carries one is unverified.
- * `mart_daily_kpis` demonstrably carries all four figures, because the P&L
- * snapshot reads every one of them. Summing days is a little more scan for a
- * guarantee that the number exists and matches the rest of the dashboard.
+ * ── Same days, same arithmetic as the Snapshot ──────────────────────────────
+ * Actuals are built from the Snapshot's own daily rows (`fetchPnlDays`), with
+ * the same stated per-order costs applied, then summed per calendar month. A
+ * month here and the Snapshot's figure for the same month are therefore the
+ * same number, CM3 included. Reading the raw CM3 column instead would skip the
+ * per-order rates the Snapshot deducts and the two pages would disagree.
  *
- * Attainment is therefore computed against the same daily spine the snapshot
- * uses, which is what stops the Goals page and the headline disagreeing.
+ * Missing is not zero: a month where no day carries a value stays null, so a
+ * client with no cost data shows n/a for CM3, never 0.
  */
 
-import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num } from "@/lib/coerce";
 import { isDemo } from "@/lib/demo/client";
 import { demoGoalActuals, demoGoals } from "@/lib/demo/goals";
 import { listGoals, type Goal, type GoalMetric } from "@/lib/goals/store";
+import { fetchPnlDays, type CostRates, type PnlDay } from "@/lib/queries/pnl";
 
 /** One month's actuals, keyed by the same metric names goals are stored under. */
 export interface MonthActuals {
@@ -37,56 +36,64 @@ export function actualFor(
   return row[metric];
 }
 
-interface Row {
-  month: { value: string };
-  revenue: unknown;
-  orders: unknown;
-  new_customers: unknown;
-  cm3: unknown;
+/** Sum a column, null only when every day is null. */
+function sumOrNull(rows: PnlDay[], pick: (r: PnlDay) => number | null): number | null {
+  let total = 0;
+  let seen = false;
+  for (const r of rows) {
+    const v = num(pick(r));
+    if (v !== null) {
+      total += v;
+      seen = true;
+    }
+  }
+  return seen ? total : null;
 }
 
 export async function getGoalActuals(
   clientId: string,
   nativeCurrency: string,
-  year: number
+  year: number,
+  costs: CostRates = { fulfilmentPerOrder: null, otherCm1PerOrder: null }
 ): Promise<MonthActuals[]> {
   if (isDemo(clientId)) return demoGoalActuals(year);
 
-  const rows = await query<Row>(
-    `SELECT
-       DATE_TRUNC(date, MONTH)         AS month,
-       SUM(revenue)                    AS revenue,
-       SUM(orders)                     AS orders,
-       SUM(new_customer_orders)        AS new_customers,
-       SUM(cm3)                        AS cm3
-     FROM \`${PROJECT_ID}.mart.mart_daily_kpis\`
-     WHERE client_id = @clientId
-       AND currency  = @currency
-       AND date >= DATE(@year, 1, 1)
-       AND date <  DATE(@nextYear, 1, 1)
-     GROUP BY month
-     ORDER BY month`,
-    {
-      clientId,
-      currency: nativeCurrency,
-      year,
-      nextYear: year + 1,
-    }
+  const days = await fetchPnlDays(
+    clientId,
+    { from: `${year}-01-01`, to: `${year}-12-31` },
+    "native",
+    nativeCurrency,
+    costs
   );
 
-  return rows.map((r) => ({
-    month: r.month.value,
-    revenue: num(r.revenue),
-    orders: num(r.orders),
-    new_customers: num(r.new_customers),
-    cm3: num(r.cm3),
-  }));
+  const byMonth = new Map<string, PnlDay[]>();
+  for (const d of days) {
+    const month = `${d.date.slice(0, 7)}-01`;
+    const bucket = byMonth.get(month);
+    if (bucket) bucket.push(d);
+    else byMonth.set(month, [d]);
+  }
+
+  return [...byMonth.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, rows]) => {
+      // Coverage rule, same as the Snapshot: a month with revenue on a day that
+      // has no COGS has no CM3 (never a partial sum).
+      const uncosted = rows.some((r) => (r.revenue ?? 0) > 0 && r.cogs === null);
+      return {
+      month,
+      revenue: sumOrNull(rows, (r) => r.revenue),
+      orders: sumOrNull(rows, (r) => r.orders),
+      new_customers: sumOrNull(rows, (r) => r.newCustomerOrders),
+      cm3: uncosted ? null : sumOrNull(rows, (r) => r.cm3),
+    };
+    });
 }
 
 /**
  * Targets for a client and year.
  *
- * The demo generates its own rather than reading Postgres — an admin editing a
+ * The demo generates its own rather than reading Postgres, an admin editing a
  * fictional brand's plan would be writing rows nothing reads.
  */
 export async function getGoals(clientId: string, year: number): Promise<Goal[]> {

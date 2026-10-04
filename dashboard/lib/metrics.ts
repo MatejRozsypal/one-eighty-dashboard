@@ -1,10 +1,14 @@
 /**
- * Metric definitions — the content behind every ⓘ tooltip.
+ * Metric definitions: the content behind every (i) tooltip.
  *
- * Sourced from METRICS.md. The `limitation` field is the important one: it's
- * what stops someone quoting a figure to a client that's 3% overstated because
- * refunds aren't netted yet. A dashboard that shows where it's wrong is more
- * trustworthy than one that doesn't, so limitations are surfaced, not buried.
+ * Sourced from METRICS.md. The `limitation` field is the important one: it is
+ * what stops someone quoting a figure that carries a known gap. A dashboard
+ * that shows where it is wrong is more trustworthy than one that does not.
+ *
+ * Copy policy: tenant-neutral (no client names, no client figures), no table
+ * or column names, at most 40 words per tooltip, no dashes. Pages look a
+ * definition up by the metric's label (MetricCard does it automatically) or
+ * pass one to `MetricTooltip` directly.
  *
  * Keep this in sync with METRICS.md. If a formula changes there, it changes here.
  */
@@ -12,7 +16,7 @@
 export interface MetricDefinition {
   /** Full name, spelled out. */
   title: string;
-  /** The formula, in warehouse column names. */
+  /** The formula, in plain words. */
   formula: string;
   /** Where the number comes from. */
   source: string;
@@ -23,141 +27,166 @@ export interface MetricDefinition {
 export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
   Revenue: {
     title: "Revenue",
-    formula: "net_sales + shipping_revenue",
+    formula: "Net sales + shipping",
     source: "Shop platform, ex-tax",
-    limitation:
-      "Refunds are not netted yet — overstated by roughly 3% (~$6k/month on Dobias).",
+    limitation: "Refunds are not netted on every platform, so revenue can be slightly high.",
+  },
+  "Net sales": {
+    title: "Net sales",
+    formula: "Merchandise after discounts",
+    source: "Shop platform",
+    limitation: "Ex-shipping and ex-tax. Reconciles against the shop platform.",
   },
   CM1: {
     title: "Contribution margin 1",
-    formula: "revenue − COGS − other CM1 costs",
-    source: "Warehouse · mart_daily_kpis",
+    formula: "Revenue - COGS - other CM1 costs",
+    source: "Warehouse",
     limitation:
-      "Other CM1 costs (inbound freight, duties, packaging, payment fees) are hardcoded to zero.",
+      "Other CM1 costs use the per-order rate set in Settings. Until it is set, none are deducted.",
   },
   CM2: {
     title: "Contribution margin 2",
-    formula: "cm1 − fulfilment_cost",
-    source: "Warehouse · mart_daily_kpis",
+    formula: "CM1 - fulfilment",
+    source: "Warehouse",
     limitation:
-      "Fulfilment is hardcoded to zero, so CM2 is identical to CM1 today.",
+      "Fulfilment uses the per-order rate set in Settings. Until it is set, CM2 equals CM1.",
   },
   CM3: {
     title: "Contribution margin 3",
-    formula: "revenue − COGS − fulfilment − paid spend",
-    source: "Warehouse · mart_daily_kpis",
+    formula: "Revenue - COGS - fulfilment - paid spend",
+    source: "Warehouse",
     limitation:
-      "Fulfilment and other CM1 costs are hardcoded to zero, so CM3 is currently optimistic.",
+      "Excludes fixed costs, salaries and platform fees. Spend is platform-reported, revenue is shop-reported.",
   },
   "CM3 %": {
     title: "CM3 margin",
-    formula: "cm3 / revenue",
+    formula: "CM3 / revenue",
     source: "Warehouse",
-    limitation:
-      "Manami's revenue includes VAT (Shoptet does not split it cleanly), so its CM% is not comparable to Dobias's.",
+    limitation: "Shoptet revenue includes VAT, so CM% is not comparable to ex-tax shops.",
   },
   "Paid spend": {
     title: "Paid media spend",
-    formula: "meta_spend + google_spend",
+    formula: "Meta + Google spend",
     source: "Platform-reported",
-    limitation:
-      "Platform truth for spend; revenue is shop-reported, so this is not the platforms' own ROAS.",
+    limitation: "Revenue is shop-reported, so this is not a platform ROAS.",
   },
   MER: {
     title: "Marketing efficiency ratio",
-    formula: "revenue / paid_spend",
+    formula: "Revenue / paid spend",
     source: "Warehouse",
-    limitation:
-      "Blended — it moves with the returning-customer base, not just with acquisition.",
+    limitation: "Blended. It moves with the returning-customer base, not just acquisition.",
   },
   aMER: {
     title: "Acquisition MER",
-    formula: "new_customer_revenue / paid_spend",
+    formula: "New customer revenue / paid spend",
     source: "Warehouse",
-    limitation:
-      "New vs returning is derived from a 36-month window, not lifetime history.",
+    limitation: "New vs returning is derived from a 60-month window, not lifetime history.",
   },
   CAC: {
     title: "Customer acquisition cost",
-    formula: "paid_spend / new_customer_orders",
+    formula: "Paid spend / new customers",
     source: "Warehouse",
-    limitation:
-      "Counts paid spend only — organic and email acquisition are not in the denominator.",
+    limitation: "Paid spend only. Organic and email acquisition are not counted.",
   },
   "AOV (net)": {
     title: "Average order value (net)",
-    formula: "net_sales / orders",
+    formula: "Net sales / orders",
     source: "Shop platform",
-    limitation:
-      "Ex-shipping, ex-tax — this is the version that reconciles against Shopify. AOV incl. shipping is a different number and lives on Orders.",
+    limitation: "Ex-shipping and ex-tax. AOV incl. shipping is a different number.",
+  },
+  "AOV incl. shipping": {
+    title: "AOV including shipping",
+    formula: "Revenue / orders",
+    source: "Shop platform",
   },
   "New / Ret. orders": {
     title: "New vs returning orders",
-    formula: "orders split by is_returning_customer",
+    formula: "Orders split by customer type",
     source: "Warehouse",
-    limitation:
-      "Derived from a 36-month window — customers whose first order predates it are misclassified as new.",
+    limitation: "Customers whose first order predates the 60-month window read as new.",
   },
   LTV: {
     title: "Lifetime value",
-    formula: "AVG(lifetime_revenue) per customer",
-    source: "Warehouse · mart_customer_lifetime",
-    limitation:
-      "36-month window, not true all-time. Customers who first ordered before the window read as new.",
+    formula: "Average lifetime revenue per customer",
+    source: "Warehouse",
+    limitation: "60-month window, not all-time. Older first orders read as new.",
   },
   LTGP: {
     title: "Lifetime gross profit",
-    formula: "AVG(lifetime_revenue − lifetime COGS) per customer",
-    source: "Warehouse · mart_customer_lifetime",
-    limitation: "Same 36-month window limit as LTV.",
+    formula: "Average lifetime revenue - COGS per customer",
+    source: "Warehouse",
+    limitation: "Same 60-month window as LTV.",
   },
   EBITDA: {
     title: "EBITDA (estimated)",
-    formula: "cm3 − revenue × 0.30",
-    source: "Warehouse + assumption",
+    formula: "CM3 - revenue x stated OpEx rate",
+    source: "Warehouse + Settings",
+    limitation: "The OpEx rate is set in Settings, not measured. The trend is more reliable than the level.",
+  },
+  "Gross margin": {
+    title: "Gross margin",
+    formula: "(Net sales - COGS) / net sales",
+    source: "Warehouse",
+    limitation: "Merchandise only, ex-shipping.",
+  },
+  Payback: {
+    title: "Customer payback",
+    formula: "90-day gross profit per new customer / CAC",
+    source: "Warehouse",
     limitation:
-      "The 30% OpEx figure is hardcoded, not measured. Treat the level as indicative and the trend as meaningful.",
+      "Uses customers whose 90 days have closed, over 12 months. Blended CAC covers the same 12 months, so it differs from the CAC card.",
+  },
+  Fulfilment: {
+    title: "Fulfilment",
+    formula: "Orders x per-order rate",
+    source: "Settings",
+    limitation: "Outbound shipping and warehousing are not measured. Set a rate in Settings to fill this step.",
+  },
+  Attainment: {
+    title: "Attainment",
+    formula: "Actual / target",
+    source: "Targets in Settings",
+    limitation:
+      "n/a means no target was set. Open months are judged against an even pace, closed months on the final figure.",
+  },
+  Growth: {
+    title: "Growth",
+    formula: "Revenue change vs previous month",
+    source: "Warehouse",
+    limitation:
+      "Averages cover closed months in the range only. The current month is partial and excluded.",
   },
 };
 
 /**
- * Assumed operating expense ratio used for the EBITDA estimate.
+ * Warehouse-wide caveats, listed on the Data Health screen.
  *
- * Lives here rather than in SQL because it is an assumption, not data. When
- * `ref.clients.opex_pct` lands (it's on the roadmap), this constant goes away
- * and the value comes from the registry per client.
- */
-export const ASSUMED_OPEX_RATE = 0.3;
-
-/**
- * Warehouse-wide caveats, shown in full on the Data Health screen.
- *
- * Each also appears in the tooltip of the metric it affects — this list is the
- * single place they're maintained.
+ * Kept only because Data Health still imports it; the sprint removes that
+ * list and this export with it. Tenant-neutral, no figures.
  */
 export const KNOWN_CAVEATS: Array<{ title: string; body: string }> = [
   {
     title: "Refunds are not netted from revenue",
-    body: "Shopify nets returns from net sales; the warehouse does not yet. Net sales is overstated by roughly 3% (~$6k/month on Dobias), and that cascades into CM1, CM2 and CM3 by the same amount.",
+    body: "Revenue is overstated by the refunded share on platforms that do not net returns, and that carries into CM1, CM2 and CM3.",
   },
   {
-    title: "COGS uses current cost, not cost at order time",
-    body: "Shopify snapshots an item's cost when the order is placed. The warehouse re-costs from the latest products table, which drifts about $4–5k/month on Dobias as supplier prices move.",
+    title: "COGS uses current cost",
+    body: "Cost is taken from the latest product costs, not the cost at order time, so it drifts as supplier prices move.",
   },
   {
-    title: "Order dates are UTC, not shop timezone",
-    body: "Shopify's own dashboard uses the shop's timezone. Comparing like-for-like date ranges shows roughly 14 orders of drift per month.",
+    title: "Order dates are UTC",
+    body: "Dates use UTC, not the shop timezone, so a day can differ slightly from the shop's own dashboard.",
   },
   {
-    title: "Manami's revenue includes VAT",
-    body: "Shoptet doesn't expose a clean shipping and tax breakdown, so Manami's revenue is gross of VAT. Its contribution margin percentages are therefore not directly comparable to Dobias's.",
+    title: "Shoptet revenue includes VAT",
+    body: "Shoptet does not split VAT out, so its margin percentages are not comparable to ex-tax shops.",
   },
   {
-    title: "New vs returning uses a 36-month window",
-    body: "A customer whose first-ever order predates the window is flagged as new on their first in-window order. This understates returning customers and, with them, the true repeat rate.",
+    title: "New vs returning uses a 60-month window",
+    body: "A customer whose first order predates the window is flagged as new on their first in-window order.",
   },
   {
-    title: "Two cost lines are placeholders",
-    body: "Other CM1 costs (inbound freight, duties, packaging, payment fees) and fulfilment (shipping, warehousing, returns) are both hardcoded to zero. CM1 and CM2 are identical until they're wired.",
+    title: "Cost lines come from Settings",
+    body: "Other CM1 costs and fulfilment are per-order rates set in Settings. Until set, CM1 and CM2 do not include them.",
   },
 ];

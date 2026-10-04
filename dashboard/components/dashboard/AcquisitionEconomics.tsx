@@ -1,5 +1,5 @@
 /**
- * Acquisition economics — the efficiency row, then the mix behind it.
+ * Acquisition economics, the efficiency row, then the mix behind it.
  *
  * Promoted from a panel of small figures to the same card treatment as the
  * headline row above. These four decide whether the revenue on that row was
@@ -7,15 +7,16 @@
  * footnote beside it.
  *
  * Every figure is recomputed from summed components, never averaged from daily
- * ratios (METRICS.md: averaging pre-divided per-day values is 10–30% wrong).
+ * ratios (METRICS.md: averaging pre-divided per-day values is 10-30% wrong).
  * The polarity of each is declared explicitly, because this is where getting it
- * wrong hurts most — a rising CAC painted green inverts the meaning of the page.
+ * wrong hurts most, a rising CAC painted green inverts the meaning of the page.
  */
 
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { DeltaChip } from "@/components/ui/Delta";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/currency";
+import { NO_VALUE } from "@/lib/format";
 import { safeDiv } from "@/lib/coerce";
 import { metric, type PnlSnapshot } from "@/lib/queries/pnl";
 
@@ -37,14 +38,9 @@ export function AcquisitionEconomics({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="m-0 text-[17px] font-bold tracking-heading text-content-strong">
-          Acquisition economics
-        </h2>
-        <span className="text-[12px] text-content-muted">
-          Rates recomputed from sums, never averaged from daily ratios
-        </span>
-      </div>
+      <h2 className="m-0 text-[17px] font-bold tracking-heading text-content-strong">
+        Acquisition economics
+      </h2>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <MetricCard
@@ -65,23 +61,23 @@ export function AcquisitionEconomics({
         />
         <MetricCard
           label="CAC"
-          value={formatMoney(t.cac, currency)}
+          value={formatMoney(t.cac, currency, { unit: true })}
           delta={hasComparison ? metric(snapshot, (x) => x.cac).delta : undefined}
-          // Cheaper acquisition is the good news — the one card here where a
+          // Cheaper acquisition is the good news, the one card here where a
           // falling number should be green.
           goodWhen="down"
           comparisonLabel={comparisonLabel}
           source="Warehouse"
         />
         <MetricCard
-          label="Ad spend % of revenue"
-          // Ad spend as a share of revenue — the Czech "podíl nákladů na
-          // obratu", and the inverse of MER. Same information, but a cost
-          // ratio is what people actually budget against, and lower is better.
+          label="Ad spend share"
+          // Ad spend as a share of revenue, the inverse of MER. Same
+          // information, but a cost ratio is what people actually budget
+          // against, and lower is better.
           value={
             t.paidSpend !== null && t.revenue
               ? formatPercent(t.paidSpend / t.revenue, { decimals: 1 })
-              : "—"
+              : NO_VALUE
           }
           delta={
             hasComparison
@@ -96,8 +92,8 @@ export function AcquisitionEconomics({
         />
         <MetricCard
           label="AOV (net)"
-          // Canonical AOV is net_sales ÷ orders — ex-shipping, ex-tax, the
-          // version that reconciles against Shopify's own dashboard.
+          // Canonical AOV is net sales / orders: ex-shipping, ex-tax, the
+          // version that reconciles against the shop platform's own dashboard.
           value={formatMoney(aov(t), currency)}
           delta={hasComparison ? metric(snapshot, aov).delta : undefined}
           goodWhen="up"
@@ -112,7 +108,7 @@ export function AcquisitionEconomics({
 }
 
 /**
- * New vs returning orders — the mix, and whether each side is growing.
+ * New vs returning orders, the mix, and whether each side is growing.
  *
  * A single "281 / 1,037" said nothing about proportion or direction. The bar
  * carries the mix; the two deltas carry the movement, and they are shown
@@ -163,7 +159,7 @@ function OrderMix({
   return (
     <div className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <Eyebrow>Order mix · new vs returning</Eyebrow>
+        <Eyebrow>Order mix</Eyebrow>
         <span className="font-mono text-[12px] tabular text-content-muted">
           {formatNumber(total)} orders
         </span>
@@ -192,7 +188,7 @@ function OrderMix({
                 {formatNumber(s.count)}
               </span>
               <span className="font-mono text-[13px] tabular text-content-muted">
-                {s.share !== null ? formatPercent(s.share, { decimals: 1 }) : "—"}
+                {formatPercent(s.share, { decimals: 1 })}
               </span>
             </span>
             {hasComparison && (

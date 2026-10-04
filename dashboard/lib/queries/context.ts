@@ -1,5 +1,5 @@
 /**
- * Small per-page context queries — freshness stamps and order-level extras.
+ * Small per-page context queries, freshness stamps and order-level extras.
  */
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
@@ -47,9 +47,8 @@ export async function getDataThrough(clientId: string): Promise<DataThrough> {
 /**
  * Discounts given in the period.
  *
- * Only `mart_orders` carries this, and that view is Shopify-only — so a Shoptet
- * client returns null and the UI renders "not exposed by this shop platform"
- * rather than a misleading zero.
+ * Only `mart_orders` carries this. A platform that does not expose per-order
+ * discounts sums to null, which the UI renders as "n/a", never as a zero.
  */
 export async function getDiscounts(
   clientId: string,
@@ -77,7 +76,7 @@ export async function getDiscounts(
  *
  * Dobias takes a handful of CAD orders alongside USD. Summing them without a
  * rate is meaningless, so `mart_daily_kpis`'s currency-grained rows keep them
- * separate and the snapshot filters to the native currency — this query reports
+ * separate and the snapshot filters to the native currency, this query reports
  * what that filtering left out, so the exclusion is stated rather than silent.
  */
 export async function getExcludedCurrencies(

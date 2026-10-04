@@ -5,8 +5,8 @@
  * so the growth arithmetic lives in one place rather than being re-derived here.
  *
  * The current month is always partial. Its MoM is arithmetically correct but
- * commercially meaningless — a month three days old will always look like a
- * collapse next to a closed one — so rows are flagged and the UI marks them.
+ * commercially meaningless, a month three days old will always look like a
+ * collapse next to a closed one, so rows are flagged and the UI marks them.
  */
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
@@ -23,7 +23,7 @@ export interface GrowthMonth {
   newCustomerRevenue: number | null;
   newCustomerRevenueMoM: number | null;
   cm3: number | null;
-  /** True when the month hasn't closed — its MoM isn't comparable. */
+  /** True when the month hasn't closed, its MoM isn't comparable. */
   isPartial: boolean;
 }
 
@@ -49,7 +49,7 @@ export async function getGrowth(
        month_start, revenue, mom_revenue_pct,
        new_customer_orders, mom_new_customer_orders_pct,
        new_customer_revenue, mom_new_customer_revenue_pct,
-       cm3
+       cogs, cm3
      FROM \`${PROJECT_ID}.mart.mart_monthly_kpis\`
      WHERE client_id = @clientId AND currency = @currency
        AND month_start >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL @monthsBack MONTH), MONTH)
@@ -69,12 +69,16 @@ export async function getGrowth(
       newCustomerOrdersMoM: num(r.mom_new_customer_orders_pct),
       newCustomerRevenue: num(r.new_customer_revenue),
       newCustomerRevenueMoM: num(r.mom_new_customer_revenue_pct),
-      cm3: num(r.cm3),
+      // Coverage rule: revenue without COGS means no CM3, never a partial sum.
+      cm3:
+        "cogs" in r && (num(r.revenue) ?? 0) > 0 && num(r.cogs) === null
+          ? null
+          : num(r.cm3),
       isPartial: monthStart.slice(0, 7) === currentMonth,
     };
   });
 
-  // Growth stats deliberately exclude the partial month — including it would
+  // Growth stats deliberately exclude the partial month, including it would
   // drag the average down by an artifact of the calendar.
   const closed = months.filter((m) => !m.isPartial);
   const withMoM = closed.filter((m) => m.revenueMoM !== null);

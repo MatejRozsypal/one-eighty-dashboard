@@ -1,0 +1,56 @@
+CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_customer_payback` AS
+WITH shopify_costs AS (
+  SELECT client_id, order_id, SUM(line_cost) AS order_cogs
+  FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
+  GROUP BY client_id, order_id
+),
+orders AS (
+  SELECT client_id, LOWER(TRIM(email)) AS customer_key, order_date,
+         margin_czk AS gross_profit, 'CZK' AS currency
+  FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
+  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
+    AND email IS NOT NULL AND TRIM(email) != ''
+  UNION ALL
+  SELECT o.client_id, LOWER(TRIM(o.customer_email)), o.order_date,
+         CASE WHEN c.order_cogs IS NULL THEN NULL
+              ELSE o.subtotal_price - c.order_cogs END,
+         o.currency
+  FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
+  LEFT JOIN shopify_costs c USING (client_id, order_id)
+  WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
+    AND o.customer_email IS NOT NULL AND TRIM(o.customer_email) != ''
+),
+first_order AS (
+  SELECT client_id, customer_key, MIN(order_date) AS first_order_date,
+         ANY_VALUE(currency) AS currency
+  FROM orders GROUP BY 1, 2
+),
+per_customer AS (
+  SELECT
+    f.client_id,
+    f.customer_key,
+    f.currency,
+    f.first_order_date,
+    DATE_ADD(f.first_order_date, INTERVAL 30 DAY) < CURRENT_DATE() AS d30_complete,
+    DATE_ADD(f.first_order_date, INTERVAL 90 DAY) < CURRENT_DATE() AS d90_complete,
+    SUM(IF(o.order_date <= DATE_ADD(f.first_order_date, INTERVAL 30 DAY), o.gross_profit, 0)) AS gp_30,
+    SUM(IF(o.order_date <= DATE_ADD(f.first_order_date, INTERVAL 90 DAY), o.gross_profit, 0)) AS gp_90
+  FROM first_order f
+  JOIN orders o ON o.client_id = f.client_id AND o.customer_key = f.customer_key
+  -- customer_key MUST be in this grouping. Without it the CTE groups by cohort
+  -- DATE, the outer COUNTIF then counts dates instead of customers, and every
+  -- per-customer average is inflated by roughly the number of customers per
+  -- day. Manami read 2,607 CZK of 30-day gross profit against a sub-1,000 CZK
+  -- AOV before this was caught.
+  GROUP BY 1, 2, 3, 4, 5, 6
+)
+SELECT
+  client_id, currency, first_order_date AS cohort_date,
+  COUNTIF(d30_complete) AS customers_30d_complete,
+  COUNTIF(d90_complete) AS customers_90d_complete,
+  SUM(IF(d30_complete, gp_30, NULL)) AS gross_profit_30d,
+  SUM(IF(d90_complete, gp_90, NULL)) AS gross_profit_90d,
+  SUM(IF(d90_complete, gp_30, NULL)) AS gross_profit_30d_of_90d_cohort
+FROM per_customer
+GROUP BY 1, 2, 3;

@@ -1,11 +1,24 @@
 /**
- * npm run check:reports
+ * npm run check:reports [-- --offline] [-- --print-sql]
  *
- * Stub created by RS0 (contracts). WP2 owns this file from here on and adds
- * the BigQuery dry runs and the live column check (design 3.5 b and c); WP1's
- * evaluator assertions live in scripts/check-reports-eval.ts. Keep the
- * contract checks below: they pin the zod rules and the fixture invariants
- * every package relies on.
+ * Owner: WP2 (RS2). Started as the RS0 contract stub; those checks stay first.
+ *
+ *   1. RS0 contract checks: ids, sizes, zod accept/reject, fixture invariants, em dash gate.
+ *   2. Compiler: snapshot of compiled SQL text for fixed widget configs, the
+ *      date predicate assertion, identifier and param validation, key stability.
+ *   3. Runner policy: TTLs, byte budget, labels, error mapping, row normalisation.
+ *   4. BigQuery (design 3.5): (b) dry runs for every phase-1 grain at 90d, 12m
+ *      and 60m across all active clients, failing above DRY_RUN_BUDGET_SHARE of
+ *      the byte budget; (c) INFORMATION_SCHEMA.COLUMNS check that every registry
+ *      component exists in the live view. Skipped with a message when no GCP
+ *      credentials are available (or with --offline).
+ *
+ * Registry: the real one (registry/components.ts, WP1) is loaded when present.
+ * Until then the compiler tests run against FIXTURE_REGISTRY below, a copy of
+ * design 2.3 plus kpis.fulfillment_cost (RS0 note), and step (c) reports that
+ * the real registry is not there yet.
+ *
+ * WP1's evaluator assertions live in scripts/check-reports-eval.ts.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -23,7 +36,26 @@ import { METRIC_IDS, PHASE2_METRIC_IDS, isMetricId } from "@/lib/reports/registr
 import { GRID, WIDGET_SIZE, MAX_METRICS_PER_WIDGET } from "@/lib/reports/limits";
 import { REPORTS_ROLES } from "@/lib/reports/contracts";
 import { DEFAULT_REPORT_FILTERS } from "@/lib/reports/types";
-import { FIXTURE_CONFIGS, FIXTURE_FILTERS, FIXTURE_RESULTS } from "@/lib/reports/fixtures";
+import { FIXTURE_CONFIGS, FIXTURE_FILTERS, FIXTURE_RESOLVED, FIXTURE_RESULTS } from "@/lib/reports/fixtures";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import * as compileModule from "@/lib/reports/compile";
+import {
+  assertDatePredicates,
+  compileWidget,
+  compileWidgetWith,
+  componentAlias,
+  createCompiler,
+  type CompilerRegistry,
+} from "@/lib/reports/compile";
+import * as runModule from "@/lib/reports/run";
+import { cacheTtlSeconds, jobLabels, mapWarehouseError, maxBytesBilled, normaliseRows } from "@/lib/reports/run";
+import { queryJob } from "@/lib/bigquery";
+import { addDays, daysInRange, presetRange, resolvePeriod, scanBounds, type ComparisonMode, type DateRange } from "@/lib/period";
+import { CACHE_TTL_S, DEFAULT_MAX_BYTES_BILLED, DRY_RUN_BUDGET_SHARE, MAX_SPAN } from "@/lib/reports/limits";
+import { ReportsError, TOTAL_BUCKET, type CompileModule, type ResolvedWidget, type RunModule } from "@/lib/reports/contracts";
+import type { ComponentDef, ComponentId, MartDef, MartId, QueryGrain, ReportClient } from "@/lib/reports/registry/types";
 
 let passed = 0;
 const failures: string[] = [];
@@ -148,11 +180,509 @@ for (const file of walk(join(__dirname, "..", "lib", "reports"))) {
   check(`no em dash in ${file}`, !readFileSync(file, "utf8").includes("—"));
 }
 
+
+// ===========================================================================
+// WP2: compiler, runner, BigQuery
+// ===========================================================================
+
+const argv = new Set(process.argv.slice(2));
+const PROJECT = "oneeighty-warehouse";
+process.env.GCP_PROJECT_ID ??= PROJECT;
+
+/** Module conformance with the contracts. */
+const _compileConforms: CompileModule = compileModule;
+const _runConforms: RunModule = runModule;
+void _compileConforms;
+void _runConforms;
+
+// ---------------------------------------------------------------------------
+// Fixture registry: design 2.3 (phase 1 kpis plus two phase 2 marts) and
+// kpis.fulfillment_cost, which the mart CM3 subtracts (RS0 report).
 // ---------------------------------------------------------------------------
 
-if (failures.length) {
-  console.error(`check:reports  ${passed} passed, ${failures.length} failed`);
-  for (const f of failures) console.error(`  FAIL ${f}`);
-  process.exit(1);
+const FIXTURE_MARTS: Record<MartId, MartDef> = {
+  kpis: { id: "kpis", table: "mart.mart_daily_kpis", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1 },
+  meta_campaign: { id: "meta_campaign", table: "mart.mart_meta_campaign_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 2 },
+  email_campaign: { id: "email_campaign", table: "mart.mart_email_campaign_perf", dateColumn: "send_date", currencyColumn: "currency", grains: ["week", "month"], phase: 2 },
+};
+
+const FIXTURE_COMPONENT_LIST: Array<[ComponentId, boolean]> = [
+  ["kpis.revenue", true],
+  ["kpis.net_sales", true],
+  ["kpis.new_customer_revenue", true],
+  ["kpis.returning_customer_revenue", true],
+  ["kpis.new_customer_net_sales", true],
+  ["kpis.returning_customer_net_sales", true],
+  ["kpis.cogs", true],
+  ["kpis.fulfillment_cost", true],
+  ["kpis.orders", false],
+  ["kpis.new_customer_orders", false],
+  ["kpis.returning_customer_orders", false],
+  ["kpis.paid_spend", true],
+  ["kpis.meta_spend", true],
+  ["kpis.meta_revenue", true],
+  ["kpis.meta_purchases", false],
+  ["kpis.meta_impressions", false],
+  ["kpis.meta_clicks", false],
+  ["kpis.google_spend", true],
+  ["kpis.google_revenue", true],
+  ["kpis.google_purchases", false],
+  ["kpis.google_impressions", false],
+  ["kpis.google_clicks", false],
+  ["meta_campaign.link_clicks", false],
+  ["meta_campaign.add_to_cart", false],
+  ["email_campaign.sent", false],
+  ["email_campaign.delivered", false],
+  ["email_campaign.unique_opens", false],
+  ["email_campaign.unique_clicks", false],
+  ["email_campaign.revenue", true],
+];
+
+function fixtureComponent(id: ComponentId, money: boolean): ComponentDef {
+  const [mart, column] = id.split(".") as [MartId, string];
+  return { id, mart, column, money, requires: "shop" };
 }
-console.log(`check:reports  ${passed}/${passed} passed`);
+
+const FIXTURE_REGISTRY: CompilerRegistry = {
+  marts: FIXTURE_MARTS,
+  components: Object.fromEntries(FIXTURE_COMPONENT_LIST.map(([id, money]) => [id, fixtureComponent(id, money)])),
+};
+
+/** The real registry (WP1) when registry/components.ts exists and is populated; null while it is the RS1 stub. */
+function loadRealRegistry(): { registry: CompilerRegistry | null; note: string } {
+  const path = join(__dirname, "..", "lib", "reports", "registry", "components.ts");
+  if (!existsSync(path)) return { registry: null, note: "registry/components.ts not present (RS1 not merged)" };
+  try {
+    // Variable path: this file must typecheck before WP1's module exists.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require(path) as { COMPONENTS?: CompilerRegistry["components"]; MARTS?: CompilerRegistry["marts"] };
+    if (!mod.COMPONENTS || !mod.MARTS || Object.keys(mod.COMPONENTS).length === 0) {
+      return { registry: null, note: "registry/components.ts is a stub (no COMPONENTS or MARTS)" };
+    }
+    return { registry: { components: mod.COMPONENTS, marts: mod.MARTS }, note: "real registry" };
+  } catch (error) {
+    failures.push(`real registry failed to load: ${String(error)}`);
+    return { registry: null, note: "registry/components.ts failed to load" };
+  }
+}
+
+const real = loadRealRegistry();
+
+// ---------------------------------------------------------------------------
+// Compiler: snapshots
+// ---------------------------------------------------------------------------
+
+function fixtureClient(id: string, currency: string): ReportClient {
+  const caps = { shopify: true, shoptet: false, woocommerce: false, meta: true, googleAds: true, klaviyo: false, ecomail: false, ga4: false, shop: true, email: false };
+  return { id, name: id, currency, shopPlatform: "shopify", capabilities: caps, vertical: null, subVertical: null, region: null, slot: 0 };
+}
+
+function resolved(input: {
+  clientIds: string[];
+  components: ComponentId[];
+  grain: QueryGrain;
+  current: DateRange;
+  compare: ComparisonMode;
+  currency?: string;
+}): ResolvedWidget {
+  const period = resolvePeriod(input.current, input.compare);
+  const marts = [...new Set(input.components.map((c) => c.split(".")[0] as MartId))].sort();
+  return {
+    ...FIXTURE_RESOLVED,
+    query: { ...FIXTURE_RESOLVED.query, grain: input.grain },
+    clients: input.clientIds.map((id) => fixtureClient(id, "CZK")),
+    queryClientIds: input.clientIds,
+    period,
+    scan: scanBounds(period),
+    grain: input.grain,
+    displayCurrency: input.currency ?? "CZK",
+    components: input.components,
+    marts,
+    availability: {},
+    warnings: [],
+  };
+}
+
+const compileFixture = createCompiler(FIXTURE_REGISTRY, { projectId: PROJECT });
+
+/** Design 2.8 example: Line, [mer, cac], manami, dobias, rawbark, week, 90 days, previous year, CZK. */
+const W_MER_CAC = resolved({
+  clientIds: ["rawbark", "manami", "dobias"],
+  components: ["kpis.revenue", "kpis.paid_spend", "kpis.new_customer_orders"],
+  grain: "week",
+  current: { from: "2026-07-06", to: "2026-10-03" },
+  compare: "previous_year",
+});
+
+const EXPECTED_MER_CAC_SQL = `WITH
+fx_pairs AS (
+  SELECT month_start, from_currency, to_currency, rate
+  FROM \`oneeighty-warehouse.ref.fx_rates\`
+  WHERE month_start BETWEEN DATE_TRUNC(@scanFrom, MONTH) AND DATE_TRUNC(@scanTo, MONTH)
+),
+fx_direct AS (
+  SELECT month_start, from_currency AS ccy, rate AS to_czk
+  FROM fx_pairs
+  WHERE to_currency = 'CZK' AND from_currency <> 'CZK'
+),
+fx AS (
+  SELECT month_start, ccy, to_czk
+  FROM (
+    SELECT month_start, ccy, to_czk, 1 AS priority FROM fx_direct
+    UNION ALL
+    SELECT a.month_start, a.from_currency, a.rate * d.to_czk, 2
+    FROM fx_pairs AS a
+    JOIN fx_direct AS d ON d.month_start = a.month_start AND d.ccy = a.to_currency
+    WHERE a.from_currency <> 'CZK'
+    UNION ALL
+    SELECT m, 'CZK', NUMERIC '1', 0
+    FROM UNNEST(GENERATE_DATE_ARRAY(DATE_TRUNC(@scanFrom, MONTH), DATE_TRUNC(@scanTo, MONTH), INTERVAL 1 MONTH)) AS m
+  )
+  WHERE to_czk > 0
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY month_start, ccy ORDER BY priority, to_czk) = 1
+),
+kpis AS (
+  SELECT
+    t.client_id,
+    p.period,
+    DATE_TRUNC(t.date, ISOWEEK) AS bucket,
+    COUNT(*) AS kpis__n_rows,
+    COUNTIF(t.currency <> c.currency) AS kpis__foreign_ccy_rows,
+    COUNTIF(src.to_czk IS NULL OR dst.to_czk IS NULL) AS kpis__fx_missing_rows,
+    ARRAY_AGG(DISTINCT IF(src.to_czk IS NULL OR dst.to_czk IS NULL, DATE_TRUNC(t.date, MONTH), NULL) IGNORE NULLS) AS kpis__fx_missing_months,
+    SUM(t.new_customer_orders) AS kpis__new_customer_orders,
+    SUM(IF(t.currency = c.currency, t.paid_spend, NULL)) AS kpis__paid_spend__nat,
+    SUM(t.paid_spend * src.to_czk / dst.to_czk) AS kpis__paid_spend__disp,
+    SUM(IF(t.currency = c.currency, t.revenue, NULL)) AS kpis__revenue__nat,
+    SUM(t.revenue * src.to_czk / dst.to_czk) AS kpis__revenue__disp
+  FROM \`oneeighty-warehouse.mart.mart_daily_kpis\` AS t
+  JOIN \`oneeighty-warehouse.ref.clients\` AS c ON c.client_id = t.client_id
+  CROSS JOIN UNNEST([STRUCT('cur' AS period, @curFrom AS from_date, @curTo AS to_date), STRUCT('cmp', @cmpFrom, @cmpTo)]) AS p
+  LEFT JOIN fx AS src ON src.month_start = DATE_TRUNC(t.date, MONTH) AND src.ccy = t.currency
+  LEFT JOIN fx AS dst ON dst.month_start = DATE_TRUNC(t.date, MONTH) AND dst.ccy = @displayCurrency
+  WHERE t.client_id IN UNNEST(@clientIds)
+    AND t.date BETWEEN @scanFrom AND @scanTo
+    AND t.date BETWEEN p.from_date AND p.to_date
+  GROUP BY 1, 2, 3
+)
+SELECT *
+FROM kpis
+ORDER BY client_id, period, bucket`;
+
+const SNAPSHOTS: Array<{ name: string; widget: ResolvedWidget; sha256: string }> = [
+  {
+    name: "kpi total, revenue and orders, EUR, no comparison",
+    widget: resolved({ clientIds: ["venev", "dobias"], components: ["kpis.orders", "kpis.revenue"], grain: "total", current: { from: "2025-10-04", to: "2026-10-03" }, compare: "none", currency: "EUR" }),
+    sha256: "1c3aba75c0f21941e8880a5a3b7bd7dde9a845cbb784834c0d9933783615e634",
+  },
+  {
+    name: "line day, counts only (no FX CTE), previous period",
+    widget: resolved({ clientIds: ["manami"], components: ["kpis.orders", "kpis.new_customer_orders"], grain: "day", current: { from: "2026-09-04", to: "2026-10-03" }, compare: "previous_period" }),
+    sha256: "a564b383b6fcc9375a11d14e8dbee834326818e8694b727254d6dad3e80ce455",
+  },
+  {
+    name: "bar month, two marts (phase 2 fixture), USD",
+    widget: resolved({ clientIds: ["manami", "ethia"], components: ["email_campaign.revenue", "kpis.revenue", "email_campaign.sent"], grain: "month", current: { from: "2026-04-01", to: "2026-09-30" }, compare: "previous_year", currency: "USD" }),
+    sha256: "45cc85e3e411fdd139479757c4b5d950c9a71cd31203410416e75c6ec8595856",
+  },
+];
+
+const merCac = compileFixture(W_MER_CAC);
+if (argv.has("--print-sql")) {
+  console.log(`--- ${"mer cac"}\n${merCac.sql}\n${JSON.stringify(merCac.params)}`);
+  for (const s of SNAPSHOTS) {
+    const q = compileFixture(s.widget);
+    console.log(`--- ${s.name} sha256=${createHash("sha256").update(q.sql).digest("hex")}\n${q.sql}\n${JSON.stringify(q.params)}`);
+  }
+}
+check("snapshot: design 2.8 MER/CAC weekly SQL text", merCac.sql === EXPECTED_MER_CAC_SQL, firstDiff(merCac.sql, EXPECTED_MER_CAC_SQL));
+check(
+  "snapshot: MER/CAC params sorted and typed",
+  JSON.stringify(merCac.params) ===
+    JSON.stringify({
+      clientIds: ["dobias", "manami", "rawbark"],
+      curFrom: "2026-07-06",
+      curTo: "2026-10-03",
+      cmpFrom: "2025-07-07",
+      cmpTo: "2025-10-04",
+      scanFrom: "2025-07-07",
+      scanTo: "2026-10-03",
+      displayCurrency: "CZK",
+    }) &&
+    JSON.stringify(merCac.types) ===
+      JSON.stringify({ clientIds: ["STRING"], curFrom: "DATE", curTo: "DATE", cmpFrom: "DATE", cmpTo: "DATE", scanFrom: "DATE", scanTo: "DATE", displayCurrency: "STRING" }),
+  JSON.stringify(merCac.params)
+);
+check("snapshot: MER/CAC metadata", merCac.hasComparison && merCac.marts.join() === "kpis" && merCac.components.join() === "kpis.new_customer_orders,kpis.paid_spend,kpis.revenue");
+for (const s of SNAPSHOTS) {
+  const q = compileFixture(s.widget);
+  const hash = createHash("sha256").update(q.sql).digest("hex");
+  check(`snapshot: ${s.name}`, hash === s.sha256, `sha256 ${hash} (run with --print-sql to review)`);
+}
+
+function firstDiff(a: string, b: string): string {
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i += 1;
+  return `first difference at ${i}: got ${JSON.stringify(a.slice(i, i + 60))}, want ${JSON.stringify(b.slice(i, i + 60))}`;
+}
+
+// ---------------------------------------------------------------------------
+// Compiler: structure and validation
+// ---------------------------------------------------------------------------
+
+{
+  const total = compileFixture(SNAPSHOTS[0].widget);
+  check("total grain buckets to TOTAL_BUCKET", total.sql.includes(`DATE '${TOTAL_BUCKET}' AS bucket`));
+  check("no comparison: no cmp params and no cmp tag", !total.hasComparison && !("cmpFrom" in total.params) && !total.sql.includes("'cmp'"));
+  const counts = compileFixture(SNAPSHOTS[1].widget);
+  check("counts only: no FX CTE and no displayCurrency param", !counts.sql.includes("fx_pairs") && !("displayCurrency" in counts.params));
+  check("day grain bucket is the date", counts.sql.includes("t.date AS bucket"));
+  const multi = compileFixture(SNAPSHOTS[2].widget);
+  check("two marts: FULL OUTER JOIN USING", multi.sql.includes("FROM email_campaign\nFULL OUTER JOIN kpis USING (client_id, period, bucket)"));
+  check("two marts: each CTE has its own date predicate", multi.sql.includes("t.send_date BETWEEN @scanFrom AND @scanTo") && multi.sql.includes("t.date BETWEEN @scanFrom AND @scanTo"));
+  check("month grain bucket", multi.sql.includes("DATE_TRUNC(t.send_date, MONTH) AS bucket"));
+
+  for (const q of [merCac, total, counts, multi]) {
+    const ids = q.params.clientIds as string[];
+    check(`no client id in SQL text (${q.key.slice(0, 8)})`, ids.every((id) => !q.sql.includes(`'${id}'`) && !q.sql.includes(`"${id}"`)));
+    check(`every @param in SQL is declared (${q.key.slice(0, 8)})`, [...q.sql.matchAll(/@([a-zA-Z]+)/g)].every((m) => m[1] in q.params && m[1] in q.types));
+    check(`every declared param is used (${q.key.slice(0, 8)})`, Object.keys(q.params).every((p) => q.sql.includes(`@${p}`)));
+    check(`key is sha256 hex (${q.key.slice(0, 8)})`, /^[0-9a-f]{64}$/.test(q.key));
+  }
+
+  const shuffled = compileFixture({
+    ...W_MER_CAC,
+    queryClientIds: ["manami", "dobias", "rawbark", "manami"],
+    components: ["kpis.revenue", "kpis.new_customer_orders", "kpis.paid_spend"],
+  });
+  check("key stable under client and component order", shuffled.key === merCac.key);
+  check("key changes with params", compileFixture({ ...W_MER_CAC, displayCurrency: "EUR" }).key !== merCac.key);
+
+  const throws = (name: string, fn: () => unknown, match?: RegExp) => {
+    try {
+      fn();
+      check(`throws: ${name}`, false, "did not throw");
+    } catch (error) {
+      check(`throws: ${name}`, !match || match.test(String(error)), String(error));
+    }
+  };
+
+  throws("tampered SQL without date predicate", () =>
+    assertDatePredicates(merCac.sql.replace("AND t.date BETWEEN @scanFrom AND @scanTo", "AND TRUE"), [FIXTURE_MARTS.kpis]), /date predicate/);
+  throws("SQL without the mart CTE", () => assertDatePredicates("SELECT 1", [FIXTURE_MARTS.kpis]), /not found/);
+  check("assertDatePredicates passes the compiled SQL", (() => { try { assertDatePredicates(merCac.sql, [FIXTURE_MARTS.kpis]); return true; } catch { return false; } })());
+  throws("unknown component", () => compileFixture({ ...W_MER_CAC, components: ["kpis.nope" as ComponentId] }), /Unknown component/);
+  throws("no components", () => compileFixture({ ...W_MER_CAC, components: [] }), /no components/);
+  throws("unsafe column in registry", () =>
+    compileWidgetWith(W_MER_CAC, {
+      marts: FIXTURE_MARTS,
+      components: { ...FIXTURE_REGISTRY.components, "kpis.revenue": { ...fixtureComponent("kpis.revenue", true), column: "revenue) --" } },
+    }), /safe identifier/);
+  throws("unsafe table in registry", () =>
+    compileWidgetWith(W_MER_CAC, { marts: { ...FIXTURE_MARTS, kpis: { ...FIXTURE_MARTS.kpis, table: "mart.x`; DROP" } }, components: FIXTURE_REGISTRY.components }), /safe identifier/);
+  throws("component with a mismatched definition", () =>
+    compileWidgetWith(W_MER_CAC, { marts: FIXTURE_MARTS, components: { ...FIXTURE_REGISTRY.components, "kpis.revenue": fixtureComponent("kpis.net_sales", true) } }), /does not match/);
+  throws("grain unsupported by mart", () => compileFixture({ ...SNAPSHOTS[2].widget, grain: "day" }), /does not support grain/);
+  throws("component mart missing from widget.marts", () => compileFixture({ ...W_MER_CAC, marts: [] }), /missing from widget.marts/);
+  throws("client id with a quote", () => compileFixture({ ...W_MER_CAC, queryClientIds: ["x' OR 1=1"] }), /Client id/);
+  throws("display currency not ISO", () => compileFixture({ ...W_MER_CAC, displayCurrency: "native" }), /Display currency/);
+  throws("bad date", () => compileFixture({ ...W_MER_CAC, period: { ...W_MER_CAC.period, current: { from: "2026-07-06'", to: "2026-10-03" } } }), /YYYY-MM-DD/);
+  throws("scan does not cover comparison", () => compileFixture({ ...W_MER_CAC, scan: W_MER_CAC.period.current }), /Scan bounds/);
+  throws("bad project id", () => compileWidgetWith(W_MER_CAC, FIXTURE_REGISTRY, { projectId: "x`.y" }), /Project id/);
+  throws("compileWidget fails closed until the registry is bound", () => compileWidget(W_MER_CAC), /No registry bound/);
+  check("componentAlias", componentAlias("kpis.new_customer_orders") === "kpis__new_customer_orders");
+}
+
+// ---------------------------------------------------------------------------
+// Runner: policy helpers and normalisation
+// ---------------------------------------------------------------------------
+
+{
+  const today = "2026-10-04";
+  check("ttl: range ending yesterday is recent", cacheTtlSeconds("2026-10-03", today) === CACHE_TTL_S.recent);
+  check("ttl: two days before yesterday is recent", cacheTtlSeconds("2026-10-01", today) === CACHE_TTL_S.recent);
+  check("ttl: five days back is lastWeek", cacheTtlSeconds("2026-09-28", today) === CACHE_TTL_S.lastWeek);
+  check("ttl: a month back is older", cacheTtlSeconds("2026-09-01", today) === CACHE_TTL_S.older);
+  check("budget default 2 GiB", maxBytesBilled({}) === DEFAULT_MAX_BYTES_BILLED && DEFAULT_MAX_BYTES_BILLED === 2147483648);
+  check("budget from env", maxBytesBilled({ REPORTS_MAX_BYTES_BILLED: "1073741824" }) === 1073741824);
+  check("budget ignores junk", maxBytesBilled({ REPORTS_MAX_BYTES_BILLED: "2GB" }) === DEFAULT_MAX_BYTES_BILLED && maxBytesBilled({ REPORTS_MAX_BYTES_BILLED: "0" }) === DEFAULT_MAX_BYTES_BILLED);
+
+  const labels = jobLabels({ userEmail: "Someone@Example.com", widgetType: "line" });
+  check("labels: app, feature, widget_type", labels.app === "dashboard" && labels.feature === "reports" && labels.widget_type === "line");
+  check("labels: user is 8 hex of sha1, never the email", /^[0-9a-f]{8}$/.test(labels.user) && labels.user === createHash("sha1").update("someone@example.com").digest("hex").slice(0, 8));
+  check("labels: valid BigQuery label values", Object.entries(labels).every(([k, v]) => /^[a-z][a-z0-9_-]{0,62}$/.test(k) && /^[a-z0-9_-]{0,63}$/.test(v)));
+
+  const bytes = { message: "Query exceeded limit for bytes billed: 2147483648. 4194304000 or higher required.", errors: [{ reason: "bytesBilledLimitExceeded" }] };
+  const timeout = { message: "Job execution was cancelled: Job timed out after 20 sec", errors: [{ reason: "timeout" }] };
+  const perm = { message: "Access Denied: Table oneeighty-warehouse:mart.x: User does not have permission", errors: [{ reason: "accessDenied" }] };
+  const m1 = mapWarehouseError(bytes);
+  const m2 = mapWarehouseError(timeout);
+  const m3 = mapWarehouseError(perm);
+  check("error map: bytes billed -> over_budget", m1 instanceof ReportsError && m1.code === "over_budget");
+  check("error map: job timeout -> timeout", m2.code === "timeout");
+  check("error map: permission -> warehouse_error", m3.code === "warehouse_error");
+  check("error map: message never leaks BigQuery text", ![m1, m2, m3].some((e) => /oneeighty|permission|Access Denied/.test(e.message)));
+  check("error map: cause kept for logs", m3.cause === perm);
+  const passthrough = new ReportsError("too_large");
+  check("error map: ReportsError passes through", mapWarehouseError(passthrough) === passthrough);
+
+  const big = (s: string) => ({ toString: () => s, valueOf: () => s, toJSON: () => s });
+  const rows = normaliseRows(
+    [
+      {
+        client_id: "dobias",
+        period: "cmp",
+        bucket: { value: "2025-07-07" },
+        kpis__n_rows: 7,
+        kpis__foreign_ccy_rows: 0,
+        kpis__fx_missing_rows: 2,
+        kpis__fx_missing_months: [{ value: "2025-08-01" }, { value: "2025-07-01" }],
+        kpis__revenue__nat: big("1234.5"),
+        kpis__revenue__disp: big("28000.125"),
+        kpis__new_customer_orders: 12,
+        kpis__paid_spend__nat: null,
+        kpis__paid_spend__disp: null,
+      },
+      { client_id: "manami", period: "cur", bucket: { value: TOTAL_BUCKET }, kpis__n_rows: 1, kpis__foreign_ccy_rows: 1, kpis__fx_missing_rows: 0, kpis__fx_missing_months: null, kpis__revenue__nat: 1, kpis__revenue__disp: 1, kpis__new_customer_orders: null, kpis__paid_spend__nat: 0, kpis__paid_spend__disp: 0 },
+    ],
+    { components: ["kpis.new_customer_orders", "kpis.paid_spend", "kpis.revenue"], marts: ["kpis"] }
+  );
+  const r0 = rows[0];
+  check("normalise: ids, period and DATE bucket", r0.clientId === "dobias" && r0.period === "cmp" && r0.bucket === "2025-07-07");
+  check("normalise: NUMERIC to number", r0.values["kpis.revenue"]?.nat === 1234.5 && r0.values["kpis.revenue"]?.disp === 28000.125);
+  check("normalise: count has nat === disp", r0.values["kpis.new_customer_orders"]?.nat === 12 && r0.values["kpis.new_customer_orders"]?.disp === 12);
+  check("normalise: NULL stays null, never 0", r0.values["kpis.paid_spend"]?.nat === null && r0.values["kpis.paid_spend"]?.disp === null);
+  check("normalise: guards and sorted fx months", JSON.stringify(r0.guards.kpis) === JSON.stringify({ nRows: 7, foreignCcyRows: 0, fxMissingRows: 2, fxMissingMonths: ["2025-07-01", "2025-08-01"] }));
+  check("normalise: NULL fx months is empty, zero stays zero", rows[1].guards.kpis?.fxMissingMonths.length === 0 && rows[1].values["kpis.paid_spend"]?.nat === 0 && rows[1].values["kpis.new_customer_orders"]?.nat === null);
+}
+
+// ---------------------------------------------------------------------------
+// BigQuery: (b) dry runs and (c) live column check
+// ---------------------------------------------------------------------------
+
+function hasCredentials(): boolean {
+  return Boolean(
+    process.env.GCP_SERVICE_ACCOUNT_KEY_BASE64 ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      existsSync(join(homedir(), ".config", "gcloud", "application_default_credentials.json"))
+  );
+}
+
+function isAuthError(error: unknown): boolean {
+  return /default credentials|invalid_grant|invalid_rapt|unauthenticated|reauth|Could not refresh access token/i.test(String(error));
+}
+
+const WINDOWS: Array<{ name: string; preset: "90d" | "12m" | "all" }> = [
+  { name: "90d", preset: "90d" },
+  { name: "12m", preset: "12m" },
+  { name: "60m", preset: "all" },
+];
+const GRAINS: QueryGrain[] = ["day", "week", "month", "total"];
+
+/** Span in the grain's own unit (design 2.7 limits). Month and total: the all preset is the warehouse window by definition. */
+function withinSpan(grain: QueryGrain, range: DateRange): boolean {
+  const days = daysInRange(range);
+  if (grain === "day") return days <= MAX_SPAN.day;
+  if (grain === "week") return Math.ceil(days / 7) <= MAX_SPAN.week;
+  return true;
+}
+
+async function bigQueryChecks(): Promise<void> {
+  if (argv.has("--offline")) {
+    console.log("check:reports  SKIP BigQuery steps (b, c): --offline");
+    return;
+  }
+  if (!hasCredentials()) {
+    console.log(
+      "check:reports  SKIP BigQuery steps (b, c): no GCP credentials (set GCP_SERVICE_ACCOUNT_KEY_BASE64, GOOGLE_APPLICATION_CREDENTIALS, or run gcloud auth application-default login)"
+    );
+    return;
+  }
+
+  const registry = real.registry ?? FIXTURE_REGISTRY;
+  const registryName = real.registry ? "real registry" : "fixture registry";
+  const budget = maxBytesBilled();
+  const limit = budget * DRY_RUN_BUDGET_SHARE;
+
+  let clients: string[];
+  try {
+    const res = await queryJob<{ client_id: string }>(
+      `SELECT client_id FROM \`${PROJECT}.ref.clients\` WHERE status = 'active' AND client_id <> 'demo' ORDER BY client_id`,
+      { jobTimeoutMs: 20_000, labels: { app: "dashboard", feature: "reports", widget_type: "check" } }
+    );
+    clients = res.rows.map((r) => r.client_id);
+  } catch (error) {
+    if (isAuthError(error)) {
+      console.log(`check:reports  SKIP BigQuery steps (b, c): credentials present but not usable (${String(error).slice(0, 120)})`);
+      return;
+    }
+    throw error;
+  }
+  check("bq: active clients found", clients.length > 0);
+
+  // (b) Dry runs. Every phase-1 kpis component at once: a single metric reads
+  // a subset of these columns, and BigQuery prunes columns through the view,
+  // so this is the upper bound for every phase-1 metric at that grain and window.
+  const phase1 = (Object.values(registry.components) as ComponentDef[])
+    .filter((c) => registry.marts[c.mart]?.phase === 1)
+    .map((c) => c.id)
+    .sort();
+  console.log(`check:reports  (b) dry runs, ${registryName}, ${phase1.length} components, ${clients.length} clients, budget ${budget} B, fail above ${limit} B`);
+  const today = new Date().toISOString().slice(0, 10);
+  for (const w of WINDOWS) {
+    const range = presetRange(w.preset, today);
+    for (const grain of GRAINS) {
+      if (!withinSpan(grain, range)) {
+        console.log(`  ${w.name.padEnd(4)} ${grain.padEnd(5)} skipped: over MAX_SPAN (resolve answers 413)`);
+        continue;
+      }
+      const widget = resolved({ clientIds: clients, components: phase1, grain, current: range, compare: "previous_year" });
+      const q = compileWidgetWith(widget, registry, { projectId: PROJECT });
+      const res = await queryJob(q.sql, { params: q.params, types: q.types, dryRun: true, maximumBytesBilled: budget });
+      const bytes = res.totalBytesProcessed ?? Number.NaN;
+      console.log(`  ${w.name.padEnd(4)} ${grain.padEnd(5)} ${String(bytes).padStart(12)} B  (${((bytes / budget) * 100).toFixed(2)}% of budget)`);
+      check(`dry run ${w.name} ${grain} within ${DRY_RUN_BUDGET_SHARE * 100}% of budget`, bytes <= limit, `${bytes} B`);
+    }
+  }
+
+  // (c) Live column check.
+  if (!real.registry) console.log(`check:reports  (c) real registry skipped: ${real.note}; checking the fixture registry instead`);
+  const byTable = new Map<string, { mart: MartDef; columns: Set<string> }>();
+  for (const mart of Object.values(registry.marts) as MartDef[]) {
+    const needed = new Set<string>(["client_id", mart.dateColumn]);
+    if (mart.currencyColumn) needed.add(mart.currencyColumn);
+    for (const c of Object.values(registry.components) as ComponentDef[]) if (c.mart === mart.id) needed.add(c.column);
+    byTable.set(mart.table, { mart, columns: needed });
+  }
+  for (const [table, { mart, columns }] of byTable) {
+    const [dataset, name] = table.split(".");
+    const res = await queryJob<{ column_name: string }>(
+      `SELECT column_name FROM \`${PROJECT}.${dataset}\`.INFORMATION_SCHEMA.COLUMNS WHERE table_name = @table`,
+      { params: { table: name }, types: { table: "STRING" }, jobTimeoutMs: 20_000 }
+    );
+    const live = new Set(res.rows.map((r) => r.column_name));
+    const missing = [...columns].filter((c) => !live.has(c));
+    if (mart.phase === 1) {
+      check(`columns: ${table} has every ${registryName} column`, live.size > 0 && missing.length === 0, missing.length ? `missing ${missing.join(", ")}` : "table not found");
+    } else if (missing.length) {
+      console.log(`  phase 2 mart ${table}: ${live.size === 0 ? "not found" : `missing ${missing.join(", ")}`} (not a failure until phase 2 ships)`);
+    }
+    console.log(`  ${table}: ${columns.size - missing.length}/${columns.size} columns live`);
+  }
+}
+
+async function main(): Promise<void> {
+  try {
+    await bigQueryChecks();
+  } catch (error) {
+    failures.push(`BigQuery step threw: ${String(error).slice(0, 300)}`);
+  }
+  if (failures.length) {
+    console.error(`check:reports  ${passed} passed, ${failures.length} failed`);
+    for (const f of failures) console.error(`  FAIL ${f}`);
+    process.exit(1);
+  }
+  console.log(`check:reports  ${passed}/${passed} passed (registry: ${real.note})`);
+}
+
+void main();

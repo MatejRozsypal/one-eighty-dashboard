@@ -40,7 +40,7 @@
  * Owner: RS8.
  */
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { MetricId } from "@/lib/reports/registry/ids";
 import type { ReportClient } from "@/lib/reports/registry/types";
 import { MAX_RANKED_LIMIT, MAX_WIDGET_TITLE } from "@/lib/reports/limits";
@@ -78,6 +78,9 @@ export function changeWidgetType(config: WidgetConfig, type: WidgetType, pool: r
   const view: WidgetConfig["view"] = { type };
   if (prev.title) view.title = prev.title;
 
+  // A KPI tile shows one figure: the first metric (it used to accept several
+  // and draw only the first, under a title naming all of them).
+  if (type === "kpi") metrics = metrics.slice(0, 1);
   if (type === "ranked") {
     metrics = metrics.slice(0, 1);
     view.sort = prev.sort ?? "desc";
@@ -106,7 +109,12 @@ export function changeWidgetType(config: WidgetConfig, type: WidgetType, pool: r
 export function autoTitle(config: WidgetConfig, pool: readonly PickerMetric[]): string {
   const label = (id: MetricId) => pool.find((m) => m.id === id)?.label ?? id;
   const s = config.view.scatter;
-  const ids = config.view.type === "scatter" && s ? unique([s.x, s.y, ...(s.size ? [s.size] : [])]) : config.query.metrics;
+  const ids =
+    config.view.type === "scatter" && s
+      ? unique([s.x, s.y, ...(s.size ? [s.size] : [])])
+      : config.view.type === "kpi"
+        ? config.query.metrics.slice(0, 1)
+        : config.query.metrics;
   return ids.map(label).join(", ");
 }
 
@@ -342,6 +350,7 @@ export function WidgetConfigPanel({ config, onChange, onClose, metrics, clients,
   const { query, view } = config;
   const type = view.type;
   const overrides = query.overrides;
+  const firstType = useRef(type);
 
   const [customizing, setCustomizing] = useState(() => hasFilterOverrides(config));
   const [limitText, setLimitText] = useState(String(view.limit ?? 10));
@@ -418,7 +427,8 @@ export function WidgetConfigPanel({ config, onChange, onClose, metrics, clients,
     <section
       aria-label="Widget settings"
       onKeyDown={(e) => {
-        // Comboboxes stop their own Esc while open, so this is the second press.
+        // The metric list closes itself and lets this press through, so one Esc
+        // closes the list and the inspector together.
         if (e.key === "Escape" && onClose) {
           e.preventDefault();
           onClose();
@@ -489,14 +499,16 @@ export function WidgetConfigPanel({ config, onChange, onClose, metrics, clients,
       ) : (
         <Field label="Metrics">
           <MetricPicker
-            mode={type === "ranked" ? "single" : "multi"}
+            // A new type starts with an empty search box.
+            key={type}
+            mode={type === "ranked" || type === "kpi" ? "single" : "multi"}
             min={1}
             label="Metrics"
             metrics={metrics}
             clients={effectiveClients}
             selected={query.metrics}
             onChange={(ids) => ids.length > 0 && setQuery({ metrics: ids })}
-            autoFocus={autoFocusMetrics}
+            autoFocus={autoFocusMetrics && type === firstType.current}
           />
         </Field>
       )}

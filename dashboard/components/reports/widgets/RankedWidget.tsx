@@ -15,7 +15,7 @@
  * Owner: RS7 (widgets). Design 1.13, 2.10, 1.9.
  */
 
-import { CellDelta, HoverCard, NotesMark, StatusText } from "./CellStatus";
+import { CellDelta, HoverCard, NotesMark, PendingCell, StatusText } from "./CellStatus";
 import { BenchmarkCardBody, benchmarkLabel } from "./BenchmarkHover";
 import { seriesColor } from "./chartTheme";
 import { formatMetricValue } from "./format";
@@ -26,7 +26,7 @@ const MARKER_STYLE = {
   backgroundImage: "repeating-linear-gradient(to bottom, var(--benchmark) 0, var(--benchmark) 3px, transparent 3px, transparent 5px)",
 } as const;
 
-export function RankedWidget({ result, metrics, caveatTexts, view }: WidgetProps) {
+export function RankedWidget({ result, metrics, caveatTexts, view, pending = false }: WidgetProps) {
   const metric = metrics[0];
   if (!metric) return <div className="h-full" />;
 
@@ -94,7 +94,7 @@ export function RankedWidget({ result, metrics, caveatTexts, view }: WidgetProps
       {sunk.map(({ series, cell }) => (
         <li key={series.id} className={ROW}>
           <span className="truncate font-mono text-[12px] text-content-muted">{series.label}</span>
-          <span className="col-span-3 justify-self-end"><StatusText cell={cell ?? { status: "no_data" }} /></span>
+          <span className="col-span-3 justify-self-end">{!cell && pending ? <PendingCell /> : <StatusText cell={cell ?? { status: "no_data" }} />}</span>
         </li>
       ))}
     </ul>

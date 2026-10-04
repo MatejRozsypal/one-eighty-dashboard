@@ -80,6 +80,41 @@ export const AXIS_TICK = {
   fontFamily: "var(--font-mono)",
 } as const;
 
+/**
+ * Width of one character of an axis label (10.5px mono is 0.6em wide). Axis
+ * and margin sizes come from the labels they hold, not from a guess, so a
+ * longer currency prefix or a wider number never loses its first character.
+ */
+export const AXIS_CHAR_PX = 6.4;
+
+/** Pixels the text needs. */
+export function textWidth(text: string): number {
+  return Math.ceil(text.length * AXIS_CHAR_PX);
+}
+
+/** Width of a value axis that has to show `labels`: the widest label plus the tick gap. */
+export function axisWidth(labels: readonly string[], min = 36, max = 120): number {
+  const widest = labels.reduce((m, l) => Math.max(m, textWidth(l)), 0);
+  return Math.min(max, Math.max(min, widest + 12));
+}
+
+/** Right margin that keeps the last tick label, centred on the plot edge, inside the card. */
+export function edgeMargin(labels: readonly string[], min = 20): number {
+  const widest = labels.reduce((m, l) => Math.max(m, textWidth(l)), 0);
+  return Math.max(min, Math.ceil(widest / 2) + 6);
+}
+
+/** `text` cut to `max` characters with "..." (the full text goes in a hover title). */
+export function truncateLabel(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+}
+
+/** The labels an axis over [lo, hi] is likely to print: both ends, zero and one tick of headroom. */
+export function axisProbe(lo: number, hi: number): number[] {
+  const span = Math.max(Math.abs(lo), Math.abs(hi));
+  return [lo, hi, 0, hi + span * 0.15, lo - span * 0.15];
+}
+
 /** Chart margins: the labelled one leaves room for a direct end label. */
 export const MARGIN = { top: 8, right: 20, bottom: 0, left: 4 } as const;
 export const MARGIN_LABELLED = { top: 8, right: 56, bottom: 0, left: 4 } as const;

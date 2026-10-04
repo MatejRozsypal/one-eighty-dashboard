@@ -28,6 +28,8 @@ import type { WidgetState } from "./useWidgetData";
 // Widget cell
 // ---------------------------------------------------------------------------
 
+const CHART_TYPES: ReadonlySet<WidgetType> = new Set<WidgetType>(["line", "bar", "scatter"]);
+
 export interface WidgetCellProps {
   config: WidgetConfig | null;
   state: WidgetState | undefined;
@@ -87,9 +89,25 @@ export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit,
   }
 
   const metrics = config.query.metrics.map((id) => widgetMetrics[id]).filter((m): m is WidgetMetric => m !== undefined);
+
+  // A metric was added (or the query changed) and the result on screen predates
+  // it: the missing cells are pending, not empty. Tables, KPIs and ranked lists
+  // draw a skeleton per cell; a chart has no cell to hold one, so it draws the
+  // whole-widget skeleton until the new result lands.
+  const awaitingMetric = loading && metrics.some((m) => result.series.some((s) => s.cells[m.id] === undefined));
+  if (awaitingMetric && CHART_TYPES.has(config.view.type)) {
+    return (
+      <div aria-busy="true" aria-label="Loading" className="h-full w-full">
+        <Skeleton className="h-full w-full rounded-md" />
+      </div>
+    );
+  }
+
+  // What is on screen answers an older request: dim it harder than a plain
+  // refresh so it cannot be read as current while another widget has updated.
   return (
-    <div aria-busy={loading} className={`h-full ${loading ? "oe-pulse" : ""}`}>
-      <WidgetBody result={result} metrics={metrics} caveatTexts={caveatTexts} view={config.view} />
+    <div aria-busy={loading} className={`h-full ${loading ? "oe-pulse" : ""} ${loading ? "oe-pulse-stale" : ""}`}>
+      <WidgetBody result={result} metrics={metrics} caveatTexts={caveatTexts} view={config.view} pending={loading} />
     </div>
   );
 }
@@ -133,7 +151,7 @@ export function ConfigDrawer({ config, readOnly, autoFocusMetrics, pickerMetrics
         className="fixed inset-x-0 bottom-0 z-[80] flex max-h-[82vh] flex-col overflow-hidden rounded-t-xl border-t border-hairline bg-paper pb-[var(--safe-bottom)] shadow-lg outline-none lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-[var(--header-h)] lg:h-[calc(100vh-var(--header-h))] lg:max-h-none lg:w-[360px] lg:rounded-none lg:border-l lg:border-t-0 lg:pb-0 lg:shadow-none"
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
+          <fieldset disabled={readOnly} className={`m-0 min-w-0 border-0 p-0 ${readOnly ? "opacity-60" : ""}`}>
             <WidgetConfigPanel
               config={config}
               onChange={onChange}

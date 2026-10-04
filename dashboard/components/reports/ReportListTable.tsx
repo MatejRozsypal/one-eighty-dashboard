@@ -36,6 +36,7 @@ import { MAX_REPORT_NAME } from "@/lib/reports/limits";
 import type { Visibility } from "@/lib/reports/types";
 import { VISIBILITIES } from "@/lib/reports/types";
 import { DotsIcon, ICON_BUTTON, Popover, PopoverMenu, type MenuEntry } from "./Popover";
+import { useDirectoryActions } from "./ReportsDirectory";
 import { ToastRegion, useToasts } from "./Toasts";
 import { VISIBILITY_LONG, VISIBILITY_SHORT, ownerInitials, relativeTime, widgetCountLabel } from "./listFormat";
 
@@ -105,16 +106,21 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deletedId]);
 
+  const directory = useDirectoryActions();
+
   const patchItem = useCallback((id: string, patch: Partial<ReportListItem>) => {
+    if (patch.name !== undefined) directory.patch(id, { name: patch.name });
+    if (patch.pinned !== undefined) directory.patch(id, { pinned: patch.pinned });
     setLists((l) => ({
       mine: l.mine.map((r) => (r.id === id ? { ...r, ...patch } : r)),
       team: l.team.map((r) => (r.id === id ? { ...r, ...patch } : r)),
     }));
-  }, []);
+  }, [directory]);
 
   const dropItem = useCallback((id: string) => {
+    directory.drop(id);
     setLists((l) => ({ mine: l.mine.filter((r) => r.id !== id), team: l.team.filter((r) => r.id !== id) }));
-  }, []);
+  }, [directory]);
 
   const fail = useCallback(
     (message = "Could not save") => {
@@ -138,14 +144,16 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
   }
 
   async function create(key: TemplateKey | undefined, name: string) {
-    const result = await createReport({ name, templateKey: key });
-    if (!result.ok) return fail();
+    // A server action can reject (network, platform error) instead of returning
+    // a failure: say so, never let the click vanish.
+    const result = await createReport({ name, templateKey: key }).catch(() => null);
+    if (!result || !result.ok) return fail();
     open(result.id, true);
   }
 
   async function duplicate(r: ReportListItem) {
-    const result = await duplicateReport(r.id);
-    if (!result.ok) return fail();
+    const result = await duplicateReport(r.id).catch(() => null);
+    if (!result || !result.ok) return fail();
     open(result.id, true);
   }
 
@@ -359,6 +367,7 @@ function RenameInput({ initial, onDone, onCancel }: { initial: string; onDone: (
       maxLength={MAX_REPORT_NAME}
       aria-label="Report name"
       onChange={(e) => setValue(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
       onBlur={() => onDone(value)}
       onKeyDown={(e) => {
         if (e.key === "Enter") {

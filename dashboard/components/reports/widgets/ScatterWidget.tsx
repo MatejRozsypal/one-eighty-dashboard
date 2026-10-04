@@ -17,20 +17,35 @@
  * Owner: RS7 (widgets). Design 1.9, 1.13, 2.10.
  */
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { CartesianGrid, ReferenceLine, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis, type TooltipProps } from "recharts";
 import { NO_VALUE } from "@/lib/format";
 import type { MetricId } from "@/lib/reports/registry/ids";
 import { BenchmarkStrip } from "./BenchmarkHover";
 import { SeriesLegend, type LegendItem } from "./CellStatus";
 import { ChartFrame, TooltipCard, TooltipRow } from "./ChartFrame";
-import { AXIS_TICK, BENCHMARK, GRID_STROKE, SURFACE, TEXT_MUTED, TEXT_STRONG, assignSeriesStyles } from "./chartTheme";
+import { AXIS_TICK, BENCHMARK, GRID_STROKE, SURFACE, TEXT_MUTED, TEXT_STRONG, assignSeriesStyles, axisProbe, axisWidth, edgeMargin, textWidth, truncateLabel } from "./chartTheme";
 import { formatAxisValue, formatMetricValue, statusReason } from "./format";
 import { benchmarksFor, cellNotes, cellOf, drawnBenchmarks, isOk, type ChartWidgetProps, type WidgetMetric } from "./types";
 
 const MAX_LABELLED_POINTS = 8;
 const SIZE_RANGE: [number, number] = [64, 360];
 const DEFAULT_SIZE = 120;
+/** Point labels are cut here; the full name is on hover. */
+const LABEL_MAX = 16;
+/** Height of a label line, for the overlap test. */
+const LABEL_H = 12;
+
+interface Box {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+function overlaps(a: Box, b: Box): boolean {
+  return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+}
 
 interface Point {
   id: string;
@@ -53,6 +68,9 @@ export function ScatterWidget({ result, metrics, caveatTexts, view, size }: Char
   const ym = find(spec?.y);
   const sm = find(spec?.size);
   const styles = useMemo(() => assignSeriesStyles(result.series), [result.series]);
+  // Label boxes already placed in the current paint, by point order. Points are
+  // drawn in order, so a point only has to avoid the ones before it.
+  const placed = useRef(new Map<number, Box>());
 
   if (!xm || !ym) {
     return (
@@ -104,22 +122,61 @@ export function ScatterWidget({ result, metrics, caveatTexts, view, size }: Char
   const fmtX = (v: number | null | undefined) => formatMetricValue(v, xm.format, result.currency);
   const fmtY = (v: number | null | undefined) => formatMetricValue(v, ym.format, result.currency);
 
+  const order = new Map(points.map((p, i) => [p.id, i]));
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const shape = (p: any) => {
     const d = p.payload as Point;
     const r = Math.max(4, Math.sqrt((typeof p.size === "number" ? p.size : DEFAULT_SIZE) / Math.PI));
+    let label: { x: number; y: number; anchor: "start" | "end"; text: string } | null = null;
+    if (labelled) {
+      const i = order.get(d.id) ?? 0;
+      const text = `${truncateLabel(d.label, LABEL_MAX)}${d.caveat ? "^" : ""}`;
+      const w = textWidth(text);
+      // Preferred spot first: right of the dot; then below it, above it, and
+      // the same three on the left. The first one clear of earlier labels wins.
+      const spots: Array<{ side: 1 | -1; dy: number }> = [
+        { side: 1, dy: 0 },
+        { side: 1, dy: LABEL_H },
+        { side: 1, dy: -LABEL_H },
+        { side: -1, dy: 0 },
+        { side: -1, dy: LABEL_H },
+        { side: -1, dy: -LABEL_H },
+      ];
+      let chosen = spots[0];
+      let box: Box = { x0: 0, x1: 0, y0: 0, y1: 0 };
+      for (const spot of spots) {
+        const x0 = spot.side === 1 ? p.cx + r + 4 : p.cx - r - 4 - w;
+        const y0 = p.cy + spot.dy - LABEL_H / 2;
+        const candidate: Box = { x0, x1: x0 + w, y0, y1: y0 + LABEL_H };
+        const clear = Array.from(placed.current.entries()).every(([j, b]) => j >= i || !overlaps(candidate, b));
+        chosen = spot;
+        box = candidate;
+        if (clear) break;
+      }
+      placed.current.set(i, box);
+      label = { x: chosen.side === 1 ? p.cx + r + 4 : p.cx - r - 4, y: p.cy + chosen.dy, anchor: chosen.side === 1 ? "start" : "end", text };
+    }
     return (
       <g>
+        <title>{d.label}</title>
         <circle cx={p.cx} cy={p.cy} r={r} fill={d.color} fillOpacity={0.9} stroke={SURFACE} strokeWidth={2} />
-        {labelled && (
-          <text x={p.cx + r + 4} y={p.cy} dy={4} fontSize={10.5} fontFamily="var(--font-mono)" fill={TEXT_STRONG}>
-            {d.label}
-            {d.caveat ? "^" : ""}
+        {label && (
+          <text x={label.x} y={label.y} dy={4} textAnchor={label.anchor} fontSize={10.5} fontFamily="var(--font-mono)" fill={TEXT_STRONG}>
+            {label.text}
           </text>
         )}
       </g>
     );
   };
+
+  // Room for what is printed: the widest value label of the x axis centred on
+  // the right edge, and the longest point label to the right of its dot.
+  const axisLabels = (vals: number[], m: WidgetMetric) => (vals.length === 0 ? [] : axisProbe(Math.min(...vals), Math.max(...vals)).map((v) => formatAxisValue(v, m.format, result.currency)));
+  const xTickLabels = axisLabels(points.map((p) => p.x), xm);
+  const yTickLabels = axisLabels(points.map((p) => p.y), ym);
+  const longestLabel = Math.max(0, ...points.map((p) => textWidth(`${truncateLabel(p.label, LABEL_MAX)}${p.caveat ? "^" : ""}`)));
+  const rightMargin = Math.max(edgeMargin(xTickLabels, 12), labelled ? longestLabel + 24 : 12);
 
   const tooltip = ({ active, payload }: TooltipProps<number, string>) => {
     if (!active || !payload || payload.length === 0) return null;
@@ -172,7 +229,7 @@ export function ScatterWidget({ result, metrics, caveatTexts, view, size }: Char
           </div>
         ) : (
           <ChartFrame size={size}>
-            <ScatterChart margin={{ top: 12, right: labelled ? 64 : 12, bottom: 16, left: 12 }}>
+            <ScatterChart margin={{ top: 12, right: rightMargin, bottom: 16, left: 12 }}>
               <CartesianGrid stroke={GRID_STROKE} />
               <XAxis
                 type="number"
@@ -191,7 +248,7 @@ export function ScatterWidget({ result, metrics, caveatTexts, view, size }: Char
                 name={ym.label}
                 tickLine={false}
                 axisLine={false}
-                width={52}
+                width={axisWidth(yTickLabels, 44)}
                 tick={AXIS_TICK}
                 domain={["auto", "auto"]}
                 tickFormatter={(v: number) => formatAxisValue(v, ym.format, result.currency)}

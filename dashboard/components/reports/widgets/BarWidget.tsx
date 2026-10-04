@@ -24,7 +24,7 @@ import { NO_VALUE } from "@/lib/format";
 import type { MetricId } from "@/lib/reports/registry/ids";
 import { BenchmarkStrip } from "./BenchmarkHover";
 import { MetricSwitch, SeriesLegend, type LegendItem } from "./CellStatus";
-import { ChartFrame, TooltipCard, TooltipRow, useHatch } from "./ChartFrame";
+import { ChartFrame, TooltipCard, TooltipRow, categoryTick, useHatch } from "./ChartFrame";
 import {
   AXIS_TICK,
   BAR_RADIUS,
@@ -36,6 +36,11 @@ import {
   SURFACE_GAP,
   TEXT_MUTED,
   assignSeriesStyles,
+  axisProbe,
+  axisWidth,
+  edgeMargin,
+  textWidth,
+  truncateLabel,
 } from "./chartTheme";
 import { formatAxisValue, formatBucket, formatMetricValue, statusLabel } from "./format";
 import { benchmarksFor, cellNotes, cellOf, drawnBenchmarks, hasLine, type ChartWidgetProps } from "./types";
@@ -128,12 +133,21 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
       );
     };
 
+    // Room for what the axes print: the series names (cut, full name on
+    // hover) on the left, and the last value label, centred on the right
+    // edge, on the right.
+    const NAME_MAX = 16;
+    const nameWidth = Math.max(0, ...data.map((d) => textWidth(truncateLabel(d.name, NAME_MAX)))) + 12;
+    const shown = data.filter((d) => !d.gap).map((d) => d.v);
+    const xLabels = shown.length === 0 ? [] : axisProbe(Math.min(0, ...shown), Math.max(0, ...shown)).map((v) => formatAxisValue(v, metric.format, result.currency));
+    const margin = { ...MARGIN, right: edgeMargin(xLabels) };
+
     return (
       <div className="flex h-full min-h-0 flex-col gap-2">
         {header}
         <div className="min-h-0 flex-1" role="img" aria-label={`${metric.label} by series`}>
           <ChartFrame size={size}>
-            <BarChart data={data} layout="vertical" margin={MARGIN} barCategoryGap="28%">
+            <BarChart data={data} layout="vertical" margin={margin} barCategoryGap="28%">
               {hatch.defs}
               <CartesianGrid stroke={GRID_STROKE} horizontal={false} />
               <XAxis
@@ -148,9 +162,8 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
                 dataKey="name"
                 tickLine={false}
                 axisLine={false}
-                width={88}
-                tick={AXIS_TICK}
-                tickFormatter={(t: string) => (t.length > 12 ? `${t.slice(0, 11)}...` : t)}
+                width={Math.min(nameWidth, 160)}
+                tick={categoryTick(NAME_MAX)}
               />
               <Tooltip content={tooltip} cursor={{ fill: MUTED_FILL, opacity: 0.6 }} isAnimationActive={false} />
               {benchLines.map((b) => (
@@ -185,6 +198,12 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
   });
   const drawn = result.series.map((s, k) => ({ s, k, cell: cellOf(s, metric.id) })).filter(({ cell }) => hasLine(cell));
   const lastDrawn = drawn.length - 1;
+  const perBar = (r: Row) => result.series.map((_, k) => r[`v${k}`]).filter((v): v is number => typeof v === "number");
+  const bucketValues = rows.flatMap((r) => (stacked ? [perBar(r).reduce((a, b) => a + b, 0)] : perBar(r)));
+  const yWidth = axisWidth(
+    bucketValues.length === 0 ? [] : axisProbe(Math.min(0, ...bucketValues), Math.max(0, ...bucketValues)).map((v) => formatAxisValue(v, metric.format, result.currency)),
+    44,
+  );
 
   const tooltip = ({ active, payload }: TooltipProps<number, string>) => {
     if (!active || !payload || payload.length === 0) return null;
@@ -224,7 +243,7 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
               <YAxis
                 tickLine={false}
                 axisLine={false}
-                width={52}
+                width={yWidth}
                 tick={AXIS_TICK}
                 tickFormatter={(v: number) => formatAxisValue(v, metric.format, result.currency)}
               />

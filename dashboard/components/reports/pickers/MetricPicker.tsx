@@ -309,9 +309,11 @@ export function MetricPicker({
         }
         return;
       case "Escape":
+        // Closes the list and lets the press travel on: the inspector closes
+        // and focus returns to the canvas, so one Esc is enough (a second press
+        // used to be needed, and "/" in between landed in this search box).
         if (open) {
           e.preventDefault();
-          e.stopPropagation();
           setOpen(false);
         }
         return;

@@ -20,7 +20,7 @@ import { DataTable, type DataTableColumn, type DataTableRow } from "@/components
 import { NoValue } from "@/components/ui/EmptyState";
 import type { MetricCell, ResultSeries } from "@/lib/reports/types";
 import { BenchmarkTag } from "./BenchmarkHover";
-import { CellDelta, NotesMark, StatusText } from "./CellStatus";
+import { CellDelta, NotesMark, PendingCell, StatusText } from "./CellStatus";
 import { seriesColor } from "./chartTheme";
 import { formatBucket, formatMetricValue } from "./format";
 import { benchmarksFor, cellNotes, cellOf, type WidgetMetric, type WidgetProps } from "./types";
@@ -69,7 +69,7 @@ function valueNode(args: {
   );
 }
 
-export function TableWidget({ result, metrics, caveatTexts, view }: WidgetProps) {
+export function TableWidget({ result, metrics, caveatTexts, view, pending = false }: WidgetProps) {
   const columns: DataTableColumn[] = [
     { key: "label", label: result.series.length === 1 && result.grain !== "total" ? "Period" : "Series", sortable: true },
     ...metrics.map((m): DataTableColumn => ({ key: m.id, label: m.label, align: "right", sortable: true })),
@@ -91,7 +91,7 @@ export function TableWidget({ result, metrics, caveatTexts, view }: WidgetProps)
           </span>,
           ...metrics.map((m) => {
             const cell = cellOf(series, m.id);
-            if (!cell) return <StatusText key={m.id} cell={{ status: "no_data" }} />;
+            if (!cell) return pending ? <PendingCell key={m.id} /> : <StatusText key={m.id} cell={{ status: "no_data" }} />;
             const value = cell.points?.[i] ?? null;
             return (
               <span key={m.id}>{valueNode({ value, metric: m, cell, currency: result.currency, notes: [], showDelta: false })}</span>
@@ -116,7 +116,7 @@ export function TableWidget({ result, metrics, caveatTexts, view }: WidgetProps)
     });
 
     for (const series of ordered) {
-      rows.push(seriesRow(series, metrics, result.currency, caveatTexts));
+      rows.push(seriesRow(series, metrics, result.currency, caveatTexts, pending));
     }
 
     // One Industry row per vertical among the matches.
@@ -150,7 +150,7 @@ export function TableWidget({ result, metrics, caveatTexts, view }: WidgetProps)
   );
 }
 
-function seriesRow(series: ResultSeries, metrics: readonly WidgetMetric[], currency: string, caveatTexts: WidgetProps["caveatTexts"]): DataTableRow {
+function seriesRow(series: ResultSeries, metrics: readonly WidgetMetric[], currency: string, caveatTexts: WidgetProps["caveatTexts"], pending: boolean): DataTableRow {
   return {
     key: series.id,
     cells: [
@@ -160,7 +160,7 @@ function seriesRow(series: ResultSeries, metrics: readonly WidgetMetric[], curre
       </span>,
       ...metrics.map((m) => {
         const cell = cellOf(series, m.id);
-        if (!cell) return <StatusText key={m.id} cell={{ status: "no_data" }} />;
+        if (!cell) return pending ? <PendingCell key={m.id} /> : <StatusText key={m.id} cell={{ status: "no_data" }} />;
         return (
           <span key={m.id}>
             {valueNode({ value: cell.total, metric: m, cell, currency, notes: cellNotes(series, m, cell, caveatTexts), showDelta: true })}

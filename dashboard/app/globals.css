@@ -170,6 +170,11 @@ body {
   --pulse-hi: 0.82;
   --pulse-lo: 0.5;
   --pulse-static: 0.6;
+  /* Report widgets whose figures answer an older request than the page now
+     asks for: a deeper dim than a plain refetch, same keyframes. */
+  --pulse-stale-hi: 0.55;
+  --pulse-stale-lo: 0.35;
+  --pulse-stale-static: 0.45;
   --skeleton-bg: var(--gray-150);
 }
 
@@ -199,6 +204,11 @@ body {
     oe-pulse var(--pulse-dur) var(--ease-in-out) var(--pulse-in) infinite;
 }
 
+.oe-pulse-stale {
+  --pulse-hi: var(--pulse-stale-hi);
+  --pulse-lo: var(--pulse-stale-lo);
+}
+
 .oe-skeleton {
   --pulse-hi: 1;
   background: var(--skeleton-bg);
@@ -210,6 +220,10 @@ body {
   [data-pending="true"] main:not([aria-busy="true"]) {
     animation: none;
     opacity: var(--pulse-static);
+  }
+
+  .oe-pulse-stale {
+    opacity: var(--pulse-stale-static);
   }
 
   .oe-skeleton {
@@ -336,7 +350,10 @@ body {
 }
 
 .product-enter {
-  animation: product-enter 200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  /* `backwards`, not `both`: a forwards fill keeps the transform animation
+     "in effect" after it ends, and that makes this element the containing
+     block of every `position: fixed` descendant (toasts, popovers). */
+  animation: product-enter 200ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
 }
 
 /* ==========================================================================

@@ -28,10 +28,10 @@
  * Owner: RS8.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { DateRangeControl } from "@/components/controls/DateRangeControl";
-import { SegmentedControl, type Segment } from "@/components/controls/SegmentedControl";
+import type { Segment } from "@/components/controls/SegmentedControl";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import { comparisonRange, presetRange, type DateRange, type PresetKey } from "@/lib/period";
 import type { ReportClient } from "@/lib/reports/registry/types";
@@ -65,7 +65,7 @@ export interface ReportFilterBarProps {
 export function ReportFilterBar({ filters, defaults, clients, onSaveDefault }: ReportFilterBarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { isPending, navigate } = useNavigation();
+  const { isPending, pendingHref, navigate } = useNavigation();
 
   const { range, presetKey } = periodRange(filters.period);
   const comparison = filters.compare === "none" ? null : comparisonRange(range, filters.compare);
@@ -75,9 +75,24 @@ export function ReportFilterBar({ filters, defaults, clients, onSaveDefault }: R
   const mixed = currencies.size > 1;
   const sharedCurrency = !mixed ? chosen[0]?.currency : undefined;
 
+  // Each control change merges onto the newest URL, not onto the one the
+  // router has committed: `searchParams` is a snapshot of the last commit, so
+  // two changes inside one load (Industry, then a currency) would otherwise
+  // both start from the same old URL and the second would erase the first.
+  // `latest` holds what the previous change navigated to until the router
+  // catches up.
+  const latest = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isPending) latest.current = null;
+  }, [isPending]);
+
   function patch(p: FilterOverrides) {
-    const qs = patchFilterParams(searchParams.toString(), p, defaults);
-    navigate(qs === "" ? pathname : `${pathname}?${qs}`);
+    const base = latest.current ?? pendingHref;
+    const current = base !== null ? base.slice(base.indexOf("?") === -1 ? base.length : base.indexOf("?") + 1) : searchParams.toString();
+    const qs = patchFilterParams(current, p, defaults);
+    const href = qs === "" ? pathname : `${pathname}?${qs}`;
+    latest.current = href;
+    navigate(href);
   }
 
   // The switch answers on click, not on response (same rule as SegmentedControl).
@@ -114,10 +129,10 @@ export function ReportFilterBar({ filters, defaults, clients, onSaveDefault }: R
 
       <div className="flex items-center gap-2" title={comparison ? `${fmtShort(comparison.from)} to ${fmtShort(comparison.to)}` : undefined}>
         <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted sm:inline">Compare</span>
-        <SegmentedControl
-          param="compare"
+        <FilterSegments
           ariaLabel="Comparison period"
           active={filters.compare}
+          onSelect={(value) => patch({ compare: value as ReportFilters["compare"] })}
           segments={[
             { value: "previous_period", label: "Prev period" },
             { value: "previous_year", label: "Prev year" },
@@ -128,7 +143,12 @@ export function ReportFilterBar({ filters, defaults, clients, onSaveDefault }: R
 
       <div className="flex items-center gap-2">
         <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted sm:inline">Currency</span>
-        <SegmentedControl param="ccy" ariaLabel="Display currency" active={filters.currency} segments={currencySegments} />
+        <FilterSegments
+          ariaLabel="Display currency"
+          active={filters.currency}
+          onSelect={(value) => patch({ currency: value as ReportFilters["currency"] })}
+          segments={currencySegments}
+        />
       </div>
 
       <div className="flex items-center gap-2">
@@ -173,6 +193,71 @@ export function ReportFilterBar({ filters, defaults, clients, onSaveDefault }: R
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The compare and currency pills. Same look and behaviour as the shared
+ * `SegmentedControl` (the selected segment moves on click, the server catches
+ * up), but the change goes through the bar's `patch`, so it merges onto the
+ * newest URL instead of the last committed one.
+ */
+function FilterSegments({
+  segments,
+  active,
+  ariaLabel,
+  onSelect,
+}: {
+  segments: Segment[];
+  active: string;
+  ariaLabel: string;
+  onSelect(value: string): void;
+}) {
+  const { isPending } = useNavigation();
+  const [optimistic, setOptimistic] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isPending) setOptimistic(null);
+  }, [isPending]);
+  const shown = optimistic ?? active;
+
+  return (
+    <div role="group" aria-label={ariaLabel} aria-busy={isPending} className="flex gap-0.5 rounded-pill bg-gray-100 p-[3px]">
+      {segments.map((seg) => {
+        if (seg.disabled) {
+          return (
+            <span
+              key={seg.value}
+              title={seg.disabledReason}
+              className="inline-flex cursor-not-allowed items-center gap-[5px] whitespace-nowrap rounded-pill px-2.5 py-1.5 font-mono text-[11px] text-gray-250"
+            >
+              {seg.label}
+              <svg aria-hidden="true" width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4">
+                <rect x="2" y="5.5" width="8" height="5" rx="1" />
+                <path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" />
+              </svg>
+            </span>
+          );
+        }
+        const isActive = seg.value === shown;
+        return (
+          <button
+            key={seg.value}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => {
+              if (seg.value === shown) return;
+              setOptimistic(seg.value);
+              onSelect(seg.value);
+            }}
+            className={`whitespace-nowrap rounded-pill px-2.5 py-1.5 font-mono text-[11px] transition-colors duration-fast ${
+              isActive ? `bg-paper text-content-strong shadow-sm ${isPending ? "oe-pulse" : ""}` : "text-content-muted hover:text-content-body"
+            }`}
+          >
+            {seg.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -1,25 +1,9 @@
 CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_customer_payback` AS
-WITH shopify_costs AS (
-  SELECT client_id, order_id, SUM(line_cost) AS order_cogs
-  FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
+WITH orders AS (
+  SELECT platform, client_id, customer_key, order_date, gross_profit, currency
+  FROM `oneeighty-warehouse.stg.stg_customer_orders`
   WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
-  GROUP BY client_id, order_id
-),
-orders AS (
-  SELECT client_id, LOWER(TRIM(email)) AS customer_key, order_date,
-         margin_czk AS gross_profit, 'CZK' AS currency
-  FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
-    AND email IS NOT NULL AND TRIM(email) != ''
-  UNION ALL
-  SELECT o.client_id, LOWER(TRIM(o.customer_email)), o.order_date,
-         CASE WHEN c.order_cogs IS NULL THEN NULL
-              ELSE o.subtotal_price - c.order_cogs END,
-         o.currency
-  FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
-  LEFT JOIN shopify_costs c USING (client_id, order_id)
-  WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
-    AND o.customer_email IS NOT NULL AND TRIM(o.customer_email) != ''
+    AND customer_key IS NOT NULL
 ),
 first_order AS (
   SELECT client_id, customer_key, MIN(order_date) AS first_order_date,
@@ -34,8 +18,20 @@ per_customer AS (
     f.first_order_date,
     DATE_ADD(f.first_order_date, INTERVAL 30 DAY) < CURRENT_DATE() AS d30_complete,
     DATE_ADD(f.first_order_date, INTERVAL 90 DAY) < CURRENT_DATE() AS d90_complete,
-    SUM(IF(o.order_date <= DATE_ADD(f.first_order_date, INTERVAL 30 DAY), o.gross_profit, 0)) AS gp_30,
-    SUM(IF(o.order_date <= DATE_ADD(f.first_order_date, INTERVAL 90 DAY), o.gross_profit, 0)) AS gp_90
+    -- WooCommerce: a customer with no costed order in the window has NULL
+    -- gross profit, never 0 (rawbark has no cost data at all). Shopify and
+    -- Shoptet keep the live behaviour (an uncosted order adds 0) byte for byte;
+    -- that latent zero is logged as a separate item, not changed here.
+    IF(LOGICAL_AND(o.platform = 'woocommerce')
+         AND COUNTIF(o.order_date <= DATE_ADD(f.first_order_date, INTERVAL 30 DAY)
+                     AND o.gross_profit IS NOT NULL) = 0,
+       NULL,
+       SUM(IF(o.order_date <= DATE_ADD(f.first_order_date, INTERVAL 30 DAY), o.gross_profit, 0))) AS gp_30,
+    IF(LOGICAL_AND(o.platform = 'woocommerce')
+         AND COUNTIF(o.order_date <= DATE_ADD(f.first_order_date, INTERVAL 90 DAY)
+                     AND o.gross_profit IS NOT NULL) = 0,
+       NULL,
+       SUM(IF(o.order_date <= DATE_ADD(f.first_order_date, INTERVAL 90 DAY), o.gross_profit, 0))) AS gp_90
   FROM first_order f
   JOIN orders o ON o.client_id = f.client_id AND o.customer_key = f.customer_key
   -- customer_key MUST be in this grouping. Without it the CTE groups by cohort

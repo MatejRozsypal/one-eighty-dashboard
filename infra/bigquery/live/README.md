@@ -1,6 +1,11 @@
 # Live warehouse DDL snapshot
 
-Snapshot date: **2026-10-04** (queried 15:00 to 16:00 UTC, project `oneeighty-warehouse`, region EU).
+Snapshot date: **2026-10-05** (re-exported after the 2026-10-04/05 deploys of migrations 228 to 234, 240 to 242, 250 and 251, plus the
+243). First export: 2026-10-04 (15:00 to 16:00 UTC). Project `oneeighty-warehouse`, region EU.
+
+Verified 2026-10-05: for every view in `stg`, `mart`, `ops` and every base table in `ref`, `ops`, the MD5 of the live
+`view_definition` (or table DDL) equals the MD5 of the file here, 0 differences, 0 stale files. The 25 views changed or added since the first
+export were taken from the deployed migration files, which were proven byte-equal to the live text at deploy time and again by this check.
 
 This directory is a read-only mirror of what is actually deployed. It exists because the repo DDL had drifted from
 the live warehouse: the WooCommerce branches, `ops.v_*`, `mart_customer_daily`, `mart_profit_share_monthly` and the
@@ -11,15 +16,16 @@ Every new migration (228 and up) must cite the `live/` file it changes in its he
 
 | Pattern | Count | Source |
 |---|---|---|
-| `stg.<view>.sql` | 31 | `INFORMATION_SCHEMA.VIEWS` of dataset `stg`, wrapped in `CREATE OR REPLACE VIEW` |
-| `mart.<view>.sql` | 39 | same, dataset `mart` |
+| `stg.<view>.sql` | 32 | `INFORMATION_SCHEMA.VIEWS` of dataset `stg`, wrapped in `CREATE OR REPLACE VIEW` |
+| `mart.<view>.sql` | 48 | same, dataset `mart` |
 | `ops.v_*.sql` | 3 | same, dataset `ops` (`v_feed_health`, `v_gads_coverage`, `v_pipeline_alerts`) |
-| `ref.<table>.sql` | 14 | `INFORMATION_SCHEMA.TABLES.ddl` of every base table in `ref` |
+| `stg.ga4_sessions.sql` | 1 | `INFORMATION_SCHEMA.TABLES.ddl` of the one base table in `stg` (derived GA4 sessions, loaded by `ops.sp_load_ga4_sessions`) |
+| `ref.<table>.sql` | 20 | `INFORMATION_SCHEMA.TABLES.ddl` of every base table in `ref` |
 | `ops.<table>.sql` | 5 | same, every base table in `ops` |
 | `scheduled_query.refresh_feed_freshness.sql` | 1 | the hourly scheduled query that fills `ops.feed_freshness` (verbatim) |
 | `scheduled_queries.md` | 1 | list of scheduled queries and DTS transfer configs |
 
-Not covered: `raw`, `raw_google_ads`, `raw_meta_*`, `analytics_*`, `mart_qa` and other datasets, and view definitions
+Not covered: stored procedures and functions (`ops.sp_load_ga4_sessions`, `ops.sp_load_ga4_sessions_for` live in `../243_ga4_sessions.sql`; `ref.sp_rebuild_creative_tags`, `ref.creative_name_key`), `raw`, `raw_google_ads`, `raw_meta_*`, `analytics_*`, `mart_qa` and other datasets, and view definitions
 that reference views from those datasets are exported as they are.
 
 ## Normalisation (so that a re-export produces no diff)
@@ -44,7 +50,7 @@ WHERE table_schema IN ("stg", "mart", "ops") ORDER BY 1, 2' > /tmp/views.json
 bq query --project_id=oneeighty-warehouse --nouse_legacy_sql --format=json --max_rows=1000 '
 SELECT table_schema, table_name, ddl
 FROM `oneeighty-warehouse`.`region-eu`.INFORMATION_SCHEMA.TABLES
-WHERE table_schema IN ("ref", "ops") AND table_type = "BASE TABLE" ORDER BY 1, 2' > /tmp/tables.json
+WHERE table_schema IN ("stg", "ref", "ops") AND table_type = "BASE TABLE" ORDER BY 1, 2' > /tmp/tables.json
 
 python3 - <<'PY'
 import json
@@ -67,6 +73,11 @@ Notes:
 
 ## Known live oddities worth a ticket (not fixed here)
 
-- `ref.product_costs` is documented as "RECORD ONLY" and no view reads it; WP3 adds a dormant join.
+- `ref.product_costs` is documented as "RECORD ONLY"; since 228 `stg_woo_order_items` joins it by `product_id` and `variation_id` (columns added by 228).
 - `ref.clients.has_woocommerce` was added without a default (NULL for non-Woo clients); fixed by migration 231.
 - The live `ops.v_*` views and the `ref.feed_sla*` tables had no repo DDL before this snapshot.
+
+## Do not re-run the old repo DDL
+
+`infra/bigquery/300_create_mart_views.sql` is superseded. Re-running it would revert 228, 229 and 234 on live views. The files in this
+directory are the source of truth; the numbered migrations (228 and up) are the change history.

@@ -9,11 +9,17 @@
 --             ref.clients (5 active clients: dobias, ethia, manami, rawbark, venev) is the key.
 -- Affected:   no existing view, mart or client. The table starts EMPTY.
 -- Regression: not applicable (new table). Tested as mart_qa.rs10_client_verticals.
--- Seed:       NOT included. The vertical taxonomy is an owner decision (design section 8,
---             question 2). A DRAFT list grounded in what the repo says each client sells is in
---             runbooks/31_reporting_benchmarks.md ("Vertical taxonomy (DRAFT)"). Seed only after
---             the owner confirms the names.
--- Deploy order: 2 of 3, after 250, before 252. Idempotent. Needs owner OK. NOT EXECUTED against prod.
+-- Seed:       NOT part of this file. The 5 vertical rows were seeded into prod on 2026-10-04
+--             (owner confirmed the taxonomy), with a one-off INSERT ... WHERE NOT EXISTS (SELECT 1
+--             FROM ref.client_verticals), all open, valid_from 2026-10-01, updated_by
+--             matej@oneeighty.cz, note "confirmed by owner 2026-10-04":
+--               dobias   pet_supplements  dog_supplements     US
+--               rawbark  pet_food         dog_granules        CZ
+--               manami   fragrance        natural_perfumery   CZ
+--               ethia    skincare         acne_sensitive_skin CZ
+--               venev    skincare         natural_cosmetics   CEE
+--             Details and rationale: runbooks/31_reporting_benchmarks.md ("Vertical taxonomy").
+-- Deploy order: 2 of 3, after 250, before 252. Idempotent. DEPLOYED to prod 2026-10-04 (table created empty, then seeded).
 --
 -- Rules (BigQuery has no constraints, so ops.v_benchmark_issues in 252 reports violations):
 --   at most ONE open row (valid_to IS NULL) per client;
@@ -34,7 +40,7 @@ CREATE TABLE IF NOT EXISTS `oneeighty-warehouse.ref.client_verticals` (
 )
 OPTIONS (description = 'Client to vertical mapping for benchmark matching in the Reports suite. At most one open row (valid_to IS NULL) per client. See runbooks/31_reporting_benchmarks.md.');
 
--- Template only (no seed, see header):
+-- Template only (the seed was a one-off, see header):
 --
 -- INSERT INTO `oneeighty-warehouse.ref.client_verticals`
 --   (client_id, vertical, sub_vertical, region, valid_from, valid_to, note, updated_by)

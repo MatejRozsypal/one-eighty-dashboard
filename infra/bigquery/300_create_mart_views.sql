@@ -1,3 +1,19 @@
+-- =============================================================================
+-- SUPERSEDED. DO NOT RE-RUN THIS FILE.
+--
+-- Status as of 2026-10-05: the live warehouse has moved on. Re-running this file
+-- (every statement is CREATE OR REPLACE) would overwrite live views with old
+-- definitions and revert migrations 228 (WooCommerce fee lines, Woo COGS NULL),
+-- 229 (customer marts read WooCommerce), 234 (CM1 to CM3 on zero-order days) and
+-- 240 and later (Meta and Google Ads marts), and would bring back the old
+-- mart_daily_kpis, mart_customer_* and mart_order_gaps.
+--
+-- The source of truth is infra/bigquery/live/ (verified byte for byte against
+-- INFORMATION_SCHEMA on 2026-10-05). Start any view change from the file there
+-- and ship it as a numbered migration (228 and up). This file is kept only as
+-- history of the original mart layer.
+-- =============================================================================
+
 -- 300_create_mart_views.sql
 -- Mart layer. Pre-aggregated, cross-source, dashboard-ready views.
 -- Looker Studio queries mart.* exclusively — never stg.* or raw.* directly.

@@ -88,7 +88,7 @@ SELECT
   media_spend_meta,
   media_spend_google,
   media_spend_meta + media_spend_google    AS media_spend,
-  revenue_net - COALESCE(cogs, 0)
+  revenue_net - cogs
               - (fulfillment_variable + fulfillment_fixed)
               - (media_spend_meta + media_spend_google) AS cm3,
   orders,

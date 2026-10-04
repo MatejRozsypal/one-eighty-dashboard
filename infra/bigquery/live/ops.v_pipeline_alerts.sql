@@ -21,6 +21,50 @@ WITH alerts AS (
     SELECT 1 FROM `oneeighty-warehouse.ops.feed_freshness`
     WHERE DATE(checked_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
       AND checked_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 26 HOUR))
+  -- [233] FX coverage. ref.fx_rates is hand-fed and expires silently: one missing month
+  -- disables the currency toggle and NULLs the revenue of every foreign-currency order of
+  -- that month. A pair is required when a registry client needs it, plus EUR->CZK for shops
+  -- that sell in EUR to a CZK client (RawBark, SK customers), which the registry cannot show.
+  UNION ALL
+  SELECT '*', 'fx_rates', 'critical', 'fx_missing',
+    FORMAT('fx_rates %s->%s has no row for %s (last month with a rate: %s). Refresh per runbook 23',
+      r.from_currency, r.to_currency,
+      FORMAT_DATE('%Y-%m', DATE_TRUNC(CURRENT_DATE(), MONTH)),
+      IFNULL(FORMAT_DATE('%Y-%m', fx.last_month), 'never')),
+    NULL, NULL
+  FROM (
+    SELECT DISTINCT from_currency, to_currency FROM (
+      SELECT currency AS from_currency, 'CZK' AS to_currency
+      FROM `oneeighty-warehouse.ref.clients` WHERE status = 'active' AND currency != 'CZK'
+      UNION ALL
+      SELECT meta_currency, currency
+      FROM `oneeighty-warehouse.ref.clients`
+      WHERE status = 'active' AND meta_currency IS NOT NULL AND meta_currency != currency
+      UNION ALL
+      SELECT gads_currency, currency
+      FROM `oneeighty-warehouse.ref.clients`
+      WHERE status = 'active' AND gads_currency IS NOT NULL AND gads_currency != currency
+      UNION ALL SELECT 'EUR', 'CZK'
+    )
+  ) r
+  LEFT JOIN (
+    SELECT from_currency, to_currency, MAX(month_start) AS last_month
+    FROM `oneeighty-warehouse.ref.fx_rates`
+    GROUP BY from_currency, to_currency
+  ) fx USING (from_currency, to_currency)
+  WHERE fx.last_month IS NULL OR fx.last_month < DATE_TRUNC(CURRENT_DATE(), MONTH)
+  -- [233] Google Ads coverage. Every v_gads_coverage row that is not ok. The view checks
+  -- transfer recency and registry mapping only; it cannot see a single missing day inside the
+  -- history (RawBark 2026-09-17), because DTS tables carry no ingested_at.
+  UNION ALL
+  SELECT COALESCE(g.client_id, '*'), 'google_ads',
+    IF(g.status LIKE 'STALE%' OR g.status LIKE 'CLIENT_WITHOUT_ACCOUNT%', 'critical', 'warning'),
+    LOWER(REGEXP_EXTRACT(g.status, r'^[A-Z_]+')),
+    FORMAT('google_ads/%s: %s', COALESCE(g.client_id, CAST(g.customer_id AS STRING)), g.status),
+    IF(g.days_since_transfer IS NULL, NULL, g.days_since_transfer * 24.0),
+    TIMESTAMP(g.last_transfer_date)
+  FROM `oneeighty-warehouse.ops.v_gads_coverage` g
+  WHERE g.status != 'ok'
 )
 SELECT * FROM alerts
 ORDER BY CASE severity WHEN 'critical' THEN 0 ELSE 1 END,

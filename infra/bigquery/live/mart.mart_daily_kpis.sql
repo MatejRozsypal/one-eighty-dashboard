@@ -98,7 +98,7 @@ shop_daily AS (
     o.revenue, o.new_customer_revenue, o.returning_customer_revenue,
     o.net_sales, o.new_customer_net_sales, o.returning_customer_net_sales,
     o.shipping_revenue, o.tax_collected, o.gross_revenue_incl_tax,
-    COALESCE(c.cogs, 0) AS cogs,
+    c.cogs              AS cogs,
     o.fulfillment_cost,
     o.orders, o.unique_customers, o.new_customer_orders, o.returning_customer_orders
   FROM woo_orders_daily o
@@ -155,6 +155,15 @@ paid_daily AS (
   FROM meta_daily m
   FULL OUTER JOIN google_daily g
     ON m.client_id = g.client_id AND m.date = g.date AND m.currency = g.currency
+),
+-- Clients that have cost data: at least one shop day with a non-NULL cogs.
+-- Shopify and Shoptet always have one (cogs is coalesced to 0 or computed);
+-- a Woo client has one only when some line is costed (migration 228), so
+-- RawBark is absent here until its cost list is loaded.
+client_cost_data AS (
+  SELECT DISTINCT client_id
+  FROM shop_daily
+  WHERE cogs IS NOT NULL
 )
 SELECT
   COALESCE(s.client_id, p.client_id) AS client_id,
@@ -170,9 +179,20 @@ SELECT
   p.paid_spend,
   CAST(0 AS NUMERIC) AS cm1_other_costs,
   COALESCE(s.fulfillment_cost, 0) AS fulfillment_cost,
-  s.revenue - s.cogs - 0                                          AS cm1,
-  s.revenue - s.cogs - 0 - COALESCE(s.fulfillment_cost, 0)        AS cm2,
-  s.revenue - s.cogs - 0 - COALESCE(s.fulfillment_cost, 0) - COALESCE(p.paid_spend, 0) AS cm3
+  -- Day with paid spend and no shop row at all (s.client_id IS NULL) for a client
+  -- with cost data: no orders means revenue 0, COGS 0, fulfilment 0, so the day
+  -- costs exactly its paid spend. Without a cost-data client (RawBark) it stays NULL.
+  IF(s.client_id IS NULL AND k.client_id IS NOT NULL,
+     CAST(0 AS NUMERIC),
+     s.revenue - s.cogs - 0)                                      AS cm1,
+  IF(s.client_id IS NULL AND k.client_id IS NOT NULL,
+     CAST(0 AS NUMERIC) - COALESCE(s.fulfillment_cost, 0),
+     s.revenue - s.cogs - 0 - COALESCE(s.fulfillment_cost, 0))    AS cm2,
+  IF(s.client_id IS NULL AND k.client_id IS NOT NULL,
+     CAST(0 AS NUMERIC) - COALESCE(s.fulfillment_cost, 0) - COALESCE(p.paid_spend, 0),
+     s.revenue - s.cogs - 0 - COALESCE(s.fulfillment_cost, 0) - COALESCE(p.paid_spend, 0)) AS cm3
 FROM shop_daily s
 FULL OUTER JOIN paid_daily p
-  ON s.client_id = p.client_id AND s.date = p.date AND s.currency = p.currency;
+  ON s.client_id = p.client_id AND s.date = p.date AND s.currency = p.currency
+LEFT JOIN client_cost_data k
+  ON k.client_id = COALESCE(s.client_id, p.client_id);

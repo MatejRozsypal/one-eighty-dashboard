@@ -9,10 +9,12 @@ metric, and the "vertical" split. Two hand-fed reference tables:
 | `ref.client_verticals` | Which vertical and region each client belongs to, with validity dates | `infra/bigquery/251_ref_client_verticals.sql` |
 | `ops.v_benchmark_issues` | Data quality view over both (phase 2, Data Health) | `infra/bigquery/252_ops_v_benchmark_issues.sql` |
 
-**Status (2026-10-05): the DDL is written and was tested in `mart_qa` (prefix `rs10_`). Nothing
-in this file has been run in prod.** Both tables start EMPTY on purpose. With no rows the Reports
-product simply shows no benchmarks, it does not break. `sa-frontend-reader` already has READER
-on `ref`, so no grants are needed.
+**Status (2026-10-05):** `ref.industry_benchmarks` (250) and `ref.client_verticals` (251) are
+deployed in prod (2026-10-04). `ref.industry_benchmarks` is EMPTY on purpose: with no rows the
+Reports product simply shows no benchmarks, it does not break. `ref.client_verticals` was seeded
+on 2026-10-04 with the 5 rows listed under "Vertical taxonomy" (owner confirmed). `252`
+(`ops.v_benchmark_issues`) is not deployed yet. `sa-frontend-reader` already has READER on `ref`,
+so no grants were needed.
 
 ## The rules (read these before adding anything)
 
@@ -131,13 +133,17 @@ WHERE client_id = '<client_id>' AND valid_to IS NULL;
 -- then the INSERT above with valid_from = the next day.
 ```
 
-### Vertical taxonomy (DRAFT, owner decision still open)
+### Vertical taxonomy (seeded 2026-10-04, owner confirmed)
 
-**This list is a proposal, not a decision.** The owner has not agreed a taxonomy (design section
-8, question 2). Nothing is seeded. The proposal below uses only what the repo says each client
-sells; the names follow the examples in the design. Confirm or rename, then seed.
+**These 5 rows were seeded into `ref.client_verticals` on 2026-10-04, after the owner confirmed
+the draft taxonomy.** All are open rows (`valid_to` NULL) with `valid_from` 2026-10-01, note
+"confirmed by owner 2026-10-04", `updated_by` matej@oneeighty.cz. The "What the repo says" column
+is the basis the draft used (only what the repo says each client sells). To change a client later,
+close the old row and insert a new one (see above); never UPDATE in place.
 
-| client_id | Proposed `vertical` | Proposed `sub_vertical` | Proposed `region` | What the repo says |
+Runbook check 3 after the seed: 0 active clients without exactly one open row, 0 orphan client ids.
+
+| client_id | `vertical` | `sub_vertical` | `region` | What the repo says (basis of the draft) |
 |---|---|---|---|---|
 | `dobias` | `pet_supplements` | `dog_supplements` | `US` | "Holistic dog nutritional supplements & education", markets US and Canada with a 70/30 budget split (`_clients/dobias/brain_dobias.md`). `ref.clients.country` is `CA`. |
 | `ethia` | `skincare` | `acne_sensitive_skin` | `CZ` | Natural skincare sold on WooCommerce; the VoC personas are adult acne and sensitive skin, product is a serum (`_clients/ethia/personas/_index.md`). |
@@ -145,7 +151,7 @@ sells; the names follow the examples in the design. Confirm or rename, then seed
 | `rawbark` | `pet_food` | `dog_granules` | `CZ` | Sells custom-built granules from fresh meat, 91 % of net sales over the last 12 months; shampoos and canned food in broth are the rest (`_clients/rawbark/audit/rawbark-eshop-business-audit-2026-09-26.md`). |
 | `venev` | `skincare` | `natural_cosmetics` | `CEE` | "Natural cosmetics / beauty-tech skincare, vegan, cruelty-free"; SK is 87 % of revenue, CZ 3.3 % (`_clients/venev/brain_venev.md`). `ref.clients.country` is `CZ`. |
 
-Decisions the owner has to make on this draft:
+Points that were open on the draft (the owner confirmed the table above as it stands; revisit when a benchmark source needs a different split):
 
 1. **`skincare` vs `cosmetics`** for Ethia and Venev. The draft puts both in one vertical so a
    benchmark can compare them. Split if a source distinguishes them.
@@ -180,7 +186,7 @@ FROM `oneeighty-warehouse.ref.industry_benchmarks`
 WHERE entered_by = '<your email>' AND DATE(entered_at) = CURRENT_DATE();
 
 -- 2. Problems in either table (needs 252 deployed; empty result = clean, except
---    client_without_vertical warnings until the verticals are seeded):
+--    client_without_vertical warnings for any client that has no open vertical row):
 SELECT * FROM `oneeighty-warehouse.ops.v_benchmark_issues` ORDER BY severity, issue_code;
 
 -- 3. Every active client has exactly one open vertical row:
@@ -213,12 +219,12 @@ on Data Health.
 - When a new metric becomes `benchmarkable` in the registry, add its id to the table above and to
   the two id lists in `252_ops_v_benchmark_issues.sql` if it is money or a percent.
 
-## Deploy (order, NOT executed, needs owner OK)
+## Deploy (order)
 
-1. `infra/bigquery/250_ref_industry_benchmarks.sql`
-2. `infra/bigquery/251_ref_client_verticals.sql`
-3. (phase 2) `infra/bigquery/252_ops_v_benchmark_issues.sql`
+1. `infra/bigquery/250_ref_industry_benchmarks.sql`: DEPLOYED 2026-10-04.
+2. `infra/bigquery/251_ref_client_verticals.sql`: DEPLOYED 2026-10-04, then the 5 vertical rows seeded.
+3. (phase 2) `infra/bigquery/252_ops_v_benchmark_issues.sql`: NOT deployed yet, needs owner OK.
 
 All three are idempotent. Run each file top to bottom in the BigQuery console, or from Cloud
-Shell with `bq query --use_legacy_sql=false < <file>`. After the owner confirms the taxonomy, seed
-`ref.client_verticals` with the INSERT template above.
+Shell with `bq query --use_legacy_sql=false < <file>`. The vertical seed is done (see
+"Vertical taxonomy"); use the INSERT template above for any later client or change.

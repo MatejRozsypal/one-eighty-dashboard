@@ -1,40 +1,20 @@
 CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_customer_cohort_grid` AS
-WITH shopify_costs AS (
-  SELECT client_id, order_id, SUM(line_cost) AS order_cogs
-  FROM `oneeighty-warehouse.stg.stg_shopify_order_items`
-  WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
-  GROUP BY client_id, order_id
-),
-orders AS (
+WITH orders AS (
   SELECT
     client_id,
-    LOWER(TRIM(email))                       AS customer_key,
+    customer_key,
     order_date,
-    order_code                               AS order_id,
-    total_with_vat_czk                       AS revenue,
-    margin_czk                               AS gross_profit,
-    'CZK'                                    AS currency,
-    currency                                 AS market,
-    'currency'                               AS market_kind
-  FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
+    order_id,
+    revenue,
+    gross_profit,
+    currency,
+    -- Shoptet orders carry no address, so its market is the order currency.
+    CASE WHEN platform = 'shoptet' THEN market_currency
+         ELSE COALESCE(NULLIF(shipping_country, ''), 'Unknown') END AS market,
+    CASE WHEN platform = 'shoptet' THEN 'currency' ELSE 'country' END AS market_kind
+  FROM `oneeighty-warehouse.stg.stg_customer_orders`
   WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
-    AND email IS NOT NULL AND TRIM(email) != ''
-  UNION ALL
-  SELECT
-    o.client_id,
-    LOWER(TRIM(o.customer_email))            AS customer_key,
-    o.order_date,
-    o.order_id,
-    o.subtotal_price + COALESCE(o.total_shipping, 0) AS revenue,
-    CASE WHEN c.order_cogs IS NULL THEN NULL
-         ELSE o.subtotal_price - c.order_cogs END    AS gross_profit,
-    o.currency,
-    COALESCE(NULLIF(o.shipping_country, ''), 'Unknown') AS market,
-    'country'                                AS market_kind
-  FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
-  LEFT JOIN shopify_costs c USING (client_id, order_id)
-  WHERE o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
-    AND o.customer_email IS NOT NULL AND TRIM(o.customer_email) != ''
+    AND customer_key IS NOT NULL
 ),
 first_orders AS (
   SELECT

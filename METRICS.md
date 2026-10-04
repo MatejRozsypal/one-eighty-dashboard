@@ -4,7 +4,7 @@ The canonical reference for every metric exposed in the `mart.*` layer. Looker S
 
 **Update this file whenever:** a new metric lands, a formula changes, a placeholder cost gets wired, or a known data gap is resolved.
 
-**Last updated:** 2026-10-05 (Reporting registry section added: metric ids, ratio recomputation, caveats; WooCommerce fee-line discounts in revenue, Woo COGS NULL when uncosted: migration 228, prepared and not yet deployed; Google Ads columns and `paid_spend` in daily and monthly marts since 2026-10-01)
+**Last updated:** 2026-10-05 (CM1 to CM3 on days with paid spend and no orders: migration 234, deployed 2026-10-04; Reports gaps rule for partially NULL components, amendment 20; WooCommerce fee-line discounts in revenue and Woo COGS NULL when uncosted: migration 228, deployed 2026-10-04; Reporting registry section: metric ids, ratio recomputation, caveats; Google Ads columns and `paid_spend` in daily and monthly marts since 2026-10-01)
 
 ---
 
@@ -88,6 +88,7 @@ Why: avoids dollar/percent dual-field confusion in field pickers, and percentage
 | **Cost placeholders** | `cm1_other_costs` (inbound freight + duties + packaging + payment fees) and `fulfillment_cost` (outbound fulfillment + returns) are 0 until data is wired. CM1 = CM2 today. | Roadmap |
 | **RawBark has no COGS** | No cost on any Woo line and no `ref.product_costs` rows, so RawBark `cogs`, `cm1`, `cm2`, `cm3` are NULL on every day (since migration 228; before it they were 0 and CM equalled revenue). | Owner sends the cost list; load into `ref.product_costs` keyed by `variation_id` / `product_id` / `sku` |
 | **Partial COGS days (Woo)** | If only some lines of a day are costed, `cogs` sums those lines and CM is overstated. Not the case today (Ethia 100 % costed, RawBark 0 %), but it will happen when RawBark costs start at an `effective_from` date, and SUMs over a range that mixes costed and NULL days skip the NULL days. | Watch when RawBark costs land |
+| **Dobias shop rows with NULL revenue (2021-10 to 2022-05)** | 240 days have orders and `cogs` in `mart_daily_kpis` but NULL `revenue` (and no ad spend), so `cm1` to `cm3` are NULL there. Not touched by 234 (not a zero-order day). | Document only |
 | **Woo positive fee lines not in revenue** | `other_charges` (surcharges booked as fee lines) is excluded from revenue: 4,674 CZK over 24 months for RawBark, 0 for Ethia. | Accepted, immaterial |
 | **RawBark orders with an inconsistent Woo total** | 105 orders (102 of them 2025-11-04 to 2025-11-12, plus 2 in 2026-03 and 1 in 2026-07) have a Woo `total` that differs from their own line, shipping, fee and tax lines, net +23.5k CZK. Revenue is built from the lines, so these orders fail the identity `net_revenue + other_charges + tax = total - refunds`. Last 90 days: -118 CZK (0.002 %). | Document only |
 | **RawBark line items vs order subtotal** | 5 orders (2026-08 to 2026-10) have line items summing to about twice the order subtotal (duplicated lines in `raw_woo_order_items`), and 2 orders have no lines (one carries a -66.71 CZK credit fee). Products revenue for those orders does not reconcile with Snapshot. | Investigate the Woo items feed |
@@ -134,6 +135,12 @@ One row per (`client_id`, `date`, `currency`). The headline daily P&L view. Look
 | `cm3` | $ | `cm2 − paid_spend` | After-marketing margin, net of ALL paid media (Meta + Google). **The live "true ROI of paid acquisition" figure.** Meta-only before 2026-07-03. |
 
 When cost placeholders get populated, CM1/CM2/CM3 update automatically. No formula changes needed.
+
+**Zero-order days with paid spend (migration 234, deployed 2026-10-04).** On a day that has ad platform rows but no shop row (no orders at all), a client **with cost data** gets `cm1 = 0`, `cm2 = 0 - fulfillment_cost` and `cm3 = 0 - fulfillment_cost - paid_spend`, so the spend of a day without orders is no longer dropped from CM3 (before, the three columns were NULL and `SUM(cm3)` skipped that spend). Only `cm1`, `cm2`, `cm3` change; `revenue`, `cogs`, `orders` and every other column stay NULL on such a day.
+- "Client with cost data" is derived from the data, no client list: a client that has at least one shop day with non-NULL `cogs`. Shopify and Shoptet always qualify. A Woo client qualifies once a line is costed (Ethia yes, RawBark not yet, so RawBark cm1 to cm3 stay NULL on every day; the rule starts applying on its own when RawBark costs land).
+- The predicate is "no shop row", not "revenue is NULL or 0". Dobias has 240 old shop rows (2021-10 to 2022-05) with orders and `cogs` but NULL `revenue` and no spend; they stay NULL (a separate data gap, not a zero-order day).
+- Effect on history (SUM of `cm3`, candidate minus previous): Ethia -29,572.13 CZK (55 days, 5 of them in the last 90 days, -4,734.43 CZK), Manami -6,686.76 CZK (17 days, 2025-05-16 to 2026-01-22, none in the last 90 days), Venev -4,446.55 EUR (84 days, 38 in the last 90 days, -2,674.33 EUR). Dobias and RawBark: no change. After 234, `SUM(cm3)` equals `SUM(revenue) - SUM(cogs) - SUM(fulfillment_cost) - SUM(paid_spend)` for every client with cost data.
+- `mart_monthly_kpis` sums the daily view and follows with no text change. `mart_cm3_monthly` was already correct (it subtracts the whole month of spend). The Reports CM3 and the Snapshot, P&L, YoY, Goals and Growth pages now agree.
 
 ### Orders
 | Column | Type | Formula | Notes |
@@ -424,6 +431,18 @@ metric = SUM(numerator components) / SUM(denominator components)
   sum. The widget names the months.
 - **Gaps are NULL, never 0.** A client without a connected source is excluded from that metric
   and the widget shows coverage ("1 of 2 clients"), instead of dragging the figure to zero.
+- **A partially NULL component is a gap, never a partial sum** (review finding F1, fixed in the
+  semantic layer version 2). Each component has a `nullMeans` in the registry. `paid_spend` and the
+  `meta_*` and `google_*` columns are `gap`: they are NULL only when the day has no ad platform row,
+  which means missing data. Shop columns are `zero`: they are NULL on a day without orders, which is a real
+  zero. The query counts `COUNTIF(col IS NULL)` per component; if a bucket, a total or a rollup contains
+  one NULL day of a `gap` component, every metric that divides by it is `no_data` with the reason "Missing days",
+  at any grain (day, week, month, total) and in combined and vertical rollups (one client with a gap nulls the
+  combined cell). Before, a month with 19 of 30 NULL spend days showed a MER of about 122x because
+  the NULL days dropped out of the sum. `cogs` is `gap` only on days with revenue above 0, and one NULL
+  there makes the cell `not_measured` ("No cost data"), also inside totals and rollups.
+- **Residual:** inside CM3 and CM3 %, fulfilment and paid spend still count NULL as 0 (the mart definition, owner
+  decision), so for a connected client with missing ad days CM3 is overstated by the missing spend. Possible follow-up.
 - **Deltas**: relative change for money, ratio and count metrics; percentage points for percent
   metrics.
 - A bucket that is not finished (the current week or month) is marked partial.
@@ -497,7 +516,7 @@ discounts are netted); its id stays reserved because ids are append-only.
 | not_connected | The client has no source for the metric (for example RawBark has no Meta). | Not connected |
 | fx_missing | A needed `ref.fx_rates` month is missing. | No FX |
 | not_measured | Revenue exists but no cost data: summed `cogs` is NULL on positive revenue (RawBark, since migration 228). Applies to `cogs`, `cm1_pct`, `cm3`, `cm3_pct`. | No cost data |
-| no_data | Connected, but no rows in the range. | No data |
+| no_data | Connected, but no rows in the range, or a gap component is NULL on some day of the bucket (reason "Missing days"). | No data |
 
 The no-value glyph in the UI is `n/a`. A NULL is never shown as 0.
 
@@ -515,7 +534,8 @@ and ours (VAT, blended or per-channel, attribution), which is why each row carri
 
 - Manami revenue includes VAT; comparing it with ex-VAT clients overstates it.
 - RawBark has no COGS (CM metrics show "No cost data") and no Meta (Google-only paid spend).
-- Dobias Meta spend is missing Dec 2025 to Mar 2026 (aMER and CAC are NULL there).
+- Dobias Meta spend is missing Dec 2025 to Mar 2026 and on 19 of 30 days of April 2026 (MER, aMER and CAC are gaps there, not partial values).
+- RawBark Google spend is NULL on 11 days (2025-12-23 to 2025-12-31, 2026-06-01, 2026-09-17), so MER is a gap in Dec 2025, Jun 2026, Sep 2026 and in a 12-month total. Open owner question: were Google Ads paused on those days (true zero, then the mart should COALESCE to 0) or is it missing ingestion (then the gap is right). See `OWNER_TODO_2026-10.md`.
 - Money in a report in another currency than the client's is converted per month; a month without
   a rate is dropped from the result, not guessed (runbook 23).
 - Ad accounts outside Meta and Google (TikTok, Sklik, Heureka and similar) are not in `paid_spend`.
@@ -556,7 +576,13 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 
 Documentation only, no warehouse change. New section "Reporting registry" records the contract of the Reports metric registry: ids are permanent and append-only, ratios are recomputed from summed components (also across clients, with per-month FX), gaps are NULL, cell statuses, caveats. Benchmarks are in `runbooks/31_reporting_benchmarks.md`.
 
-### 2026-10-05 (amendment 18): WooCommerce fee lines and honest COGS (migration 228, not yet deployed)
+### 2026-10-05 (amendment 20): CM3 on zero-order days (migration 234) and the Reports gaps rule
+
+1. **Migration 234, deployed 2026-10-04.** `mart_daily_kpis` `cm1`, `cm2`, `cm3` on a day with paid spend and no shop row: 0, `0 - fulfillment_cost`, `0 - fulfillment_cost - paid_spend` for a client with cost data (derived from the data), NULL for a client without (RawBark). Nothing else changes. Prod md5 of the view `9dc5140218469a887bed32050d1bbf0e`. Effect: Ethia -29,572.13 CZK, Manami -6,686.76 CZK, Venev -4,446.55 EUR over full history, Dobias and RawBark none. Details under Contribution Margin stack.
+2. **Reports semantic layer version 2 (review finding F1).** A partially NULL `gap` component (`paid_spend`, `meta_*`, `google_*`) makes the cell `no_data` ("Missing days") instead of a partial sum, at every grain and in rollups; shop columns stay a real zero when NULL. Details in the Reporting registry section. Effect on live data: Dobias April 2026 and the 12-month totals, RawBark Dec 2025, Jun 2026 and Sep 2026 are now gaps.
+3. Known gap recorded: Dobias has 240 old shop rows (2021-10 to 2022-05) with NULL revenue; CM stays NULL there.
+
+### 2026-10-05 (amendment 18): WooCommerce fee lines and honest COGS (migration 228, deployed 2026-10-04)
 
 1. **Fee-line discounts reduce Woo revenue.** `stg_woo_orders.subtotal_price` (net sales) and `net_revenue` now include the negative fee lines (loyalty and bundle discounts). Positive fee lines are exposed as `other_charges` and stay out of revenue (0.009 % of RawBark revenue over 24 months). New columns `fee_discounts`, `other_charges`, and `stg_woo_order_items.fee_discount_alloc`. Effect: RawBark revenue about -7.0 % over 90 days, Ethia about -1.2 %. Shopify and Shoptet clients: zero diff. Details under Global conventions, Revenue.
 2. **Woo COGS is NULL, never 0, when no line is costed.** `mart_daily_kpis` and `mart_cm3_monthly` no longer coalesce Woo `cogs` to 0, so RawBark `cogs`, `cm1`, `cm2`, `cm3` are NULL until costs exist. Dormant cost join from `ref.product_costs` (client, `variation_id` / `product_id` / `sku`, effective-dated) picks them up when rows are loaded.

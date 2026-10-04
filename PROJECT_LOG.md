@@ -4,6 +4,50 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-10-04/05: Cleanup sprint, Paid redesign and Reporting Suite live
+
+Everything prepared in the three October packages is now deployed (frontend on prod, warehouse
+migrations in `oneeighty-warehouse`). This entry supersedes the "in progress" and "not yet
+deployed" wording of the two entries below it.
+
+- **Cleanup sprint: live.** Capability model, one `n/a` glyph, copy cuts, honest COGS ("No cost data"),
+  Ethia and RawBark onboarded (WooCommerce).
+- **Paid redesign: live.** Paid Overview, Meta, Google and GA4 pages on the new marts.
+- **Reporting Suite: live, internal only** (`admin` and `agency` on `@oneeighty.cz`, never the client
+  role). Security and correctness review done. **F1** (partially NULL ad spend gave inflated MER, aMER
+  and CAC) and **F2** (a temporary-password session reached Reports data) are fixed. **F3** (no
+  per-user query limit on `/api/reports/query`) and **F4** (Postgres pool pressure, about 8 + N
+  statements per widget on 3 connections) are open, low risk. F5 and F6 are info only.
+  The tenancy black-box test (Addendum A) has not been run yet.
+- **Warehouse migrations deployed to prod:**
+  - **228** WooCommerce fee-line discounts in revenue, Woo COGS NULL when uncosted (RawBark revenue
+    about -7 % over 90 days, Ethia about -1.2 %; Shopify and Shoptet zero diff).
+  - **229** customer marts read WooCommerce (Ethia and RawBark in lifetime, cohorts, payback).
+  - **230 to 233** Woo feed SLA rows, registry hygiene, FX rates Sept (final) and Oct (provisional),
+    FX and Google Ads alerts in `ops.v_pipeline_alerts`. 230b (scheduled query text) is NOT deployed,
+    so Woo freshness is not monitored yet.
+  - **234** CM1 to CM3 on days with paid spend and no orders (Ethia -29,572 CZK, Manami -6,687 CZK,
+    Venev -4,447 EUR of CM3 over history; Dobias and RawBark unchanged). Documented in METRICS.md.
+  - **240 to 243** Meta and Google Ads marts, `ref.naming_rules`, `ref.campaign_overrides`,
+    `ref.client_brand_terms`, GA4 sessions (`ref.ga4_properties`, `stg.ga4_sessions`, procedures).
+  - **250 and 251** `ref.industry_benchmarks` (empty on purpose) and `ref.client_verticals` (5 rows
+    seeded 2026-10-04, owner confirmed: runbook 31). 252 not deployed.
+  Every view was proven equal to its migration file by MD5 against INFORMATION_SCHEMA, with
+  zero-diff regressions on unaffected clients.
+- **Reports gaps rule (RS11).** A partially NULL `gap` component is now a gap ("Missing days"), never a
+  partial sum. Side effect to know: RawBark MER is a gap in Dec 2025, Jun 2026 and Sep 2026 because
+  Google spend is NULL on 11 days (owner question in the TODO).
+- **Docs housekeeping (this commit).** `infra/bigquery/live/` re-exported (snapshot 2026-10-05, 0
+  differences against the warehouse); `300_create_mart_views.sql` marked superseded, do not re-run
+  (it would revert 228, 229 and 234); METRICS.md amendment 20; runbook 31 and the 251 header record
+  the vertical seed.
+- **Cleanup still open (not done, owner go needed):** drop the `mart_qa` candidates and baselines
+  (`wp2_*`, `wp3_*`, `wp4_*`, `pa1_*`, `pa2_*`, `m234_*`, and the `base_*` regression baselines), deploy 252, run 230b.
+- **Still open for the owner:** see `OWNER_TODO_2026-10.md` (GA4 links, BigQuery console steps, client
+  data, Reports QA on prod in section D, the RawBark Google pause question, open review items).
+
+---
+
 ## 2026-10-05: Reporting suite in progress (warehouse and docs prepared)
 
 Cross-client Reports product (`/reports`): a builder of saved reports with KPI, line, bar,

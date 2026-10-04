@@ -29,6 +29,11 @@
  *   CM3, the mart definition) are not affected. Ad outcomes (purchase value,
  *   purchases, clicks, impressions) count only the days whose platform spend
  *   is NULL (registry `missingWhenNull`): a gap is only ever missing spend.
+ * - Stated per-order costs (registry `perClientRate`, CM3 and CM1 parity with
+ *   Snapshot): the component's summed orders, native or converted per month,
+ *   are multiplied by that client's `costRates` entry (Settings, merged in by
+ *   the query route). Each client uses its own rate, also inside rollups. An
+ *   unstated rate counts as 0, exactly like Snapshot.
  * - Several marts in one widget (the daily KPI view and the Meta campaign and
  *   ad marts): FX and foreign-currency guards are kept per mart, so a missing
  *   rate or an ad account in another currency only affects that mart's money.
@@ -66,7 +71,7 @@ import { clientCaveats, orderCaveats } from "./registry/caveats";
 import { MARTS, getComponent } from "./registry/components";
 import type { MetricId } from "./registry/ids";
 import { METRICS } from "./registry/metrics";
-import type { Capability, CaveatId, ComponentId, MartDef, MartId, RegisteredMetric, ReportClient, Term } from "./registry/types";
+import type { Capability, CaveatId, ComponentDef, ComponentId, MartDef, MartId, RegisteredMetric, ReportClient, Term } from "./registry/types";
 import { buildBuckets, partialBucketIndexes, verticalKey } from "./resolve";
 import {
   CELL_STATUS_LABEL,
@@ -199,8 +204,15 @@ interface Read {
 
 /** One client's value of one component in one row group. */
 function readComponent(agg: Agg, id: ComponentId, mode: ReadMode, client: ReportClient, displayCurrency: string): Read {
-  const v = agg.values.get(id);
   const def = getComponent(id);
+  const r = readRaw(agg, id, def, mode, client, displayCurrency);
+  if (def.perClientRate === undefined || r.value === null) return r;
+  // Stated per-order cost: the summed orders (native or converted per month) times this client's rate. Unstated = 0, as on Snapshot.
+  return { ...r, value: r.value * (client.costRates?.[def.perClientRate] ?? 0) };
+}
+
+function readRaw(agg: Agg, id: ComponentId, def: ComponentDef, mode: ReadMode, client: ReportClient, displayCurrency: string): Read {
+  const v = agg.values.get(id);
   const isGap = (nulls: number | undefined) => def.nullMeans === "gap" && (nulls ?? 0) > 0;
   if (!def.money) return { value: v ? (v.nat ?? v.disp) : null, fx: false, gap: v ? isGap(v.natNulls) : false };
   if (mode === "native") return { value: v ? v.nat : null, fx: false, gap: v ? isGap(v.natNulls) : false };

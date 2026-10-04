@@ -26,8 +26,13 @@
  *     and are only read after the gate.
  *
  * Flow: gate (404) -> parse (400) -> report visibility (404) -> clients ->
- * resolve (413) -> compile -> run (422 / 504 / 500) -> benchmarks -> evaluate
- * -> access log -> 200.
+ * resolve (413) -> compile -> run (422 / 504 / 500) -> benchmarks and stated
+ * cost rates -> evaluate -> access log -> 200.
+ *
+ * Stated cost rates (CM3 and CM1 parity with Snapshot): read from Postgres
+ * `client_settings` per request, only when a metric of the widget needs one,
+ * and merged into the widget's clients as `costRates`. They never reach SQL,
+ * so cached rows stay valid and a Settings edit applies on the next request.
  */
 
 import { reportsAccessOrNull, type Access } from "@/lib/authz";
@@ -39,6 +44,9 @@ import { compileWidget } from "@/lib/reports/compile";
 import { runCached } from "@/lib/reports/run";
 import { evaluateWidget } from "@/lib/reports/evaluate";
 import { getReport } from "@/lib/reports/store";
+import { getComponent } from "@/lib/reports/registry/components";
+import type { ComponentId, ReportClient } from "@/lib/reports/registry/types";
+import { listClientSettings } from "@/lib/users/settings";
 import {
   isReportsError,
   type CompileWidget,
@@ -122,6 +130,34 @@ async function auditRead(access: Access, reportId: string | undefined, clientIds
 }
 
 // ---------------------------------------------------------------------------
+// Stated cost rates
+// ---------------------------------------------------------------------------
+
+type CostRates = NonNullable<ReportClient["costRates"]>;
+
+/**
+ * Per-order rates stated in Settings for the given clients, or null when no
+ * component of the widget needs one. A failed read leaves every rate unstated
+ * (0), the same fallback as Snapshot (`optional(getClientSettings)`), and is
+ * logged.
+ */
+async function statedRates(componentIds: readonly ComponentId[], clientIds: readonly string[]): Promise<Map<string, CostRates> | null> {
+  if (!componentIds.some((id) => getComponent(id).perClientRate !== undefined)) return null;
+  const wanted = new Set(clientIds);
+  try {
+    const rows = await listClientSettings();
+    const out = new Map<string, CostRates>();
+    for (const r of rows) {
+      if (wanted.has(r.clientId)) out.set(r.clientId, { fulfilment: r.fulfilmentPerOrder, otherCm1: r.otherCm1PerOrder });
+    }
+    return out;
+  } catch (error) {
+    console.warn("[reports] client_settings unreadable, stated cost rates count as 0", error instanceof Error ? error.message : "");
+    return new Map();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -170,16 +206,19 @@ export async function POST(request: Request): Promise<Response> {
     }
     const widget = resolved.widget;
 
-    // 5. Compile and run. Benchmarks are reference data and load in parallel.
+    // 5. Compile and run. Benchmarks and stated cost rates load in parallel.
     const compiled = compileFn(widget);
-    const [run, benchmarks] = await Promise.all([
+    const [run, benchmarks, rates] = await Promise.all([
       runFn(compiled, { rangeTo: widget.period.current.to, userEmail: access.email, widgetType: body.widgetType }),
       benchmarksFn(widget),
+      statedRates(widget.components, widget.clients.map((c) => c.id)),
     ]);
 
-    // 6. Evaluate in TypeScript from the summed components.
+    // 6. Evaluate in TypeScript from the summed components. Rates go into the
+    // clients only now: they are not part of the compiled SQL or its key.
+    const evaluated = rates === null ? widget : { ...widget, clients: widget.clients.map((c) => ({ ...c, costRates: rates.get(c.id) ?? {} })) };
     const result = evaluateFn({
-      widget,
+      widget: evaluated,
       rows: run.rows,
       benchmarks,
       run: { key: compiled.key, cached: run.cached, generatedAt: run.generatedAt },

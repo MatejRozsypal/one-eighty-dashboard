@@ -24,17 +24,34 @@ export function formatMetricValue(value: number | null | undefined, spec: Format
   if (missing(value)) return NO_VALUE;
   switch (spec.style) {
     case "money": {
-      if (spec.compact) return formatMoney(value, currency, { compact: true });
+      if (spec.compact) return compactMoney(value, currency);
       const small = spec.smallDecimals !== undefined && Math.abs(value) < 10;
       return formatMoney(value, currency, { decimals: small ? spec.smallDecimals : spec.decimals });
     }
     case "number":
-      return formatNumber(value, { compact: spec.compact, decimals: spec.decimals });
+      // Counts below 100k are written out ("4,172", not "4K"): an agency report
+      // is read for the exact figure.
+      return formatNumber(value, { compact: spec.compact && Math.abs(value) >= COMPACT_FROM, decimals: spec.decimals });
     case "percent":
       return formatPercent(value, { decimals: spec.decimals });
     case "ratio":
       return formatRatio(value, { decimals: spec.decimals });
   }
+}
+
+/** Below this, a count or an amount is written out in full. */
+const COMPACT_FROM = 100_000;
+
+/** "CZK 13.0M", "CZK 618.8K": one decimal always, so the precision does not jump; whole units below 100k. */
+function compactMoney(value: number, currency: string): string {
+  if (Math.abs(value) < COMPACT_FROM) return formatMoney(value, currency, { decimals: 0 });
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    notation: "compact",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 /** Axis ticks: always compact, one decimal at most. */

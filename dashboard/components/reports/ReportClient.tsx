@@ -60,7 +60,7 @@ import { autoTitle, hasFilterOverrides } from "@/components/reports/pickers/Widg
 import { clientSelectionLabel } from "@/components/reports/pickers/ClientPicker";
 import type { CaveatTexts, WidgetMetric } from "@/components/reports/widgets";
 import type { ActionResult, ReportMeta, ReportPermissions, StoredWidget } from "@/lib/reports/contracts";
-import { AUTOSAVE_DEBOUNCE_MS, MAX_WIDGETS_PER_REPORT } from "@/lib/reports/limits";
+import { AUTOSAVE_DEBOUNCE_MS, MAX_WIDGET_TITLE, MAX_WIDGETS_PER_REPORT } from "@/lib/reports/limits";
 import type { MetricId } from "@/lib/reports/registry/ids";
 import type { ReportClient as ReportClientT } from "@/lib/reports/registry/types";
 import type { LayoutItem, ReportFilters, Visibility, WidgetConfig, WidgetType } from "@/lib/reports/types";
@@ -69,6 +69,8 @@ import { defaultWidgetConfig, overrideChip } from "@/lib/reports/widgetHelpers";
 import { DotsIcon, ICON_BUTTON, PopoverMenu, type MenuEntry } from "./Popover";
 import { AddWidget, ConfigDrawer, FilterRegion, SaveStatus, WidgetCell, type SaveState } from "./ReportParts";
 import { ReportTitleButton } from "./ReportSwitcher";
+import { AppLink } from "@/components/ui/AppLink";
+import { useDirectoryActions } from "./ReportsDirectory";
 import { ShareMenu } from "./ShareMenu";
 import { ShortcutSheet } from "./ShortcutSheet";
 import { ToastRegion, useToasts } from "./Toasts";
@@ -388,9 +390,18 @@ export function ReportClient(props: ReportClientProps) {
 
   const onDuplicate = useCallback(
     (sourceId: string, newId: string) => {
-      setEntries((all) => (all[sourceId] ? { ...all, [newId]: { ...all[sourceId] } } : all));
+      setEntries((all) => {
+        const source = all[sourceId];
+        if (!source) return all;
+        // The copy says it is a copy: two identical titles on one page cannot be told apart.
+        const config = source.config;
+        const titled = config
+          ? { ...config, view: { ...config.view, title: `${config.view.title?.trim() || autoTitle(config, pickerMetrics)} copy`.slice(0, MAX_WIDGET_TITLE) } }
+          : config;
+        return { ...all, [newId]: { ...source, config: titled } };
+      });
     },
-    [setEntries],
+    [pickerMetrics, setEntries],
   );
 
   const onRemove = useCallback(
@@ -521,15 +532,18 @@ export function ReportClient(props: ReportClientProps) {
     });
   }, [canEdit, enqueue, navigate, pathname, refreshPage, reportId, savedFilters]);
 
+  const directory = useDirectoryActions();
+
   const rename = useCallback(
     (next: string) => {
       setRenaming(false);
       const value = next.trim();
       if (!value || value === name) return;
       setName(value);
+      directory.patch(reportId, { name: value });
       void enqueue(() => renameReport(reportId, value) as Promise<Result>).then((res) => res?.ok && router.refresh());
     },
-    [enqueue, name, reportId, router],
+    [directory, enqueue, name, reportId, router],
   );
 
   const changeVisibility = useCallback(
@@ -543,10 +557,13 @@ export function ReportClient(props: ReportClientProps) {
   const togglePin = useCallback(async () => {
     const next = !pinned;
     setPinned(next);
+    directory.patch(reportId, { pinned: next });
     const res = await pinReport(reportId, next);
-    if (!res.ok) setPinned(!next);
-    else router.refresh();
-  }, [pinned, reportId, router]);
+    if (!res.ok) {
+      setPinned(!next);
+      directory.patch(reportId, { pinned: !next });
+    } else router.refresh();
+  }, [directory, pinned, reportId, router]);
 
   const duplicate = useCallback(async () => {
     // A copy carries what is saved, so flush pending edits first.
@@ -560,8 +577,9 @@ export function ReportClient(props: ReportClientProps) {
   const remove = useCallback(async () => {
     const res = await deleteReport(reportId);
     if (!res.ok) return pushToast({ text: "Could not delete", tone: "error" });
+    directory.drop(reportId);
     navigate(`/reports?deleted=${reportId}`);
-  }, [navigate, reportId, pushToast]);
+  }, [directory, navigate, reportId, pushToast]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -579,9 +597,25 @@ export function ReportClient(props: ReportClientProps) {
   // Effects
   // =========================================================================
 
-  // Opened: one audit row, once per mount.
+  // Opened: one audit row, once per mount. Fire and forget: a failure never
+  // reaches the page. The action is a POST on the page route and a transient
+  // platform error (a 503 under load was seen in QA, none in the runtime logs
+  // afterwards) would otherwise drop the open for good, so it retries once.
   useEffect(() => {
-    void touchOpened(reportId).catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const send = (attempt: number) => {
+      touchOpened(reportId).catch(() => {
+        if (stopped) return;
+        if (attempt < 1) timer = setTimeout(() => send(attempt + 1), 3000);
+        else console.warn("[reports] could not record that the report was opened");
+      });
+    };
+    send(0);
+    return () => {
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
   }, [reportId]);
 
   // The new server copy after a conflict.
@@ -716,7 +750,7 @@ export function ReportClient(props: ReportClientProps) {
               ))}
             </div>
           )}
-          <ShareMenu visibility={visibility} isOwner={permissions.isOwner} onChange={changeVisibility} />
+          <ShareMenu reportId={reportId} visibility={visibility} isOwner={permissions.isOwner} onChange={changeVisibility} />
           <button
             type="button"
             onClick={() => void refresh()}
@@ -747,7 +781,26 @@ export function ReportClient(props: ReportClientProps) {
           onOpenConfig={openConfig}
           onDuplicate={canEdit ? onDuplicate : undefined}
           onRemove={onRemove}
-          empty={<p className="py-6 text-[13.5px] text-content-muted">No widgets.</p>}
+          empty={
+            <div className="flex flex-col items-start gap-2 py-6">
+              <p className="m-0 text-[13.5px] text-content-muted">No widgets yet.</p>
+              {canEdit && desktop ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("edit");
+                    setAddOpen(true);
+                  }}
+                  className="rounded-control border border-hairline-strong bg-paper px-3 py-1.5 text-[12.5px] text-content-body transition-colors duration-fast hover:bg-gray-50"
+                >
+                  Add your first widget
+                </button>
+              ) : null}
+              <AppLink href="/reports?new=1" className="text-[12.5px] text-content-muted underline-offset-2 hover:text-content-strong hover:underline">
+                Start from a template
+              </AppLink>
+            </div>
+          }
         />
         {editing && <AddWidget open={addOpen} onToggle={() => setAddOpen((o) => !o)} onPick={addOfType} onClose={() => setAddOpen(false)} />}
       </main>
@@ -790,6 +843,7 @@ function TitleInput({ initial, onDone, onCancel }: { initial: string; onDone: (n
       maxLength={120}
       aria-label="Report name"
       onChange={(e) => setValue(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
       onBlur={() => onDone(value)}
       onKeyDown={(e) => {
         if (e.key === "Enter") {

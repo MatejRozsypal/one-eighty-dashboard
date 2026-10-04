@@ -372,7 +372,7 @@ export const ReportCanvas = forwardRef<ReportCanvasHandle, ReportCanvasProps>(fu
 
   const menuFor = (w: CanvasWidget): FrameMenuItem[] => {
     const items: FrameMenuItem[] = [];
-    if (onOpenConfig) items.push({ id: "edit", label: canEdit ? "Edit" : "Open", onSelect: () => onOpenConfig(w.id) });
+    if (onOpenConfig) items.push({ id: "edit", label: canEdit ? "Edit" : "Details", onSelect: () => onOpenConfig(w.id) });
     items.push(...(rendered.get(w.id)?.menu ?? []));
     if (canEdit && onDuplicate) items.push({ id: "duplicate", label: "Duplicate", onSelect: () => duplicate(w.id) });
     if (canEdit) items.push({ id: "remove", label: "Remove", danger: true, onSelect: () => remove(w.id) });

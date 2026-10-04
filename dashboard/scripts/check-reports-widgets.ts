@@ -332,6 +332,21 @@ for (const [name, result] of RESULTS) {
 // Intl puts a no-break space after the currency code; compare with plain spaces.
 const plain = (t: string) => t.replace(/\u00a0/g, " ");
 check("money compact", plain(formatMetricValue(654200, F.money, "CZK")) === "CZK 654.2K", formatMetricValue(654200, F.money, "CZK"));
+check("count below 100k is written out", formatMetricValue(4172, { style: "number", decimals: 0, compact: true }, "CZK") === "4,172");
+check("count from 100k is compact", formatMetricValue(250000, { style: "number", decimals: 0, compact: true }, "CZK") === "250K");
+check("money compact keeps one decimal from 100k", plain(formatMetricValue(13000000, F.money, "CZK")) === "CZK 13.0M", formatMetricValue(13000000, F.money, "CZK"));
+check("money below 100k is whole units", plain(formatMetricValue(65420, F.money, "CZK")) === "CZK 65,420", formatMetricValue(65420, F.money, "CZK"));
+{
+  // A metric the result on screen has no cell for: skeleton while pending, n/a otherwise.
+  const mer0 = META.mer as WidgetMetric;
+  const fresh = m("cac", "CAC", "money", F.money, "down", false);
+  const waiting = renderToStaticMarkup(createElement(TableWidget, { ...props(weekly, [mer0, fresh], "table"), pending: true }));
+  const settled = renderToStaticMarkup(createElement(TableWidget, props(weekly, [mer0, fresh], "table")));
+  check("pending table: missing metric cells are skeletons", waiting.includes("oe-skeleton"));
+  check("settled table: a missing metric is n/a No data", !settled.includes("oe-skeleton") && settled.includes("No data"));
+  const waitingKpi = renderToStaticMarkup(createElement(KpiWidget, { ...props(weekly, [fresh], "kpi"), pending: true }));
+  check("pending kpi: skeleton, not n/a", waitingKpi.includes("oe-skeleton") && !waitingKpi.includes("No data"));
+}
 check("unit cost small decimals", formatMetricValue(5.2, F.unitCost, "USD") === "$5.20", formatMetricValue(5.2, F.unitCost, "USD"));
 check("unit cost whole above 10", plain(formatMetricValue(612, F.unitCost, "CZK")) === "CZK 612", formatMetricValue(612, F.unitCost, "CZK"));
 check("ratio", formatMetricValue(3.1, F.x, "CZK") === "3.10×");

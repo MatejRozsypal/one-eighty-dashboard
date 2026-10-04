@@ -15,7 +15,7 @@
 
 import { cloneElement, useId, type ReactElement, type ReactNode } from "react";
 import { ResponsiveContainer } from "recharts";
-import { HATCH_STROKE, TOOLTIP_CLASS } from "./chartTheme";
+import { AXIS_TICK, HATCH_STROKE, TOOLTIP_CLASS, truncateLabel } from "./chartTheme";
 
 export function ChartFrame({ size, children }: { size?: { width: number; height: number }; children: ReactElement }) {
   if (size) return cloneElement(children, { width: size.width, height: size.height });
@@ -46,6 +46,27 @@ export function TooltipRow({ color, name, value, muted }: { color?: string; name
       <span className={`tabular ${muted ? "text-content-muted" : "text-content-strong"}`}>{value}</span>
     </div>
   );
+}
+
+/**
+ * A category-axis tick (the series names of a horizontal bar) cut to `max`
+ * characters, with the full name in the native hover title. Pass it as
+ * `tick={categoryTick(14)}`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function categoryTick(max: number): (props: any) => ReactElement {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return function CategoryTick({ x, y, payload }: any) {
+    const full = String(payload?.value ?? "");
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <title>{full}</title>
+        <text x={0} y={0} dy={4} textAnchor="end" fontSize={AXIS_TICK.fontSize} fontFamily={AXIS_TICK.fontFamily} fill={AXIS_TICK.fill}>
+          {truncateLabel(full, max)}
+        </text>
+      </g>
+    );
+  };
 }
 
 /** Returns a stable, selector-safe pattern id and the `<defs>` that defines it. */

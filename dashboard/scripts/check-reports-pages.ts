@@ -13,6 +13,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { planWidget } from "@/components/reports/useWidgetData";
+import { autoTitle, changeWidgetType } from "@/components/reports/pickers/WidgetConfigPanel";
 import { ownerInitials, relativeTime, reportHref, widgetCountLabel } from "@/components/reports/listFormat";
 import { buildPageMetrics } from "@/lib/reports/pageData";
 import { defaultWidgetConfig, fetchGrain, overrideChip } from "@/lib/reports/widgetHelpers";
@@ -88,6 +89,13 @@ check("plan carries the report id and widget type", p1.body.reportId === ID && p
 check("plan: KPI body is weekly, the fallback is the configured total", p1.body.query.grain === "week" && p1.fallback?.query.grain === "total");
 check("plan: a line has no fallback", planWidget({ id: "b", config: lineCfg }, ID, filters)!.fallback === null);
 check("plan: null config is not fetched", planWidget({ id: "c", config: null }, ID, filters) === null);
+{
+  // A KPI shows one figure: switching a multi-metric widget to KPI keeps the first metric only.
+  const multi = WidgetConfig.parse({ v: 1, query: { metrics: ["revenue", "mer", "cac"], grain: "week", split: "client" }, view: { type: "table" } });
+  const asKpi = changeWidgetType(multi, "kpi");
+  check("kpi keeps one metric", asKpi.query.metrics.length === 1 && asKpi.query.metrics[0] === "revenue");
+  check("kpi auto title names one metric", !autoTitle(multi.view.type === "table" ? { ...multi, view: { type: "kpi" } } : multi, []).includes(","));
+}
 check("plan: key ignores the title (display only)", planWidget({ id: "a", config: { ...kpi, view: { ...kpi.view, title: "Hello" } } }, ID, filters)!.key === p1.key);
 check("plan: key ignores sort, limit and stacked", (() => {
   const r = defaultWidgetConfig("ranked", page.pickerMetrics);

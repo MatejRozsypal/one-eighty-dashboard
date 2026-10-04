@@ -28,6 +28,12 @@ export interface WidgetProps {
   metrics: readonly WidgetMetric[];
   caveatTexts: CaveatTexts;
   view: WidgetView;
+  /**
+   * The result on screen is older than the request (a refetch is running). A
+   * metric the old result has no cell for is not "no data", it is not here yet:
+   * the cell draws a skeleton, not `n/a`.
+   */
+  pending?: boolean;
 }
 
 /** Chart widgets measure themselves; pass `size` to render at a fixed size (print, tests). */

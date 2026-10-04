@@ -4,7 +4,8 @@
  * Share menu (design 1.10): who can see the report, and a copy of the link.
  *
  *   Private | Team can view | Team can edit     (owner only; others see the current one)
- *   Copy link                                   (the current URL, filter overrides included)
+ *   Copy link                                   (/reports/<id>: the saved report, no edit mode, no overrides)
+ *   Copy link with current filters              (the saved link plus only the filter params in the URL)
  *
  * "Team" means everyone who passes the reports gate. The visibility write is an
  * owner-only action; a failure comes back through `onError`.
@@ -13,27 +14,47 @@
  */
 
 import { useState } from "react";
+import { FILTER_PARAMS } from "@/lib/reports/url";
 import type { Visibility } from "@/lib/reports/types";
 import { VISIBILITIES } from "@/lib/reports/types";
 import { Popover } from "./Popover";
 import { VISIBILITY_LONG } from "./listFormat";
 
 export interface ShareMenuProps {
+  reportId: string;
   visibility: Visibility;
   isOwner: boolean;
   onChange: (next: Visibility) => void;
 }
 
-export function ShareMenu({ visibility, isOwner, onChange }: ShareMenuProps) {
-  const [copied, setCopied] = useState(false);
+/** The saved report: the same page for everyone, whatever the sender has open. */
+function reportPath(reportId: string): string {
+  return `/reports/${reportId}`;
+}
 
-  async function copy() {
+/** The saved link plus the filter params in the address bar. Never `edit`, never anything else. */
+function reportPathWithFilters(reportId: string): string {
+  const here = new URLSearchParams(window.location.search);
+  const kept = new URLSearchParams();
+  for (const key of FILTER_PARAMS) {
+    const value = here.get(key);
+    if (value !== null) kept.set(key, value);
+  }
+  const qs = kept.toString().replace(/%3A/g, ":").replace(/%2C/g, ",");
+  return qs === "" ? reportPath(reportId) : `${reportPath(reportId)}?${qs}`;
+}
+
+export function ShareMenu({ reportId, visibility, isOwner, onChange }: ShareMenuProps) {
+  const [copied, setCopied] = useState<"saved" | "filters" | null>(null);
+
+  async function copy(kind: "saved" | "filters") {
+    const path = kind === "saved" ? reportPath(reportId) : reportPathWithFilters(reportId);
     try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      await navigator.clipboard.writeText(`${window.location.origin}${path}`);
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1800);
     } catch {
-      /* Clipboard blocked: the address bar still has the link. */
+      /* Clipboard blocked: nothing to fall back to, the button just does not confirm. */
     }
   }
 
@@ -67,13 +88,16 @@ export function ShareMenu({ visibility, isOwner, onChange }: ShareMenuProps) {
             })}
           </div>
           <div className="h-px bg-hairline" />
-          <button
-            type="button"
-            onClick={copy}
-            className="rounded-control border border-hairline-strong px-3 py-1.5 text-[12.5px] text-content-body transition-colors duration-fast hover:bg-gray-50"
-          >
-            {copied ? "Copied" : "Copy link"}
-          </button>
+          {(["saved", "filters"] as const).map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              onClick={() => void copy(kind)}
+              className="rounded-control border border-hairline-strong px-3 py-1.5 text-left text-[12.5px] text-content-body transition-colors duration-fast hover:bg-gray-50"
+            >
+              {copied === kind ? "Copied" : kind === "saved" ? "Copy link" : "Copy link with current filters"}
+            </button>
+          ))}
         </div>
       )}
     </Popover>

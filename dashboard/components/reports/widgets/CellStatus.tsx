@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DeltaChip } from "@/components/ui/Delta";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { NoValue } from "@/components/ui/EmptyState";
 import type { GoodWhen } from "@/lib/reports/registry/types";
 import type { MetricCell } from "@/lib/reports/types";
@@ -164,6 +165,15 @@ export function CardRow({ label, value }: { label: string; value?: string }) {
 // ---------------------------------------------------------------------------
 // Gap and caveat rendering
 // ---------------------------------------------------------------------------
+
+/** A cell whose metric was added after the result on screen was fetched: a skeleton until the new result lands. */
+export function PendingCell({ size = "sm" }: { size?: "sm" | "lg" }) {
+  return (
+    <span role="status" aria-label="Loading" className="inline-block">
+      <Skeleton className={size === "lg" ? "h-7 w-24 rounded-xs" : "h-3.5 w-16 rounded-pill"} />
+    </span>
+  );
+}
 
 /**
  * `n/a` and the status words. Not an empty state: it sits where the value

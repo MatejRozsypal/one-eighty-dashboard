@@ -21,6 +21,7 @@
     "check:reports-url": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-url.ts",
     "check:reports-widgets": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-widgets.ts",
     "check:reports-canvas": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-canvas.ts",
+    "check:reports-pages": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-pages.ts",
     "check:clickup": "tsx --tsconfig scripts/tsconfig.json scripts/probe-clickup.ts"
   },
   "dependencies": {

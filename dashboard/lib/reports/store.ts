@@ -212,7 +212,7 @@ const Geometry = z
 
 /** A widget to insert. The stored type must equal config.view.type. */
 export const NewWidgetInput = z
-  .object({ type: z.enum(WIDGET_TYPES), config: WidgetConfig })
+  .object({ type: z.enum(WIDGET_TYPES), config: WidgetConfig, id: z.string().uuid().optional() })
   .and(Geometry)
   .refine((w) => w.config.view.type === w.type, { message: "Type does not match config", path: ["type"] });
 
@@ -639,9 +639,9 @@ export function createReportStore(deps: StoreDeps): ReportStore {
       const count = await tx.query(`/* reports.widgets.count */ SELECT COUNT(*)::int AS n FROM report_widgets WHERE report_id = $1`, [id]);
       if (Number(count.rows[0]?.n ?? 0) >= MAX_WIDGETS_PER_REPORT) throw new TxAbort(fail("invalid", "Widget limit reached"));
       const ins = await tx.query(
-        `/* reports.widgets.insert */ INSERT INTO report_widgets (report_id, type, config, x, y, w, h)
-         VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7) RETURNING id`,
-        [id, w.type, JSON.stringify(w.config), w.x, w.y, w.w, w.h],
+        `/* reports.widgets.insert */ INSERT INTO report_widgets (id, report_id, type, config, x, y, w, h)
+         VALUES (COALESCE($8::uuid, gen_random_uuid()), $1, $2, $3::jsonb, $4, $5, $6, $7) RETURNING id`,
+        [id, w.type, JSON.stringify(w.config), w.x, w.y, w.w, w.h, w.id ?? null],
       );
       const widgetId = ins.rows[0]?.id;
       if (!widgetId) throw new Error("Widget insert returned no row.");

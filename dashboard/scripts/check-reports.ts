@@ -177,7 +177,7 @@ function walk(dir: string): string[] {
   });
 }
 for (const file of walk(join(__dirname, "..", "lib", "reports"))) {
-  check(`no em dash in ${file}`, !readFileSync(file, "utf8").includes("—"));
+  check(`no em dash in ${file}`, !readFileSync(file, "utf8").includes("\u2014"));
 }
 
 

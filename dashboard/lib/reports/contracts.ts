@@ -478,6 +478,12 @@ export type StoreResult<T extends object = Record<never, never>> =
   | { ok: false; code: StoreFailureCode; message?: string; version?: number };
 
 export interface NewWidget {
+  /**
+   * Optional client-chosen uuid. The canvas creates a widget (or restores one
+   * after an undo) before the save returns, so the page supplies the id and the
+   * layout save that follows can name it. Absent: the database picks one.
+   */
+  id?: string;
   type: WidgetType;
   config: WidgetConfig;
   x: number;

@@ -3,7 +3,7 @@ import "server-only";
 /**
  * The shared server-side preamble for every Creative screen.
  *
- * All five need the same six things — the resolved client, the thresholds, the
+ * All five need the same six things, the resolved client, the thresholds, the
  * ads with their tags, the assets, the account context and the unmapped count.
  * Doing it once here means a new screen cannot accidentally use a different
  * account mean for its shrinkage than the screen next to it, which would show
@@ -11,6 +11,7 @@ import "server-only";
  */
 
 import { getClients, resolveClient, type Client } from "@/lib/clients";
+import { missingSource, pageAvailability } from "@/lib/capabilities";
 import {
   getCreativeAds,
   getCreativeAssets,
@@ -49,16 +50,30 @@ export interface CreativeContext {
   /**
    * The comparison period's account totals, or null when no comparison is
    * selected, the client was not running then, or the range has no rows.
-   * Account-level only — see `getCreativeTotals`.
+   * Account-level only, see `getCreativeTotals`.
    */
   previous: Components | null;
 }
 
 
 
-export async function loadCreativeContext(searchParams: {
-  [k: string]: string | string[] | undefined;
-}): Promise<CreativeContext> {
+/**
+ * What a Creative page gets back: either the client has no Meta account and
+ * the page renders `<NotConnected />`, or the full context.
+ *
+ * Decided from the registry flags (`lib/capabilities`) before any query runs,
+ * so a client without Meta costs no BigQuery reads and never sees an empty
+ * state that blames the date range.
+ */
+export type CreativeLoad =
+  | { status: "not-connected"; client: Client; source: string }
+  | { status: "ready"; ctx: CreativeContext };
+
+export async function loadCreative(
+  searchParams: { [k: string]: string | string[] | undefined },
+  /** True only on the screen that shows a comparison. Skips the extra query elsewhere. */
+  options: { compare?: boolean } = {}
+): Promise<CreativeLoad> {
   // `all` rather than the dashboard-wide 30-day default. See parseViewParams:
   // tag breakdowns live on accumulation, and a month of a small account is not
   // enough purchases to separate one persona from another.
@@ -67,6 +82,14 @@ export async function loadCreativeContext(searchParams: {
   const requested = params.clientId;
   const client = await resolveClient(requested, clients);
 
+  if (pageAvailability(client, "/creative") !== "available") {
+    return {
+      status: "not-connected",
+      client,
+      source: missingSource(client, "/creative") ?? "Meta",
+    };
+  }
+
   const [settings, data, assets, unmapped, confirmed, previous] = await Promise.all([
     getCreativeSettings(client.clientId),
     getCreativeAds(client.clientId, params.range),
@@ -74,14 +97,14 @@ export async function loadCreativeContext(searchParams: {
     getUnmapped(client.clientId),
     listConfirmedMappings(client.clientId),
     // Account totals only, and only when a comparison is actually selected.
-    params.period.comparison
+    options.compare && params.period.comparison
       ? getCreativeTotals(client.clientId, params.period.comparison)
       : Promise.resolve(null),
   ]);
 
   const confirmedIds = new Set(confirmed.map((c) => c.adId));
 
-  return {
+  const ctx: CreativeContext = {
     client,
     // The Meta ad account's own currency, not the shop's. They are set
     // separately and are not always the same, and a ROAS built from one
@@ -96,11 +119,12 @@ export async function loadCreativeContext(searchParams: {
     assets,
     // The shrinkage anchor. Computed from summed revenue over summed spend, so
     // a 300 Kč freak at 17x cannot drag the mean that every other row is pulled
-    // toward — the learnings file has that exact ad in it.
+    // toward, the learnings file has that exact ad in it.
     account: accountContext(data.ads, settings.targetRoas ?? 1),
     unmapped,
     unmappedCount: unmapped.ads.filter((a) => !confirmedIds.has(a.adId)).length,
   };
+  return { status: "ready", ctx };
 }
 
 /**

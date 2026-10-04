@@ -40,7 +40,7 @@ function client(): Storage | null {
   }
 
   // Local development only: Application Default Credentials. In production the
-  // key is always set — signing requires a private key, and ADC on a Vercel
+  // key is always set, signing requires a private key, and ADC on a Vercel
   // lambda has none, so this path returns null there rather than throwing.
   if (process.env.NODE_ENV === "production") return null;
   cached = new Storage({ projectId });
@@ -56,7 +56,7 @@ export function parseGsUri(uri: string): { bucket: string; name: string } | null
 /**
  * Sign one object for reading.
  *
- * Returns null rather than throwing on every failure path — a missing asset, a
+ * Returns null rather than throwing on every failure path, a missing asset, a
  * bucket that does not exist yet, a service account without the signing role.
  * The grid renders a placeholder tile and says the asset has not been mirrored;
  * a thrown error would take down a screen whose other twenty columns are fine.
@@ -89,7 +89,7 @@ export async function signedUrl(gsUri: string | null): Promise<string | null> {
  * Sign many at once.
  *
  * A grid of forty tiles is forty signatures. They are local cryptographic
- * operations rather than network calls, so this is milliseconds — but it is
+ * operations rather than network calls, so this is milliseconds, but it is
  * still worth doing in one pass rather than forty awaited round trips through
  * the component tree, which is what a naive per-tile `await` would produce.
  */
@@ -117,7 +117,7 @@ export function assetServingConfigured(): boolean {
  * blob instead needs a CORS rule on the bucket that does not exist.
  *
  * What does work is asking the signature itself for the header, which is what
- * `responseDisposition` does — the object comes back as an attachment with a
+ * `responseDisposition` does, the object comes back as an attachment with a
  * filename, from a plain link, with no CORS involved. The cost is one extra
  * local signature per ad.
  *

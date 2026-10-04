@@ -20,6 +20,8 @@
 import { useMemo, useRef, useState } from "react";
 import type { AdView } from "@/lib/creative/view";
 import { focusLabel } from "@/lib/creative/vocabulary";
+import { UNTAGGED } from "@/lib/creative/model";
+import { NO_VALUE } from "@/lib/format";
 import { AdDetail } from "@/components/creative/AdDetail";
 import type { RangeLabel } from "@/lib/params";
 import { ConfidenceChip, SpendBar, Tag, money, pct, ratePct, roas } from "@/components/creative/primitives";
@@ -42,8 +44,8 @@ const FILTERS: Filter[] = [
 /**
  * A filter arriving from another screen.
  *
- * Breakdown and Concepts both end in the same question — "which ads are those"
- * — and the answer is this grid. The five selects cannot carry it: a concept is
+ * Breakdown and Concepts both end in the same question, "which ads are those"
+ *, and the answer is this grid. The five selects cannot carry it: a concept is
  * matched on an id and displayed as a name, and adding a select for every
  * breakable dimension would put nine dropdowns above the wall.
  *
@@ -51,7 +53,7 @@ const FILTERS: Filter[] = [
  * of how many it left, and it comes off in one click.
  */
 export interface GridFocus {
-  /** A key of AdView — `conceptId`, `angle`, `adsetName`. */
+  /** A key of AdView, `conceptId`, `angle`, `adsetName`. */
   field: string;
   /** The raw value to match. */
   value: string;
@@ -93,7 +95,7 @@ export function CreativeGrid({
     const out: Record<string, string[]> = {};
     for (const f of FILTERS) {
       const values = new Set<string>();
-      for (const ad of ads) values.add((ad[f.key] as string | null) ?? "Untagged");
+      for (const ad of ads) values.add((ad[f.key] as string | null) ?? UNTAGGED);
       out[f.key] = [...values].sort();
     }
     return out;
@@ -106,7 +108,7 @@ export function CreativeGrid({
           FILTERS.every((f) => {
             const want = selected[f.key] ?? ALL;
             if (want === ALL) return true;
-            return ((ad[f.key] as string | null) ?? "Untagged") === want;
+            return ((ad[f.key] as string | null) ?? UNTAGGED) === want;
           })
         )
         .filter((ad) =>
@@ -145,7 +147,7 @@ export function CreativeGrid({
           <span className="font-mono text-[11.5px] text-content-muted">
             {focusOn
               ? `${rows.length} of ${ads.length} creatives`
-              : "filter off — showing everything"}
+              : "Filter off"}
           </span>
         </div>
       )}
@@ -180,9 +182,7 @@ export function CreativeGrid({
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-[13.5px] text-content-muted">
-          No creative matches this filter.
-        </p>
+        <p className="m-0 text-[13.5px] text-content-muted">No matches.</p>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(228px,1fr))] gap-4">
           {rows.map((ad, i) => (
@@ -270,7 +270,7 @@ function Tile({
       {/* ── A square crop, deliberately ──────────────────────────────────
           The wall is for comparison, and comparison needs one shape. It was
           4:5 with `contain`, which letterboxed every 9:16 and left the tiles
-          ragged — different amounts of dead space above and below different
+          ragged, different amounts of dead space above and below different
           creatives, and the text below each starting at a different height.
 
           So: 1:1, cropped. The whole creative is still one click away in the
@@ -280,7 +280,7 @@ function Tile({
       <div className="relative aspect-square overflow-hidden border-b border-hairline bg-gray-100/70">
         <Thumb ad={ad} />
         <span className="absolute left-2 top-2 rounded-xs bg-ink-950/70 px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.09em] text-white">
-          {ad.format ?? "—"}
+          {ad.format ?? NO_VALUE}
         </span>
         <span className="absolute right-2 top-2 rounded-xs border border-hairline bg-paper px-1.5 py-px font-mono text-[10px] text-content-muted">
           #{rank}
@@ -291,7 +291,7 @@ function Tile({
           </span>
         )}
         {/* ── Play here, in the tile ───────────────────────────────────────
-            The badge used to be decorative — it said "this is a video" and
+            The badge used to be decorative, it said "this is a video" and
             clicking it opened the panel like everywhere else. Now it plays,
             and it is the ONLY part of the tile that does: `stopPropagation`
             keeps the click off the card, so the button plays and the rest of
@@ -317,8 +317,8 @@ function Tile({
 
       {/* ── The card body ────────────────────────────────────────────────
           Label-left, value-right rows on a tight rhythm, like the reference.
-          It was a loose stack — name, then a big number, then a bar, then a
-          ROAS line, then a metric row, then tags — each with its own gap, so
+          It was a loose stack, name, then a big number, then a bar, then a
+          ROAS line, then a metric row, then tags, each with its own gap, so
           the text ran nearly as tall as the image and no two cards lined up.
 
           Now every row is the same height and the labels form a column, which
@@ -489,8 +489,8 @@ function TilePlayer({
  * may be missing, or the ad may predate the bucket. A grey box with a broken
  * icon reads as a failure; a tinted placeholder reads as "not here yet", which
  * is what it is. The tint is by format, so a wall of unmirrored creative still
- * shows you the shape of the account — how much of it is video, how much
- * static — which is worth something on its own.
+ * shows you the shape of the account, how much of it is video, how much
+ * static, which is worth something on its own.
  */
 function Thumb({ ad }: { ad: AdView }) {
   if (ad.thumbUrl) {

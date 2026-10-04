@@ -5,13 +5,13 @@
  * ── Why the attribution is always on screen ────────────────────────────────
  * Every figure in this section is 7-day click with existing customers excluded,
  * and that is not a detail. The learnings file records four months where
- * attribution windows differed between ad sets — some on 7-day click, some on
- * click-or-view — and the packs measured most strictly looked worst. The
+ * attribution windows differed between ad sets, some on 7-day click, some on
+ * click-or-view, and the packs measured most strictly looked worst. The
  * numbers were not comparable and nobody could see it, because nothing on
  * screen said what they were.
  *
  * The range itself is NOT repeated here. It moved to the shared control bar
- * directly above — the same picker every other screen in the dashboard uses —
+ * directly above, the same picker every other screen in the dashboard uses,
  * and printing it twice on one screen was how the old two-position toggle and
  * the app's date picker came to disagree about what "last 30 days" meant.
  *

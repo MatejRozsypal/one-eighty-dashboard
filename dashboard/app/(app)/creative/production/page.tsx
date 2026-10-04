@@ -1,5 +1,5 @@
 /**
- * Screen 5 — Production ROI.
+ * Screen 5, Production ROI.
  *
  * What each way of making a creative costs, and what it returned.
  *
@@ -25,14 +25,17 @@ import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { PageControls } from "@/components/controls/PageControls";
 import {
   ConfidenceChip,
-  NotIngested,
+  CreativeNotConnected,
   Scorecard,
   SectionHead,
-  ThresholdsMissing,
   money,
   pct,
 } from "@/components/creative/primitives";
-import { loadCreativeContext } from "@/lib/creative/page";
+import { NoData, NoValue, NotConnected } from "@/components/ui/EmptyState";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { Notice } from "@/components/ui/Notice";
+import { isNoValue, NO_VALUE } from "@/lib/format";
+import { loadCreative, type CreativeContext } from "@/lib/creative/page";
 import { getCreatorTerms, getProductionRates } from "@/lib/creative/store";
 import { adCost, contributionMargin, type CreatorTerms, type ProductionRate } from "@/lib/creative/cost";
 import { classify, groupBy, sum } from "@/lib/creative/model";
@@ -46,7 +49,11 @@ export default async function ProductionPage({
 }: {
   searchParams: { [k: string]: string | string[] | undefined };
 }) {
-  const ctx = await loadCreativeContext(searchParams);
+  const loaded = await loadCreative(searchParams);
+  if (loaded.status === "not-connected") {
+    return <CreativeNotConnected title="Production ROI" source={loaded.source} />;
+  }
+  const { ctx } = loaded;
   const { client, currency, data, thresholds, display, account } = ctx;
   // What a creative cost and what it returned is a measurement; which of them
   // "won" is a judgement. So the cost table renders either way and only the
@@ -55,7 +62,7 @@ export default async function ProductionPage({
   if (!data.available || data.ads.length === 0) {
     return (
       <Shell ctx={ctx}>
-        <NotIngested what="No delivery to price yet." object={data.missing} />
+        {data.available ? <NoData /> : <NotConnected source="Creative data" />}
       </Shell>
     );
   }
@@ -94,7 +101,7 @@ export default async function ProductionPage({
 
     return {
       key: g.key,
-      label: g.untagged ? "— unattributed —" : g.label,
+      label: g.label,
       ads: g.ads.length,
       // The share of this row's cost that is a real number rather than a rate
       // somebody typed into settings. The whole row is only as good as this.
@@ -118,7 +125,7 @@ export default async function ProductionPage({
   const totalProduction = rows.reduce((a, r) => a + (r.production ?? 0), 0);
   const totalWinners = rows.reduce((a, r) => a + r.winners, 0);
   // Stated where ClickUp says so, inferred from b1h1 only for the ads that
-  // predate the field — the same precedence the velocity gauge uses, so the two
+  // predate the field, the same precedence the velocity gauge uses, so the two
   // screens cannot report different net-new hit rates.
   const stated = data.ads.filter((a) => a.tags.productionType !== null);
   const netNew =
@@ -140,38 +147,46 @@ export default async function ProductionPage({
 
   return (
     <Shell ctx={ctx}>
-      {!judged && <ThresholdsMissing clientName={client.name} />}
+      {!judged && <Notice tone="warning">No verdicts. Set thresholds in Settings.</Notice>}
 
       {(unpriced || rates.length === 0) && (
-        <div className="glass flex flex-col gap-2 border-warning/40 p-5">
-          <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-warning">
-            Costs are mostly estimates
-          </span>
-          <p className="m-0 max-w-[74ch] text-[13px] leading-[1.7] text-content-body">
-            {rates.length === 0
-              ? "No per-asset rates have been entered, so nothing below has a cost basis at all."
-              : "Some ads have no production cost, so their rows are priced from the per-asset rate for the method."}{" "}
-            The ClickUp <span className="font-mono">Production cost</span> field is what turns
-            this from an estimate into a measurement. Until it is filled in, read the return
-            column as an order of magnitude and nothing finer.
-          </p>
-        </div>
+        <Notice tone="warning">
+          Costs are estimates.
+          <InfoTip
+            text="Priced from per-asset rates unless the ClickUp Production cost field is filled in. Read Return as an order of magnitude."
+            label="About costs"
+          />
+        </Notice>
       )}
 
       <div className="glass-solid overflow-x-auto">
         <table className="w-full min-w-[940px] border-collapse">
           <thead>
             <tr>
-              {["Made by", "Ads", "Priced", "Cost / asset", "Production", "Ad spend", "Contribution", "Net of production", "Return", "Confidence"].map(
-                (h, i) => (
-                  <th key={h}
-                      className={`border-b border-hairline bg-gray-50/60 px-3.5 py-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-content-muted ${
-                        i === 0 || i === 9 ? "text-left" : "text-right"
-                      }`}>
+              {(
+                [
+                  ["Made by"],
+                  ["Ads"],
+                  ["Priced"],
+                  ["Cost / asset", "n/a when no rate is set for the method."],
+                  ["Production"],
+                  ["Ad spend"],
+                  ["Contribution", "n/a when no gross margin is set."],
+                  ["Net of production"],
+                  ["Return"],
+                  ["Confidence"],
+                ] as Array<[string, string?]>
+              ).map(([h, info], i) => (
+                <th key={h}
+                    className={`border-b border-hairline bg-gray-50/60 px-3.5 py-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-content-muted ${
+                      i === 0 || i === 9 ? "text-left" : "text-right"
+                    }`}>
+                  <span className="inline-flex items-center gap-1.5">
                     {h}
-                  </th>
-                )
-              )}
+                    {info && <InfoTip text={info} label={`About ${h}`} />}
+                  </span>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -182,19 +197,19 @@ export default async function ProductionPage({
                 </td>
                 <Cell>{r.ads}</Cell>
                 <Cell>{pct(r.pricedShare)}</Cell>
-                <Cell>{r.costPerAsset === null ? "unpriced" : money(r.costPerAsset, currency)}</Cell>
-                <Cell>{r.production === null ? "—" : money(r.production, currency)}</Cell>
+                <Cell>{r.costPerAsset === null ? NO_VALUE : money(r.costPerAsset, currency)}</Cell>
+                <Cell>{r.production === null ? NO_VALUE : money(r.production, currency)}</Cell>
                 <Cell>{money(r.spend, currency)}</Cell>
-                <Cell>{r.cm === null ? "no margin set" : money(r.cm, currency)}</Cell>
+                <Cell>{r.cm === null ? NO_VALUE : money(r.cm, currency)}</Cell>
                 <td className={`border-b border-hairline px-3.5 py-2.5 text-right font-mono text-[13px] tabular ${
                   r.net === null ? "text-content-muted" : r.net >= 0 ? "text-positive" : "text-negative"
                 }`}>
-                  {r.net === null ? "—" : money(r.net, currency)}
+                  {r.net === null ? NO_VALUE : money(r.net, currency)}
                 </td>
                 <td className={`border-b border-hairline px-3.5 py-2.5 text-right font-mono text-[13px] font-medium tabular ${
                   r.ret === null ? "text-content-muted" : r.ret >= 1 ? "text-positive" : "text-negative"
                 }`}>
-                  {r.ret === null ? "—" : `${r.ret.toFixed(2)}×`}
+                  {r.ret === null ? NO_VALUE : `${r.ret.toFixed(2)}×`}
                 </td>
                 <td className="border-b border-hairline px-3.5 py-2.5">
                   <ConfidenceChip level={r.confidence} />
@@ -211,7 +226,7 @@ export default async function ProductionPage({
           screen, which reads as a finding rather than as an absent input. */}
       {judged && (
       <section>
-        <SectionHead title="Cost to first winner" eyebrow="the number that judges the rest" />
+        <SectionHead title="Cost per winner" />
         {/*
           This is the argument for the 80/20 split in one row of tiles. A
           net-new hit rate far below the ~5% reference is not an argument for
@@ -222,23 +237,24 @@ export default async function ProductionPage({
           tiles={[
             {
               label: "Net-new hit rate",
-              value: netNew.length ? pct(netNewWinners / netNew.length) : "—",
-              sub: `${netNewWinners} from ${netNew.length} first-hook ads`,
+              value: netNew.length ? pct(netNewWinners / netNew.length) : NO_VALUE,
+              info: `${netNewWinners} winners from ${netNew.length} first-hook ads.`,
             },
             {
               label: "Ads per winner",
-              value: totalWinners > 0 ? String(Math.round(data.ads.length / totalWinners)) : "—",
-              sub: "reference is about 20 at a 5% hit rate",
+              value: totalWinners > 0 ? String(Math.round(data.ads.length / totalWinners)) : NO_VALUE,
+              info: "Reference: about 20 at a 5% hit rate.",
             },
             {
               label: "Production per winner",
-              value: totalWinners > 0 ? money(totalProduction / totalWinners, currency) : "—",
-              sub: `${money(totalProduction, currency)} across ${data.ads.length} ads`,
+              value: totalWinners > 0 ? money(totalProduction / totalWinners, currency) : NO_VALUE,
+              info: `${money(totalProduction, currency)} across ${data.ads.length} ads.`,
             },
             {
-              label: "Media burned per winner",
+              label: "Wasted spend per winner",
               value: totalWinners > 0 ? money(burned / totalWinners, currency) : money(burned, currency),
-              sub: totalWinners > 0 ? "on the ones that never cleared" : "no winner yet",
+              info: "Spend on ads that never became winners.",
+              sub: totalWinners > 0 ? undefined : "no winner yet",
             },
           ]}
         />
@@ -251,7 +267,7 @@ export default async function ProductionPage({
 function Cell({ children }: { children: React.ReactNode }) {
   return (
     <td className="border-b border-hairline px-3.5 py-2.5 text-right font-mono text-[13px] tabular text-content-body">
-      {children}
+      {isNoValue(children) ? <NoValue /> : children}
     </td>
   );
 }
@@ -260,12 +276,12 @@ function Shell({
   ctx,
   children,
 }: {
-  ctx: Awaited<ReturnType<typeof loadCreativeContext>>;
+  ctx: CreativeContext;
   children: React.ReactNode;
 }) {
   return (
     <>
-      <Header eyebrow={`Creative · ${ctx.client.name}`} title="Production ROI" />
+      <Header title="Production ROI" />
       <PageControls client={ctx.client} params={ctx.params} />
       <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-4 lg:px-8">
         <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />

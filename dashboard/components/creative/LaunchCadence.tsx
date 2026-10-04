@@ -2,7 +2,7 @@
  * Packs launched per month, against the target.
  *
  * ── Why bars and not the line the other charts use ─────────────────────────
- * A pack is a discrete event — you launched two, or you launched none. A line
+ * A pack is a discrete event, you launched two, or you launched none. A line
  * between June's four and July's zero draws a value at every point between
  * them, and there is no such thing as 2.3 packs in the middle of July. Bars
  * also make a zero month visibly empty rather than a line touching the floor,
@@ -12,8 +12,8 @@
  * bar: the question is whether the rhythm clears the line, and a rule lets you
  * read six months of that in one glance.
  *
- * Colour is the same three-state language the gauges use — at target, short,
- * nothing shipped — so a month reads the same here as it would there.
+ * Colour is the same three-state language the gauges use, at target, short,
+ * nothing shipped, so a month reads the same here as it would there.
  */
 
 import type { LaunchMonth } from "@/lib/creative/velocity";

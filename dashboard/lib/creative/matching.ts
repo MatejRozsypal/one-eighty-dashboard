@@ -4,12 +4,12 @@
  * ── Why this exists at all ─────────────────────────────────────────────────
  * The authoritative join is the Meta `ad_id` written into the ClickUp task's
  * `Creative ID` field. Today that field contains the literal string
- * "Creative ID" on every one of the 65 Manami tasks: it has never been filled
+ * "Creative ID" on every one of the 65 the pilot client tasks: it has never been filled
  * once. A product that waits for someone to paste 65 eighteen-digit numbers by
  * hand is a product that never starts.
  *
  * So the dashboard fills it. This module proposes the match, a human confirms
- * it in one click, and the confirmation WRITES THE AD ID BACK to ClickUp — so
+ * it in one click, and the confirmation WRITES THE AD ID BACK to ClickUp, so
  * the next sync resolves it as `creative_id` at full confidence and this
  * heuristic is never consulted for that ad again. The fuzzy matching is
  * scaffolding that removes itself.
@@ -49,8 +49,8 @@ export interface Proposal {
  *     HeadacheFromSynthetics | C07 | TOF | STAT | b1h3 | 04SEP | CZ
  *
  * Real names in the account predate it and are messier. Three separators are in
- * live use — `|`, `-`, and a capital `I` standing in for a pipe, as in
- * "DYN I Příběh Manami V1 I 6JUN I CZ". The capital-I case is not a typo to be
+ * live use, `|`, `-`, and a capital `I` standing in for a pipe, as in
+ * "DYN I Příběh Brand V1 I 6JUN I CZ". The capital-I case is not a typo to be
  * cleaned up later; it is in the names of ads holding real spend today, and a
  * splitter that ignores it silently fails to tokenise a third of the account.
  */
@@ -139,7 +139,7 @@ function fold(s: string): string {
 /**
  * Score one candidate against an ad name.
  *
- * Weights are deliberately lopsided. A concept id agreeing is nearly decisive —
+ * Weights are deliberately lopsided. A concept id agreeing is nearly decisive,
  * it is a unique key that appears in both names on purpose. A format agreeing
  * is nearly worthless on its own, because most of the account is STAT and
  * "both are static" is true of two ads picked at random.

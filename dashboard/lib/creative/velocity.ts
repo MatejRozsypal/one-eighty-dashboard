@@ -1,5 +1,5 @@
 /**
- * Creative velocity — the pack, not the ad.
+ * Creative velocity, the pack, not the ad.
  *
  * ── Why the pack is the unit ───────────────────────────────────────────────
  * Nathan's model is `expected value per ad = mean spend per ad x 7-day-click
@@ -23,12 +23,13 @@
  * The ads-per-pack figure landing exactly on what PACK6 actually launched with
  * is a good sign the floor is set right. The horizon does not quite close: a
  * 14-day pack reaches 23 purchases and the test size is 25. Two short, every
- * pack — which means either the verdict is taken on thinner data than the
+ * pack, which means either the verdict is taken on thinner data than the
  * standard claims, or the no-touch window quietly runs long. `packSpec` states
  * that as one line with two answers rather than hiding it in a table.
  */
 
 import type { AdRow, AdsetRow } from "@/lib/creative/model";
+import { formatNumber, NO_VALUE } from "@/lib/format";
 
 export interface PackSettings {
   /** Purchases a pack must reach before its verdict means anything. */
@@ -125,7 +126,7 @@ export type GaugeState = "ok" | "warn" | "bad";
 
 export interface Gauge {
   label: string;
-  /** Already formatted — the gauge tile prints numbers, not prose. */
+  /** Already formatted, the gauge tile prints numbers, not prose. */
   value: string;
   /** The target, phrased as a comparison. */
   against: string;
@@ -153,7 +154,7 @@ export interface VelocityInput {
 /**
  * Eight tiles, red / amber / green, no prose.
  *
- * On Manami today three read red: one pack launched in the last 30 days against
+ * On the pilot client today three read red: one pack launched in the last 30 days against
  * a target of two, 1.0 hooks per body against a target of six, and 80% net-new
  * production against a 20% target. None of the three needs more budget to fix,
  * which is the point of showing them together.
@@ -179,11 +180,11 @@ export function gauges(input: VelocityInput): Gauge[] {
 
   // Hooks per body. Nathan: two bodies and fifteen hooks beats five bodies and
   // two hooks. This is the only creative test One Eighty has the sample size to
-  // read, it is the cheapest production there is — re-record three to five
-  // seconds — and it has never been run once.
+  // read, it is the cheapest production there is, re-record three to five
+  // seconds, and it has never been run once.
   // Only ads that actually carry a Body code. Counting every absent code as
   // one shared body turned "nobody fills this field in" into a confident 13.8
-  // hooks per body against a target of 6 — a gauge reading full green on a
+  // hooks per body against a target of 6, a gauge reading full green on a
   // measurement that was never taken.
   const coded = ads.filter((a) => a.tags.bodyCode !== null);
   const bodies = new Set(
@@ -193,8 +194,8 @@ export function gauges(input: VelocityInput): Gauge[] {
 
   // Net-new share, for the 80/20 rule.
   //
-  // ClickUp's `Content Purpose` states this directly — Net-new against Winner
-  // Variant is exactly the split the rule is about — so it is used wherever it
+  // ClickUp's `Content Purpose` states this directly, Net-new against Winner
+  // Variant is exactly the split the rule is about, so it is used wherever it
   // is filled in. The b1h1 reading is the fallback for the ads that predate the
   // field: first hook on the first body of a concept is a fresh idea rather
   // than an iteration of a proven one. Inference only where nobody stated it.
@@ -224,7 +225,7 @@ export function gauges(input: VelocityInput): Gauge[] {
       cpaDerived: false,
     },
     {
-      label: "Ads in last pack",
+      label: "Last pack size",
       value: String(adsInLastPack),
       against: `budget feeds ${spec.adsPerPack}`,
       fill: clamp(adsInLastPack / spec.adsPerPack),
@@ -240,7 +241,7 @@ export function gauges(input: VelocityInput): Gauge[] {
       cpaDerived: true,
     },
     {
-      label: "Days to a verdict",
+      label: "Days to verdict",
       value: String(spec.daysToVerdict),
       against: `no-touch ${s.noTouchDays}`,
       fill: clamp(spec.daysToVerdict / s.noTouchDays),
@@ -263,7 +264,7 @@ export function gauges(input: VelocityInput): Gauge[] {
     },
     {
       label: "Hooks per body",
-      value: hooksPerBody === null ? "—" : hooksPerBody.toFixed(1),
+      value: hooksPerBody === null ? NO_VALUE : hooksPerBody.toFixed(1),
       against:
         hooksPerBody === null
           ? "no Body code on any ad"
@@ -292,9 +293,9 @@ export function gauges(input: VelocityInput): Gauge[] {
       cpaDerived: false,
     },
     {
-      label: "Testing share of budget",
+      label: "Test share of budget",
       value: `${Math.round(testShare * 100)}%`,
-      against: "target 20–30%",
+      against: "target 20-30%",
       fill: clamp(testShare / 0.4),
       mark: 0.75,
       state: testShare >= 0.18 && testShare <= 0.32 ? "ok" : "warn",
@@ -302,8 +303,8 @@ export function gauges(input: VelocityInput): Gauge[] {
     },
     {
       label: "Pack daily budget",
-      value: Math.round(s.minPackDaily).toLocaleString("en-US"),
-      against: `floor ${Math.round(2 * s.targetCpa).toLocaleString("en-US")}`,
+      value: formatNumber(s.minPackDaily),
+      against: `floor ${formatNumber(2 * s.targetCpa)}`,
       fill: clamp(s.minPackDaily / (2 * s.targetCpa)),
       mark: 1,
       state: band(
@@ -342,7 +343,7 @@ export interface PersonaCapacity {
  *
  * The arithmetic that settles the argument rather than continuing it: reading a
  * persona to ±25% takes about 84 purchases, which at a 527 Kč CPA is about
- * 44 300 Kč. Manami spends about 273 000 Kč a quarter. Cutting the active set
+ * 44 300 Kč. The pilot client spends about 273 000 Kč a quarter. Cutting the active set
  * is the fix; a better dashboard is not.
  */
 export function personaCapacity(
@@ -383,7 +384,7 @@ export interface LaunchMonth {
  * shape of question: cadence is a rhythm, and a rhythm is only visible over
  * several months. An account that shipped four packs in June and none since
  * reads identically to one shipping two a month, on a gauge that only sees the
- * last thirty days — and those are opposite situations. One is a team that
+ * last thirty days, and those are opposite situations. One is a team that
  * stopped; the other is a team that is fine.
  *
  * A pack is an ad set, and the month it launched is the month its first
@@ -391,7 +392,7 @@ export interface LaunchMonth {
  * ran, so nothing can be judged, and counting them would let a folder of drafts
  * look like output.
  *
- * The dates come from `getAdsetLaunchDates`, which reads them lifetime — never
+ * The dates come from `getAdsetLaunchDates`, which reads them lifetime, never
  * from `AdsetRow.firstDate`, which is clamped to the selected window and would
  * put the entire account's launches in the last thirty days.
  */

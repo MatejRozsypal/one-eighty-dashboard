@@ -7,8 +7,8 @@
  * The approved design (docs/creative-engine/DEMO.html) puts navigation across
  * the top, and it earns that: this is a visual product whose main object is a
  * wall of creative, and 252px of dark chrome down the left is 252px not spent
- * on thumbnails. The sidebar panel is suppressed for this product — see
- * Sidebar.tsx — so there is exactly one navigation, here.
+ * on thumbnails. The sidebar panel is suppressed for this product, see
+ * Sidebar.tsx, so there is exactly one navigation, here.
  *
  * The query string is carried across, because it holds the client, the window
  * and the breakdown dimension. Dropping it would silently reset whose numbers

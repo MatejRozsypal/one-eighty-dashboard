@@ -1,5 +1,5 @@
 /**
- * Angle coverage — all eighteen, whether or not they have ever run.
+ * Angle coverage, all eighteen, whether or not they have ever run.
  *
  * ── Why the unused ones are the point ──────────────────────────────────────
  * A grid of only the angles already tested can tell you which of your habits
@@ -34,7 +34,7 @@ export function AngleCoverage({
             className={
               used
                 ? "glass flex min-h-[78px] flex-col gap-1.5 rounded-xl px-3 py-2.5"
-                : "flex min-h-[78px] flex-col gap-1.5 rounded-xl border border-dashed border-hairline-strong bg-paper/25 px-3 py-2.5"
+                : "flex min-h-[78px] flex-col gap-1.5 rounded-xl border border-hairline bg-paper/25 px-3 py-2.5"
             }
           >
             <span

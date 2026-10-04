@@ -15,6 +15,12 @@
     "check:capabilities": "tsx --tsconfig scripts/tsconfig.json scripts/check-capabilities.ts",
     "check:paid": "tsx --tsconfig scripts/tsconfig.json scripts/check-paid-math.ts",
     "check:reports": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports.ts",
+    "check:reports-eval": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-eval.ts",
+    "check:reports-authz": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-authz.ts",
+    "check:reports-store": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-store.ts",
+    "check:reports-url": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-url.ts",
+    "check:reports-widgets": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-widgets.ts",
+    "check:reports-canvas": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-canvas.ts",
     "check:clickup": "tsx --tsconfig scripts/tsconfig.json scripts/probe-clickup.ts"
   },
   "dependencies": {

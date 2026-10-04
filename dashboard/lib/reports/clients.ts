@@ -27,6 +27,7 @@ import { assertReportsAccess } from "@/lib/authz";
 import { isDemo } from "@/lib/demo/client";
 import type { GetReportClients } from "./contracts";
 import { CACHE_TAGS, CACHE_TTL_S, SERIES_SLOTS } from "./limits";
+import { toReportCapabilities } from "./registry/capabilities";
 import type { ReportCapabilities, ReportClient, ShopPlatform } from "./registry/types";
 
 interface ClientRow {
@@ -69,24 +70,22 @@ export function isTableNotFound(error: unknown, table: string): boolean {
   return new RegExp(`Not found: Table [^ ]*${escaped}\\b`, "i").test(message);
 }
 
+/**
+ * The registry flags as Reports sees them. NULL is false, and the derived
+ * `shop` and `email` flags come from the one shared rule (toReportCapabilities).
+ */
 function capabilitiesOf(row: ClientRow): ReportCapabilities {
-  const shopify = row.has_shopify === true;
-  const shoptet = row.has_shoptet === true;
-  const woocommerce = row.has_woocommerce === true;
-  const klaviyo = row.has_klaviyo === true;
-  const ecomail = row.has_ecomail === true;
-  return {
-    shopify,
-    shoptet,
-    woocommerce,
+  return toReportCapabilities({
+    shopify: row.has_shopify === true,
+    shoptet: row.has_shoptet === true,
+    woocommerce: row.has_woocommerce === true,
+    klaviyo: row.has_klaviyo === true,
+    ecomail: row.has_ecomail === true,
     meta: row.has_meta === true,
     googleAds: row.has_gads === true,
-    klaviyo,
-    ecomail,
     ga4: row.has_ga4 === true,
-    shop: shopify || shoptet || woocommerce,
-    email: klaviyo || ecomail,
-  };
+    instagram: false,
+  });
 }
 
 /** `shop_platform` when it names a known platform, else the first shop flag that is on, else null. */

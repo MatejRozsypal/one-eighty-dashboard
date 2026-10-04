@@ -350,7 +350,14 @@ check("index.tsx loads charts with next/dynamic and ssr false", (() => {
 const colors = readFileSync(join(process.cwd(), "styles/tokens/colors.css"), "utf8");
 for (let i = 1; i <= 6; i += 1) check(`colors.css --series-${i}`, new RegExp(`--series-${i}:\\s*var\\(--[a-z0-9-]+\\)`).test(colors));
 check("colors.css --benchmark", /--benchmark:\s*var\(--gray-300\)/.test(colors));
-check("series aliases match the design", /--series-1:\s*var\(--ink-900\)/.test(colors) && /--series-2:\s*var\(--growth-600\)/.test(colors) && /--series-3:\s*var\(--info\)/.test(colors) && /--series-4:\s*var\(--warning-700\)/.test(colors) && /--series-5:\s*var\(--gray-400\)/.test(colors) && /--series-6:\s*var\(--growth-300\)/.test(colors));
+// Re-stepped in RS9 with the dataviz validator (the design's ink, gray and light-green slots failed it).
+// The hexes below are the validated palette; the script re-runs the validator when the skill is installed locally.
+{
+  const slot = (n: number) => new RegExp(`--series-${n}:\\s*var\\(--([a-z0-9-]+)\\)`).exec(colors)?.[1];
+  const raw = (name: string) => new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`).exec(colors)?.[1]?.toUpperCase();
+  check("series slots follow the validated order", slot(1) === "growth-600" && slot(2) === "series-purple" && slot(3) === "warning-700" && slot(4) === "series-pink" && slot(5) === "info" && slot(6) === "series-teal");
+  check("series hexes are the validated palette", raw("series-purple") === "#7F54B3" && raw("series-pink") === "#D6409F" && raw("series-teal") === "#0B8FA3" && raw("growth-600") === "#0E9F5D" && raw("warning-700") === "#8A5B0A" && raw("info") === "#0866FF");
+}
 
 // ---------------------------------------------------------------------------
 

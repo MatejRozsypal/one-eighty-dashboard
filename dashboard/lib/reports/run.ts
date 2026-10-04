@@ -23,13 +23,12 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { unstable_cache } from "next/cache";
-import * as authz from "@/lib/authz";
+import { assertReportsAccess } from "@/lib/authz";
 import { queryJob } from "@/lib/bigquery";
 import { todayUtc, addDays } from "@/lib/period";
 import {
   ReportsError,
   TOTAL_BUCKET,
-  type AssertReportsAccess,
   type CompiledQuery,
   type ComponentRow,
   type ComponentSum,
@@ -242,16 +241,9 @@ async function cacheThrough(key: string, ttlS: number, load: () => Promise<Paylo
 // Gate
 // ---------------------------------------------------------------------------
 
-/**
- * assertReportsAccess() lives in lib/authz.ts (WP3, written in parallel). It is
- * looked up on the module namespace so this file compiles before WP3 lands;
- * when it is absent the runner fails closed. After merging WP3 this can become
- * a plain named import.
- */
+/** The gate (lib/authz.ts). Throws "Not authorised." before any cache is read. */
 async function assertAccess(): Promise<void> {
-  const gate = (authz as unknown as { assertReportsAccess?: AssertReportsAccess }).assertReportsAccess;
-  if (typeof gate !== "function") throw new Error("Not authorised.");
-  await gate();
+  await assertReportsAccess();
 }
 
 // ---------------------------------------------------------------------------

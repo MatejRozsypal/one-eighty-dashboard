@@ -27,9 +27,8 @@
  *   <mart>__<column>__nat and <mart>__<column>__disp for money components,
  *   <mart>__<column> for every other component.
  *
- * The registry is injected: createCompiler({ marts, components }). The
- * registry data lives in registry/components.ts (WP1); see `compileWidget`
- * at the bottom of this file for the integration binding.
+ * The registry is injected: createCompiler({ marts, components }).
+ * `compileWidget` at the bottom of this file is bound to registry/components.ts.
  *
  * Owner: WP2 (RS2).
  */
@@ -45,6 +44,7 @@ import {
   type CompileWidget,
   type ResolvedWidget,
 } from "./contracts";
+import { COMPONENTS, MARTS } from "./registry/components";
 import {
   IDENTIFIER_RE,
   SEMANTIC_VERSION,
@@ -369,15 +369,8 @@ export function createCompiler(registry: CompilerRegistry, options: CompilerOpti
 // Integration binding
 // ---------------------------------------------------------------------------
 //
-// registry/components.ts (WP1, RS1) is written in parallel and does not exist
-// on this branch, so the contract export is bound when the branches meet.
-// After merging RS1, replace this section with:
-//
-//   import { COMPONENTS, MARTS } from "./registry/components";
-//   export const compileWidget: CompileWidget = createCompiler({ marts: MARTS, components: COMPONENTS });
-//
-// Until then compileWidget fails closed with a clear message; createCompiler()
-// and compileWidgetWith() are fully usable with any registry.
+// The contract export, bound to the real registry (registry/components.ts).
+// createCompiler() and compileWidgetWith() stay available for tests that
+// inject a fixture registry.
 
-export const compileWidget: CompileWidget = () =>
-  fail("No registry bound: import COMPONENTS and MARTS from registry/components.ts (see the integration note)");
+export const compileWidget: CompileWidget = createCompiler({ marts: MARTS, components: COMPONENTS });

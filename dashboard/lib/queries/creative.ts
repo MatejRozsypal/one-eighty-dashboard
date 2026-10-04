@@ -27,6 +27,7 @@ import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isMissingObject } from "@/lib/queries/errors";
 import { num, isoDate } from "@/lib/coerce";
 import { isDemo } from "@/lib/demo/client";
+import { cleanPersona, noEmDash } from "@/lib/creative/display";
 import {
   ZERO,
   type AdRow,
@@ -71,6 +72,7 @@ function componentsFrom(r: Record<string, unknown>): Components {
     landingPageViews: n0(r.landing_page_views),
     linkClicks: n0(r.link_clicks),
     outboundClicks: n0(r.outbound_clicks),
+    outboundRows: n0(r.outbound_rows),
     uniqueOutboundClicks: n0(r.unique_outbound_clicks),
     videoViews: n0(r.video_views),
     videoPlays: n0(r.video_play_actions),
@@ -85,7 +87,9 @@ function componentsFrom(r: Record<string, unknown>): Components {
 }
 
 function tagsFrom(r: Record<string, unknown>): Tags {
-  const s = (k: string) => (r[k] === null || r[k] === undefined ? null : String(r[k]));
+  // Display strings only: the U+2014 dash never reaches the UI, and a persona
+  // label loses the internal code it is filed under (`lib/creative/display`).
+  const s = (k: string) => (r[k] === null || r[k] === undefined ? null : noEmDash(String(r[k])));
   return {
     clickupTaskId: s("clickup_task_id"),
     clickupUrl: s("clickup_url"),
@@ -93,7 +97,7 @@ function tagsFrom(r: Record<string, unknown>): Tags {
     conceptCode: s("concept_code"),
     conceptName: s("concept_name"),
     personaId: s("persona_id"),
-    personaName: s("persona_name"),
+    personaName: r.persona_name === null || r.persona_name === undefined ? null : cleanPersona(String(r.persona_name)),
     angle: s("angle"),
     offer: s("offer"),
     stage: s("stage"),
@@ -192,6 +196,7 @@ export async function getCreativeAds(
            SUM(add_to_cart) AS add_to_cart, SUM(initiate_checkout) AS initiate_checkout,
            SUM(landing_page_views) AS landing_page_views, SUM(link_clicks) AS link_clicks,
            SUM(outbound_clicks) AS outbound_clicks,
+         COUNTIF(outbound_clicks IS NOT NULL) AS outbound_rows,
            SUM(unique_outbound_clicks) AS unique_outbound_clicks,
            SUM(video_views) AS video_views,
            SUM(video_play_actions) AS video_play_actions,
@@ -239,7 +244,8 @@ export async function getCreativeAds(
            SUM(impressions) AS impressions, SUM(clicks) AS clicks, SUM(reach) AS reach,
            SUM(add_to_cart) AS add_to_cart, SUM(initiate_checkout) AS initiate_checkout,
            SUM(landing_page_views) AS landing_page_views, SUM(link_clicks) AS link_clicks,
-           SUM(outbound_clicks) AS outbound_clicks
+           SUM(outbound_clicks) AS outbound_clicks,
+           COUNTIF(outbound_clicks IS NOT NULL) AS outbound_rows
          FROM \`${PROJECT_ID}.mart.mart_creative_adset_perf\`
          WHERE client_id = @clientId AND ${RANGE_CLAUSE}
          GROUP BY adset_id
@@ -657,7 +663,7 @@ export async function getPersonas(clientId: string): Promise<PersonaRow[]> {
     );
     return rows.map((r) => ({
       personaId: String(r.persona_id),
-      name: String(r.name ?? r.persona_id),
+      name: cleanPersona(String(r.name ?? r.persona_id)),
       status: r.status ? String(r.status) : null,
       clickupUrl: r.clickup_url ? String(r.clickup_url) : null,
     }));
@@ -704,7 +710,7 @@ export async function getConcepts(clientId: string): Promise<ConceptRow[]> {
     return rows.map((r) => ({
       conceptId: String(r.concept_id),
       conceptCode: s(r.concept_code),
-      name: String(r.name ?? r.concept_id),
+      name: noEmDash(String(r.name ?? r.concept_id)),
       angle: s(r.angle),
       offer: s(r.offer),
       personaId: s(r.persona_id),
@@ -784,6 +790,7 @@ export async function getCreativeTotals(
          SUM(add_to_cart) AS add_to_cart, SUM(initiate_checkout) AS initiate_checkout,
          SUM(landing_page_views) AS landing_page_views, SUM(link_clicks) AS link_clicks,
          SUM(outbound_clicks) AS outbound_clicks,
+         COUNTIF(outbound_clicks IS NOT NULL) AS outbound_rows,
          SUM(unique_outbound_clicks) AS unique_outbound_clicks,
          SUM(video_views) AS video_views,
          SUM(video_play_actions) AS video_play_actions,

@@ -147,7 +147,7 @@ function ReviewItem({
         <span className="ml-auto flex flex-wrap items-center gap-3 font-mono text-[12px] tabular text-content-muted">
           <span>{money(row.spend, currency)}</span>
           <span>{row.purchases} purchases</span>
-          <span className="text-content-strong">ROAS {roas(row.roas)}</span>
+          <span className="text-content-strong">ROAS (adj.) {roas(row.roas)}</span>
           {row.ciLow !== null && row.ciHigh !== null && (
             <span>
               {roas(row.ciLow)} to {roas(row.ciHigh)}

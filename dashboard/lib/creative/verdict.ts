@@ -397,7 +397,7 @@ export function diagnose(
     return {
       code: "static-no-signal",
       label: "Judge on CTR",
-      say: `No video metrics. Judge on CTR ${pct(d.ctr)}.`,
+      say: `No video metrics. CTR (all) ${pct(d.ctr)}.`,
       iterationType: 2,
     };
   }

@@ -149,12 +149,13 @@ export function AdDetail({
       */
       className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-[rgba(10,10,11,0.55)] backdrop-blur-[5px]"
     >
-      {/* `items-start` with `my-auto`, not `items-center`: a flex item taller
-          than its container and centred overflows in BOTH directions, and the
-          top half becomes unreachable by scrolling. This centres when it fits
-          and top-aligns when it does not. */}
+      {/* `items-start`, not `items-center`: a flex item taller than its
+          container and centred overflows in BOTH directions, and the top half
+          becomes unreachable by scrolling. */}
       <div className="flex min-h-full items-start justify-center p-4 sm:p-6">
-      <div className="my-auto flex w-full max-w-[1080px] flex-col rounded-2xl border border-hairline bg-bg-subtle shadow-xl">
+      {/* Top-aligned with a floor on its height, so switching tabs does not
+          move the header, the tabs or the close button under the cursor. */}
+      <div className="flex min-h-[min(760px,calc(100vh-3rem))] w-full max-w-[1080px] flex-col rounded-2xl border border-hairline bg-bg-subtle shadow-xl">
         <header className="flex flex-shrink-0 items-start gap-4 border-b border-hairline px-6 py-5">
           <div className="min-w-0 flex-1">
             <div className="break-all font-mono text-[21px] font-medium leading-[1.2] tracking-heading text-content-strong">
@@ -796,7 +797,7 @@ const fUnitMoney = (v: number | null, currency: string): Figure => ({
 });
 const fRate = (v: number | null): Figure => ({ v: ratePct(v) });
 const fRoas = (v: number | null): Figure =>
-  v === null ? { v: NO_VALUE } : { v: roas(v), unit: "×" };
+  ({ v: roas(v) });
 
 /** A section title, and whatever legend sits opposite. */
 function SectionHeading({ title, aside }: { title: string; aside?: ReactNode }) {
@@ -1016,8 +1017,11 @@ function Metrics({
       verdict: cpaVerdict,
     },
     {
-      k: "ROAS",
+      k: "ROAS (adj.)",
       f: fRoas(ad.roas),
+      // The headline figure is pulled toward the account average when there are
+      // few purchases. The raw ratio is Revenue over Spend on the cards below.
+      info: `Adjusted toward the account average when purchases are few. Raw: ${roas(ad.roasRaw)}.`,
       big: true,
       // The interval is on the card, not in a tooltip. It is the number that
       // decides whether the headline figure means anything at all.
@@ -1074,19 +1078,22 @@ function Metrics({
       verdict:
         ad.linkCtr === null ? null : ad.linkCtr >= 0.01 ? "good" : ad.linkCtr >= 0.0065 ? "warn" : "bad",
     },
-    {
-      k: "Outbound CTR",
-      f: fRate(ad.outboundCtr),
-      info: "Clicks that left Meta.",
-      verdict:
-        ad.outboundCtr === null
-          ? null
-          : ad.outboundCtr >= 0.01
-            ? "good"
-            : ad.outboundCtr > 0
-              ? "warn"
-              : "bad",
-    },
+    // Hidden, not shown as 0.0%, when the warehouse has no outbound clicks for
+    // this ad: missing data must not read as a bad real value.
+    ...(ad.outboundCtr === null
+      ? []
+      : [
+          {
+            k: "Outbound CTR",
+            f: fRate(ad.outboundCtr),
+            info: "Clicks that left Meta.",
+            verdict: (ad.outboundCtr >= 0.01
+              ? "good"
+              : ad.outboundCtr > 0
+                ? "warn"
+                : "bad") as Verdict,
+          },
+        ]),
 
     { k: "CPM", f: fUnitMoney(ad.cpm, currency), info: "Cost per 1,000 impressions." },
     { k: "Adds to cart", f: fCount(ad.addToCart), info: "From this ad." },
@@ -1097,7 +1104,7 @@ function Metrics({
       {
         k: "Hook rate",
         f: fRate(ad.hookRate),
-        info: "Plays over impressions.",
+        info: "3-second plays over impressions.",
       },
       {
         k: "Hold rate",
@@ -1232,7 +1239,7 @@ function Breakdowns({
       <section>
         <SectionHeading title="Delivery" />
         <div className={`${CARD} px-5 py-4`}>
-          <p className="m-0 text-[13.5px] text-content-muted">Breakdown not loaded yet.</p>
+          <p className="m-0 text-[13.5px] text-content-muted">No age or placement data for this period.</p>
         </div>
       </section>
     );

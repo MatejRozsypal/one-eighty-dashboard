@@ -14,7 +14,7 @@
  */
 
 import type { ReactNode } from "react";
-import { formatMoney, formatNumber, NO_VALUE, isNoValue } from "@/lib/format";
+import { formatMoney, formatNumber, formatRatio, NO_VALUE, isNoValue } from "@/lib/format";
 import { Header } from "@/components/shell/Header";
 import { NotConnected } from "@/components/ui/EmptyState";
 import { InfoTip } from "@/components/ui/InfoTip";
@@ -26,7 +26,8 @@ import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 // Numbers
 // ---------------------------------------------------------------------------
 
-export const roas = (v: number | null): string => (v === null ? NO_VALUE : v.toFixed(2));
+/** Same formatter as Paid and the rest of the dashboard: "2.60×". */
+export const roas = (v: number | null): string => formatRatio(v);
 
 /** Whole-number percent. The default everywhere. */
 export const pct = (v: number | null): string =>

@@ -182,7 +182,9 @@ export function CreativeGrid({
       </div>
 
       {rows.length === 0 ? (
-        <p className="m-0 text-[13.5px] text-content-muted">No matches.</p>
+        <p className="m-0 text-[13.5px] text-content-muted">
+          {activeFocus ? "No creatives with spend for this filter in this period." : "No matches."}
+        </p>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(228px,1fr))] gap-4">
           {rows.map((ad, i) => (
@@ -335,7 +337,11 @@ function Tile({
             </span>
           </Row>
           <SpendBar fraction={ad.spend / maxSpend} tone={tone} />
-          <Row label="ROAS" trailing={null}>
+          <Row
+            label="ROAS (adj.)"
+            hint={`Adjusted toward the account average for few purchases. Raw ${roas(ad.roasRaw)}.`}
+            trailing={null}
+          >
             <span className={`font-mono text-[13px] font-medium tabular ${roasColour}`}>
               {roas(ad.roas)}
             </span>
@@ -358,7 +364,7 @@ function Tile({
               <span className="font-mono text-[12.5px] tabular text-content-body">{ad.purchases}</span>
             </Row>
           )}
-          <Row label="CTR" trailing={null}>
+          <Row label="CTR (all)" hint="All clicks over impressions. The detail panel shows link CTR." trailing={null}>
             <span className="font-mono text-[12.5px] tabular text-content-body">{ratePct(ad.ctr)}</span>
           </Row>
         </dl>
@@ -379,17 +385,22 @@ function Tile({
 /** One label/value line. Fixed height, so cards line up across the wall. */
 function Row({
   label,
+  hint,
   trailing,
   children,
 }: {
   label: string;
+  /** Hover text for the label. */
+  hint?: string;
   /** Right-hand annotation, e.g. share of spend. */
   trailing: string | null;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <dt className="text-[11.5px] text-content-muted">{label}</dt>
+      <dt className="text-[11.5px] text-content-muted" title={hint}>
+        {label}
+      </dt>
       <dd className="m-0 flex items-center gap-1.5">
         {children}
         {trailing && (

@@ -22,7 +22,7 @@ import {
   type UnmappedData,
 } from "@/lib/queries/creative";
 import { getCreativeSettings, listConfirmedMappings, toDisplayThresholds, toThresholds, type StoredCreativeSettings } from "@/lib/creative/store";
-import { accountContext, type AccountContext, type Components } from "@/lib/creative/model";
+import { accountContext, fillNames, type AccountContext, type Components } from "@/lib/creative/model";
 import { parseViewParams, type ViewParams } from "@/lib/params";
 import { signMany, signManyDownloads } from "@/lib/creative/assets";
 import { toAdView, type AdView } from "@/lib/creative/view";
@@ -104,6 +104,11 @@ export async function loadCreative(
 
   const confirmedIds = new Set(confirmed.map((c) => c.adId));
 
+  // The performance mart carries campaign and ad set ids only. The names come
+  // from the asset mart, so a campaign link and the Ad set breakdown both work
+  // even when the ad set mart returns nothing.
+  const named: CreativeData = { ...data, ads: fillNames(data.ads, assets) };
+
   const ctx: CreativeContext = {
     client,
     // The Meta ad account's own currency, not the shop's. They are set
@@ -115,12 +120,12 @@ export async function loadCreative(
     settings,
     thresholds: toThresholds(settings),
     display: toThresholds(settings) ?? toDisplayThresholds(settings),
-    data,
+    data: named,
     assets,
     // The shrinkage anchor. Computed from summed revenue over summed spend, so
     // a 300 Kč freak at 17x cannot drag the mean that every other row is pulled
     // toward, the learnings file has that exact ad in it.
-    account: accountContext(data.ads, settings.targetRoas ?? 1),
+    account: accountContext(named.ads, settings.targetRoas ?? 1),
     unmapped,
     unmappedCount: unmapped.ads.filter((a) => !confirmedIds.has(a.adId)).length,
   };

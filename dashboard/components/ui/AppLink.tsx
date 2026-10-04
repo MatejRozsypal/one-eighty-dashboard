@@ -15,6 +15,11 @@
  * page you are already on fall through to `next/link` untouched. Outside the
  * provider it is a plain `next/link`. Prefetching is `next/link`'s own.
  *
+ * Scroll: a link that only changes the query string of the page you are on (a
+ * table filter, a column set, a segment link) keeps the scroll position unless
+ * it passes `scroll` itself; `navigate` decides that (`scrollFor`). Before, every
+ * such toggle jumped back to the top of the page (QA B-04).
+ *
  * Use this instead of `next/link` everywhere under `app/(app)`; the loading
  * check (`npm run check:loading`) enforces it.
  */

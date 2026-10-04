@@ -12,6 +12,7 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
+import { includesToday } from "@/lib/period";
 import { parseViewParams, viewQuery, comparisonLabel, type SearchParams } from "@/lib/params";
 import { getPnlSnapshot, hasNoCostData, metric } from "@/lib/queries/pnl";
 import { getLifetimeSummary, getPayback } from "@/lib/queries/lifetime";
@@ -32,6 +33,17 @@ import { RevenueComposition } from "@/components/dashboard/RevenueComposition";
 import { BottomLine } from "@/components/dashboard/BottomLine";
 
 export const metadata: Metadata = { title: "Snapshot" };
+
+/** "Apr 20, 2026" from an ISO date. */
+function formatDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
 
 // Rendered per request: every page is behind auth and parameterised by the URL,
 // so there is nothing to prerender. Repeat cost is absorbed by BigQuery's own
@@ -73,7 +85,14 @@ export default async function SnapshotPage({
 
   const [snapshot, lifetime, payback, nativeDiscounts, excluded] =
     await Promise.all([
-      getPnlSnapshot(client.clientId, client.currency, params.period, display, costs),
+      getPnlSnapshot(
+        client.clientId,
+        client.currency,
+        params.period,
+        display,
+        costs,
+        client.capabilities.meta || client.capabilities.googleAds
+      ),
       optional(() => getLifetimeSummary(client.clientId, client.currency), null),
       optional(() => getPayback(client.clientId, client.currency), null),
       getDiscounts(client.clientId, params.range),
@@ -106,6 +125,18 @@ export default async function SnapshotPage({
 
   const newShare = safeDiv(t.newCustomerRevenue, t.revenue);
 
+  // Leading spend gap (this period or the comparison): the ratios over spend
+  // are withheld, and one line says where spend starts. A paid spend delta
+  // against a period that only partly had spend would be a fiction too.
+  const prev = snapshot.previous;
+  const spendGap = t.leadingSpendGap || (prev?.leadingSpendGap ?? false);
+  const spendFrom = [t.spendFrom, prev?.spendFrom ?? null]
+    .filter((d): d is string => d !== null)
+    .sort()[0];
+  const paidSpendDelta = spendGap
+    ? null
+    : metric(snapshot, (x) => x.paidSpend).delta;
+
   return (
     <>
       <Header title="Snapshot" />
@@ -123,6 +154,8 @@ export default async function SnapshotPage({
         )}
 
         {googleAds && !meta && <Notice>Paid spend is Google only.</Notice>}
+
+        {spendGap && spendFrom && <Notice>Ad spend from {formatDay(spendFrom)}.</Notice>}
 
         <section className="grid grid-cols-[repeat(auto-fit,minmax(252px,1fr))] gap-4">
           <MetricCard
@@ -160,7 +193,7 @@ export default async function SnapshotPage({
           <MetricCard
             label="Paid spend"
             value={formatMoney(t.paidSpend, currency)}
-            delta={hasComparison ? metric(snapshot, (x) => x.paidSpend).delta : undefined}
+            delta={hasComparison ? paidSpendDelta : undefined}
             // Spend rising is neither good nor bad on its own. It depends
             // entirely on what it bought. Colouring it would assert a judgement
             // the number doesn't support.
@@ -178,7 +211,12 @@ export default async function SnapshotPage({
           shopPlatform={shopSource}
         />
 
-        <RevenueMix series={snapshot.series} newShare={newShare} />
+        <RevenueMix
+          series={snapshot.series}
+          range={params.range}
+          partialLast={includesToday(params.range)}
+          newShare={newShare}
+        />
 
         <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           <RevenueComposition

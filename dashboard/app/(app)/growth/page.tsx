@@ -13,6 +13,7 @@ import { parseViewParams, type SearchParams } from "@/lib/params";
 import { monthsInRange } from "@/lib/period";
 import { PageControls } from "@/components/controls/PageControls";
 import { getGrowth } from "@/lib/queries/growth";
+import { growthStats } from "@/components/growth/stats";
 import { getYearOverYear } from "@/lib/queries/yoy";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
@@ -69,12 +70,14 @@ export default async function GrowthPage({
   // and so a YoY view is a shareable link like everything else here.
   const view = searchParams.view === "yoy" ? "yoy" : "mom";
 
-  const [{ months, avgMonthlyGrowth, cumulativeGrowth }, yoy] = await Promise.all([
+  const [{ months }, yoy] = await Promise.all([
     getGrowth(client.clientId, client.currency, monthsInRange(params.range)),
     view === "yoy"
       ? getYearOverYear(client.clientId, client.currency)
       : Promise.resolve(null),
   ]);
+
+  const { avgMonthlyGrowth, cumulativeGrowth } = growthStats(months);
 
   // Chronological for the chart, newest-first for the table, a chart reads
   // left to right, a table reads most-recent first.
@@ -197,9 +200,9 @@ export default async function GrowthPage({
                     sort: [
                       m.monthStart,
                       m.revenue,
-                      m.revenueMoM,
+                      m.isPartial ? null : m.revenueMoM,
                       m.newCustomerOrders,
-                      m.newCustomerOrdersMoM,
+                      m.isPartial ? null : m.newCustomerOrdersMoM,
                       null,
                     ],
                     cells: [
@@ -209,7 +212,7 @@ export default async function GrowthPage({
                       <span className="font-mono text-[14px] font-semibold tracking-heading tabular text-content-strong">
                         <Value>{formatMoney(m.revenue, client.currency)}</Value>
                       </span>,
-                      m.revenueMoM !== null ? (
+                      !m.isPartial && m.revenueMoM !== null ? (
                         <DeltaChip delta={m.revenueMoM} goodWhen="up" />
                       ) : (
                         <NoValue />
@@ -217,7 +220,7 @@ export default async function GrowthPage({
                       <span className="font-mono text-[14px] tracking-heading tabular text-content-strong">
                         <Value>{formatNumber(m.newCustomerOrders)}</Value>
                       </span>,
-                      m.newCustomerOrdersMoM !== null ? (
+                      !m.isPartial && m.newCustomerOrdersMoM !== null ? (
                         <DeltaChip delta={m.newCustomerOrdersMoM} goodWhen="up" />
                       ) : (
                         <NoValue />

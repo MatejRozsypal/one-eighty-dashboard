@@ -53,9 +53,37 @@ function formatValue(
 ): string {
   if (value === null) return NO_VALUE;
   const spec = GOAL_METRICS.find((m) => m.key === metric)!;
+  // Money may abbreviate ("CZK 1.8M"); counts never do. "1K of 1K" cannot be
+  // read, and an order count is small enough to print whole.
   return spec.format === "money"
     ? formatMoney(value, currency, { compact: true })
-    : formatNumber(value, { compact: true });
+    : formatNumber(value);
+}
+
+/** "Target covers 2 of 12 months", or null when every month has a target. */
+function coverageLine(a: Attainment): string | null {
+  const { targeted, of } = a.coverage;
+  if (targeted === 0 || targeted >= of) return null;
+  return `Target covers ${targeted} of ${of} months`;
+}
+
+/**
+ * One line per period when every targeted metric has the same coverage (the
+ * usual case: targets are set per month for all four metrics at once), else
+ * null and each tile says its own.
+ */
+function periodCoverage(
+  byMetric: Record<GoalMetric, Attainment>,
+  metrics: GoalMetric[]
+): string | null {
+  const lines = metrics.map((m) => coverageLine(byMetric[m]));
+  const present = lines.filter((l): l is string => l !== null);
+  if (present.length === 0) return null;
+  const withTarget = metrics.filter((m) => byMetric[m].target !== null);
+  if (present.length === withTarget.length && present.every((l) => l === present[0])) {
+    return present[0];
+  }
+  return null;
 }
 
 /**
@@ -78,7 +106,7 @@ function toneOf(a: Attainment): string {
   return "text-negative";
 }
 
-function AttainmentBar({ a }: { a: Attainment }) {
+function AttainmentBar({ a, showCoverage }: { a: Attainment; showCoverage: boolean }) {
   if (a.target === null) {
     return <span className="text-[12px] text-content-muted">No target set</span>;
   }
@@ -117,6 +145,9 @@ function AttainmentBar({ a }: { a: Attainment }) {
           <> · {formatPercent(a.elapsed, { decimals: 0 })} of period elapsed</>
         )}
       </span>
+      {showCoverage && coverageLine(a) && (
+        <span className="font-mono text-[10.5px] text-content-muted">{coverageLine(a)}</span>
+      )}
     </div>
   );
 }
@@ -184,7 +215,9 @@ export default async function GoalsPage({
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {!anyTarget && <Notice>No targets set.</Notice>}
 
-        {periods.map((period) => (
+        {periods.map((period) => {
+          const sharedCoverage = periodCoverage(period.byMetric, metrics);
+          return (
           <section
             key={period.label}
             className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]"
@@ -197,6 +230,7 @@ export default async function GoalsPage({
                   : `${monthLabel(period.months[0])} to ${monthLabel(
                       period.months[period.months.length - 1]
                     )}`}
+                {sharedCoverage && <> · {sharedCoverage}</>}
               </span>
             </div>
 
@@ -221,13 +255,14 @@ export default async function GoalsPage({
                           : `of ${formatValue(a.target, metric, client.currency)}`}
                       </span>
                     </div>
-                    <AttainmentBar a={a} />
+                    <AttainmentBar a={a} showCoverage={sharedCoverage === null} />
                   </div>
                 );
               })}
             </div>
           </section>
-        ))}
+          );
+        })}
 
         <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
           <span className="inline-flex items-center gap-1.5">

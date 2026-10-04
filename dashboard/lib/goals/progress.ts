@@ -36,6 +36,12 @@ export interface Attainment {
   pace: "ahead" | "on" | "behind" | null;
   /** True while the period can still change. */
   isOpen: boolean;
+  /**
+   * Months with a target, out of the months in the period. Target, actual and
+   * elapsed all cover the targeted months only, so a partial plan is never
+   * measured against a full year of actuals.
+   */
+  coverage: { targeted: number; of: number };
 }
 
 function daysInMonth(month: string): number {
@@ -74,7 +80,11 @@ function paceOf(
 export function attainment(
   target: number | null,
   actual: number | null,
-  elapsed: number
+  elapsed: number,
+  coverage: { targeted: number; of: number } = {
+    targeted: target === null ? 0 : 1,
+    of: 1,
+  }
 ): Attainment {
   const expected = target === null ? null : target * elapsed;
   return {
@@ -85,6 +95,7 @@ export function attainment(
     expected,
     pace: elapsed >= 1 ? null : paceOf(actual, expected),
     isOpen: elapsed < 1,
+    coverage,
   };
 }
 
@@ -100,8 +111,15 @@ export interface PeriodProgress {
  *
  * Targets and actuals are summed because every goal metric is an absolute
  * quantity, that is precisely why ratios were excluded from the metric list.
- * A period's target is null only when *no* month in it has one; a partial plan
- * is still a plan, and summing what exists beats refusing to show anything.
+ *
+ * ── Only targeted months are measured ───────────────────────────────────────
+ * A year with targets for 2 of 12 months is not a year with a small target.
+ * Summing every month's actuals against those two targets reads as 331% and
+ * means nothing. Per metric, the roll-up therefore sums target AND actual over
+ * the months that have a target, measures elapsed time over the same months,
+ * and reports `coverage` so the page can say "Target covers 2 of 12 months".
+ * When no month has a target the target stays null (not zero) and the actual is
+ * the plain total, shown without a bar.
  */
 export function rollUp(
   label: string,
@@ -113,27 +131,44 @@ export function rollUp(
 ): PeriodProgress {
   const byMetric = {} as Record<GoalMetric, Attainment>;
 
-  // Elapsed across the whole period: months fully past count 1, the current one
-  // counts its own fraction, the future counts 0.
-  const elapsed =
-    months.length === 0
+  const elapsedOf = (ms: string[]) =>
+    ms.length === 0
       ? 0
-      : months.reduce((a, m) => a + monthElapsed(m, today), 0) / months.length;
+      : ms.reduce((a, m) => a + monthElapsed(m, today), 0) / ms.length;
 
-  for (const metric of metrics) {
-    let target: number | null = null;
+  const actualOf = (ms: string[], metric: GoalMetric): number | null => {
     let actual: number | null = null;
-
-    for (const month of months) {
-      const g = goals.find((x) => x.month === month && x.metric === metric);
-      if (g) target = (target ?? 0) + g.target;
-
+    for (const month of ms) {
       const a = actuals.find((x) => x.month === month);
       const value = a ? a[metric] : null;
       if (value !== null && value !== undefined) actual = (actual ?? 0) + value;
     }
+    return actual;
+  };
 
-    byMetric[metric] = attainment(target, actual, elapsed);
+  for (const metric of metrics) {
+    const targeted = months.filter((month) =>
+      goals.some((x) => x.month === month && x.metric === metric)
+    );
+
+    if (targeted.length === 0) {
+      byMetric[metric] = attainment(null, actualOf(months, metric), elapsedOf(months), {
+        targeted: 0,
+        of: months.length,
+      });
+      continue;
+    }
+
+    const target = targeted.reduce(
+      (sum, month) =>
+        sum + goals.find((x) => x.month === month && x.metric === metric)!.target,
+      0
+    );
+
+    byMetric[metric] = attainment(target, actualOf(targeted, metric), elapsedOf(targeted), {
+      targeted: targeted.length,
+      of: months.length,
+    });
   }
 
   return { label, months, byMetric };

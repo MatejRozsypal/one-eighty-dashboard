@@ -12,7 +12,7 @@
  * wrong hurts most, a rising CAC painted green inverts the meaning of the page.
  */
 
-import { MetricCard } from "@/components/dashboard/MetricCard";
+import { MetricCard, type MetricState } from "@/components/dashboard/MetricCard";
 import { DeltaChip } from "@/components/ui/Delta";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/currency";
@@ -33,6 +33,12 @@ export function AcquisitionEconomics({
   const currency = snapshot.currency;
   const hasComparison = snapshot.previous !== null;
 
+  // Leading spend gap: revenue covers days the ad spend does not, so every
+  // ratio over spend says so instead of showing an inflated figure.
+  const gapState: MetricState | undefined = t.leadingSpendGap
+    ? { kind: "no-data", reason: "Missing days" }
+    : undefined;
+
   const aov = (x: typeof t) =>
     x.netSales !== null && x.orders ? x.netSales / x.orders : null;
 
@@ -50,6 +56,7 @@ export function AcquisitionEconomics({
           goodWhen="up"
           comparisonLabel={comparisonLabel}
           source="Warehouse"
+          state={gapState}
         />
         <MetricCard
           label="aMER"
@@ -58,6 +65,7 @@ export function AcquisitionEconomics({
           goodWhen="up"
           comparisonLabel={comparisonLabel}
           source="Warehouse"
+          state={gapState}
         />
         <MetricCard
           label="CAC"
@@ -68,6 +76,7 @@ export function AcquisitionEconomics({
           goodWhen="down"
           comparisonLabel={comparisonLabel}
           source="Warehouse"
+          state={gapState}
         />
         <MetricCard
           label="Ad spend share"
@@ -75,20 +84,23 @@ export function AcquisitionEconomics({
           // information, but a cost ratio is what people actually budget
           // against, and lower is better.
           value={
-            t.paidSpend !== null && t.revenue
+            !t.leadingSpendGap && t.paidSpend !== null && t.revenue
               ? formatPercent(t.paidSpend / t.revenue, { decimals: 1 })
               : NO_VALUE
           }
           delta={
             hasComparison
               ? metric(snapshot, (x) =>
-                  x.paidSpend !== null && x.revenue ? x.paidSpend / x.revenue : null
+                  !x.leadingSpendGap && x.paidSpend !== null && x.revenue
+                    ? x.paidSpend / x.revenue
+                    : null
                 ).delta
               : undefined
           }
           goodWhen="down"
           comparisonLabel={comparisonLabel}
           source="Warehouse"
+          state={gapState}
         />
         <MetricCard
           label="AOV (net)"

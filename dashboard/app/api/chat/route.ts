@@ -23,7 +23,7 @@ import { authOptions } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-/** Matěj's stated holding answer. Every question gets it, verbatim. */
+/** Holding answer until the assistant ships. Every question gets it. */
 const HOLDING_REPLY =
   "Coming soon.";
 

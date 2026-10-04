@@ -7,7 +7,7 @@
  * ── On the second axis ──────────────────────────────────────────────────────
  * This is a two-scale chart, which is normally the worst thing you can do to a
  * reader: two unrelated measures on two axes invite a correlation that is not
- * there. It is defensible here for one specific reason — the curve is the
+ * there. It is defensible here for one specific reason, the curve is the
  * cumulative sum of the bars, not an independent series. It cannot diverge from
  * them, it can only rise, and there is no spurious relationship to read into
  * it. Both axes are percentages of the same denominator; the right one simply
@@ -180,7 +180,17 @@ export function RepeatTimingChart({ timing }: { timing: RepeatTiming }) {
           </span>
         ))}
         <span className="inline-flex items-center gap-[7px] font-mono text-[11px] text-content-muted">
-          <span aria-hidden="true" className="h-0 w-4 border-t-[1.6px] border-dashed border-growth-700" />
+          <svg aria-hidden="true" width="16" height="2" className="flex-none">
+            <line
+              x1="0"
+              x2="16"
+              y1="1"
+              y2="1"
+              strokeWidth="1.6"
+              strokeDasharray="4 3"
+              className="stroke-growth-700"
+            />
+          </svg>
           Cumulative reordered
         </span>
         <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.08em] text-content-muted">

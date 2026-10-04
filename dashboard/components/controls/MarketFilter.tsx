@@ -5,17 +5,18 @@
  *
  * Multi-select, written to one repeated search param so the view stays a
  * shareable link like every other control here. No selection means all markets
- * — an empty filter and "everything" are the same view, and forcing a user to
+ *, an empty filter and "everything" are the same view, and forcing a user to
  * re-tick every box to get back to the default is a trap.
  *
  * The label says which dimension this actually is. On Shopify it is the
  * shipping country of the first order; on Shoptet there is no address in the
  * data at all, so it is the currency the customer transacted in. Calling both
- * "market" without saying which would quietly imply Manami has country data.
+ * "market" without saying which would quietly imply every client has country data.
  */
 
 import { usePathname, useSearchParams } from "next/navigation";
 import { useNavigation } from "@/components/shell/NavigationPending";
+import { formatNumber } from "@/lib/format";
 import type { MarketOption } from "@/lib/queries/cohortGrid";
 
 const COUNTRY = new Intl.DisplayNames(["en"], { type: "region" });
@@ -100,7 +101,7 @@ export function MarketFilter({
             >
               {label(m.code, kind)}
               <span className={on ? "text-gray-300" : "text-content-muted"}>
-                {m.customers.toLocaleString("en-US")}
+                {formatNumber(m.customers)}
               </span>
             </button>
           );
@@ -109,7 +110,7 @@ export function MarketFilter({
         {hidden > 0 && (
           <span
             className="font-mono text-[11px] text-content-muted"
-            title="Markets with fewer than 10 customers are folded into All rather than listed"
+            title="Under 10 customers: grouped in All"
           >
             +{hidden} small
           </span>

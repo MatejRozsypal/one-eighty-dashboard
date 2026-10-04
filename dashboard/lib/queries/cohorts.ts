@@ -1,5 +1,5 @@
 /**
- * Cohorts — customers grouped by the month they first bought.
+ * Cohorts, customers grouped by the month they first bought.
  *
  * ── The maturity trap ───────────────────────────────────────────────────────
  * Read a cohort table's repeat-rate column top to bottom and it looks like
@@ -12,8 +12,8 @@
  * numbers, and the UI uses them to make the effect structural rather than
  * something you have to already know to look for.
  *
- * The Y1 columns are the honest fix — every customer measured over the same
- * 365-day window — but they only exist once a cohort is fully mature, which is
+ * The Y1 columns are the honest fix, every customer measured over the same
+ * 365-day window, but they only exist once a cohort is fully mature, which is
  * why most rows have them empty. That emptiness is rigor, not a gap.
  */
 
@@ -77,7 +77,7 @@ export async function getCohorts(
       y1Ltv: num(r.y1_ltv),
       y1Ltgp: num(r.y1_ltgp),
       ordersPerCustomer: num(r.avg_orders_per_customer),
-      // Stored as 0–100 in the warehouse; the UI works in fractions throughout.
+      // Stored as 0-100 in the warehouse; the UI works in fractions throughout.
       repeatRate:
         num(r.cohort_repeat_rate_pct) === null
           ? null

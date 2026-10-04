@@ -2,7 +2,7 @@
  * When the second order happens, day by day.
  *
  * ── Why this is not the "Time between orders" page ──────────────────────────
- * `/gaps` pools *every* consecutive gap — 1st→2nd, 2nd→3rd, 3rd→4th — into
+ * `/gaps` pools *every* consecutive gap, 1st→2nd, 2nd→3rd, 3rd→4th, into
  * coarse buckets over 24 months. That answers "how often does this base
  * reorder". This answers a different question: for someone who has just bought
  * once, when do they come back? Only the first→second gap, one day per bar.
@@ -10,7 +10,7 @@
  * clock from a second one.
  *
  * ── The cohort is chosen so the window is observed, not censored ────────────
- * A customer who bought last week has not "failed to reorder within 90 days" —
+ * A customer who bought last week has not "failed to reorder within 90 days",
  * they have not had 90 days. Including them drags every share down and makes
  * the distribution look worse the better acquisition has been recently, which
  * is exactly backwards.
@@ -22,7 +22,7 @@
  * ── The denominator is repeaters, not the cohort ────────────────────────────
  * Bars are the share of *repeat orders* landing on each day, so they sum to
  * 100% across the window. The share of the cohort that repeated at all is
- * reported separately — mixing the two produces a chart whose bars sum to
+ * reported separately, mixing the two produces a chart whose bars sum to
  * something meaningless.
  */
 
@@ -34,15 +34,15 @@ import { demoRepeatTiming } from "@/lib/demo/repeatTiming";
 /** Windows the summary table reports. Contiguous, and they cover the horizon. */
 export const TIMING_WINDOWS: Array<{ label: string; from: number; to: number }> = [
   { label: "Same day", from: 0, to: 0 },
-  { label: "1–3 days", from: 1, to: 3 },
-  { label: "4–7 days", from: 4, to: 7 },
-  { label: "8–14 days", from: 8, to: 14 },
-  { label: "15–30 days", from: 15, to: 30 },
-  { label: "31–45 days", from: 31, to: 45 },
-  { label: "46–60 days", from: 46, to: 60 },
-  { label: "61–90 days", from: 61, to: 90 },
-  { label: "91–180 days", from: 91, to: 180 },
-  { label: "181–365 days", from: 181, to: 365 },
+  { label: "1-3 days", from: 1, to: 3 },
+  { label: "4-7 days", from: 4, to: 7 },
+  { label: "8-14 days", from: 8, to: 14 },
+  { label: "15-30 days", from: 15, to: 30 },
+  { label: "31-45 days", from: 31, to: 45 },
+  { label: "46-60 days", from: 46, to: 60 },
+  { label: "61-90 days", from: 61, to: 90 },
+  { label: "91-180 days", from: 91, to: 180 },
+  { label: "181-365 days", from: 181, to: 365 },
 ];
 
 export interface TimingDay {

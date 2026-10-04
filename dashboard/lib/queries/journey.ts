@@ -1,12 +1,12 @@
 /**
- * Product journey — what customers buy, and what they buy next.
+ * Product journey, what customers buy, and what they buy next.
  *
  * ── Why only four products carry a colour ───────────────────────────────────
  * A Sankey shows every colour at once, so the palette has to survive an
  * all-pairs comparison rather than the usual adjacent-pair one. Running the
  * design system's own validator over candidate palettes, four hues pass every
- * check — lightness band, chroma floor, colour-vision separation and the
- * normal-vision floor — and five do not, at any hue spacing tried. So the top
+ * check, lightness band, chroma floor, colour-vision separation and the
+ * normal-vision floor, and five do not, at any hue spacing tried. So the top
  * four products by volume are coloured and the rest fold into a neutral
  * "Other".
  *

@@ -2,12 +2,11 @@
  * Time between orders.
  *
  * The most actionable retention question there is: when should a reorder
- * reminder go out? The distribution answers it, and the median — not the mean —
+ * reminder go out? The distribution answers it, and the median, not the mean,
  * is the number to act on.
  *
- * Depends on `mart.mart_order_gaps` (migration 208). Until that view is
- * deployed, or for a client with too few repeat orders to say anything, the
- * page renders its empty state rather than an error.
+ * Until the underlying view is deployed, or for a client with too few repeat
+ * orders to say anything, the page renders its empty state rather than an error.
  */
 
 import type { Metadata } from "next";
@@ -16,10 +15,12 @@ import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
 import { getGapStats } from "@/lib/queries/gaps";
 import { formatNumber } from "@/lib/currency";
+import { NO_VALUE } from "@/lib/format";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
-import { Badge } from "@/components/ui/Badge";
-import { pageEyebrow } from "@/lib/nav";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NotConnected, NoData, Value } from "@/components/ui/EmptyState";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 
 export const metadata: Metadata = { title: "Time between orders" };
 // Rendered per request: every page is behind auth and parameterised by the URL,
@@ -35,15 +36,23 @@ export default async function GapsPage({
   const params = parseViewParams(searchParams);
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
+  if (pageAvailability(client, "/gaps") !== "available") {
+    return (
+      <>
+        <Header title="Time between orders" />
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/gaps") ?? "Shop"} />
+        </main>
+      </>
+    );
+  }
+
   const stats = await getGapStats(client.clientId, client.currency);
 
   const header = (
     <>
-      <Header
-        eyebrow={pageEyebrow("/gaps", client.name)}
-        title="Time between orders"
-      />
-      <PageControls client={client} params={params} scope="lifetime" />
+      <Header title="Time between orders" />
+      <PageControls client={client} params={params} />
     </>
   );
 
@@ -52,23 +61,7 @@ export default async function GapsPage({
       <>
         {header}
         <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-          <div className="flex max-w-[640px] flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[32px_24px] lg:p-[32px_34px]">
-            <span className="self-start">
-              <Badge variant="outline" size="sm">
-                No data yet
-              </Badge>
-            </span>
-            <span className="text-[15px] font-semibold text-content-strong">
-              Order-to-order gaps haven&apos;t been computed for {client.name} yet.
-            </span>
-            <span className="max-w-[520px] text-[13px] leading-[1.6] text-content-body">
-              This screen reads <code className="font-mono">mart.mart_order_gaps</code>,
-              a warehouse view that ships separately from the frontend
-              (migration <code className="font-mono">208_mart_order_gaps.sql</code>).
-              It may also be empty simply because this client has too few repeat
-              orders for the distribution to say anything yet.
-            </span>
-          </div>
+          <NoData />
         </main>
       </>
     );
@@ -85,22 +78,12 @@ export default async function GapsPage({
             <Eyebrow>Median gap between orders</Eyebrow>
             <div className="flex items-end gap-3.5">
               <span className="font-mono text-[56px] font-semibold leading-none tracking-heading tabular text-content-strong">
-                {stats.median !== null ? Math.round(stats.median) : "—"}
+                <Value>{formatNumber(stats.median)}</Value>
               </span>
               <span className="pb-1.5 font-mono text-[15px] text-content-muted">
                 days
               </span>
             </div>
-            <span className="text-[13px] leading-[1.6] text-content-body">
-              The typical customer comes back in{" "}
-              <b className="text-content-strong">
-                {stats.median !== null ? Math.round(stats.median) : "—"} days
-              </b>
-              . The mean is{" "}
-              {stats.mean !== null ? Math.round(stats.mean) : "—"} — dragged up by
-              a long tail of customers returning after a year. Reorder timing
-              follows the median.
-            </span>
           </div>
 
           <div className="grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] content-start gap-x-3.5 gap-y-5 rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
@@ -119,7 +102,7 @@ export default async function GapsPage({
                     s.muted ? "text-gray-400" : "text-content-strong"
                   }`}
                 >
-                  {s.value !== null ? Math.round(s.value) : "—"}
+                  <Value>{formatNumber(s.value)}</Value>
                 </span>
               </span>
             ))}
@@ -138,11 +121,12 @@ export default async function GapsPage({
         <section className="flex flex-col gap-5 rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div className="flex flex-col gap-1.5">
-              <Eyebrow>Distribution of order-to-order gaps</Eyebrow>
+              <Eyebrow>
+                Distribution of order-to-order gaps
+                <InfoTip text="The 0-7 day bucket is mostly split orders and corrections, not reorders. The tallest bucket is the product's natural reorder cycle." />
+              </Eyebrow>
               <h2 className="m-0 text-[20px] font-bold tracking-heading text-content-strong">
-                The peak sits at{" "}
-                {stats.buckets.find((b) => b.isModal)?.label ?? "—"} days —{" "}
-                <i className="font-medium">one consumption cycle.</i>
+                Peak at <Value>{stats.buckets.find((b) => b.isModal)?.label ?? NO_VALUE}</Value> days
               </h2>
             </div>
             <span className="inline-flex items-center gap-[7px] font-mono text-[11px] text-content-muted">
@@ -166,7 +150,7 @@ export default async function GapsPage({
                     b.isModal
                       ? "bg-accent"
                       : b.isOrderHygiene
-                        ? "hatched border border-dashed border-hairline-strong"
+                        ? "hatched border border-hairline-strong"
                         : "bg-ink-700"
                   }`}
                   style={{ height: `${(b.count / maxCount) * 200}px` }}
@@ -206,7 +190,7 @@ export default async function GapsPage({
                       b.isModal
                         ? "bg-accent"
                         : b.isOrderHygiene
-                          ? "hatched border border-dashed border-hairline-strong"
+                          ? "hatched border border-hairline-strong"
                           : "bg-ink-700"
                     }`}
                     style={{ width: `${(b.count / maxCount) * 100}%` }}
@@ -217,27 +201,6 @@ export default async function GapsPage({
                 </span>
               </div>
             ))}
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <span className="flex min-w-[280px] flex-1 items-start gap-2.5 rounded-control border border-dashed border-hairline-strong bg-gray-50 p-[11px_14px]">
-              <span className="font-mono text-[11px] text-gray-400">0–7</span>
-              <span className="text-[12.5px] leading-[1.6] text-content-body">
-                Mostly <b className="text-content-strong">not</b> reorders — split
-                orders, corrections and forgotten items. Read it as order hygiene,
-                not loyalty.
-              </span>
-            </span>
-            <span className="flex min-w-[280px] flex-1 items-start gap-2.5 rounded-control border border-growth-100 bg-growth-50 p-[11px_14px]">
-              <span className="font-mono text-[11px] text-growth-700">
-                {stats.buckets.find((b) => b.isModal)?.label ?? "—"}
-              </span>
-              <span className="text-[12.5px] leading-[1.6] text-content-body">
-                The product&apos;s natural consumption cycle. A reminder timed to
-                the median lands while most customers are still deciding; one timed
-                to the mean arrives after they already have.
-              </span>
-            </span>
           </div>
         </section>
       </main>

@@ -1,5 +1,5 @@
 /**
- * Cohort grid — retention and value by months since first order.
+ * Cohort grid, retention and value by months since first order.
  *
  * Reads `mart.mart_customer_cohort_grid`, which carries counts and sums only.
  * Every metric is derived here rather than in SQL, for two reasons: the mart's
@@ -10,7 +10,7 @@
  * ── Markets are additive ────────────────────────────────────────────────────
  * A customer belongs to the market of their first order, for life, so cohort
  * sizes and active counts sum cleanly across markets. Filtering is a subset of
- * one fetch, not a re-query — and the market list always reflects *all* markets
+ * one fetch, not a re-query, and the market list always reflects *all* markets
  * so a filter can never hide the option to undo itself.
  *
  * ── The denominator is the whole cohort, not the survivors ──────────────────
@@ -67,21 +67,21 @@ export const COHORT_METRICS: Array<{
     value: "cumulativeRevenuePerCustomer",
     label: "Cumulative LTV",
     format: "money",
-    blurb: "Revenue per customer, accumulated — the LTV curve.",
+    blurb: "Revenue per customer, accumulated: the LTV curve.",
     cumulative: true,
   },
   {
     value: "grossProfitPerCustomer",
     label: "Cumulative LTGP",
     format: "money",
-    blurb: "Gross profit per customer, accumulated. Shopify has no equivalent.",
+    blurb: "Gross profit per customer, accumulated.",
     cumulative: true,
   },
   {
     value: "aov",
     label: "Average order value",
     format: "money",
-    blurb: "Revenue ÷ orders placed that month — per order, not per customer.",
+    blurb: "Revenue ÷ orders placed that month. Per order, not per customer.",
   },
   {
     value: "ordersPerCustomer",
@@ -108,12 +108,12 @@ export interface CohortRow {
 }
 
 export interface CohortGrid {
-  /** "country" for Shopify, "currency" for Shoptet — the UI must say which. */
+  /** "country" for Shopify, "currency" for Shoptet, the UI must say which. */
   marketKind: "country" | "currency";
   /** Every market, regardless of the current filter. */
   markets: MarketOption[];
   rows: CohortRow[];
-  /** Weighted across every cohort — the summary row. */
+  /** Weighted across every cohort, the summary row. */
   allCohorts: Array<number | null>;
   maxOffset: number;
   totalCustomers: number;
@@ -242,10 +242,12 @@ export async function getCohortGrid(
       const row = grid.get(month)!;
       const lastElapsed = Math.max(...row.keys());
 
-      let running = 0;
+      // Cumulative metrics keep a running sum, but a cell with no value stays
+      // null rather than showing the sum of nothing as a 0.
+      let running: number | null = null;
       const cells: Array<number | null> = [];
       for (let offset = 0; offset <= maxOffset; offset++) {
-        // Beyond the cohort's own lifetime there is no cell at all — a zero
+        // Beyond the cohort's own lifetime there is no cell at all, a zero
         // there would read as total churn rather than as "not yet".
         if (offset > lastElapsed) {
           cells.push(null);
@@ -254,7 +256,7 @@ export async function getCohortGrid(
         const cell = row.get(offset) ?? empty();
         const v = valueOf(metric, cell, size);
         if (spec.cumulative) {
-          running += v ?? 0;
+          if (v !== null) running = (running ?? 0) + v;
           cells.push(running);
         } else {
           cells.push(v);
@@ -265,7 +267,7 @@ export async function getCohortGrid(
 
   const totalCustomers = [...cohortSize.values()].reduce((a, b) => a + b, 0);
 
-  let runningAll = 0;
+  let runningAll: number | null = null;
   const allCohorts: Array<number | null> = [];
   for (let offset = 0; offset <= maxOffset; offset++) {
     const cell = totals.get(offset);
@@ -273,14 +275,14 @@ export async function getCohortGrid(
       allCohorts.push(null);
       continue;
     }
-    // Weighted by the cohorts that have actually reached this offset — using
+    // Weighted by the cohorts that have actually reached this offset, using
     // every cohort would divide by customers who cannot possibly have appeared.
     const eligible = cohortRows
       .filter((r) => r.cells[offset] !== null)
       .reduce((sum, r) => sum + r.customers, 0);
     const v = valueOf(metric, cell, eligible);
     if (spec.cumulative) {
-      runningAll += v ?? 0;
+      if (v !== null) runningAll = (runningAll ?? 0) + v;
       allCohorts.push(runningAll);
     } else {
       allCohorts.push(v);

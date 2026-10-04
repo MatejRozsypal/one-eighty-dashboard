@@ -8,7 +8,7 @@
  *
  * Cells are ranked against every other cell in the grid and dropped into six
  * discrete steps instead. Rank spreads whatever distribution the data actually
- * has, and discrete steps are far easier to tell apart than a continuous ramp —
+ * has, and discrete steps are far easier to tell apart than a continuous ramp,
  * you can see that two cells differ without holding them side by side.
  *
  * The cost is that colour now shows *order*, not magnitude: a step up does not
@@ -22,7 +22,7 @@
  * for.
  *
  * ── Month 0 is excluded from that scale ─────────────────────────────────────
- * On retention month 0 is 100% by definition — every cohort ordered in the
+ * On retention month 0 is 100% by definition, every cohort ordered in the
  * month it was born. Leaving it in the scale makes it the maximum everywhere
  * and washes every later month to near-white, which is how a retention grid
  * ends up looking empty. It is still shown, just not allowed to set the range.
@@ -78,7 +78,7 @@ export function CohortHeatmap({
       case "money":
         return formatMoney(v, currency, { compact: true });
       case "ratio":
-        return v.toFixed(2);
+        return formatNumber(v, { decimals: 2 });
       default:
         return formatNumber(v);
     }

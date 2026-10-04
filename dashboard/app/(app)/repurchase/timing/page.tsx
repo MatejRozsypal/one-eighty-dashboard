@@ -1,5 +1,5 @@
 /**
- * Repeat timing — when the second order actually happens.
+ * Repeat timing, when the second order actually happens.
  *
  * Companion to `/repurchase`, which answers *which* first product brings people
  * back. This answers *when*, so a flow can be timed rather than guessed at.
@@ -19,8 +19,10 @@ import { optional } from "@/lib/queries/errors";
 import { formatNumber, formatPercent } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NotConnected, NoData } from "@/components/ui/EmptyState";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { RepeatTimingChart } from "@/components/dashboard/RepeatTimingChart";
-import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Repeat timing" };
 export const dynamic = "force-dynamic";
@@ -35,6 +37,17 @@ export default async function RepeatTimingPage({
   const params = parseViewParams(searchParams);
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
+
+  if (pageAvailability(client, "/repurchase") !== "available") {
+    return (
+      <>
+        <Header title="Repeat timing" />
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/repurchase") ?? "Shop"} />
+        </main>
+      </>
+    );
+  }
 
   const requested = Number(
     Array.isArray(searchParams.horizon) ? searchParams.horizon[0] : searchParams.horizon
@@ -52,18 +65,8 @@ export default async function RepeatTimingPage({
 
   return (
     <>
-      <Header
-        eyebrow={pageEyebrow("/repurchase/timing", client.name)}
-        title="Repeat timing"
-      />
-      {/* The horizon below is this page's own control; the range is not.
-          The note under the horizon buttons already said "ignores the date
-          range above", which was written against a bar that was not there. */}
-      <PageControls
-        client={client}
-        params={params}
-        scope="the horizon set below"
-      />
+      <Header title="Repeat timing" />
+      <PageControls client={client} params={params} />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <div className="flex flex-wrap items-center gap-2">
@@ -80,35 +83,23 @@ export default async function RepeatTimingPage({
               {h} days
             </Link>
           ))}
-          <span className="text-[12px] text-content-muted">
-            Ignores the date range above — a gap belongs to the customer&rsquo;s
-            own timeline, not to a calendar window.
-          </span>
         </div>
 
         {!timing || timing.repeaters === 0 ? (
-          <section className="rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-            <Eyebrow>Not enough repeat orders</Eyebrow>
-            <p className="mt-2 max-w-[62ch] text-[13px] leading-relaxed text-content-body">
-              No second orders inside {horizon} days for {client.name} from
-              customers whose first order is old enough to have been observed
-              for that long.
-            </p>
-          </section>
+          <NoData />
         ) : (
           <>
             <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="flex flex-col gap-[5px]">
-                  <Eyebrow>First → second · 1-day buckets</Eyebrow>
-                  <span className="max-w-[70ch] text-[12.5px] leading-[1.5] text-content-muted">
-                    Bars are the share of repeat orders landing on each day; the
-                    dashed line is the running total of those same bars.
-                  </span>
-                </div>
+                <Eyebrow>
+                  First to second order
+                  <InfoTip
+                    text={`Only first to second orders, from customers whose first order is ${horizon} to ${horizon + 365} days old. Percentages are of repeat orders. Ignores the date range.`}
+                  />
+                </Eyebrow>
                 {timing.peak && (
                   <span className="rounded-full border border-hairline-strong px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-content-body">
-                    Peak {timing.peak.from}–{timing.peak.to}d
+                    Peak {timing.peak.from}-{timing.peak.to}d
                   </span>
                 )}
               </div>
@@ -118,12 +109,9 @@ export default async function RepeatTimingPage({
               <p className="max-w-[92ch] text-[12.5px] leading-relaxed text-content-body">
                 {timing.peak && (
                   <>
-                    The heaviest week is{" "}
-                    <b>
-                      days {timing.peak.from}–{timing.peak.to}
-                    </b>
-                    , holding {formatPercent(timing.peak.share, { decimals: 1 })} of
-                    all repeats on its own.{" "}
+                    Peak week holds{" "}
+                    <b>{formatPercent(timing.peak.share, { decimals: 1 })}</b> of
+                    repeats.{" "}
                   </>
                 )}
                 {timing.medianDay !== null && (
@@ -132,39 +120,14 @@ export default async function RepeatTimingPage({
                     {timing.p80Day !== null && <> and 80% by day {timing.p80Day}</>}.{" "}
                   </>
                 )}
-                Of {formatNumber(timing.cohort)} customers who had a full{" "}
-                {horizon} days to come back, {formatNumber(timing.repeaters)} did —{" "}
-                {formatPercent(timing.repeaters / timing.cohort, { decimals: 1 })}.
-                {timing.beyondHorizon > 0 && (
-                  <>
-                    {" "}
-                    A further {formatNumber(timing.beyondHorizon)} returned later
-                    than day {horizon} and are not on this chart, so the window
-                    captures{" "}
-                    {formatPercent(
-                      timing.repeaters / (timing.repeaters + timing.beyondHorizon),
-                      { decimals: 0 }
-                    )}{" "}
-                    of everyone who eventually came back.
-                  </>
-                )}
-                {timing.sameDay > 0 && (
-                  <>
-                    {" "}
-                    {formatNumber(timing.sameDay)} of them ordered again the same
-                    day, which is usually a split order rather than a return.
-                  </>
-                )}
+                {formatNumber(timing.repeaters)} of {formatNumber(timing.cohort)}{" "}
+                came back ({formatPercent(timing.repeaters / timing.cohort, { decimals: 1 })}).
               </p>
             </section>
 
             <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
-              <div className="flex flex-col gap-[5px] border-b border-hairline px-5 py-4 lg:px-[26px]">
+              <div className="flex items-center border-b border-hairline px-5 py-4 lg:px-[26px]">
                 <Eyebrow>Exact breakdown by window</Eyebrow>
-                <span className="text-[12.5px] leading-[1.5] text-content-muted">
-                  Share of repeat orders in each window, and the running total by
-                  the end of it.
-                </span>
               </div>
 
               <div className="overflow-x-auto">
@@ -224,27 +187,12 @@ export default async function RepeatTimingPage({
               </div>
             </section>
 
-            <section className="rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-              <Eyebrow>How to read this</Eyebrow>
-              <p className="mt-2 max-w-[92ch] text-[12.5px] leading-relaxed text-content-body">
-                Only the first→second gap is counted, from customers whose first
-                order is between {horizon} and {horizon + 365} days old — twelve
-                months of cohorts, every one observed for the whole window. That
-                exclusion matters: a customer who bought last week has not failed
-                to reorder within {horizon} days, and counting them would make the
-                distribution look worse the better recent acquisition has been.
-              </p>
-              <p className="mt-2 max-w-[92ch] text-[12.5px] leading-relaxed text-content-body">
-                Percentages are of repeat orders, not of all customers, so the
-                bars sum to 100%. The separate share of the cohort that came back
-                at all is in the paragraph above.{" "}
-                <Link href="/gaps" className="underline">
-                  Time between orders
-                </Link>{" "}
-                answers a different question — it pools every consecutive gap,
-                including 2nd→3rd and later, which run on a different clock.
-              </p>
-            </section>
+            <Link
+              href={params.clientId ? `/gaps?client=${params.clientId}` : "/gaps"}
+              className="text-[12.5px] text-content-body underline"
+            >
+              Time between orders
+            </Link>
           </>
         )}
       </main>

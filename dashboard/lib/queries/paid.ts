@@ -1,21 +1,22 @@
 /**
- * Paid media — Meta funnel, channel totals, ad-level performance.
+ * Paid media, Meta funnel, channel totals, ad-level performance.
  *
  * ── Every rate here is recomputed, never averaged ───────────────────────────
  * `mart_meta_*` exposes `ctr_per_day`, `cpc_per_day`, `roas_per_day` and
  * `frequency_per_day`. The `_per_day` suffix is a warning label: these are
  * pre-divided at daily grain and averaging them across a range gives
  * AVG(daily ratio) instead of SUM(num)/SUM(denom), which METRICS.md measures as
- * 10–30% wrong. So this module reads only the summable components and derives
+ * 10-30% wrong. So this module reads only the summable components and derives
  * every ratio from those sums.
  *
- * Frequency is the worst offender and gets special treatment — it is
+ * Frequency is the worst offender and gets special treatment, it is
  * impressions ÷ reach over the whole period, which is not remotely the mean of
  * daily frequencies.
  */
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num, safeDiv } from "@/lib/coerce";
+import { NO_VALUE } from "@/lib/format";
 import type { DateRange } from "@/lib/period";
 import { isDemo } from "@/lib/demo/client";
 import { demoChannelTotals, demoMetaTotals, demoTopAds } from "@/lib/demo/media";
@@ -38,7 +39,7 @@ export interface MetaTotals {
   cpm: number | null;
   roas: number | null;
   cpa: number | null;
-  /** impressions ÷ reach — NOT an average of frequency_per_day. */
+  /** impressions ÷ reach, NOT an average of frequency_per_day. */
   frequency: number | null;
 }
 
@@ -119,7 +120,7 @@ export async function getTopAds(
   // Demo client: served from memory, never from the warehouse.
   if (isDemo(clientId)) return demoTopAds(range, limit);
 
-  // `mart_meta_ad_perf` carries campaign_id but not campaign_name — the name
+  // `mart_meta_ad_perf` carries campaign_id but not campaign_name, the name
   // only exists on the campaign view, so it's resolved by join. The inner
   // SELECT is again a block boundary: the mart columns are already aggregates,
   // and summing them directly trips "Aggregations of aggregations".
@@ -162,12 +163,12 @@ export async function getTopAds(
     const clicks = num(r.clicks);
 
     return {
-      adName: String(r.ad_name ?? "—"),
-      campaignName: String(r.campaign_name ?? "—"),
+      adName: String(r.ad_name ?? NO_VALUE),
+      campaignName: String(r.campaign_name ?? NO_VALUE),
       spend,
       revenue,
       // Null, not zero, when nothing was attributed. A campaign that spent and
-      // returned nothing measured is not a 0.00× campaign — it's unmeasured.
+      // returned nothing measured is not a 0.00× campaign, it's unmeasured.
       roas: revenue === null ? null : safeDiv(revenue, spend),
       reach,
       ctr: safeDiv(clicks, impressions),
@@ -182,15 +183,16 @@ export async function getTopAds(
 /**
  * Spend per channel.
  *
- * Meta comes from its own mart view. Google has no mart view yet — only
- * `stg_google_ads_campaign_insights`, which this service account can't read —
+ * Meta comes from its own mart view. Google has no mart view yet, only
+ * `stg_google_ads_campaign_insights`, which this service account can't read,
  * so its totals are taken from `mart_daily_kpis.google_spend`, which is enough
  * for the channel split even though per-campaign detail isn't available.
  */
 export async function getChannelTotals(
   clientId: string,
   range: DateRange,
-  hasGoogle: boolean
+  hasGoogle: boolean,
+  hasMeta = true
 ): Promise<ChannelTotal[]> {
   // Demo client: served from memory, never from the warehouse.
   if (isDemo(clientId)) return demoChannelTotals(range, hasGoogle);
@@ -205,7 +207,9 @@ export async function getChannelTotals(
     { clientId, from: range.from, to: range.to }
   );
 
-  const googleSpend = num(row?.google_spend);
+  // A platform the client does not have is null, never a zero from the mart.
+  const metaSpend = hasMeta ? num(row?.meta_spend) : null;
+  const googleSpend = hasGoogle ? num(row?.google_spend) : null;
 
   // Platform-attributed revenue, and worth saying out loud: Meta and Google
   // each claim conversions under their own attribution windows, so these do not
@@ -214,17 +218,17 @@ export async function getChannelTotals(
   return [
     {
       channel: "meta",
-      spend: num(row?.meta_spend),
-      revenue: num(row?.meta_revenue),
+      spend: metaSpend,
+      revenue: hasMeta ? num(row?.meta_revenue) : null,
       purchases: null,
-      connected: true,
+      connected: hasMeta,
     },
     {
       channel: "google",
       spend: googleSpend,
-      revenue: num(row?.google_revenue),
+      revenue: hasGoogle ? num(row?.google_revenue) : null,
       purchases: null,
-      connected: hasGoogle || googleSpend !== null,
+      connected: hasGoogle,
     },
   ];
 }

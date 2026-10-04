@@ -1,9 +1,9 @@
 /**
- * Email — campaign performance.
+ * Email: campaign and flow performance.
  *
- * Ordered by revenue rather than open rate on purpose. On this data open rates
- * are flat across every send while revenue varies by 2×, so open rate has no
- * discriminating power and giving it the lead position would mislead.
+ * Ordered by revenue rather than open rate on purpose. Open rates are flat
+ * across sends while revenue varies widely, so open rate has no discriminating
+ * power and giving it the lead position would mislead.
  */
 
 import type { Metadata } from "next";
@@ -11,12 +11,14 @@ import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { getEmailSummary, getFlows } from "@/lib/queries/email";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
 import { Eyebrow } from "@/components/ui/Eyebrow";
-import { Badge } from "@/components/ui/Badge";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NotConnected, NoData, Value } from "@/components/ui/EmptyState";
 import { DataTable } from "@/components/ui/DataTable";
-import { pageEyebrow } from "@/lib/nav";
+import { NO_VALUE } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Email" };
 export const dynamic = "force-dynamic";
@@ -29,23 +31,33 @@ export default async function EmailPage({
   const params = parseViewParams(searchParams);
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
+  if (pageAvailability(client, "/email") !== "available") {
+    return (
+      <>
+        <Header title="Email" />
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/email") ?? "Email"} />
+        </main>
+      </>
+    );
+  }
+
   const [summary, flows] = await Promise.all([
-    getEmailSummary(client.clientId, params.range, 30),
-    getFlows(client.clientId, client.currency, params.range),
+    getEmailSummary(client.clientId, params.range, 30, client.emailPlatform),
+    // The daily flow series is Klaviyo only.
+    client.emailPlatform === "ecomail"
+      ? null
+      : getFlows(client.clientId, client.currency, params.range),
   ]);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
-  const esp = client.emailPlatform
-    ? client.emailPlatform[0].toUpperCase() + client.emailPlatform.slice(1)
-    : "Email";
+  // Per-send amounts are unit costs: 2 decimals below 100.
+  const unitMoney = (v: number | null) =>
+    formatMoney(v, client.currency, { unit: true });
 
   const header = (
     <>
-      <Header
-        eyebrow={pageEyebrow("/email", client.name)}
-        title="Email"
-      />
-
+      <Header title="Email" />
       <PageControls client={client} params={params} />
     </>
   );
@@ -55,21 +67,7 @@ export default async function EmailPage({
       <>
         {header}
         <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-          <div className="flex max-w-[640px] flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[32px_24px]">
-            <span className="self-start">
-              <Badge variant="outline" size="sm">
-                No data
-              </Badge>
-            </span>
-            <span className="text-[15px] font-semibold text-content-strong">
-              No campaigns sent in this range.
-            </span>
-            <span className="text-[13px] leading-[1.6] text-content-body">
-              {client.emailPlatform === "ecomail"
-                ? "Ecomail campaigns land in the warehouse but have no per-message mart view yet — only Klaviyo does."
-                : `No ${esp} sends between ${params.range.from} and ${params.range.to}. Widen the range.`}
-            </span>
-          </div>
+          <NoData />
         </main>
       </>
     );
@@ -83,69 +81,42 @@ export default async function EmailPage({
           {[
             { label: "Campaign revenue", value: money(summary.totalRevenue), accent: true },
             { label: "Emails sent", value: formatNumber(summary.totalSent) },
-            {
-              label: "Revenue / recipient",
-              value: money(summary.revenuePerRecipient),
-              note: "the metric that separates sends",
-            },
-            {
-              label: "Open rate",
-              value:
-                summary.avgOpenRate !== null
-                  ? formatPercent(summary.avgOpenRate)
-                  : "—",
-            },
+            { label: "Revenue / recipient", value: unitMoney(summary.revenuePerRecipient) },
+            { label: "Open rate", value: formatPercent(summary.avgOpenRate) },
             {
               label: "Click rate",
-              value:
-                summary.avgClickRate !== null
-                  ? formatPercent(summary.avgClickRate, { decimals: 2 })
-                  : "—",
-              note: "÷ delivered, not CTOR",
+              value: formatPercent(summary.avgClickRate, { decimals: 2 }),
+              info: "Unique clicks divided by delivered, not click-to-open, so it reads lower than most email platforms show. Period rates are recomputed from sums.",
             },
           ].map((s) => (
             <div
               key={s.label}
               className="flex flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm"
             >
-              <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+              <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
                 {s.label}
+                {s.info && <InfoTip text={s.info} />}
               </span>
               <span
                 className={`font-mono text-[22px] font-semibold leading-none tracking-heading tabular ${
                   s.accent ? "text-growth-700" : "text-content-strong"
                 }`}
               >
-                {s.value}
+                <Value>{s.value}</Value>
               </span>
-              {s.note && (
-                <span className="text-[11.5px] leading-[1.4] text-gray-300">
-                  {s.note}
-                </span>
-              )}
             </div>
           ))}
         </section>
 
-        <div className="flex items-start gap-3 rounded-card border border-hairline bg-gray-50 p-[14px_18px]">
-          <span aria-hidden="true" className="mt-0.5 text-[13px] text-content-muted">
-            ⓘ
-          </span>
-          <span className="text-[12.5px] leading-[1.6] text-content-body">
-            <b className="text-content-strong">Click rate is unique clicks ÷ delivered</b>,
-            not click-to-open. It reads far lower than the number {esp} shows —
-            that&apos;s the honest denominator, not a bug. Rates across the period
-            are recomputed from summed components, so a 400-recipient send
-            doesn&apos;t weigh the same as a 44,000-recipient one.
-          </span>
-        </div>
-
         <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
-            <Eyebrow>Campaigns · mart_email_campaign_message_perf</Eyebrow>
-            <span className="text-[12px] text-content-muted">
-              Click a heading to sort
-            </span>
+            <Eyebrow>Campaigns</Eyebrow>
+            {(summary.campaignCount ?? summary.campaigns.length) >
+              summary.campaigns.length && (
+              <span className="text-[12px] text-content-muted">
+                Top {summary.campaigns.length} by revenue
+              </span>
+            )}
           </div>
 
           <div className="overflow-x-auto">
@@ -182,31 +153,25 @@ export default async function EmailPage({
                       {c.campaignName}
                     </span>,
                     <span className="font-mono text-[12px] tabular text-content-muted">
-                      {c.sendDate ?? "—"}
+                      <Value>{c.sendDate ?? NO_VALUE}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-content-body">
-                      {formatNumber(c.sent)}
+                      <Value>{formatNumber(c.sent)}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-content-muted">
-                      {c.openRate !== null
-                        ? formatPercent(c.openRate, { decimals: 0 })
-                        : "—"}
+                      <Value>{formatPercent(c.openRate, { decimals: 0 })}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-content-muted">
-                      {c.clickRate !== null
-                        ? formatPercent(c.clickRate, { decimals: 2 })
-                        : "—"}
+                      <Value>{formatPercent(c.clickRate, { decimals: 2 })}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {formatNumber(c.uniqueOrders)}
+                      <Value>{formatNumber(c.uniqueOrders)}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                      {money(c.revenue)}
+                      <Value>{money(c.revenue)}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-growth-700">
-                      {c.revenuePerRecipient !== null
-                        ? money(c.revenuePerRecipient)
-                        : "—"}
+                      <Value>{unitMoney(c.revenuePerRecipient)}</Value>
                     </span>,
                   ],
                 }))}
@@ -215,65 +180,21 @@ export default async function EmailPage({
           </div>
         </section>
 
-        <div className="flex flex-col gap-1.5 rounded-card border border-dashed border-hairline-strong bg-paper p-[16px_18px]">
-          <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-gray-400">
-            Not here yet
-          </span>
-          <span className="text-[12.5px] leading-[1.6] text-content-muted">
-            <b className="text-content-strong">List growth</b> is missing —
-            blocked on a Klaviyo segment mirroring the master list, so it is
-            unknown rather than zero. <b className="text-content-strong">Daily
-            flow revenue</b> is also unavailable: the series exists for Dobias
-            only and stops 2026-06-20, because the backfill was never wired to
-            an ongoing sync. Flow totals below are cumulative instead.
-          </span>
-        </div>
-        {flows && (
-          <section className="flex flex-col gap-4 overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
-            <div className="flex flex-col gap-4 px-5 pt-5">
-              <div className="flex flex-col gap-[5px]">
-                <Eyebrow>Flows · mart_email_flow_daily</Eyebrow>
-                <span className="text-[12.5px] leading-[1.5] text-content-muted">
-                  Automated flows over the selected range, on the same basis as
-                  the campaigns above, so the two can be compared.
-                </span>
-              </div>
+        <section className="flex flex-col gap-4 overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
+          <div className="flex flex-col gap-4 px-5 pt-5">
+            <Eyebrow>
+              Flows
+              <InfoTip text="Rates are weighted by sends, never a mean of per-flow rates. Rev / email is what one more send of that flow has been worth." />
+            </Eyebrow>
 
-              {/*
-                The figures are withheld rather than approximated when the daily
-                series does not reach the range. This panel previously showed
-                each flow's total since switch-on, which read as a period figure
-                and was out by 13x — the honest answer to "what did flows earn
-                in July" is that this pipeline cannot currently say.
-              */}
-              {!flows.coverage.covered && (
-                <div className="rounded-card border border-warning/40 bg-[#FFFBF2] p-[14px_16px] text-[12.5px] leading-relaxed text-content-strong">
-                  <b>No flow data for this range.</b> The daily flow series
-                  stops at{" "}
-                  <b>{flows.coverage.lastAvailable ?? "no data at all"}</b>,
-                  and you asked for {flows.coverage.requestedFrom} to{" "}
-                  {flows.coverage.requestedTo}. Klaviyo&apos;s snapshot of each
-                  flow&apos;s <i>lifetime</i> totals is still arriving, but
-                  showing that here would put two years of flow history beside
-                  one month of campaigns. Pick a range ending on or before{" "}
-                  {flows.coverage.lastAvailable ?? "—"}, or fix the ingest —
-                  runbook 25.
-                </div>
-              )}
-
+            {flows && flows.coverage.covered && flows.flows.length > 0 ? (
               <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4">
                 {[
                   { label: "Flow revenue", value: money(flows.totalRevenue), accent: true },
                   { label: "Conversions", value: formatNumber(flows.totalConversions) },
                   { label: "Emails sent", value: formatNumber(flows.totalEmails) },
-                  {
-                    label: "Open rate",
-                    value: flows.openRate !== null ? formatPercent(flows.openRate) : "—",
-                  },
-                  {
-                    label: "Click rate",
-                    value: flows.clickRate !== null ? formatPercent(flows.clickRate) : "—",
-                  },
+                  { label: "Open rate", value: formatPercent(flows.openRate) },
+                  { label: "Click rate", value: formatPercent(flows.clickRate) },
                 ].map((k) => (
                   <div key={k.label} className="flex flex-col gap-[7px]">
                     <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
@@ -284,13 +205,19 @@ export default async function EmailPage({
                         k.accent ? "text-growth-700" : "text-content-strong"
                       }`}
                     >
-                      {k.value}
+                      <Value>{k.value}</Value>
                     </span>
                   </div>
                 ))}
               </div>
-            </div>
+            ) : (
+              <div className="pb-5">
+                <NoData />
+              </div>
+            )}
+          </div>
 
+          {flows && flows.coverage.covered && flows.flows.length > 0 && (
             <div className="overflow-x-auto">
               <div className="min-w-[880px]">
                 <DataTable
@@ -325,43 +252,33 @@ export default async function EmailPage({
                         {f.flowName}
                       </span>,
                       <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-content-muted">
-                        {f.status ?? "—"}
+                        <Value>{f.status ?? NO_VALUE}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-body">
-                        {formatNumber(f.emailsSent)}
+                        <Value>{formatNumber(f.emailsSent)}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-body">
-                        {f.openRate !== null ? formatPercent(f.openRate, { decimals: 1 }) : "—"}
+                        <Value>{formatPercent(f.openRate, { decimals: 1 })}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-body">
-                        {f.clickRate !== null ? formatPercent(f.clickRate, { decimals: 1 }) : "—"}
+                        <Value>{formatPercent(f.clickRate, { decimals: 1 })}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-body">
-                        {f.conversionRate !== null
-                          ? formatPercent(f.conversionRate, { decimals: 2 })
-                          : "—"}
+                        <Value>{formatPercent(f.conversionRate, { decimals: 2 })}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                        {money(f.revenue)}
+                        <Value>{money(f.revenue)}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-growth-700">
-                        {f.revenuePerEmail !== null ? money(f.revenuePerEmail) : "—"}
+                        <Value>{unitMoney(f.revenuePerEmail)}</Value>
                       </span>,
                     ],
                   }))}
                 />
               </div>
             </div>
-
-            <div className="px-5 pb-4 text-[12px] leading-[1.6] text-content-muted">
-              Rates are delivery-weighted across flows, never a mean of per-flow
-              rates — averaging those weights a two-send flow the same as a
-              forty-thousand-send one. <b>Rev / email</b> is what one more send
-              of that flow has been worth, which is the column to rank by when
-              deciding what to build next.
-            </div>
-          </section>
-        )}
+          )}
+        </section>
 
       </main>
     </>

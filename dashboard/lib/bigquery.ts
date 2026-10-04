@@ -79,6 +79,119 @@ export async function query<T = Record<string, unknown>>(
   return rows as T[];
 }
 
+// ---------------------------------------------------------------------------
+// queryJob(): the guarded variant used by the Reports suite
+// ---------------------------------------------------------------------------
+
+/** A named parameter value. Arrays need an entry in `types` (an empty array has no inferable type). */
+export type QueryJobParam = string | number | boolean | Date | string[] | number[];
+
+/** BigQuery parameter type per name: "STRING", "DATE", "INT64", ..., or ["STRING"] for ARRAY<STRING>. */
+export type QueryJobParamType = string | [string];
+
+export interface QueryJobOptions {
+  params?: Record<string, QueryJobParam>;
+  types?: Record<string, QueryJobParamType>;
+  /** The job fails (reason bytesBilledLimitExceeded) when it would bill more than this. */
+  maximumBytesBilled?: number;
+  /** Keys and values: lowercase letters, digits, `_` and `-`, at most 63 characters. */
+  labels?: Record<string, string>;
+  /** Server-side job timeout. The client waits this long plus a small margin for results. */
+  jobTimeoutMs?: number;
+  /** Validate and estimate only: no rows, no cost. */
+  dryRun?: boolean;
+}
+
+export interface QueryJobResult<T> {
+  rows: T[];
+  jobId: string | null;
+  /** From the job statistics when BigQuery reports them (always for a dry run). */
+  totalBytesProcessed: number | null;
+  totalBytesBilled: number | null;
+  cacheHit: boolean | null;
+}
+
+const LABEL_RE = /^[a-z][a-z0-9_-]{0,62}$/;
+const LABEL_VALUE_RE = /^[a-z0-9_-]{0,63}$/;
+
+function statNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Run (or dry-run) a parameterized query as an explicit job, with the cost
+ * guardrails `query()` does not have: typed array params, maximumBytesBilled,
+ * labels, a job timeout and dry runs. `query()` stays as it is for every
+ * existing page.
+ *
+ * Errors are BigQuery's own (ApiError with `errors[].reason`); callers map them.
+ */
+export async function queryJob<T = Record<string, unknown>>(
+  sql: string,
+  options: QueryJobOptions = {}
+): Promise<QueryJobResult<T>> {
+  const params = options.params ?? {};
+
+  // Same rule as query(): the demo client never reaches the warehouse, also
+  // not inside an array parameter.
+  for (const value of Object.values(params)) {
+    const hit = Array.isArray(value)
+      ? (value as unknown[]).includes(DEMO_CLIENT_ID)
+      : value === DEMO_CLIENT_ID;
+    if (hit) {
+      throw new Error(
+        `The demo client must never reach BigQuery. Query: ` + sql.slice(0, 160).replace(/\s+/g, " ")
+      );
+    }
+  }
+
+  for (const [key, value] of Object.entries(options.labels ?? {})) {
+    if (!LABEL_RE.test(key) || !LABEL_VALUE_RE.test(value)) {
+      throw new Error(`Invalid BigQuery job label ${key}=${value}`);
+    }
+  }
+
+  const bq = getClient();
+  const [job] = await bq.createQueryJob({
+    query: sql,
+    params,
+    types: options.types,
+    location: "EU",
+    dryRun: options.dryRun === true ? true : undefined,
+    labels: options.labels,
+    jobTimeoutMs: options.jobTimeoutMs,
+    maximumBytesBilled:
+      options.maximumBytesBilled !== undefined ? String(Math.floor(options.maximumBytesBilled)) : undefined,
+  });
+
+  const jobId = job.id ?? null;
+
+  if (options.dryRun) {
+    const stats = job.metadata?.statistics;
+    return {
+      rows: [],
+      jobId,
+      totalBytesProcessed: statNumber(stats?.totalBytesProcessed ?? stats?.query?.totalBytesProcessed),
+      totalBytesBilled: null,
+      cacheHit: null,
+    };
+  }
+
+  const [rows] = await job.getQueryResults({
+    timeoutMs: options.jobTimeoutMs !== undefined ? options.jobTimeoutMs + 5_000 : undefined,
+  });
+  const stats = job.metadata?.statistics;
+  return {
+    rows: rows as T[],
+    jobId,
+    totalBytesProcessed: statNumber(stats?.totalBytesProcessed ?? stats?.query?.totalBytesProcessed),
+    totalBytesBilled: statNumber(stats?.query?.totalBytesBilled),
+    cacheHit: typeof stats?.query?.cacheHit === "boolean" ? stats.query.cacheHit : null,
+  };
+}
+
 /**
  * Convenience: get the canonical project ID prefix for fully-qualified table names.
  */

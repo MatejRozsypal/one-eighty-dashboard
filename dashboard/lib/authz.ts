@@ -27,6 +27,12 @@ export interface Access {
   role: Role;
   /** Non-null only for `client`, the single client they may see. */
   clientId: string | null;
+  /**
+   * The account still holds an admin-issued temporary password. Pages are
+   * covered by the redirect in `app/(app)/layout.tsx`; route handlers and
+   * server actions are not, so the Reports gate refuses it itself.
+   */
+  mustChangePassword: boolean;
 }
 
 /** The signed-in account's access, or null if there is no usable session. */
@@ -35,7 +41,12 @@ export async function currentAccess(): Promise<Access | null> {
   const email = session?.user?.email;
   const role = session?.user?.role ?? null;
   if (!email || !role) return null;
-  return { email, role, clientId: session.user.clientId ?? null };
+  return {
+    email,
+    role,
+    clientId: session.user.clientId ?? null,
+    mustChangePassword: Boolean(session.user.mustChangePassword),
+  };
 }
 
 /** True for the agency's own staff, the roles allowed to see across clients. */
@@ -154,7 +165,7 @@ function emailDomain(email: string): string | null {
 
 /**
  * Pure decision, no session read: true only for a REPORTS_ROLES role, no
- * client assignment, and an email on an internal domain (exact match, so a
+ * client assignment, no pending forced password change, and an email on an internal domain (exact match, so a
  * look-alike such as "oneeighty.cz.evil.com" or a subdomain does not pass).
  *
  * The `clientId === null` condition is belt and braces: internal roles never
@@ -163,6 +174,10 @@ function emailDomain(email: string): string | null {
  */
 export function canUseReports(access: Access | null): access is Access {
   if (!access) return false;
+  // A temporary-password session has not completed onboarding. Pages redirect
+  // it to /auth/change-password; the API route and server actions have no such
+  // redirect, so refuse here and every gate path inherits it.
+  if (access.mustChangePassword) return false;
   if (!(REPORTS_ROLES as readonly string[]).includes(access.role)) return false;
   if (access.clientId !== null && access.clientId !== undefined) return false;
   const domain = emailDomain(access.email ?? "");

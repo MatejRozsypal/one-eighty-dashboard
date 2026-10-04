@@ -34,6 +34,7 @@ Every signature and intermediate type on this path is declared in `contracts.ts`
 
 Rules that hold everywhere:
 - No data is not zero. A value that cannot be computed is `null` and renders as `NO_VALUE` (`"n/a"`, `lib/format.ts`) with the cell status as the reason. The design text's "em-dash glyph" means `n/a`.
+- Partial sums are gaps (review F1). The compiled query returns, per bucket, a count of NULL rows next to every component sum. A component with `nullMeans: "gap"` (ad-platform columns, COGS on days with revenue) that has NULL rows in a bucket, total or rollup makes every gap term over it `no_data` ("Missing days"), or `not_measured` for COGS. `nullMeans: "zero"` components (shop columns, which are NULL on a day without orders; phase 2 campaign marts) and `nullAs: "zero"` terms (fulfilment and paid spend inside CM3, the mart definition) are not gaps.
 - No user text reaches SQL. Identifiers come from the registry only; user values travel as typed params.
 - Metric formulas are evaluated in TypeScript from summed components, never averaged.
 - Reports never call `resolveClient()`; they use `getReportClients()`.

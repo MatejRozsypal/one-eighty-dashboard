@@ -16,9 +16,18 @@
  *   another currency, the native sum is used instead: it is exactly the same
  *   number and needs no rate.
  * - COGS guard: a guarded component (COGS) that sums to 0 or NULL while its
- *   guard (revenue) is > 0 is not measured. Applied per client and per row
+ *   guard (revenue) is > 0 is not measured, and so is one with any NULL row on
+ *   a day with revenue (partial costing). Applied per client and per row
  *   group; a period total is not measured when any of its buckets is, so a
  *   total never silently covers uncosted days.
+ * - Gaps (F1): a component whose registry `nullMeans` is "gap" (ad spend and
+ *   the other ad-platform columns) and that has NULL rows inside a bucket, a
+ *   total or a rollup makes every term that reads it as nullAs "gap" a gap, so
+ *   the cell is no_data ("Missing days"), never a SUM over the valued days
+ *   only. "zero" components (shop columns, which are NULL on a day without
+ *   orders) and terms with nullAs "zero" (fulfilment and paid spend inside
+ *   CM3, the mart definition) are not affected. A rollup is a gap when any
+ *   included client has a gap in a needed component, the same rule as fx_missing.
  * - Per-client series read native sums for non-money units and display sums
  *   for money units. Rollups read display sums for every client, so all
  *   clients are in one currency before summing; not_connected clients are
@@ -82,6 +91,19 @@ function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+/** Missing-day label for a gap cell (two words, design copy policy). */
+export const GAP_REASON = "Missing days";
+
+function addSums(prev: ComponentSum | undefined, v: ComponentSum): ComponentSum {
+  const p = prev ?? { nat: null, disp: null, natNulls: 0, dispNulls: 0 };
+  return {
+    nat: addN(p.nat, num(v.nat)),
+    disp: addN(p.disp, num(v.disp)),
+    natNulls: (p.natNulls ?? 0) + (v.natNulls ?? 0),
+    dispNulls: (p.dispNulls ?? 0) + (v.dispNulls ?? 0),
+  };
+}
+
 function addRow(agg: Agg, row: ComponentRow): void {
   for (const g of Object.values(row.guards)) {
     if (!g) continue;
@@ -94,8 +116,7 @@ function addRow(agg: Agg, row: ComponentRow): void {
   }
   for (const [id, v] of Object.entries(row.values) as Array<[ComponentId, ComponentSum | undefined]>) {
     if (!v) continue;
-    const prev = agg.values.get(id) ?? { nat: null, disp: null };
-    agg.values.set(id, { nat: addN(prev.nat, num(v.nat)), disp: addN(prev.disp, num(v.disp)) });
+    agg.values.set(id, addSums(agg.values.get(id), v));
   }
 }
 
@@ -107,8 +128,7 @@ function mergeAggs(aggs: Iterable<Agg>): Agg {
     if (a.fxMissing) out.fxMissing = true;
     for (const m of a.fxMonths) out.fxMonths.add(m);
     for (const [id, v] of a.values) {
-      const prev = out.values.get(id) ?? { nat: null, disp: null };
-      out.values.set(id, { nat: addN(prev.nat, v.nat), disp: addN(prev.disp, v.disp) });
+      out.values.set(id, addSums(out.values.get(id), v));
     }
   }
   return out;
@@ -130,18 +150,21 @@ interface Read {
   value: number | null;
   /** The value needed an FX rate that is missing. */
   fx: boolean;
+  /** The component has NULL rows (`nullMeans: "gap"`) in this row group, so its sum is partial. Absent means false. */
+  gap?: boolean;
 }
 
 /** One client's value of one component in one row group. */
 function readComponent(agg: Agg, id: ComponentId, mode: ReadMode, client: ReportClient, displayCurrency: string): Read {
   const v = agg.values.get(id);
   const def = getComponent(id);
-  if (!def.money) return { value: v ? (v.nat ?? v.disp) : null, fx: false };
-  if (mode === "native") return { value: v ? v.nat : null, fx: false };
+  const isGap = (nulls: number | undefined) => def.nullMeans === "gap" && (nulls ?? 0) > 0;
+  if (!def.money) return { value: v ? (v.nat ?? v.disp) : null, fx: false, gap: v ? isGap(v.natNulls) : false };
+  if (mode === "native") return { value: v ? v.nat : null, fx: false, gap: v ? isGap(v.natNulls) : false };
   // Same currency and no foreign rows: the native sum is the display sum, no rate needed.
-  if (client.currency === displayCurrency && agg.foreignRows === 0) return { value: v ? v.nat : null, fx: false };
+  if (client.currency === displayCurrency && agg.foreignRows === 0) return { value: v ? v.nat : null, fx: false, gap: v ? isGap(v.natNulls) : false };
   if (agg.fxMissing) return { value: null, fx: true };
-  return { value: v ? v.disp : null, fx: false };
+  return { value: v ? v.disp : null, fx: false, gap: v ? isGap(v.dispNulls) : false };
 }
 
 /** COGS guard for one client's row group: true when a guarded component of the metric is not measured. */
@@ -154,6 +177,8 @@ function guardFails(agg: Agg, metric: RegisteredMetric): boolean {
     const raw = v ? (v.nat ?? v.disp) : null;
     const gRaw = g ? (g.nat ?? g.disp) : null;
     if (gRaw !== null && gRaw > 0 && (raw === null || raw === 0)) return true;
+    // Partly costed: a day with revenue and no cost value inside the sum (counted in SQL only where the guard is > 0).
+    if (v && ((v.natNulls ?? 0) > 0 || (v.dispNulls ?? 0) > 0)) return true;
   }
   return false;
 }
@@ -165,6 +190,8 @@ function evalTerms(terms: readonly Term[], get: (c: ComponentId) => Read): { val
   for (const term of terms) {
     const r = get(term.c);
     if (r.fx) fx = true;
+    // NULL rows inside the sum make it partial: a gap term nulls the metric, a zero term keeps the valued rows.
+    if (r.gap === true && term.nullAs === "gap") gap = true;
     if (r.value === null) {
       if (term.nullAs === "gap") gap = true;
       continue;
@@ -194,6 +221,8 @@ interface Outcome {
   value: number | null;
   status: Status;
   fxMonths: string[];
+  /** Overrides the default status label (gap cells: "Missing days"). */
+  reason?: string;
 }
 
 const NO_ROWS: Outcome = { value: null, status: "no_data", fxMonths: [] };
@@ -215,21 +244,28 @@ function outcome(metric: RegisteredMetric, members: readonly Member[], mode: Rea
   for (const id of metric.meta.components) {
     let value: number | null = null;
     let compFx = false;
+    let compGap = false;
     for (const m of present) {
       const r = readComponent(m.agg, id, mode, m.client, displayCurrency);
       if (r.fx) {
         compFx = true;
         for (const mo of m.agg.fxMonths) fxMonths.add(mo);
       }
+      if (r.gap === true) compGap = true;
       value = addN(value, r.value);
     }
     if (compFx) fx = true;
-    summed.set(id, { value: compFx ? null : value, fx: compFx });
+    summed.set(id, { value: compFx ? null : value, fx: compFx, gap: compGap });
   }
   if (fx) return { value: null, status: "fx_missing", fxMonths: [...fxMonths].sort() };
   if (present.some((m) => m.innerGuardFail || guardFails(m.agg, metric))) return { value: null, status: "not_measured", fxMonths: [] };
   const r = evaluateFormula(metric, (c) => summed.get(c) ?? { value: null, fx: false });
-  if (r.value === null) return { value: null, status: "no_data", fxMonths: [] };
+  if (r.value === null) {
+    // A NULL-day gap in a component a gap term needs (any client of a rollup): no partial sum.
+    const terms = metric.kind === "sum" ? metric.terms : [...metric.numerator, ...metric.denominator];
+    const gapped = terms.some((term) => term.nullAs === "gap" && summed.get(term.c)?.gap === true);
+    return gapped ? { value: null, status: "no_data", fxMonths: [], reason: GAP_REASON } : { value: null, status: "no_data", fxMonths: [] };
+  }
   return { value: r.value, status: "ok", fxMonths: [] };
 }
 
@@ -377,7 +413,7 @@ export const evaluateWidget: EvaluateWidget = (input) => {
       }
       const cell: MetricCell = {
         status: cur.status,
-        ...(cur.status !== "ok" ? { reason: cur.status === "fx_missing" ? fxReason(cur.fxMonths) : CELL_STATUS_LABEL[cur.status] } : {}),
+        ...(cur.status !== "ok" ? { reason: cur.status === "fx_missing" ? fxReason(cur.fxMonths) : (cur.reason ?? CELL_STATUS_LABEL[cur.status]) } : {}),
         ...(cur.status === "fx_missing" ? { fxMonths: cur.fxMonths } : {}),
         total: ok ? cur.value : null,
         compareTotal,

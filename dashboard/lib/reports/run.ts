@@ -39,7 +39,7 @@ import {
 } from "./contracts";
 import { CACHE_TAGS, CACHE_TTL_S, DEFAULT_MAX_BYTES_BILLED, JOB_TIMEOUT_MS } from "./limits";
 import { SEMANTIC_VERSION, type ComponentId, type MartId } from "./registry/types";
-import { componentAlias, guardAlias } from "./compile";
+import { componentAlias, guardAlias, nullsAlias } from "./compile";
 
 // ---------------------------------------------------------------------------
 // Policy helpers (pure, exported for check:reports)
@@ -155,10 +155,16 @@ export function normaliseRows(raw: ReadonlyArray<Record<string, unknown>>, query
     for (const id of query.components) {
       const alias = componentAlias(id);
       if (`${alias}__nat` in r) {
-        values[id] = { nat: toNumber(r[`${alias}__nat`]), disp: toNumber(r[`${alias}__disp`]) };
+        values[id] = {
+          nat: toNumber(r[`${alias}__nat`]),
+          disp: toNumber(r[`${alias}__disp`]),
+          natNulls: toNumber(r[nullsAlias(id, "nat")]) ?? 0,
+          dispNulls: toNumber(r[nullsAlias(id, "disp")]) ?? 0,
+        };
       } else {
         const v = toNumber(r[alias]);
-        values[id] = { nat: v, disp: v };
+        const n = toNumber(r[nullsAlias(id, "all")]) ?? 0;
+        values[id] = { nat: v, disp: v, natNulls: n, dispNulls: n };
       }
     }
     const period = r.period === "cmp" ? "cmp" : "cur";

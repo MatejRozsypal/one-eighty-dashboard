@@ -58,12 +58,15 @@ function widget(metrics: MetricId[], opts: { grain?: WidgetQuery["grain"]; split
   return out.widget;
 }
 
-type V = number | null | [number | null, number | null];
+type V = number | null | [number | null, number | null] | ComponentSum;
+
+/** A summed value with NULL rows inside it (SQL SUM skips them): `sum` over the valued rows, `nulls` rows without a value. */
+const withNulls = (sum: number | null, nulls: number): ComponentSum => ({ nat: sum, disp: sum, natNulls: nulls, dispNulls: nulls });
 
 function row(clientId: string, period: "cur" | "cmp", bucket: string, values: Partial<Record<ComponentId, V>>, guards: Partial<{ foreignCcyRows: number; fxMissingRows: number; fxMissingMonths: string[] }> = {}): ComponentRow {
   const vals: Partial<Record<ComponentId, ComponentSum>> = {};
   for (const [k, v] of Object.entries(values) as Array<[ComponentId, V]>) {
-    vals[k] = Array.isArray(v) ? { nat: v[0], disp: v[1] } : { nat: v, disp: v };
+    vals[k] = Array.isArray(v) ? { nat: v[0], disp: v[1] } : v !== null && typeof v === "object" ? v : { nat: v, disp: v };
   }
   return {
     clientId,
@@ -454,6 +457,127 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   check("envelope", r.key === "k" && r.currency === "CZK" && r.grain === "total" && eqJson(r.current, w.period.current) && r.benchmarks.length === 0);
   check("client series uses registry slot and name", r.series[0].label === "Alpha" && r.series[0].slot === alpha.slot && r.series[0].clientIds === undefined);
   void delta;
+}
+
+// 4.12 F1: NULL rows inside a sum are a gap, never a partial sum ("no data is not zero").
+{
+  const TOTAL = "1970-01-01";
+  const wkMer = widget(["mer"], { grain: "week", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } });
+  // The review case: two days, spend [100, NULL], revenue [1000, 1000]. The old partial sum gave MER 20.
+  const gapWeek = evalW(wkMer, [row("alpha", "cur", "2026-09-07", { "kpis.revenue": 2000, "kpis.paid_spend": withNulls(100, 1) })]);
+  const g = cell(gapWeek, "alpha", "mer");
+  check("F1: week with a NULL-spend day is a gap, not 20", g.points?.[0] === null && g.total === null && g.status === "no_data" && g.reason === "Missing days");
+  const fullWeek = evalW(wkMer, [row("alpha", "cur", "2026-09-07", { "kpis.revenue": 2000, "kpis.paid_spend": withNulls(200, 0) })]);
+  check("F1: the same week with both days valued keeps its value", close(cell(fullWeek, "alpha", "mer").points?.[0], 10) && cell(fullWeek, "alpha", "mer").status === "ok");
+
+  // Total grain and a gap in one bucket: points keep their valued weeks, the total is a gap, never the sum of the valued weeks.
+  const mixed = evalW(wkMer, [
+    row("alpha", "cur", "2026-09-07", { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 0) }),
+    row("alpha", "cur", "2026-09-14", { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 2) }),
+  ]);
+  const m = cell(mixed, "alpha", "mer");
+  check("F1: valued week keeps its value, gap week is null", close(m.points?.[0], 10) && m.points?.[1] === null);
+  check("F1: total over a gap week is a gap", m.total === null && m.status === "no_data" && m.reason === "Missing days");
+  const wkTotal = widget(["mer", "paid_spend", "cac"], { grain: "total", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } });
+  const tot = evalW(wkTotal, [row("alpha", "cur", TOTAL, { "kpis.revenue": 2000, "kpis.paid_spend": withNulls(100, 19), "kpis.new_customer_orders": 10 })]);
+  check("F1: total grain: MER, spend and CAC are all gaps", ["mer", "paid_spend", "cac"].every((id) => cell(tot, "alpha", id as MetricId).status === "no_data" && cell(tot, "alpha", id as MetricId).total === null));
+  check("F1: gap in spend does not null a metric without spend", (() => {
+    const w = widget(["revenue", "orders"], { grain: "total", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } });
+    const r = evalW(w, [row("alpha", "cur", TOTAL, { "kpis.revenue": 2000, "kpis.orders": 7, "kpis.paid_spend": withNulls(100, 19) })]);
+    return cell(r, "alpha", "revenue").status === "ok" && close(cell(r, "alpha", "orders").total, 7);
+  })());
+  check("F1: a gap on the comparison period only leaves the current cell valued, without a delta", (() => {
+    const w = widget(["mer"], { grain: "total", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "previous_period" } });
+    const r = evalW(w, [
+      row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 0) }),
+      row("alpha", "cmp", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(50, 3) }),
+    ]);
+    const c = cell(r, "alpha", "mer");
+    return c.status === "ok" && close(c.total, 10) && c.compareTotal === null && c.delta === null;
+  })());
+
+  // Rollups: one client with a gap makes the combined cell a gap, however complete the others are. Coverage still counts it as included.
+  const wCmb = widget(["mer"], { split: "combined", filters: { clients: { mode: "list", ids: ["alpha", "bravo", "charlie"] }, compare: "none" } });
+  const cmbGap = evalW(wCmb, [
+    row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 4) }),
+    row("bravo", "cur", TOTAL, { "kpis.revenue": [100, 2300], "kpis.paid_spend": [10, 230] }),
+    row("charlie", "cur", TOTAL, { "kpis.revenue": 500, "kpis.paid_spend": 50 }),
+  ]);
+  const cg = cell(cmbGap, "combined", "mer");
+  check("F1: combined MER is a gap when one client has a gap", cg.status === "no_data" && cg.total === null && cg.reason === "Missing days");
+  const cmbOk = evalW(wCmb, [
+    row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 0) }),
+    row("bravo", "cur", TOTAL, { "kpis.revenue": [100, 2300], "kpis.paid_spend": [10, 230] }),
+    row("charlie", "cur", TOTAL, { "kpis.revenue": 500, "kpis.paid_spend": 50 }),
+  ]);
+  check("F1: combined MER with no gaps is unchanged", close(cell(cmbOk, "combined", "mer").total, (1000 + 2300 + 500) / (100 + 230 + 50)));
+  const split = evalW(widget(["mer"], { split: "client", filters: { clients: { mode: "list", ids: ["alpha", "charlie"] }, compare: "none" } }), [
+    row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 4) }),
+    row("charlie", "cur", TOTAL, { "kpis.revenue": 500, "kpis.paid_spend": 50 }),
+  ]);
+  check("F1: per-client split: only the client with the gap is null", cell(split, "alpha", "mer").status === "no_data" && close(cell(split, "charlie", "mer").total, 10));
+
+  // Day grain stays consistent with week and total.
+  const wDay = widget(["mer"], { grain: "day", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } });
+  const day = evalW(wDay, [
+    row("alpha", "cur", "2026-09-07", { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(null, 1) }),
+    row("alpha", "cur", "2026-09-08", { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 0) }),
+  ]);
+  check("F1: day grain: NULL-spend day null, next day valued", cell(day, "alpha", "mer").points?.[0] === null && close(cell(day, "alpha", "mer").points?.[1], 10));
+
+  // Native vs display variants: native-per-client ratios read the native count, money metrics in a display currency read the display count.
+  const wNative = widget(["mer", "paid_spend"], { grain: "total", filters: { clients: { mode: "list", ids: ["charlie"] }, compare: "none" } });
+  const sums: ComponentSum = { nat: 100, disp: 100, natNulls: 0, dispNulls: 2 };
+  const nat = evalW(wNative, [row("charlie", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": sums })]);
+  check("F1: same-currency client: MER (native) and spend (display, no foreign rows) follow their own count", close(cell(nat, "charlie", "mer").total, 10) && close(cell(nat, "charlie", "paid_spend").total, 100));
+  const wNatBravo = widget(["mer", "paid_spend"], { grain: "total", filters: { clients: { mode: "list", ids: ["bravo"] }, compare: "none" } });
+  const bv = evalW(wNatBravo, [row("bravo", "cur", TOTAL, { "kpis.revenue": [1000, 23000], "kpis.paid_spend": { nat: 100, disp: 2300, natNulls: 0, dispNulls: 2 } })]);
+  check("F1: cross-currency: native MER ignores a display-only count, display spend is a gap", close(cell(bv, "bravo", "mer").total, 10) && cell(bv, "bravo", "paid_spend").status === "no_data");
+  const bv2 = evalW(wNatBravo, [row("bravo", "cur", TOTAL, { "kpis.revenue": [1000, 23000], "kpis.paid_spend": { nat: 100, disp: 2300, natNulls: 2, dispNulls: 0 } })]);
+  check("F1: cross-currency: native count nulls native MER, not display spend", cell(bv2, "bravo", "mer").status === "no_data" && close(cell(bv2, "bravo", "paid_spend").total, 2300));
+
+  // Components that are NULL by meaning do not make a gap.
+  const shopZero = evalW(wkMer, [row("alpha", "cur", "2026-09-07", { "kpis.revenue": withNulls(2000, 3), "kpis.paid_spend": withNulls(200, 0), "kpis.orders": withNulls(8, 3) })]);
+  check("F1: shop columns NULL on no-order days (nullMeans zero) keep MER", close(cell(shopZero, "alpha", "mer").points?.[0], 10));
+  check("F1: registry nullMeans: shop zero, ad platform gap, cogs gap", COMPONENTS["kpis.revenue"].nullMeans === "zero" && COMPONENTS["kpis.orders"].nullMeans === "zero" && COMPONENTS["kpis.paid_spend"].nullMeans === "gap" && COMPONENTS["kpis.meta_spend"].nullMeans === "gap" && COMPONENTS["kpis.cogs"].nullMeans === "gap");
+  check("F1: every component declares nullMeans", Object.values(COMPONENTS).every((c) => c.nullMeans === "gap" || c.nullMeans === "zero"));
+
+  // Google-only client (RawBark): Meta columns are NULL on every day and must not null MER, spend or CM3 inputs; Meta-only metrics stay not_connected.
+  const wRaw = widget(["mer", "paid_spend", "meta_roas", "revenue"], { grain: "total", filters: { clients: { mode: "list", ids: ["charlie"] }, compare: "none" } });
+  const raw = evalW(wRaw, [row("charlie", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 0), "kpis.meta_spend": withNulls(null, 30), "kpis.meta_revenue": withNulls(null, 30) })]);
+  check("F1: Google-only client keeps MER and spend with Meta columns NULL", close(cell(raw, "charlie", "mer").total, 10) && close(cell(raw, "charlie", "paid_spend").total, 100));
+  check("F1: Meta ROAS stays not_connected for it", cell(raw, "charlie", "meta_roas").status === "not_connected");
+  // A client with Meta connected and Meta NULL days: Meta-only metrics are gaps, MER is not.
+  const wMeta = widget(["mer", "meta_roas"], { grain: "total", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } });
+  const mt = evalW(wMeta, [row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 0), "kpis.meta_revenue": withNulls(300, 5), "kpis.meta_spend": withNulls(60, 5) })]);
+  check("F1: Meta NULL days gap Meta ROAS only", cell(mt, "alpha", "meta_roas").status === "no_data" && cell(mt, "alpha", "meta_roas").reason === "Missing days" && close(cell(mt, "alpha", "mer").total, 10));
+
+  // CM3: fulfilment and paid spend are nullAs zero (mart definition), so NULL rows in them do not make a gap; revenue and COGS still do.
+  const wCm3 = widget(["cm3"], { grain: "total", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } });
+  const cm3 = evalW(wCm3, [row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.cogs": withNulls(300, 0), "kpis.paid_spend": withNulls(100, 5), "kpis.fulfillment_cost": withNulls(null, 5) })]);
+  check("F1: CM3 keeps nullAs zero for paid spend and fulfilment (documented residual)", close(cell(cm3, "alpha", "cm3").total, 600));
+
+  // COGS: a NULL on a day with revenue inside a sum is not measured (counted in SQL only where revenue > 0), at bucket and total level.
+  const wCogs = widget(["cogs", "cm1_pct", "cm3"], { grain: "week", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } });
+  const cg2 = evalW(wCogs, [
+    row("alpha", "cur", "2026-09-07", { "kpis.revenue": 1000, "kpis.cogs": withNulls(300, 0), "kpis.paid_spend": 100 }),
+    row("alpha", "cur", "2026-09-14", { "kpis.revenue": 1000, "kpis.cogs": withNulls(300, 2), "kpis.paid_spend": 100 }),
+  ]);
+  check("F1: partly costed week is not measured, costed week keeps its value", cell(cg2, "alpha", "cogs").points?.[0] === 300 && cell(cg2, "alpha", "cogs").points?.[1] === null);
+  check("F1: partly costed week makes the total not measured", ["cogs", "cm1_pct", "cm3"].every((id) => cell(cg2, "alpha", id as MetricId).status === "not_measured" && cell(cg2, "alpha", id as MetricId).reason === "No cost data"));
+  const cogsQuiet = evalW(wCogs, [row("alpha", "cur", "2026-09-07", { "kpis.revenue": 1000, "kpis.cogs": withNulls(300, 0), "kpis.paid_spend": 100 })]);
+  check("F1: fully costed week unaffected", cell(cogsQuiet, "alpha", "cogs").points?.[0] === 300 && close(cell(cogsQuiet, "alpha", "cm1_pct").points?.[0], 0.7));
+  const cmbCogs = evalW(widget(["cm3_pct"], { split: "combined", filters: { clients: { mode: "list", ids: ["alpha", "bravo"] }, compare: "none" } }), [
+    row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.cogs": withNulls(300, 0), "kpis.paid_spend": 100, "kpis.fulfillment_cost": 0 }),
+    row("bravo", "cur", TOTAL, { "kpis.revenue": [100, 2300], "kpis.cogs": { nat: 30, disp: 690, natNulls: 1, dispNulls: 1 }, "kpis.paid_spend": [10, 230], "kpis.fulfillment_cost": [0, 0] }),
+  ]);
+  check("F1: combined CM3 % not measured when one client is partly costed", cell(cmbCogs, "combined", "cm3_pct").status === "not_measured");
+
+  // Old-shape rows (no counts at all, as the fixtures and cached rows from before F1) behave exactly as before.
+  const legacy = evalW(wkMer, [row("alpha", "cur", "2026-09-07", { "kpis.revenue": 2000, "kpis.paid_spend": 100 })]);
+  check("F1: rows without NULL counts evaluate as before", close(cell(legacy, "alpha", "mer").points?.[0], 20));
+  // The status of a gap loses to fx_missing and not_connected.
+  check("F1: reason text has no dash", !"Missing days".includes("-"));
 }
 
 // ---------------------------------------------------------------------------

@@ -113,7 +113,7 @@ export default async function AppLayout({
     <HistoryProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
       <ProductRail isInternal={isInternal} clients={clients} />
-      <Sidebar clients={clients} isAdmin={isAdmin} />
+      <Sidebar clients={clients} isAdmin={isAdmin} isInternal={isInternal} />
 
       {/*
         Fixed to the header's right-hand side rather than rendered inside it:

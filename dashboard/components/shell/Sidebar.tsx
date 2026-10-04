@@ -29,16 +29,19 @@ import type { Client } from "@/lib/clients";
 export function Sidebar({
   clients,
   isAdmin = false,
+  isInternal = isAdmin,
 }: {
   /** The switcher's client list; the selected one decides which pages show. */
   clients: Client[];
   isAdmin?: boolean;
+  /** Admin or agency: sees internal-only pages such as Paid. */
+  isInternal?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
   const client = selectedClient(clients, searchParams.get("client"));
-  const nav = navFor(isAdmin, client);
+  const nav = navFor(isAdmin, client, isInternal);
   const active = activeNavHref(pathname);
   const product = productFor(pathname);
 

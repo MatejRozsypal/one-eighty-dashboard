@@ -6,10 +6,18 @@
  *
  * A null or "n/a" value renders a muted "n/a". A `state` renders one short line
  * in place of the figure ("Not connected", or a reason of 3 words or fewer).
+ *
+ * Optional, for the Paid tabs: `delta` (a fraction, with `goodWhen` saying which
+ * direction is good) renders a change chip under the figure, and `metricKey`
+ * adds the (i) tooltip with that metric's definition from `lib/metrics.ts`.
+ * Callers that pass neither render exactly as before.
  */
 
 import { NO_VALUE, isNoValue } from "@/lib/format";
 import { stateLine, type MetricState } from "@/components/dashboard/MetricCard";
+import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
+import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
+import { METRIC_DEFINITIONS } from "@/lib/metrics";
 
 export interface Kpi {
   label: string;
@@ -19,17 +27,25 @@ export interface Kpi {
   scope?: string;
   /** "no-account" or "no-data" replace the figure with one line. */
   state?: MetricState;
+  /** Change against the comparison period, as a fraction. Null shows no chip; omit it to hold no space. */
+  delta?: number | null;
+  /** Which direction is good. Default "up"; spend, frequency and share are "neutral". */
+  goodWhen?: GoodWhen;
+  /** Key into `METRIC_DEFINITIONS`. Adds the (i) tooltip. */
+  metricKey?: string;
 }
 
-export function KpiTile({ label, value, scope, state }: Kpi) {
+export function KpiTile({ label, value, scope, state, delta, goodWhen = "up", metricKey }: Kpi) {
   const line = state ? stateLine(state) : null;
   const missing = value === null || isNoValue(value);
+  const definition = metricKey ? METRIC_DEFINITIONS[metricKey] : undefined;
 
   return (
     <div className="flex flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm">
       <span className="flex items-center justify-between gap-2">
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+        <span className="relative inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
           {label}
+          {definition && <MetricTooltip definition={definition} />}
         </span>
         {scope === "meta" && (
           <span
@@ -49,6 +65,9 @@ export function KpiTile({ label, value, scope, state }: Kpi) {
         >
           {missing ? NO_VALUE : value}
         </span>
+      )}
+      {line === null && delta !== undefined && delta !== null && (
+        <DeltaChip delta={delta} goodWhen={goodWhen} />
       )}
     </div>
   );

@@ -9,12 +9,16 @@
 
 import { matchesPrefix, pageAvailability, type HasCapabilities } from "@/lib/capabilities";
 import { productsFor, type Product } from "@/lib/products";
+import { PAID_TAB_HREF } from "@/lib/paid/links";
+import type { PaidTabKey } from "@/lib/paid/types";
 
 export interface NavItem {
   label: string;
   href: string;
   /** Hidden entirely from non-admins, rather than shown and refused. */
   adminOnly?: boolean;
+  /** Hidden from the client role (admin and agency see it). Presentation only: the route's layout enforces it. */
+  internalOnly?: boolean;
 }
 
 export interface NavGroup {
@@ -45,7 +49,7 @@ export const NAV: NavGroup[] = [
   {
     label: "Marketing",
     items: [
-      { label: "Paid", href: "/paid" },
+      { label: "Paid", href: "/paid", internalOnly: true },
       { label: "Email", href: "/email" },
     ],
   },
@@ -75,6 +79,18 @@ export const CREATIVE_NAV: NavItem[] = [
   { label: "Breakdown", href: "/creative/breakdown" },
   { label: "Velocity", href: "/creative/velocity" },
   { label: "Production ROI", href: "/creative/production" },
+];
+
+/**
+ * The Paid section's tabs, in display order. `href` is the capability key too:
+ * `pageAvailability(client, tab.href)` says whether the client has that platform
+ * (the Overview tab needs Meta or Google Ads, the others one platform each).
+ */
+export const PAID_TABS: Array<{ key: PaidTabKey; label: string; href: string }> = [
+  { key: "overview", label: "Overview", href: PAID_TAB_HREF.overview },
+  { key: "meta", label: "Meta", href: PAID_TAB_HREF.meta },
+  { key: "google", label: "Google", href: PAID_TAB_HREF.google },
+  { key: "ga4", label: "GA4", href: PAID_TAB_HREF.ga4 },
 ];
 
 /** Settings lives behind the gear in the sidebar footer, not in this tree. */
@@ -119,16 +135,22 @@ export function pageTitle(pathname: string): string {
 /**
  * The navigation a given user should see for the selected client.
  *
- * Admin-only items are removed for non-admins. With a client, pages it has no
- * source for are removed too. Groups that empty out disappear with their
+ * Admin-only items are removed for non-admins, internal-only items (Paid) for
+ * the client role: `isInternal` is admin or agency and defaults to `isAdmin`.
+ * With a client, pages it has no source for are removed too. Groups that empty out disappear with their
  * heading. Without a client (registry not loaded) only the admin filter runs.
  */
-export function navFor(isAdmin: boolean, client?: HasCapabilities | null): NavGroup[] {
+export function navFor(
+  isAdmin: boolean,
+  client?: HasCapabilities | null,
+  isInternal: boolean = isAdmin
+): NavGroup[] {
   return NAV.map((g) => ({
     ...g,
     items: g.items.filter(
       (i) =>
         (isAdmin || !i.adminOnly) &&
+        (isInternal || !i.internalOnly) &&
         (!client || pageAvailability(client, i.href) === "available")
     ),
   })).filter((g) => g.items.length > 0);

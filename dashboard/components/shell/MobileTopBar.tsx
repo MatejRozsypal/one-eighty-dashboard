@@ -67,7 +67,7 @@ export function MobileTopBar({
   const shownClient = optimisticClient ?? activeClient;
 
   // Pages and products the selected client has no source for are hidden.
-  const nav = navFor(isAdmin, shownClient);
+  const nav = navFor(isAdmin, shownClient, isInternal);
   const products = railProducts(isInternal, shownClient);
 
   function selectClient(client: Client) {

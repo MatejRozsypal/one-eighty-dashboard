@@ -158,4 +158,111 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     note:
       "Averages cover closed months in the range only. The current month is partial and excluded.",
   },
+
+  // ── Paid section ─────────────────────────────────────────────────────────
+  // Keys are the tile labels the Paid tabs print (pass as KpiTile `metricKey`).
+  // Every figure is a sum over the range divided by a sum, never an average of
+  // daily rates. Each tooltip stays at 40 words or fewer in total.
+  nCAC: {
+    title: "New-customer CAC",
+    formula: "Paid spend / new customers",
+    source: "Warehouse",
+    limitation: "Paid spend only. Organic and email acquisition are not counted.",
+  },
+  "CAC (blended)": {
+    title: "Blended CAC",
+    formula: "Paid spend / all orders",
+    source: "Warehouse",
+    note: "Orders from returning customers count too, so it reads lower than new-customer CAC.",
+  },
+  "Link CTR": {
+    title: "Link click-through rate",
+    formula: "Link clicks / impressions",
+    source: "Meta",
+    note: "Only clicks to a destination count, not reactions or comments.",
+  },
+  "Cost / LPV": {
+    title: "Cost per landing page view",
+    formula: "Spend / landing page views",
+    source: "Meta",
+    note: "A view counts only once the page has loaded, so it runs below link clicks.",
+  },
+  "Cost / ATC": {
+    title: "Cost per add to cart",
+    formula: "Spend / add-to-cart events",
+    source: "Meta",
+    limitation: "Depends on the pixel firing. A tracking gap inflates it.",
+  },
+  "ATC to purchase": {
+    title: "Add to cart to purchase",
+    formula: "Purchases / add-to-cart events",
+    source: "Meta",
+    limitation: "Both counts are platform-reported, inside the platform's attribution window.",
+  },
+  "Hook rate": {
+    title: "Hook rate",
+    formula: "Video plays / impressions",
+    source: "Meta",
+    note: "Video ads only. Hold rate uses the same impressions.",
+  },
+  "Hold rate": {
+    title: "Hold rate",
+    formula: "ThruPlays / impressions",
+    source: "Meta",
+    note: "Video ads only. A ThruPlay is 15 seconds watched, or the whole video if shorter.",
+  },
+  "Avg daily frequency": {
+    title: "Average daily frequency",
+    formula: "Impressions / reach, summed over daily rows",
+    source: "Meta",
+    limitation: "The same person is counted again on each day, so this is below true period frequency.",
+  },
+  "Search IS": {
+    title: "Search impression share",
+    formula: "Impressions / eligible impressions",
+    source: "Google Ads",
+    note: "Search network only. Rows with no reported share are left out.",
+  },
+  "Lost IS (budget)": {
+    title: "Lost impression share, budget",
+    formula: "Impressions lost to budget / eligible impressions",
+    source: "Google Ads",
+    note: "Search network only.",
+  },
+  "Lost IS (rank)": {
+    title: "Lost impression share, rank",
+    formula: "Impressions lost to ad rank / eligible impressions",
+    source: "Google Ads",
+    note: "Search network only.",
+  },
+  "Brand share": {
+    title: "Brand share of spend",
+    formula: "Brand campaign spend / total spend",
+    source: "Google Ads",
+    note: "Campaigns are classed brand or non-brand by name and the client's brand terms.",
+  },
+  "Brand leakage": {
+    title: "Brand leakage",
+    formula: "Brand search-term spend in non-brand campaigns / search-term spend in non-brand campaigns",
+    source: "Google Ads",
+    limitation: "Needs the client's brand terms. A spelling not listed reads as non-brand.",
+  },
+  "Non-brand ROAS": {
+    title: "Non-brand ROAS",
+    formula: "Conversion value / spend, non-brand and Shopping or PMax campaigns",
+    source: "Google Ads",
+    note: "Leaves brand search out, which flatters blended ROAS.",
+  },
+  "Over-claim": {
+    title: "Platform over-claim",
+    formula: "Platform-reported value / GA4 revenue",
+    source: "Platform and GA4",
+    limitation: "Above 1.00x the platform claims more than GA4 sees. Attribution rules differ, so some gap is normal.",
+  },
+  "Tracking coverage": {
+    title: "Tracking coverage",
+    formula: "GA4 revenue / shop revenue",
+    source: "GA4 and shop platform",
+    limitation: "Shop revenue may include tax where GA4 does not, which lowers coverage.",
+  },
 };

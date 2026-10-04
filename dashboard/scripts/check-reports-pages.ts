@@ -40,11 +40,11 @@ const filters: ReportFilters = DEFAULT_REPORT_FILTERS;
 // ---------------------------------------------------------------------------
 
 const page = buildPageMetrics();
-check("every picker metric is a queryable (phase 1) id", page.pickerMetrics.length === 30 && page.pickerMetrics.every((m) => isMetricId(m.id)), page.pickerMetrics.length);
+check("every picker metric is a queryable id (44)", page.pickerMetrics.length === 44 && page.pickerMetrics.every((m) => isMetricId(m.id)), page.pickerMetrics.length);
 check("widget metrics cover every picker metric", page.pickerMetrics.every((m) => page.widgetMetrics[m.id]?.label === m.label));
 check("picker metrics carry the full requirement", page.pickerMetrics.every((m) => m.requires !== undefined));
 check("caveat texts cover every caveat id", Object.keys(page.caveatTexts).length >= 9 && Object.values(page.caveatTexts).every((t) => typeof t === "string" && t.length > 0));
-check("the whole page payload is JSON serialisable", JSON.stringify(page).length > 100 && JSON.parse(JSON.stringify(page)).pickerMetrics.length === 30);
+check("the whole page payload is JSON serialisable", JSON.stringify(page).length > 100 && JSON.parse(JSON.stringify(page)).pickerMetrics.length === 44);
 check("roas finds MER (RS8 request)", findMetricId("roas") === "mer" && METRICS.mer.aliases?.includes("roas") === true);
 
 // ---------------------------------------------------------------------------

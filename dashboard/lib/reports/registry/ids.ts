@@ -13,7 +13,12 @@
  * Pure module: no imports, safe for the browser bundle.
  */
 
-/** Phase 1: the 30 metrics read from `mart_daily_kpis`. The only ids a widget query accepts. */
+/**
+ * Queryable metrics: the 30 phase-1 metrics read from `mart_daily_kpis`, then
+ * the Meta soft metrics read from `mart_meta_campaign_perf` and
+ * `mart_meta_ad_perf` (added 2026-10-04, semantic version 5). The only ids a
+ * widget query accepts.
+ */
 export const METRIC_IDS = [
   // Profitability
   "revenue",
@@ -50,6 +55,21 @@ export const METRIC_IDS = [
   "google_roas",
   "google_ctr",
   "google_cpc",
+  // Meta soft metrics (campaign and ad marts). meta_atc_rate was reserved in phase 2 and never queryable.
+  "meta_cost_per_lpv",
+  "meta_lpv",
+  "meta_link_ctr",
+  "meta_cpc_link",
+  "meta_add_to_cart",
+  "meta_cost_per_atc",
+  "meta_atc_rate",
+  "meta_atc_to_purchase",
+  "meta_initiate_checkout",
+  "meta_cost_per_ic",
+  "meta_hook_rate",
+  "meta_hold_rate",
+  "meta_frequency",
+  "meta_conversion_rate",
 ] as const;
 
 /** Phase 2, reserved: defined in the registry, not yet queryable. */
@@ -58,7 +78,6 @@ export const PHASE2_METRIC_IDS = [
   "email_open_rate",
   "email_click_rate",
   "email_rev_per_email",
-  "meta_atc_rate",
 ] as const;
 
 /** Every id the registry may define (phase 1 and reserved phase 2). */
@@ -74,7 +93,7 @@ export type RegistryMetricId = MetricId | Phase2MetricId;
 const QUERYABLE: ReadonlySet<string> = new Set(METRIC_IDS);
 const REGISTERED: ReadonlySet<string> = new Set(REGISTRY_METRIC_IDS);
 
-/** True for a queryable (phase 1) metric id. */
+/** True for a queryable metric id. */
 export function isMetricId(value: unknown): value is MetricId {
   return typeof value === "string" && QUERYABLE.has(value);
 }

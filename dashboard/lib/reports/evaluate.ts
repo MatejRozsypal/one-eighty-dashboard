@@ -29,6 +29,12 @@
  *   CM3, the mart definition) are not affected. Ad outcomes (purchase value,
  *   purchases, clicks, impressions) count only the days whose platform spend
  *   is NULL (registry `missingWhenNull`): a gap is only ever missing spend.
+ * - Several marts in one widget (the daily KPI view and the Meta campaign and
+ *   ad marts): FX and foreign-currency guards are kept per mart, so a missing
+ *   rate or an ad account in another currency only affects that mart's money.
+ *   Marts flagged `accountCurrency` (Meta, money in the ad account currency)
+ *   are converted per row like any other but never raise the foreign
+ *   currency caveat.
  * - Per-client series read native sums for non-money units and display sums
  *   for money units. Rollups read display sums for every client, so all
  *   clients are in one currency before summing.
@@ -53,14 +59,14 @@
  */
 
 import { delta as relativeDelta } from "@/lib/period";
-import { TOTAL_BUCKET, type ComponentRow, type ComponentSum, type EvaluateModule, type EvaluateWidget, type ResolvedWidget } from "./contracts";
+import { TOTAL_BUCKET, type ComponentRow, type ComponentSum, type EvaluateModule, type EvaluateWidget, type MartGuards, type ResolvedWidget } from "./contracts";
 import { SERIES_SLOTS } from "./limits";
 import { notConnectedReason } from "./registry/capabilities";
 import { clientCaveats, orderCaveats } from "./registry/caveats";
-import { getComponent } from "./registry/components";
+import { MARTS, getComponent } from "./registry/components";
 import type { MetricId } from "./registry/ids";
 import { METRICS } from "./registry/metrics";
-import type { Capability, CaveatId, ComponentId, RegisteredMetric, ReportClient, Term } from "./registry/types";
+import type { Capability, CaveatId, ComponentId, MartDef, MartId, RegisteredMetric, ReportClient, Term } from "./registry/types";
 import { buildBuckets, partialBucketIndexes, verticalKey } from "./resolve";
 import {
   CELL_STATUS_LABEL,
@@ -78,17 +84,39 @@ import {
 // Aggregates
 // ---------------------------------------------------------------------------
 
-/** Summed rows of one client for one row group (a bucket or a whole period). */
-interface Agg {
-  values: Map<ComponentId, ComponentSum>;
+/** Row guards of one mart inside a row group. Each mart CTE has its own currency column and FX joins. */
+interface MartAgg {
   fxMissing: boolean;
   fxMonths: Set<string>;
   foreignRows: number;
+}
+
+/** Summed rows of one client for one row group (a bucket or a whole period). */
+interface Agg {
+  values: Map<ComponentId, ComponentSum>;
+  /** Guards per mart: a component reads only its own mart's FX and currency guards. */
+  marts: Map<MartId, MartAgg>;
   nRows: number;
 }
 
 function emptyAgg(): Agg {
-  return { values: new Map(), fxMissing: false, fxMonths: new Set(), foreignRows: 0, nRows: 0 };
+  return { values: new Map(), marts: new Map(), nRows: 0 };
+}
+
+function martAgg(agg: Agg, mart: MartId): MartAgg {
+  let g = agg.marts.get(mart);
+  if (!g) {
+    g = { fxMissing: false, fxMonths: new Set(), foreignRows: 0 };
+    agg.marts.set(mart, g);
+  }
+  return g;
+}
+
+/** Rows in another currency that deserve the caveat: marts whose money is in the ad account currency are converted by design and not flagged. */
+function flaggedForeignRows(agg: Agg): number {
+  let n = 0;
+  for (const [mart, g] of agg.marts) if (!(MARTS[mart] as MartDef).accountCurrency) n += g.foreignRows;
+  return n;
 }
 
 /** SQL SUM semantics: null + null = null, null + x = x. */
@@ -116,13 +144,14 @@ function addSums(prev: ComponentSum | undefined, v: ComponentSum): ComponentSum 
 }
 
 function addRow(agg: Agg, row: ComponentRow): void {
-  for (const g of Object.values(row.guards)) {
+  for (const [mart, g] of Object.entries(row.guards) as Array<[MartId, MartGuards | undefined]>) {
     if (!g) continue;
     agg.nRows += g.nRows;
-    agg.foreignRows += g.foreignCcyRows;
+    const ma = martAgg(agg, mart);
+    ma.foreignRows += g.foreignCcyRows;
     if (g.fxMissingRows > 0) {
-      agg.fxMissing = true;
-      for (const m of g.fxMissingMonths) agg.fxMonths.add(m);
+      ma.fxMissing = true;
+      for (const m of g.fxMissingMonths) ma.fxMonths.add(m);
     }
   }
   for (const [id, v] of Object.entries(row.values) as Array<[ComponentId, ComponentSum | undefined]>) {
@@ -135,9 +164,12 @@ function mergeAggs(aggs: Iterable<Agg>): Agg {
   const out = emptyAgg();
   for (const a of aggs) {
     out.nRows += a.nRows;
-    out.foreignRows += a.foreignRows;
-    if (a.fxMissing) out.fxMissing = true;
-    for (const m of a.fxMonths) out.fxMonths.add(m);
+    for (const [mart, g] of a.marts) {
+      const o = martAgg(out, mart);
+      o.foreignRows += g.foreignRows;
+      if (g.fxMissing) o.fxMissing = true;
+      for (const m of g.fxMonths) o.fxMonths.add(m);
+    }
     for (const [id, v] of a.values) {
       out.values.set(id, addSums(out.values.get(id), v));
     }
@@ -172,9 +204,11 @@ function readComponent(agg: Agg, id: ComponentId, mode: ReadMode, client: Report
   const isGap = (nulls: number | undefined) => def.nullMeans === "gap" && (nulls ?? 0) > 0;
   if (!def.money) return { value: v ? (v.nat ?? v.disp) : null, fx: false, gap: v ? isGap(v.natNulls) : false };
   if (mode === "native") return { value: v ? v.nat : null, fx: false, gap: v ? isGap(v.natNulls) : false };
+  // Guards of this component's own mart (an EUR shop can have a CZK Meta account).
+  const g = agg.marts.get(def.mart);
   // Same currency and no foreign rows: the native sum is the display sum, no rate needed.
-  if (client.currency === displayCurrency && agg.foreignRows === 0) return { value: v ? v.nat : null, fx: false, gap: v ? isGap(v.natNulls) : false };
-  if (agg.fxMissing) return { value: null, fx: true };
+  if (client.currency === displayCurrency && (g?.foreignRows ?? 0) === 0) return { value: v ? v.nat : null, fx: false, gap: v ? isGap(v.natNulls) : false };
+  if (g?.fxMissing) return { value: null, fx: true };
   return { value: v ? v.disp : null, fx: false, gap: v ? isGap(v.dispNulls) : false };
 }
 
@@ -260,7 +294,7 @@ function outcome(metric: RegisteredMetric, members: readonly Member[], mode: Rea
       const r = readComponent(m.agg, id, mode, m.client, displayCurrency);
       if (r.fx) {
         compFx = true;
-        for (const mo of m.agg.fxMonths) fxMonths.add(mo);
+        for (const mo of m.agg.marts.get(getComponent(id).mart)?.fxMonths ?? []) fxMonths.add(mo);
       }
       if (r.gap === true) compGap = true;
       value = addN(value, r.value);
@@ -426,7 +460,7 @@ export const evaluateWidget: EvaluateWidget = (input) => {
     for (const c of group.clients) {
       for (const cv of clientCaveats(c)) caveats.add(cv);
       const d = data.get(c.id);
-      if (d && (d.cur.total.foreignRows > 0 || d.cmp.total.foreignRows > 0)) caveats.add("foreign_currency_rows");
+      if (d && (flaggedForeignRows(d.cur.total) > 0 || flaggedForeignRows(d.cmp.total) > 0)) caveats.add("foreign_currency_rows");
     }
 
     const cells: Partial<Record<MetricId, MetricCell>> = {};

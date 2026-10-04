@@ -486,6 +486,17 @@ Components are `mart_daily_kpis` columns, summed. Metrics:
 | | `meta_cpm` | `meta_spend / meta_impressions * 1000`. |
 | | `meta_cpa` | `meta_spend / meta_purchases`. |
 | | `meta_spend_share` | `meta_spend / paid_spend`. |
+| Meta soft (campaign and ad marts) | `meta_cost_per_lpv` | `spend / landing_page_views`, `mart_meta_campaign_perf`. Money in the ad account currency, converted per row and month. |
+| | `meta_lpv`, `meta_add_to_cart`, `meta_initiate_checkout` | Sums of `landing_page_views`, `add_to_cart`, `initiate_checkout`. |
+| | `meta_link_ctr` | `link_clicks / impressions`. |
+| | `meta_cpc_link` | `spend / link_clicks`. |
+| | `meta_cost_per_atc`, `meta_cost_per_ic` | `spend / add_to_cart`, `spend / initiate_checkout`. |
+| | `meta_atc_rate` | `add_to_cart / landing_page_views` (the reserved phase-2 id, formula set by the owner 2026-10-04). |
+| | `meta_atc_to_purchase` | `purchases / add_to_cart`. |
+| | `meta_conversion_rate` | `purchases / link_clicks`. |
+| | `meta_hook_rate` | `video_play_actions / impressions` of ad days with video plays, `mart_meta_ad_perf` ("hit rate" in the owner's request). |
+| | `meta_hold_rate` | `video_thruplays / impressions` of ad days with video plays. |
+| | `meta_frequency` | `impressions / reach` summed over campaign days: average daily frequency, below true period frequency. |
 | Google | `google_spend` | Sum. |
 | | `google_roas` | `google_revenue / google_spend`. |
 | | `google_ctr` | `google_clicks / google_impressions`. |
@@ -581,6 +592,10 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ---
 
 ## Changelog (most recent first)
+
+### 2026-10-04 (amendment 22): Meta soft metrics in Reports
+
+Frontend semantic layer only, no warehouse change. `SEMANTIC_VERSION` 4 to 5. 14 queryable Meta metrics read `mart_meta_campaign_perf` and `mart_meta_ad_perf` next to the daily KPI view (one CTE per mart): cost per LPV, landing page views, link CTR, CPC (link), add to carts, cost per ATC, ATC rate (ATC / LPV), ATC to purchase, initiate checkouts, cost per checkout, hook rate, hold rate, average daily frequency, Meta conversion rate (purchases / link clicks). Meta CPM and Meta CPA stay on the daily KPI view. Not possible yet: outbound CTR and quartile hold curves (columns 100 percent NULL, not ingested). Sep 2026 in CZK: cost per LPV Dobias 14.52, Ethia 15.12, Manami 28.20, Venev 89.83; link CTR 2.38 %, 1.44 %, 1.39 %, 1.49 %; RawBark not connected.
 
 ### 2026-10-05 (amendment 19): Reporting registry section
 

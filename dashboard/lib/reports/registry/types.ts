@@ -18,9 +18,9 @@ export type { MetricId, Phase2MetricId, RegistryMetricId } from "./ids";
  * Part of every cache key. Bump it whenever a formula, a component column or
  * an evaluation rule changes, so no cached result outlives its definition.
  */
-export const SEMANTIC_VERSION = 4;
+export const SEMANTIC_VERSION = 5;
 
-export type MartId = "kpis" | "meta_campaign" | "email_campaign";
+export type MartId = "kpis" | "meta_campaign" | "meta_ad" | "email_campaign";
 export type Grain = "day" | "week" | "month";
 export type QueryGrain = Grain | "total";
 export type Unit = "money" | "count" | "ratio" | "percent";
@@ -105,6 +105,14 @@ export interface MartDef {
   currencyColumn: string | null;
   grains: readonly Grain[];
   phase: 1 | 2;
+  /**
+   * Money is in the ad account's currency, which may differ from the client's
+   * trading currency by design (an EUR shop with a CZK Meta account). Such
+   * rows are converted per month like any other row, but they are expected,
+   * so they do not raise the `foreign_currency_rows` caveat. The row count is
+   * still returned: the evaluator needs it to know the native sum is partial.
+   */
+  accountCurrency?: true;
 }
 
 export type ComponentId = `${MartId}.${string}`;
@@ -112,7 +120,11 @@ export type ComponentId = `${MartId}.${string}`;
 export interface ComponentDef {
   id: ComponentId;
   mart: MartId;
-  /** Physical column. Must match /^[a-z_][a-z0-9_]*$/ (checked at module load). */
+  /**
+   * Physical column. Must match /^[a-z_][a-z0-9_]*$/ (checked at module load).
+   * Equals the part of the id after the dot unless the spec names another
+   * column (a filtered variant such as `meta_ad.video_impressions`).
+   */
   column: string;
   /** Money components are emitted twice: native (client currency) and display currency. */
   money: boolean;
@@ -141,6 +153,12 @@ export interface ComponentDef {
   missingWhenNull?: ComponentId;
   /** A summed 0 is "not measured" when this guard component is > 0 (COGS on positive revenue). */
   zeroIsMissingWhen?: ComponentId;
+  /**
+   * Row filter: only rows where this component's column is > 0 are summed
+   * (and counted for NULLs). Same mart. Used for impressions of video ads
+   * (rows with video plays), the denominator of hook and hold rate.
+   */
+  onlyWhenPositive?: ComponentId;
 }
 
 /** Identifier rule for marts, tables and columns. Enforced when the registry loads. */

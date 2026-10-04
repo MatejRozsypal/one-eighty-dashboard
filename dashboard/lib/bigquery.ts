@@ -114,6 +114,37 @@ export interface QueryJobResult<T> {
 const LABEL_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 const LABEL_VALUE_RE = /^[a-z0-9_-]{0,63}$/;
 
+/** Provided types whose value @google-cloud/bigquery reads from `.value` (BigQuery._isCustomType). */
+const WRAPPED_TYPES: Readonly<Record<string, (v: string) => unknown>> = {
+  DATE: (v) => BigQuery.date(v),
+  DATETIME: (v) => BigQuery.datetime(v),
+  TIME: (v) => BigQuery.time(v),
+  TIMESTAMP: (v) => BigQuery.timestamp(v),
+};
+
+/**
+ * Params as @google-cloud/bigquery needs them. With a provided type of DATE,
+ * DATETIME, TIME or TIMESTAMP the library sends `value.value`, which is
+ * undefined for a plain `YYYY-MM-DD` string, so the parameter silently
+ * arrives as NULL (every `BETWEEN @from AND @to` matches nothing, the job
+ * still succeeds, and a dry run cannot tell). Such strings, alone or inside
+ * an array, are wrapped in the library's own value class here.
+ */
+export function toJobParams(
+  params: Record<string, QueryJobParam>,
+  types: Record<string, QueryJobParamType> = {}
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(params)) {
+    const t = types[name];
+    const wrap = WRAPPED_TYPES[(Array.isArray(t) ? t[0] : t ?? "").toUpperCase()];
+    if (!wrap) out[name] = value;
+    else if (Array.isArray(value)) out[name] = (value as unknown[]).map((v) => (typeof v === "string" ? wrap(v) : v));
+    else out[name] = typeof value === "string" ? wrap(value) : value;
+  }
+  return out;
+}
+
 function statNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
@@ -156,7 +187,7 @@ export async function queryJob<T = Record<string, unknown>>(
   const bq = getClient();
   const [job] = await bq.createQueryJob({
     query: sql,
-    params,
+    params: toJobParams(params, options.types),
     types: options.types,
     location: "EU",
     dryRun: options.dryRun === true ? true : undefined,

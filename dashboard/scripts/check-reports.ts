@@ -51,7 +51,8 @@ import {
 } from "@/lib/reports/compile";
 import * as runModule from "@/lib/reports/run";
 import { cacheTtlSeconds, jobLabels, mapWarehouseError, maxBytesBilled, normaliseRows } from "@/lib/reports/run";
-import { queryJob } from "@/lib/bigquery";
+import { BigQuery } from "@google-cloud/bigquery";
+import { queryJob, toJobParams } from "@/lib/bigquery";
 import { addDays, daysInRange, presetRange, resolvePeriod, scanBounds, type ComparisonMode, type DateRange } from "@/lib/period";
 import { CACHE_TTL_S, DEFAULT_MAX_BYTES_BILLED, DRY_RUN_BUDGET_SHARE, MAX_SPAN } from "@/lib/reports/limits";
 import { ReportsError, TOTAL_BUCKET, type CompileModule, type ResolvedWidget, type RunModule } from "@/lib/reports/contracts";
@@ -593,6 +594,37 @@ function firstDiff(a: string, b: string): string {
   const nv = nrows[0].values;
   check("normalise: NULL-row counts carried (money nat/disp, count)", nv["kpis.paid_spend"]?.natNulls === 19 && nv["kpis.paid_spend"]?.dispNulls === 19 && nv["kpis.revenue"]?.natNulls === 0 && nv["kpis.new_customer_orders"]?.natNulls === 2 && nv["kpis.new_customer_orders"]?.dispNulls === 2);
   check("normalise: NULL fx months is empty, zero stays zero", rows[1].guards.kpis?.fxMissingMonths.length === 0 && rows[1].values["kpis.paid_spend"]?.nat === 0 && rows[1].values["kpis.new_customer_orders"]?.nat === null);
+}
+
+// ---------------------------------------------------------------------------
+// Wire params: what @google-cloud/bigquery actually sends (2026-10-04 bug)
+// ---------------------------------------------------------------------------
+//
+// A provided type of DATE makes the library send `value.value`; for a plain
+// string that is undefined, so every date param went out as NULL, every query
+// matched 0 rows and every Reports cell read "No data" with HTTP 200. A dry
+// run cannot see it, so the params are serialised here with the library's own
+// encoder and compared to the compiled values.
+{
+  const q = compileWidgetWith(
+    resolved({ clientIds: ["dobias", "manami"], components: ["kpis.revenue"], grain: "week", current: { from: "2026-07-06", to: "2026-10-03" }, compare: "previous_period" }),
+    FIXTURE_REGISTRY,
+    { projectId: "oneeighty-warehouse" }
+  );
+  const encode = BigQuery as unknown as { valueToQueryParameter_(v: unknown, t: unknown): { parameterValue: { value?: unknown; arrayValues?: Array<{ value?: unknown }> } } };
+  const wire = toJobParams(q.params, q.types);
+  const dateNames = Object.keys(q.types).filter((k) => q.types[k] === "DATE");
+  check("wire params: compiled query has six DATE params", dateNames.length === 6);
+  check(
+    "wire params: every DATE param reaches BigQuery as its YYYY-MM-DD value, never NULL",
+    dateNames.every((k) => encode.valueToQueryParameter_(wire[k], q.types[k]).parameterValue.value === q.params[k]),
+    dateNames.map((k) => `${k}=${JSON.stringify(encode.valueToQueryParameter_(wire[k], q.types[k]).parameterValue)}`).join(" ")
+  );
+  check("wire params: raw strings would be NULL (guards the encoder assumption)", encode.valueToQueryParameter_("2026-07-06", "DATE").parameterValue.value === undefined);
+  const ids = encode.valueToQueryParameter_(wire.clientIds, q.types.clientIds).parameterValue.arrayValues?.map((v) => v.value);
+  check("wire params: ARRAY<STRING> and STRING untouched", JSON.stringify(ids) === JSON.stringify(q.params.clientIds) && encode.valueToQueryParameter_(wire.displayCurrency, "STRING").parameterValue.value === "CZK");
+  const arr = encode.valueToQueryParameter_(toJobParams({ d: ["2026-01-01"] }, { d: ["DATE"] }).d, ["DATE"]).parameterValue.arrayValues;
+  check("wire params: ARRAY<DATE> items wrapped too", arr?.[0]?.value === "2026-01-01");
 }
 
 // ---------------------------------------------------------------------------

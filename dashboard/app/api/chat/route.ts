@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 
 /** Matěj's stated holding answer. Every question gets it, verbatim. */
 const HOLDING_REPLY =
-  "This function is in progress. Please wait for further information from Matt. Thank you! 🤫";
+  "Coming soon.";
 
 async function reply(_message: string, _images: Img[]): Promise<string> {
   return HOLDING_REPLY;

@@ -9,6 +9,7 @@
 
 import { matchesPrefix, pageAvailability, type HasCapabilities } from "@/lib/capabilities";
 import { productsFor, type Product } from "@/lib/products";
+import type { Role } from "@/lib/users/store";
 import { PAID_TAB_HREF } from "@/lib/paid/links";
 import type { PaidTabKey } from "@/lib/paid/types";
 
@@ -99,6 +100,7 @@ export const SETTINGS_HREF = "/settings";
 /** Titles for routes outside NAV and CREATIVE_NAV (used by the mobile bar). */
 const OTHER_TITLES: Array<{ href: string; label: string }> = [
   { href: "/chat", label: "Assistant" },
+  { href: "/reports", label: "Reports" },
   { href: "/channels", label: "Channels" },
   { href: "/health", label: "Data health" },
   { href: "/settings", label: "Settings" },
@@ -156,9 +158,12 @@ export function navFor(
   })).filter((g) => g.items.length > 0);
 }
 
-/** Rail products for this user and client. Creative is hidden when the client has no Meta. */
-export function railProducts(isInternal: boolean, client?: HasCapabilities | null): Product[] {
-  return productsFor(isInternal).filter(
+/**
+ * Rail products for this role and client. Creative is hidden when the client has no Meta.
+ * Reports is not client-scoped (each report picks its clients), so it is never filtered here.
+ */
+export function railProducts(role: Role, client?: HasCapabilities | null): Product[] {
+  return productsFor(role).filter(
     (p) => p.id !== "creative" || !client || pageAvailability(client, p.href) === "available"
   );
 }

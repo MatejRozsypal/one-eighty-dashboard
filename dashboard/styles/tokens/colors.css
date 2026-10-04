@@ -83,4 +83,18 @@
   --accent-soft:       var(--growth-50);
 
   --focus-ring: var(--growth-500);
+
+  /* ---- Reports: series and benchmark (aliases only, no new colours) ----
+     A client keeps one slot across every widget (index in the alphabetical
+     client list, mod 6). Beyond six series the widgets add dash patterns.
+     They alias the base scales, so a theme that redefines the base tokens
+     carries the series colours with it; nothing here is theme specific. */
+  --series-1: var(--ink-900);
+  --series-2: var(--growth-600);
+  --series-3: var(--info);
+  --series-4: var(--warning-700);
+  --series-5: var(--gray-400);
+  --series-6: var(--growth-300);
+  /* Industry benchmark. Always drawn dashed. */
+  --benchmark: var(--gray-300);
 }

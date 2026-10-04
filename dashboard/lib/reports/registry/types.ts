@@ -18,7 +18,7 @@ export type { MetricId, Phase2MetricId, RegistryMetricId } from "./ids";
  * Part of every cache key. Bump it whenever a formula, a component column or
  * an evaluation rule changes, so no cached result outlives its definition.
  */
-export const SEMANTIC_VERSION = 1;
+export const SEMANTIC_VERSION = 2;
 
 export type MartId = "kpis" | "meta_campaign" | "email_campaign";
 export type Grain = "day" | "week" | "month";
@@ -117,6 +117,19 @@ export interface ComponentDef {
   /** Money components are emitted twice: native (client currency) and display currency. */
   money: boolean;
   requires: CapExpr;
+  /**
+   * What a NULL in this column on a mart row means. The daily KPI view
+   * FULL OUTER JOINs the shop side and the ad platforms, so a row exists for a
+   * day when either side has data.
+   * - "gap": the value is missing (ad rows absent for that day, uncosted order
+   *   lines). A bucket, total or rollup that contains such a row has no value
+   *   for any term that treats the component as a gap, never a partial sum.
+   * - "zero": nothing happened (no orders that day, a campaign with no events).
+   *   NULL adds 0 and is never a gap.
+   * Components with `zeroIsMissingWhen` count a NULL only on rows where the
+   * guard component is > 0 (COGS on a day with revenue).
+   */
+  nullMeans: "gap" | "zero";
   /** A summed 0 is "not measured" when this guard component is > 0 (COGS on positive revenue). */
   zeroIsMissingWhen?: ComponentId;
 }

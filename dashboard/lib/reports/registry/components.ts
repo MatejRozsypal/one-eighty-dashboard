@@ -39,6 +39,11 @@ export const MARTS = {
   email_campaign: { id: "email_campaign", table: "mart.mart_email_campaign_perf", dateColumn: "send_date", currencyColumn: "currency", grains: ["week", "month"], phase: 2 },
 } as const satisfies MartRegistry;
 
+// nullMeans (see ComponentDef): shop columns are NULL on a day without orders
+// (zero); ad-platform columns are NULL when no ad rows exist for the day (gap,
+// for example Dobias Meta before April 2026); COGS is a gap only on days with
+// revenue; phase 2 campaign marts have one row per campaign, where NULL means
+// the platform reported nothing (zero). Checked live 2026-10-04.
 const PAID: CapExpr = { any: ["meta", "googleAds"] };
 
 type ComponentSpec = Omit<ComponentDef, "id" | "mart" | "column">;
@@ -70,38 +75,38 @@ function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>
 }
 
 export const COMPONENTS = defineComponents({
-  "kpis.revenue": { money: true, requires: "shop" },
-  "kpis.net_sales": { money: true, requires: "shop" },
-  "kpis.new_customer_revenue": { money: true, requires: "shop" },
-  "kpis.returning_customer_revenue": { money: true, requires: "shop" },
-  "kpis.new_customer_net_sales": { money: true, requires: "shop" },
-  "kpis.returning_customer_net_sales": { money: true, requires: "shop" },
-  /** NULL (Woo without costed lines) or 0 on positive revenue: not measured. */
-  "kpis.cogs": { money: true, requires: "shop", zeroIsMissingWhen: "kpis.revenue" },
+  "kpis.revenue": { money: true, requires: "shop", nullMeans: "zero" },
+  "kpis.net_sales": { money: true, requires: "shop", nullMeans: "zero" },
+  "kpis.new_customer_revenue": { money: true, requires: "shop", nullMeans: "zero" },
+  "kpis.returning_customer_revenue": { money: true, requires: "shop", nullMeans: "zero" },
+  "kpis.new_customer_net_sales": { money: true, requires: "shop", nullMeans: "zero" },
+  "kpis.returning_customer_net_sales": { money: true, requires: "shop", nullMeans: "zero" },
+  /** NULL (Woo without costed lines) or 0 on positive revenue: not measured. NULL counts as a gap only on days with revenue. */
+  "kpis.cogs": { money: true, requires: "shop", nullMeans: "gap", zeroIsMissingWhen: "kpis.revenue" },
   /** Part of the mart's CM3 (owner decision: CM3 = mart definition). COALESCEd to 0 in the view. */
-  "kpis.fulfillment_cost": { money: true, requires: "shop" },
-  "kpis.orders": { money: false, requires: "shop" },
-  "kpis.new_customer_orders": { money: false, requires: "shop" },
-  "kpis.returning_customer_orders": { money: false, requires: "shop" },
-  "kpis.paid_spend": { money: true, requires: PAID },
-  "kpis.meta_spend": { money: true, requires: "meta" },
-  "kpis.meta_revenue": { money: true, requires: "meta" },
-  "kpis.meta_purchases": { money: false, requires: "meta" },
-  "kpis.meta_impressions": { money: false, requires: "meta" },
-  "kpis.meta_clicks": { money: false, requires: "meta" },
-  "kpis.google_spend": { money: true, requires: "googleAds" },
-  "kpis.google_revenue": { money: true, requires: "googleAds" },
-  "kpis.google_purchases": { money: false, requires: "googleAds" },
-  "kpis.google_impressions": { money: false, requires: "googleAds" },
-  "kpis.google_clicks": { money: false, requires: "googleAds" },
+  "kpis.fulfillment_cost": { money: true, requires: "shop", nullMeans: "zero" },
+  "kpis.orders": { money: false, requires: "shop", nullMeans: "zero" },
+  "kpis.new_customer_orders": { money: false, requires: "shop", nullMeans: "zero" },
+  "kpis.returning_customer_orders": { money: false, requires: "shop", nullMeans: "zero" },
+  "kpis.paid_spend": { money: true, requires: PAID, nullMeans: "gap" },
+  "kpis.meta_spend": { money: true, requires: "meta", nullMeans: "gap" },
+  "kpis.meta_revenue": { money: true, requires: "meta", nullMeans: "gap" },
+  "kpis.meta_purchases": { money: false, requires: "meta", nullMeans: "gap" },
+  "kpis.meta_impressions": { money: false, requires: "meta", nullMeans: "gap" },
+  "kpis.meta_clicks": { money: false, requires: "meta", nullMeans: "gap" },
+  "kpis.google_spend": { money: true, requires: "googleAds", nullMeans: "gap" },
+  "kpis.google_revenue": { money: true, requires: "googleAds", nullMeans: "gap" },
+  "kpis.google_purchases": { money: false, requires: "googleAds", nullMeans: "gap" },
+  "kpis.google_impressions": { money: false, requires: "googleAds", nullMeans: "gap" },
+  "kpis.google_clicks": { money: false, requires: "googleAds", nullMeans: "gap" },
   // phase 2
-  "meta_campaign.link_clicks": { money: false, requires: "meta" },
-  "meta_campaign.add_to_cart": { money: false, requires: "meta" },
-  "email_campaign.sent": { money: false, requires: "email" },
-  "email_campaign.delivered": { money: false, requires: "email" },
-  "email_campaign.unique_opens": { money: false, requires: "email" },
-  "email_campaign.unique_clicks": { money: false, requires: "email" },
-  "email_campaign.revenue": { money: true, requires: "email" },
+  "meta_campaign.link_clicks": { money: false, requires: "meta", nullMeans: "zero" },
+  "meta_campaign.add_to_cart": { money: false, requires: "meta", nullMeans: "zero" },
+  "email_campaign.sent": { money: false, requires: "email", nullMeans: "zero" },
+  "email_campaign.delivered": { money: false, requires: "email", nullMeans: "zero" },
+  "email_campaign.unique_opens": { money: false, requires: "email", nullMeans: "zero" },
+  "email_campaign.unique_clicks": { money: false, requires: "email", nullMeans: "zero" },
+  "email_campaign.revenue": { money: true, requires: "email", nullMeans: "zero" },
 });
 
 export type KnownComponentId = keyof typeof COMPONENTS;

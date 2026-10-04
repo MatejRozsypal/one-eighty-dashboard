@@ -240,7 +240,7 @@ const FIXTURE_COMPONENT_LIST: Array<[ComponentId, boolean]> = [
 
 function fixtureComponent(id: ComponentId, money: boolean): ComponentDef {
   const [mart, column] = id.split(".") as [MartId, string];
-  return { id, mart, column, money, requires: "shop" };
+  return { id, mart, column, money, requires: "shop", nullMeans: "gap" };
 }
 
 const FIXTURE_REGISTRY: CompilerRegistry = {
@@ -351,10 +351,15 @@ kpis AS (
     COUNTIF(src.to_czk IS NULL OR dst.to_czk IS NULL) AS kpis__fx_missing_rows,
     ARRAY_AGG(DISTINCT IF(src.to_czk IS NULL OR dst.to_czk IS NULL, DATE_TRUNC(t.date, MONTH), NULL) IGNORE NULLS) AS kpis__fx_missing_months,
     SUM(t.new_customer_orders) AS kpis__new_customer_orders,
+    COUNTIF(t.new_customer_orders IS NULL) AS kpis__new_customer_orders__nulls,
     SUM(IF(t.currency = c.currency, t.paid_spend, NULL)) AS kpis__paid_spend__nat,
     SUM(t.paid_spend * src.to_czk / dst.to_czk) AS kpis__paid_spend__disp,
+    COUNTIF(t.currency = c.currency AND t.paid_spend IS NULL) AS kpis__paid_spend__nat_nulls,
+    COUNTIF(t.paid_spend IS NULL) AS kpis__paid_spend__disp_nulls,
     SUM(IF(t.currency = c.currency, t.revenue, NULL)) AS kpis__revenue__nat,
-    SUM(t.revenue * src.to_czk / dst.to_czk) AS kpis__revenue__disp
+    SUM(t.revenue * src.to_czk / dst.to_czk) AS kpis__revenue__disp,
+    COUNTIF(t.currency = c.currency AND t.revenue IS NULL) AS kpis__revenue__nat_nulls,
+    COUNTIF(t.revenue IS NULL) AS kpis__revenue__disp_nulls
   FROM \`oneeighty-warehouse.mart.mart_daily_kpis\` AS t
   JOIN \`oneeighty-warehouse.ref.clients\` AS c ON c.client_id = t.client_id
   CROSS JOIN UNNEST([STRUCT('cur' AS period, @curFrom AS from_date, @curTo AS to_date), STRUCT('cmp', @cmpFrom, @cmpTo)]) AS p
@@ -373,17 +378,17 @@ const SNAPSHOTS: Array<{ name: string; widget: ResolvedWidget; sha256: string }>
   {
     name: "kpi total, revenue and orders, EUR, no comparison",
     widget: resolved({ clientIds: ["venev", "dobias"], components: ["kpis.orders", "kpis.revenue"], grain: "total", current: { from: "2025-10-04", to: "2026-10-03" }, compare: "none", currency: "EUR" }),
-    sha256: "1c3aba75c0f21941e8880a5a3b7bd7dde9a845cbb784834c0d9933783615e634",
+    sha256: "49fe1050ddd75345b3f13542e96a655ebea79ebb770bd2b7c9135511fd6090bb",
   },
   {
     name: "line day, counts only (no FX CTE), previous period",
     widget: resolved({ clientIds: ["manami"], components: ["kpis.orders", "kpis.new_customer_orders"], grain: "day", current: { from: "2026-09-04", to: "2026-10-03" }, compare: "previous_period" }),
-    sha256: "a564b383b6fcc9375a11d14e8dbee834326818e8694b727254d6dad3e80ce455",
+    sha256: "9ca07d39351bc0fb9be74fe1ba99ab8cf6a506b5a54df643cfdc6d88d94ab626",
   },
   {
     name: "bar month, two marts (phase 2 fixture), USD",
     widget: resolved({ clientIds: ["manami", "ethia"], components: ["email_campaign.revenue", "kpis.revenue", "email_campaign.sent"], grain: "month", current: { from: "2026-04-01", to: "2026-09-30" }, compare: "previous_year", currency: "USD" }),
-    sha256: "45cc85e3e411fdd139479757c4b5d950c9a71cd31203410416e75c6ec8595856",
+    sha256: "e34806a03009098aad1dcde39a22e69b1e7ef95f31a6fa390762d47e6e5f59fe",
   },
 ];
 
@@ -418,6 +423,26 @@ for (const s of SNAPSHOTS) {
   const q = compileFixture(s.widget);
   const hash = createHash("sha256").update(q.sql).digest("hex");
   check(`snapshot: ${s.name}`, hash === s.sha256, `sha256 ${hash} (run with --print-sql to review)`);
+}
+
+// F1: NULL-row counts ride along with every component sum, in the same row sets.
+check(
+  "F1 sql: money component has nat and disp NULL counts",
+  merCac.sql.includes("COUNTIF(t.currency = c.currency AND t.paid_spend IS NULL) AS kpis__paid_spend__nat_nulls") &&
+    merCac.sql.includes("COUNTIF(t.paid_spend IS NULL) AS kpis__paid_spend__disp_nulls")
+);
+check("F1 sql: non-money component has a NULL count", merCac.sql.includes("COUNTIF(t.new_customer_orders IS NULL) AS kpis__new_customer_orders__nulls"));
+check("F1 sql: still one query (one mart CTE, one SELECT)", merCac.marts.length === 1 && merCac.sql.split("\nSELECT *\n").length === 2);
+if (real.registry) {
+  const cogsQ = createCompiler(real.registry, { projectId: PROJECT })(
+    resolved({ clientIds: ["manami"], components: ["kpis.cogs", "kpis.revenue"], grain: "month", current: { from: "2026-04-01", to: "2026-09-30" }, compare: "none" })
+  );
+  check(
+    "F1 sql: COGS NULL count only on rows with revenue (guard)",
+    cogsQ.sql.includes("COUNTIF(t.currency = c.currency AND t.cogs IS NULL AND t.revenue > 0) AS kpis__cogs__nat_nulls") &&
+      cogsQ.sql.includes("COUNTIF(t.cogs IS NULL AND t.revenue > 0) AS kpis__cogs__disp_nulls") &&
+      cogsQ.sql.includes("COUNTIF(t.currency = c.currency AND t.revenue IS NULL) AS kpis__revenue__nat_nulls")
+  );
 }
 
 function firstDiff(a: string, b: string): string {
@@ -560,6 +585,13 @@ function firstDiff(a: string, b: string): string {
   check("normalise: count has nat === disp", r0.values["kpis.new_customer_orders"]?.nat === 12 && r0.values["kpis.new_customer_orders"]?.disp === 12);
   check("normalise: NULL stays null, never 0", r0.values["kpis.paid_spend"]?.nat === null && r0.values["kpis.paid_spend"]?.disp === null);
   check("normalise: guards and sorted fx months", JSON.stringify(r0.guards.kpis) === JSON.stringify({ nRows: 7, foreignCcyRows: 0, fxMissingRows: 2, fxMissingMonths: ["2025-07-01", "2025-08-01"] }));
+  check("normalise: NULL counts default to 0 when the column is absent", r0.values["kpis.revenue"]?.natNulls === 0 && r0.values["kpis.new_customer_orders"]?.natNulls === 0);
+  const nrows = normaliseRows(
+    [{ client_id: "dobias", period: "cur", bucket: { value: "2026-04-01" }, kpis__n_rows: 30, kpis__foreign_ccy_rows: 0, kpis__fx_missing_rows: 0, kpis__fx_missing_months: [], kpis__revenue__nat: 210447, kpis__revenue__disp: 210447, kpis__revenue__nat_nulls: 0, kpis__revenue__disp_nulls: 0, kpis__paid_spend__nat: 1724, kpis__paid_spend__disp: 1724, kpis__paid_spend__nat_nulls: 19, kpis__paid_spend__disp_nulls: 19, kpis__new_customer_orders: 5, kpis__new_customer_orders__nulls: 2 }],
+    { components: ["kpis.new_customer_orders", "kpis.paid_spend", "kpis.revenue"], marts: ["kpis"] }
+  );
+  const nv = nrows[0].values;
+  check("normalise: NULL-row counts carried (money nat/disp, count)", nv["kpis.paid_spend"]?.natNulls === 19 && nv["kpis.paid_spend"]?.dispNulls === 19 && nv["kpis.revenue"]?.natNulls === 0 && nv["kpis.new_customer_orders"]?.natNulls === 2 && nv["kpis.new_customer_orders"]?.dispNulls === 2);
   check("normalise: NULL fx months is empty, zero stays zero", rows[1].guards.kpis?.fxMissingMonths.length === 0 && rows[1].values["kpis.paid_spend"]?.nat === 0 && rows[1].values["kpis.new_customer_orders"]?.nat === null);
 }
 

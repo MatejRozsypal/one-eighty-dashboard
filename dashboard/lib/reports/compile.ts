@@ -15,6 +15,9 @@
  * - Money components are emitted twice: `<alias>__nat` (rows in the client's
  *   registry currency only) and `<alias>__disp` (every row converted per month
  *   into the display currency, FX triangulated through CZK).
+ * - Every component also returns COUNTIF(<column> IS NULL) in the same
+ *   row sets, so the evaluator can tell a bucket that mixes NULL and valued
+ *   days (a gap) from a complete one. SUM alone skips NULL rows silently.
  * - The comparison period runs in the same query, tagged `period = 'cmp'`.
  *   A row that falls in both ranges (previous year over a long range) is
  *   counted in both. Without a comparison the simpler variant is compiled.
@@ -25,7 +28,11 @@
  *   client_id, period, bucket,
  *   <mart>__n_rows, <mart>__foreign_ccy_rows, <mart>__fx_missing_rows, <mart>__fx_missing_months,
  *   <mart>__<column>__nat and <mart>__<column>__disp for money components,
- *   <mart>__<column> for every other component.
+ *   <mart>__<column> for every other component,
+ *   and the NULL-row counts that make a gap visible inside a sum (F1):
+ *   <mart>__<column>__nat_nulls and <mart>__<column>__disp_nulls (money),
+ *   <mart>__<column>__nulls (other). A component with a guard
+ *   (zeroIsMissingWhen) counts a NULL only on rows where the guard is > 0.
  *
  * The registry is injected: createCompiler({ marts, components }).
  * `compileWidget` at the bottom of this file is bound to registry/components.ts.
@@ -106,6 +113,11 @@ export function componentAlias(id: ComponentId): string {
   const m = COMPONENT_ID_RE.exec(id);
   if (!m) throw new Error(`[reports/compile] Invalid component id ${JSON.stringify(id)}`);
   return `${m[1]}__${m[2]}`;
+}
+
+/** `kpis.revenue` + "nat" -> `kpis__revenue__nat_nulls`; "all" -> `kpis__revenue__nulls`. */
+export function nullsAlias(id: ComponentId, variant: "nat" | "disp" | "all"): string {
+  return variant === "all" ? `${componentAlias(id)}__nulls` : `${componentAlias(id)}__${variant}_nulls`;
 }
 
 /** `kpis` + `n_rows` -> `kpis__n_rows`. */
@@ -198,7 +210,13 @@ interface MartPlan {
   money: boolean;
 }
 
-function martCte(plan: MartPlan, grain: QueryGrain, hasComparison: boolean, projectId: string): string {
+function martCte(
+  plan: MartPlan,
+  grain: QueryGrain,
+  hasComparison: boolean,
+  projectId: string,
+  components: CompilerRegistry["components"]
+): string {
   const { mart } = plan;
   const date = `t.${ident(mart.dateColumn, "Date column")}`;
   const ccyCol = mart.currencyColumn === null ? null : `t.${ident(mart.currencyColumn, "Currency column")}`;
@@ -220,12 +238,22 @@ function martCte(plan: MartPlan, grain: QueryGrain, hasComparison: boolean, proj
   for (const c of plan.components) {
     const col = `t.${ident(c.column, "Component column")}`;
     const alias = componentAlias(c.id);
+    // A NULL counts only where the guard component (revenue for COGS) is > 0.
+    let isNull = `${col} IS NULL`;
+    if (c.zeroIsMissingWhen !== undefined) {
+      const guard = components[c.zeroIsMissingWhen];
+      if (!guard || guard.mart !== mart.id) fail(`Guard ${c.zeroIsMissingWhen} of ${c.id} is not a component of mart ${mart.id}`);
+      isNull = `${col} IS NULL AND t.${ident(guard.column, "Guard column")} > 0`;
+    }
     if (c.money) {
       if (!ccyCol) fail(`Money component ${c.id} on mart ${mart.id} without a currency column`);
       select.push(`SUM(IF(${ccyCol} = c.currency, ${col}, NULL)) AS ${alias}__nat`);
       select.push(`SUM(${col} * src.to_czk / dst.to_czk) AS ${alias}__disp`);
+      select.push(`COUNTIF(${ccyCol} = c.currency AND ${isNull}) AS ${alias}__nat_nulls`);
+      select.push(`COUNTIF(${isNull}) AS ${alias}__disp_nulls`);
     } else {
       select.push(`SUM(${col}) AS ${alias}`);
+      select.push(`COUNTIF(${isNull}) AS ${alias}__nulls`);
     }
   }
 
@@ -339,7 +367,7 @@ export function compileWidgetWith(
   // SQL.
   const ctes: string[] = [];
   if (anyMoney) ctes.push(fxCtes(projectId));
-  for (const plan of plans) ctes.push(martCte(plan, grain, hasComparison, projectId));
+  for (const plan of plans) ctes.push(martCte(plan, grain, hasComparison, projectId, registry.components));
 
   const [first, ...rest] = martIds;
   const fromClause = [first, ...rest.map((id) => `FULL OUTER JOIN ${id} USING (client_id, period, bucket)`)].join("\n");

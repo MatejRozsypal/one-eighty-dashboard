@@ -238,6 +238,14 @@ export interface ComponentSum {
   nat: number | null;
   /** Every row converted per month into the display currency. Raw: the evaluator nulls it on fx_missing. */
   disp: number | null;
+  /**
+   * Rows whose column is NULL, counted in the same row set as `nat` (client
+   * currency rows only). For a component with `zeroIsMissingWhen`, only rows
+   * where the guard component is > 0. Absent counts as 0.
+   */
+  natNulls?: number;
+  /** Rows whose column is NULL, in the row set of `disp` (every row). Same guard rule as `natNulls`. */
+  dispNulls?: number;
 }
 
 /** Per-mart row guards from the SQL (design 2.8). */

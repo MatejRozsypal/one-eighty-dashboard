@@ -26,7 +26,12 @@ function eq(label: string, actual: unknown, expected: unknown) {
   }
 }
 
-const a = (email: string, role: Access["role"], clientId: string | null = null): Access => ({ email, role, clientId });
+const a = (email: string, role: Access["role"], clientId: string | null = null, mustChangePassword = false): Access => ({
+  email,
+  role,
+  clientId,
+  mustChangePassword,
+});
 
 function run(envDomain: string | undefined) {
   const prev = process.env.ALLOWED_EMAIL_DOMAIN;
@@ -71,8 +76,15 @@ eq("no @ at all", canUseReports(a("oneeighty.cz", "admin")), false);
 eq("empty email", canUseReports(a("", "admin")), false);
 
 eq("internal role carrying a client id", canUseReports(a("matej@oneeighty.cz", "admin", "dobias")), false);
-eq("unknown role string", canUseReports({ email: "x@oneeighty.cz", role: "owner" as Access["role"], clientId: null }), false);
-eq("null role", canUseReports({ email: "x@oneeighty.cz", role: null as unknown as Access["role"], clientId: null }), false);
+eq("unknown role string", canUseReports({ email: "x@oneeighty.cz", role: "owner" as Access["role"], clientId: null, mustChangePassword: false }), false);
+eq("null role", canUseReports({ email: "x@oneeighty.cz", role: null as unknown as Access["role"], clientId: null, mustChangePassword: false }), false);
+
+// Forced password change: a temporary-password session never reaches Reports,
+// whatever its role or domain (route handlers and server actions have no redirect).
+eq("admin with temporary password", canUseReports(a("matej@oneeighty.cz", "admin", null, true)), false);
+eq("agency with temporary password", canUseReports(a("lukas@oneeighty.cz", "agency", null, true)), false);
+eq("agency after password change", canUseReports(a("lukas@oneeighty.cz", "agency", null, false)), true);
+eq("truthy non-boolean flag is refused", canUseReports({ email: "x@oneeighty.cz", role: "agency", clientId: null, mustChangePassword: 1 as unknown as boolean }), false);
 
 eq("null session", canUseReports(null), false);
 eq("undefined session", canUseReports(undefined as unknown as null), false);

@@ -678,8 +678,8 @@ export function ReportClient(props: ReportClientProps) {
 
   return (
     <>
-      <header className="flex min-h-[var(--header-h)] flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-paper px-5 py-2 lg:sticky lg:top-0 lg:z-30 lg:flex-nowrap lg:px-8 lg:pr-[336px] lg:pt-[calc(0.5rem+var(--safe-top))]">
-        <div className="w-full min-w-0 lg:w-auto lg:max-w-[40%] lg:flex-none">
+      <header className="flex min-h-[var(--header-h)] flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-paper px-5 py-2 lg:sticky lg:top-0 lg:z-30 lg:flex-nowrap lg:px-8 lg:pr-[var(--account-reserve)] lg:pt-[calc(0.5rem+var(--safe-top))]">
+        <div className="w-full min-w-0 lg:w-auto lg:max-w-[40%] lg:shrink">
           {renaming ? (
             <TitleInput initial={name} onDone={rename} onCancel={() => setRenaming(false)} />
           ) : (
@@ -687,9 +687,9 @@ export function ReportClient(props: ReportClientProps) {
           )}
         </div>
         <SaveStatus state={saveState} />
-        {!canEdit && <span className="text-[12px] text-content-muted">Read only</span>}
+        {!canEdit && <span className="flex-none whitespace-nowrap text-[12px] text-content-muted">Read only</span>}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-none items-center gap-2">
           {canEdit && desktop && (
             <div role="group" aria-label="Mode" className="inline-flex rounded-pill border border-hairline-strong bg-paper p-0.5">
               {(["view", "edit"] as const).map((m) => (

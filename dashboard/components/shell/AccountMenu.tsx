@@ -142,7 +142,16 @@ export function AccountMenu({
     <div className={`pointer-events-none fixed inset-x-0 top-0 z-40 hidden h-[var(--header-h)] pt-[var(--safe-top)] lg:block ${
       onReports ? "lg:pl-[var(--rail-w)]" : "lg:pl-[calc(var(--rail-w)+var(--nav-w))]"
     }`}>
-      <div className="page-frame flex h-full items-center justify-end px-5 lg:px-8">
+      {/*
+        The menu sits in the same frame as the bar it shares the row with, or
+        the reserve that bar leaves (`--account-reserve`) is measured from the
+        wrong edge. Every analytics and Creative page centres its header in a
+        capped `page-frame`, so the menu does too. The report page's header runs
+        edge to edge, so there the menu hugs the viewport's edge. Capping it
+        there would stop it 100px or more short of that edge on a wide screen,
+        straight over the report actions.
+      */}
+      <div className={`${onReports ? "w-full" : "page-frame"} flex h-full items-center justify-end px-5 lg:px-8`}>
         <div ref={rootRef} className="pointer-events-auto relative">
       <button
         type="button"

@@ -251,7 +251,7 @@ export type SaveState = "idle" | "saving" | "saved" | "error";
 export function SaveStatus({ state }: { state: SaveState }) {
   const text = state === "saving" ? "Saving" : state === "saved" ? "Saved" : state === "error" ? "Not saved" : "";
   return (
-    <span role="status" aria-live="polite" className={`text-[12px] ${state === "error" ? "text-negative" : "text-content-muted"}`}>
+    <span role="status" aria-live="polite" className={`flex-none whitespace-nowrap text-[12px] ${state === "error" ? "text-negative" : "text-content-muted"}`}>
       {text}
     </span>
   );

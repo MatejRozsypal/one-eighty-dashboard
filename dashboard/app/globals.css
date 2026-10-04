@@ -91,6 +91,17 @@
   --rail-w: 0px;
   --nav-w: 0px;
 
+  /*
+   * The corner the account menu occupies, measured from the right edge of the
+   * frame it is aligned to: its widest pill (about 270px) plus the page gutter,
+   * with slack. Every top bar that shares the header row (`Header`, the report
+   * header) pads its right side by exactly this, as `lg:pr-[var(--account-reserve)]`.
+   * Two bars once carried their own copy of the number and, more to the point,
+   * a different idea of which frame the menu sat in, which is how the pill came
+   * to cover the report actions on wide screens. See `AccountMenu`.
+   */
+  --account-reserve: 336px;
+
   /* Platform colors (incl. Shoptet, Ecomail, WooCommerce) live in styles/tokens/colors.css. */
 }
 

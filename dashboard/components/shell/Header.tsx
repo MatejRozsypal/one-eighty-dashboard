@@ -9,7 +9,8 @@
  *
  * Its height is `--header-h` (globals.css), status-bar inset included, because
  * ControlBar sticks beneath it and needs to know. The right padding reserves
- * the corner for `AccountMenu`, which is positioned fixed.
+ * the corner for `AccountMenu`, which is positioned fixed: `--account-reserve`
+ * (globals.css), measured inside the same `page-frame` the menu aligns to.
  */
 
 export function Header({
@@ -21,7 +22,7 @@ export function Header({
 }) {
   return (
     <header className="sticky top-0 z-30 hidden h-[var(--header-h)] items-center border-b border-hairline bg-paper/[0.86] pt-[var(--safe-top)] backdrop-blur-[12px] lg:flex">
-      <div className="page-frame flex items-center gap-3 px-5 lg:px-8 lg:pr-[336px]">
+      <div className="page-frame flex items-center gap-3 px-5 lg:px-8 lg:pr-[var(--account-reserve)]">
         <h1 className="m-0 min-w-0 truncate text-[17px] font-bold tracking-heading text-content-strong">
           {title}
         </h1>

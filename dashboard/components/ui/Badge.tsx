@@ -2,7 +2,7 @@
  * Badge / pill.
  *
  * Ported from `components/labels/Badge.jsx`. Used for status ("LIVE"), deltas,
- * and — the reason it earns its place here — platform tags. Every metric card
+ * and, the reason it earns its place here, platform tags. Every metric card
  * carries a badge naming the system the number came from, so you can tell at a
  * glance whether a figure is Shopify's truth or Meta's.
  *
@@ -82,7 +82,7 @@ export function Badge({
 }
 
 /**
- * Platform tag — the source-of-truth badge on every metric card.
+ * Platform tag, the source-of-truth badge on every metric card.
  *
  * Deliberately monochrome-with-a-dot rather than a fully colored pill: the brand
  * is monochrome plus one green, and a grid of eight differently-colored pills
@@ -92,6 +92,7 @@ export function Badge({
 const PLATFORM_DOTS: Record<string, string> = {
   shopify: "bg-platform-shopify",
   shoptet: "bg-platform-shoptet",
+  woocommerce: "bg-platform-woocommerce",
   meta: "bg-platform-meta",
   google: "bg-platform-google",
   klaviyo: "bg-platform-klaviyo",

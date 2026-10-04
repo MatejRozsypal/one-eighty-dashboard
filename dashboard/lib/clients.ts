@@ -3,14 +3,14 @@
  *
  * `ref.clients` is the single source of truth for who exists, what currency they
  * trade in, and which sources they have. Adding a client to the dashboard is an
- * INSERT there and nothing else — no code change, matching the warehouse's
+ * INSERT there and nothing else, no code change, matching the warehouse's
  * "n8n workflows loop over ref.clients, never duplicate per client" rule.
  *
  * The capability flags drive what the UI renders. A client with has_gads = false
- * gets no Google card at all, rather than a card reading "—" that leaves you
+ * gets no Google card at all, rather than a card reading "n/a" that leaves you
  * wondering whether the spend is zero or the pipeline is broken.
  *
- * ⚠ The registry can drift from reality — it is hand-maintained and nothing
+ * ⚠ The registry can drift from reality, it is hand-maintained and nothing
  * validates it on write. See `detectRegistryDrift` below and the Data Health
  * page, which surfaces drift rather than silently working around it.
  */
@@ -26,7 +26,7 @@ import { recordAccess } from "@/lib/users/accessLog";
 /**
  * The demo client ships switched on. It is invisible to anyone with the
  * `client` role unless they are assigned to it, so the only people who see it
- * in the switcher are the agency — which is who presents with it. Set
+ * in the switcher are the agency, which is who presents with it. Set
  * DEMO_CLIENT_DISABLED=1 to remove it entirely.
  */
 const DEMO_ENABLED = process.env.DEMO_CLIENT_DISABLED !== "1";
@@ -34,6 +34,8 @@ const DEMO_ENABLED = process.env.DEMO_CLIENT_DISABLED !== "1";
 export interface ClientCapabilities {
   shopify: boolean;
   shoptet: boolean;
+  /** `has_woocommerce`. NULL in the registry means false. */
+  woocommerce: boolean;
   klaviyo: boolean;
   ecomail: boolean;
   meta: boolean;
@@ -53,7 +55,11 @@ export interface Client {
   emailPlatform: string | null;
   status: string;
   capabilities: ClientCapabilities;
-  /** Klaviyo "Placed Order" metric id — needed for conversion attribution. */
+  /** `meta_currency`: the currency Meta reports spend in. Null when Meta is not connected. */
+  metaCurrency: string | null;
+  /** `gads_currency`: the currency Google Ads reports spend in. Null when Google Ads is not connected. */
+  gadsCurrency: string | null;
+  /** Klaviyo "Placed Order" metric id, needed for conversion attribution. */
   klaviyoConversionMetricId: string | null;
   klaviyoSubscriberSegmentId: string | null;
 }
@@ -69,12 +75,15 @@ interface ClientRow {
   status: string;
   has_shopify: boolean | null;
   has_shoptet: boolean | null;
+  has_woocommerce: boolean | null;
   has_klaviyo: boolean | null;
   has_ecomail: boolean | null;
   has_meta: boolean | null;
   has_gads: boolean | null;
   has_ga4: boolean | null;
   has_instagram: boolean | null;
+  meta_currency: string | null;
+  gads_currency: string | null;
   klaviyo_conversion_metric_id: string | null;
   klaviyo_subscriber_segment_id: string | null;
 }
@@ -92,6 +101,7 @@ function toClient(row: ClientRow): Client {
     capabilities: {
       shopify: row.has_shopify === true,
       shoptet: row.has_shoptet === true,
+      woocommerce: row.has_woocommerce === true,
       klaviyo: row.has_klaviyo === true,
       ecomail: row.has_ecomail === true,
       meta: row.has_meta === true,
@@ -99,6 +109,8 @@ function toClient(row: ClientRow): Client {
       ga4: row.has_ga4 === true,
       instagram: row.has_instagram === true,
     },
+    metaCurrency: row.meta_currency ?? null,
+    gadsCurrency: row.gads_currency ?? null,
     klaviyoConversionMetricId: row.klaviyo_conversion_metric_id,
     klaviyoSubscriberSegmentId: row.klaviyo_subscriber_segment_id,
   };
@@ -115,7 +127,7 @@ function toClient(row: ClientRow): Client {
  * entire job is noticing that data stopped arriving. Venev sat 41 days stale
  * that way, seen by nothing.
  *
- * This is therefore for the Data Health page only — an internal-only screen —
+ * This is therefore for the Data Health page only, an internal-only screen,
  * and it deliberately does NOT append the demo client or feed `resolveClient`.
  * Widening the confinement gate is not what this is for.
  */
@@ -125,8 +137,9 @@ export async function getClientsIncludingInactive(): Promise<
   const rows = await query<ClientRow>(
     `SELECT client_id, name, currency, timezone, country,
             shop_platform, email_platform, status,
-            has_shopify, has_shoptet, has_klaviyo, has_ecomail,
+            has_shopify, has_shoptet, has_woocommerce, has_klaviyo, has_ecomail,
             has_meta, has_gads, has_ga4, has_instagram,
+            meta_currency, gads_currency,
             klaviyo_conversion_metric_id, klaviyo_subscriber_segment_id
      FROM \`${PROJECT_ID}.ref.clients\`
      ORDER BY name`
@@ -145,15 +158,16 @@ export async function getClients(): Promise<Client[]> {
   const rows = await query<ClientRow>(
     `SELECT client_id, name, currency, timezone, country,
             shop_platform, email_platform, status,
-            has_shopify, has_shoptet, has_klaviyo, has_ecomail,
+            has_shopify, has_shoptet, has_woocommerce, has_klaviyo, has_ecomail,
             has_meta, has_gads, has_ga4, has_instagram,
+            meta_currency, gads_currency,
             klaviyo_conversion_metric_id, klaviyo_subscriber_segment_id
      FROM \`${PROJECT_ID}.ref.clients\`
      WHERE status = 'active'
      ORDER BY name`
   );
 
-  // Appended, never stored — the demo has no registry row precisely so that no
+  // Appended, never stored, the demo has no registry row precisely so that no
   // warehouse query, n8n loop or freshness check has to know it exists. It is
   // appended *last* so `resolveClient`'s fallback still lands on a real client.
   //
@@ -178,16 +192,16 @@ export async function resolveClient(
 ): Promise<Client> {
   if (clients.length === 0) {
     throw new Error(
-      "ref.clients has no active rows — the dashboard has nothing to show."
+      "ref.clients has no active rows, the dashboard has nothing to show."
     );
   }
 
-  // ── Server-side confinement — the ONE gate that keeps clients apart ─────────
+  // ── Server-side confinement, the ONE gate that keeps clients apart ─────────
   // Every data page calls this to turn `?client=` into the client it renders.
   // The layout also filters the client list, but only to build the switcher UI;
   // that filtered list never reaches the page components, so it cannot keep one
-  // client out of another's numbers. Enforcing it here — where the role is read
-  // from the server-verified session, not from anything the browser controls —
+  // client out of another's numbers. Enforcing it here, where the role is read
+  // from the server-verified session, not from anything the browser controls,
   // means a `client`-role account gets its own client regardless of what the URL
   // asks for. Change `?client=` to a different id and this still returns theirs.
   const session = await getServerSession(authOptions);
@@ -201,7 +215,7 @@ export async function resolveClient(
     return served;
   }
 
-  // `client` role — and, fail-closed, anything else that reaches here — is
+  // `client` role, and, fail-closed, anything else that reaches here, is
   // pinned to its own assigned client. Never fall through to clients[0], which
   // would hand back whichever client happens to sort first.
   const ownId = session?.user?.clientId ?? null;
@@ -282,7 +296,7 @@ export interface RegistryDrift {
  *
  * Rather than hardcoding a workaround (which buries the problem and rots the
  * moment a third client lands), the Data Health page runs this and shows what
- * disagrees. Fixing it is an UPDATE against ref.clients — a warehouse change,
+ * disagrees. Fixing it is an UPDATE against ref.clients, a warehouse change,
  * not a frontend one.
  */
 export async function detectRegistryDrift(
@@ -328,7 +342,7 @@ export async function detectRegistryDrift(
         clientId: client.clientId,
         field: "has_gads",
         registryValue: "false",
-        actualValue: "true — Google spend present in mart",
+        actualValue: "true (Google spend present)",
         consequence:
           "Google Ads cards are hidden even though the channel is spending and is netted out of CM3.",
       });
@@ -339,7 +353,7 @@ export async function detectRegistryDrift(
 }
 
 /**
- * Freshest date the warehouse holds per client — the "data through" stamp.
+ * Freshest date the warehouse holds per client, the "data through" stamp.
  */
 export async function getDataThrough(): Promise<Map<string, string | null>> {
   const rows = await query<{ client_id: string; last_date: { value: string } }>(

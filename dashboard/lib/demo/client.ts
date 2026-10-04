@@ -4,7 +4,7 @@
  * ── Why it is not a row in `ref.clients` ────────────────────────────────────
  * A registry row would put a fake client in the warehouse, where every
  * cross-client query, every n8n loop and every freshness check would have to
- * learn to skip it. It would also make the demo depend on BigQuery being up —
+ * learn to skip it. It would also make the demo depend on BigQuery being up,
  * and the one moment you cannot afford a warehouse hiccup is halfway through
  * showing the dashboard to a prospect.
  *
@@ -16,7 +16,7 @@
  * Real clients keep these in Postgres because they are stated inputs, not
  * measurements. The demo states its own here for the same reason, so the margin
  * stack runs all the way to EBITDA instead of stopping at CM2 with a hatched
- * band — which is the honest rendering for a client who has entered nothing,
+ * band, which is the honest rendering for a client who has entered nothing,
  * but a poor advertisement for the page.
  */
 
@@ -41,7 +41,7 @@ export function isDemo(clientId: string | undefined | null): boolean {
 /**
  * Capabilities are all-on except the two the dashboard genuinely cannot show.
  *
- * GA4 is not connected for anybody, and Instagram has no page — switching them
+ * GA4 is not connected for anybody, and Instagram has no page, switching them
  * on would produce cards advertising features that do not exist. A demo that
  * promises more than the product delivers is worse than no demo.
  */
@@ -57,6 +57,7 @@ export const DEMO_CLIENT: Client = {
   capabilities: {
     shopify: true,
     shoptet: false,
+    woocommerce: false,
     klaviyo: true,
     ecomail: false,
     meta: true,
@@ -64,6 +65,8 @@ export const DEMO_CLIENT: Client = {
     ga4: false,
     instagram: false,
   },
+  metaCurrency: DEMO_CURRENCY,
+  gadsCurrency: DEMO_CURRENCY,
   klaviyoConversionMetricId: "DemoPlacedOrder",
   klaviyoSubscriberSegmentId: "DemoMasterList",
 };

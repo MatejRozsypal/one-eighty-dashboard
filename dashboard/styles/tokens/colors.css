@@ -1,4 +1,4 @@
-/* One Eighty — Color tokens
+/* One Eighty: color tokens
  * Monochrome brand (black mark) + a single signature GROWTH green used for
  * positive/data-forward accents. Platform colors are for product/dashboard UI. */
 :root {
@@ -34,9 +34,11 @@
   --negative: #E5484D;
   --warning:  #F5A623;
   /* Amber is legible as a dot or a border at #F5A623 and is not legible as
-     text on its own tint — roughly 2:1. This is the step that is, and it
+     text on its own tint, roughly 2:1. This is the step that is, and it
      exists for the same reason --growth-700 does. */
   --warning-700: #8A5B0A;
+  /* Amber text on the dark tooltip surface. */
+  --warning-300: #F0C070;
   --info:     #0866FF;
 
   /* ---- Platform (product/dashboard UI kit only) ---- */
@@ -44,6 +46,15 @@
   --meta:    #0866FF;
   --klaviyo: #1B1B1B;
   --google:  #4285F4;
+  /* Shoptet, Ecomail and WooCommerce are approximations taken from each
+     vendor's own site, not from the One Eighty brand guide. */
+  --shoptet:     #1a2c4e;
+  --ecomail:     #00b4f1;
+  --woocommerce: #7F54B3;
+
+  /* ---- Notice tints (one-line notices and error cards) ---- */
+  --notice-warning: #FFFBF4;
+  --notice-negative: #FFF7F7;
 
   /* ================= Semantic aliases ================= */
   --bg:              var(--paper);

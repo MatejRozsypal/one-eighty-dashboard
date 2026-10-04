@@ -1,17 +1,14 @@
 /**
- * The control bar — date range, comparison, and currency.
+ * The control bar: date range, plus Compare and Currency where the page uses them.
  *
  * Sticks directly beneath the header so the numbers below always carry the
- * period they cover: you can never scroll a figure into view without also
- * seeing what range produced it.
+ * period they cover.
  *
- * ── One row, not two ────────────────────────────────────────────────────────
- * This used to also carry two freshness stamps ("shop data through" / "ad
- * platforms through"). They pushed the bar into a second wrapped row, and
- * header plus bar then occupied over 150px before a single number appeared.
- * Freshness is per-source, judged against per-source expectations, and the
- * Data Health page already does that properly — a pair of dates bolted to the
- * corner of every screen was the worse home for it.
+ * ── Opt-in controls ─────────────────────────────────────────────────────────
+ * `compare` and `currency` default to false. A control that changes nothing on
+ * the page is worse than no control, so a page turns one on only when its
+ * queries read it (Compare: Snapshot, Growth, Products, Unit economics,
+ * Creative; Currency: Snapshot).
  *
  * It is deliberately not an overflow-scroll container: the date picker's
  * popover is absolutely positioned inside this element, and any `overflow`
@@ -20,7 +17,6 @@
 
 import { DateRangeControl } from "@/components/controls/DateRangeControl";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
-import { includesToday } from "@/lib/period";
 import type { ComparisonMode, DateRange, PresetKey } from "@/lib/period";
 import type { ConversionCoverage } from "@/lib/currency";
 import { ROLLUP_CURRENCY } from "@/lib/currency";
@@ -43,7 +39,8 @@ export function ControlBar({
   nativeCurrency,
   displayCurrency,
   conversion,
-  scope,
+  compare = false,
+  currency = false,
 }: {
   range: DateRange;
   presetKey: PresetKey | "custom";
@@ -52,30 +49,26 @@ export function ControlBar({
   nativeCurrency: string;
   displayCurrency: string;
   conversion: ConversionCoverage | null;
-  /**
-   * Set on a page whose figures are NOT bounded by the selected range — a
-   * lifetime summary, current stock, a cohort grid. The picker still belongs
-   * there: the range is global view state and it is the period you carry to
-   * the next screen. What must not happen is a page implying the filter was
-   * applied to what is on it, so it says what it is really on instead.
-   */
+  /** Show the Compare control. Only on pages whose queries read the comparison. */
+  compare?: boolean;
+  /** Show the Currency toggle (non-CZK clients only). Only on pages that honour it. */
+  currency?: boolean;
+  /** Deprecated and ignored: no scope label beside the picker. */
   scope?: string | null;
 }) {
-  // A client already trading in the rollup currency has nothing to convert, so
-  // the control is omitted rather than shown reading "CZK → CZK 🔒", which is
-  // a padlock guarding nothing and costs a fifth of the bar's width.
-  const showCurrency = nativeCurrency !== ROLLUP_CURRENCY;
+  // A client already trading in the rollup currency has nothing to convert.
+  const showCurrency = currency && nativeCurrency !== ROLLUP_CURRENCY;
 
   // Conversion is offered only when rates actually cover the whole range.
-  // Partial coverage is treated as none — a total built from some converted
+  // Partial coverage is treated as none, a total built from some converted
   // months and some dropped ones is wrong, not merely smaller.
   const canConvert = conversion?.complete === true;
 
   const missing = conversion?.missingMonths ?? [];
   const convertReason =
-    missing.length > 0
-      ? `No ${nativeCurrency} → ${ROLLUP_CURRENCY} rate for ${missing.length === 1 ? missing[0].slice(0, 7) : `${missing.length} months in this range`}. See runbooks/23_fx_rates_refresh.md.`
-      : `${nativeCurrency} → ${ROLLUP_CURRENCY} conversion is unavailable for this range.`;
+    missing.length === 1
+      ? `No ${ROLLUP_CURRENCY} rate for ${missing[0].slice(0, 7)}.`
+      : `No ${ROLLUP_CURRENCY} rate for this range.`;
 
   return (
     /*
@@ -91,41 +84,31 @@ export function ControlBar({
       <div className="page-frame flex flex-wrap items-center gap-x-4 gap-y-2 px-5 lg:px-8">
       <DateRangeControl range={range} presetKey={presetKey} />
 
-      {scope && (
-        <span className="inline-flex items-center gap-1.5 rounded-pill border border-hairline bg-gray-50 px-2.5 py-1 text-[11.5px] text-content-muted">
-          <span aria-hidden="true" className="h-1 w-1 rounded-full bg-content-muted" />
-          This page: {scope}
-        </span>
-      )}
+      {compare && (
+        <>
+          <span aria-hidden="true" className="hidden h-5 w-px bg-hairline lg:block" />
 
-      <span aria-hidden="true" className="hidden h-5 w-px bg-hairline lg:block" />
-
-      <div className="flex items-center gap-2">
-        <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted sm:inline">
-          Compare
-        </span>
-        <SegmentedControl
-          param="compare"
-          ariaLabel="Comparison period"
-          active={comparisonMode}
-          segments={[
-            { value: "previous_period", label: "Prev period" },
-            { value: "previous_year", label: "Prev year" },
-            { value: "none", label: "None" },
-          ]}
-        />
-        {comparison && (
-          <span className="hidden font-mono text-[11.5px] tabular text-content-muted xl:inline">
-            vs {fmtShort(comparison.from)} – {fmtShort(comparison.to)}
-          </span>
-        )}
-      </div>
-
-      {includesToday(range) && (
-        <span className="inline-flex items-center gap-1.5 rounded-pill border border-warning/[0.45] bg-[#FFFBF4] px-2.5 py-1 font-mono text-[10.5px] text-content-body">
-          <span aria-hidden="true" className="text-warning">⚠</span>
-          Includes today — ad platforms report D-1, so paid metrics are incomplete
-        </span>
+          <div className="flex items-center gap-2">
+            <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted sm:inline">
+              Compare
+            </span>
+            <SegmentedControl
+              param="compare"
+              ariaLabel="Comparison period"
+              active={comparisonMode}
+              segments={[
+                { value: "previous_period", label: "Prev period" },
+                { value: "previous_year", label: "Prev year" },
+                { value: "none", label: "None" },
+              ]}
+            />
+            {comparison && (
+              <span className="hidden font-mono text-[11.5px] tabular text-content-muted xl:inline">
+                vs {fmtShort(comparison.from)} to {fmtShort(comparison.to)}
+              </span>
+            )}
+          </div>
+        </>
       )}
 
       {showCurrency && (

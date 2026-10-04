@@ -1,0 +1,143 @@
+/**
+ * Asserts the page requirements table (sprint plan WP1) and the formatter
+ * contract against the registry fixtures of all five clients plus demo.
+ *
+ *     npx tsx --tsconfig scripts/tsconfig.json scripts/check-capabilities.ts
+ *
+ * Fixtures are the `ref.clients` flags as audited on 2026-10-04 (03 section 1),
+ * with NULL flags already mapped to false, as `toClient` does. Exits non-zero
+ * on a mismatch. Pure modules only: no BigQuery, no session.
+ */
+
+import { pageAvailability, missingSource, hasShop } from "@/lib/capabilities";
+import { navFor, railProducts, pageTitle, activeNavHref, selectedClient } from "@/lib/nav";
+import { formatMoney, formatNumber, formatPercent, formatRatio, NO_VALUE } from "@/lib/format";
+import type { ClientCapabilities } from "@/lib/clients";
+
+type Caps = ClientCapabilities;
+const OFF: Caps = {
+  shopify: false, shoptet: false, woocommerce: false, klaviyo: false, ecomail: false,
+  meta: false, googleAds: false, ga4: false, instagram: false,
+};
+const caps = (on: Partial<Caps>): { capabilities: Caps } => ({ capabilities: { ...OFF, ...on } });
+
+const FIXTURES = {
+  manami: caps({ shoptet: true, ecomail: true, meta: true, googleAds: true, instagram: true }),
+  dobias: caps({ shopify: true, klaviyo: true, meta: true, instagram: true }),
+  // Registry has email_platform = ecomail but has_ecomail = FALSE: Email stays hidden (DoD #12).
+  venev: caps({ shopify: true, meta: true }),
+  ethia: caps({ woocommerce: true, meta: true }),
+  rawbark: caps({ woocommerce: true, googleAds: true }),
+  // Demo client (lib/demo/client.ts).
+  demo: caps({ shopify: true, klaviyo: true, meta: true, googleAds: true }),
+};
+type Name = keyof typeof FIXTURES;
+
+const SHOP_PAGES = [
+  "/snapshot", "/goals", "/growth", "/orders", "/products", "/unit-economics",
+  "/customers", "/gaps", "/cohorts", "/repurchase", "/repurchase/timing",
+];
+const INVENTORY = ["/inventory", "/inventory/catalogue", "/inventory/buying"];
+const CREATIVE = ["/creative", "/creative/concepts", "/creative/breakdown", "/creative/velocity", "/creative/production"];
+
+// Expected availability per client: true = available.
+const EXPECT: Record<Name, { shop: boolean; inventory: boolean; paid: boolean; email: boolean; creative: boolean }> = {
+  manami: { shop: true, inventory: false, paid: true, email: true, creative: true },
+  dobias: { shop: true, inventory: true, paid: true, email: true, creative: true },
+  venev: { shop: true, inventory: true, paid: true, email: false, creative: true },
+  ethia: { shop: true, inventory: false, paid: true, email: false, creative: true },
+  rawbark: { shop: true, inventory: false, paid: true, email: false, creative: false },
+  demo: { shop: true, inventory: true, paid: true, email: true, creative: true },
+};
+
+let failures = 0;
+let checks = 0;
+function eq(label: string, actual: unknown, expected: unknown) {
+  checks++;
+  // Intl puts a no-break space between an ISO code and the amount.
+  if (typeof actual === "string") actual = actual.replace(/\u00a0/g, " ");
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    failures++;
+    console.error(`FAIL ${label}: got ${JSON.stringify(actual)}, want ${JSON.stringify(expected)}`);
+  }
+}
+const avail = (b: boolean) => (b ? "available" : "not-connected");
+
+for (const name of Object.keys(FIXTURES) as Name[]) {
+  const c = FIXTURES[name];
+  const e = EXPECT[name];
+  for (const p of SHOP_PAGES) eq(`${name} ${p}`, pageAvailability(c, p), avail(e.shop));
+  for (const p of INVENTORY) eq(`${name} ${p}`, pageAvailability(c, p), avail(e.inventory));
+  for (const p of CREATIVE) eq(`${name} ${p}`, pageAvailability(c, p), avail(e.creative));
+  eq(`${name} /paid`, pageAvailability(c, "/paid"), avail(e.paid));
+  eq(`${name} /email`, pageAvailability(c, "/email"), avail(e.email));
+  eq(`${name} /channels`, pageAvailability(c, "/channels"), "not-connected");
+  eq(`${name} /channels source`, missingSource(c, "/channels"), "GA4");
+  for (const p of ["/settings", "/health", "/admin", "/chat"]) eq(`${name} ${p}`, pageAvailability(c, p), "available");
+  eq(`${name} hasShop`, hasShop(c), true);
+
+  // The nav never lists Channels, and lists exactly the available pages.
+  const hrefs = navFor(false, c).flatMap((g) => g.items.map((i) => i.href));
+  eq(`${name} nav has no /channels`, hrefs.includes("/channels"), false);
+  for (const h of hrefs) eq(`${name} nav ${h} available`, pageAvailability(c, h), "available");
+  eq(`${name} nav has /email`, hrefs.includes("/email"), e.email);
+  eq(`${name} nav has /inventory`, hrefs.includes("/inventory"), e.inventory);
+  eq(`${name} rail has creative`, railProducts(true, c).some((p) => p.id === "creative"), e.creative);
+  eq(`${name} rail has analytics`, railProducts(true, c).some((p) => p.id === "analytics"), true);
+}
+
+// RawBark: the acceptance line. No Inventory, Email, Channels or Creative.
+const rb = navFor(false, FIXTURES.rawbark).flatMap((g) => g.items.map((i) => i.href));
+eq("rawbark nav", rb.filter((h) => /^\/(inventory|email|channels|creative)/.test(h)), []);
+eq("rawbark /email source", missingSource(FIXTURES.rawbark, "/email"), "Email");
+eq("rawbark /creative source", missingSource(FIXTURES.rawbark, "/creative"), "Meta");
+eq("rawbark /inventory source", missingSource(FIXTURES.rawbark, "/inventory/buying"), "Shopify");
+eq("rawbark /paid source", missingSource(FIXTURES.rawbark, "/paid"), null);
+
+// Paid sub-routes (later Paid package): longest prefix wins.
+eq("rawbark /paid/meta", pageAvailability(FIXTURES.rawbark, "/paid/meta"), "not-connected");
+eq("rawbark /paid/meta source", missingSource(FIXTURES.rawbark, "/paid/meta"), "Meta");
+eq("rawbark /paid/google", pageAvailability(FIXTURES.rawbark, "/paid/google"), "available");
+eq("ethia /paid/google source", missingSource(FIXTURES.ethia, "/paid/google"), "Google Ads");
+eq("manami /paid/ga4", pageAvailability(FIXTURES.manami, "/paid/ga4"), "not-connected");
+eq("query string ignored", pageAvailability(FIXTURES.rawbark, "/email?client=rawbark"), "not-connected");
+eq("no client: nav unfiltered except Channels", navFor(false).flatMap((g) => g.items).length, 16);
+
+// A shopless client keeps Analytics in the rail but loses the shop pages.
+const adsOnly = caps({ meta: true });
+eq("ads-only /snapshot", pageAvailability(adsOnly, "/snapshot"), "not-connected");
+eq("ads-only /snapshot source", missingSource(adsOnly, "/snapshot"), "Shop");
+
+// Active state and titles are prefix based.
+eq("active /repurchase/timing", activeNavHref("/repurchase/timing"), "/repurchase/timing");
+eq("active /repurchase", activeNavHref("/repurchase"), "/repurchase");
+eq("active /paid/meta", activeNavHref("/paid/meta"), "/paid");
+eq("active /inventory/catalogue", activeNavHref("/inventory/catalogue"), "/inventory/catalogue");
+eq("active /paidx", activeNavHref("/paidx"), null);
+eq("title /paid/google", pageTitle("/paid/google"), "Paid");
+eq("title /creative/velocity", pageTitle("/creative/velocity"), "Velocity");
+eq("title /creative/unknown", pageTitle("/creative/unknown"), "Creatives");
+eq("title /chat/abc", pageTitle("/chat/abc"), "Assistant");
+eq("title /health", pageTitle("/health"), "Data health");
+eq("title /channels", pageTitle("/channels"), "Channels");
+eq("selectedClient fallback", selectedClient([{ clientId: "a" }, { clientId: "b" }], "zzz")?.clientId, "a");
+eq("selectedClient pick", selectedClient([{ clientId: "a" }, { clientId: "b" }], "b")?.clientId, "b");
+
+// Formatters.
+eq("NO_VALUE", NO_VALUE, "n/a");
+eq("formatMoney null", formatMoney(null, "CZK"), "n/a");
+eq("formatNumber null", formatNumber(null), "n/a");
+eq("formatPercent null", formatPercent(null), "n/a");
+eq("formatRatio null", formatRatio(null), "n/a");
+eq("formatMoney unit 0.62 USD", formatMoney(0.62, "USD", { unit: true }), "$0.62");
+eq("formatMoney unit 12.5 CZK", formatMoney(12.5, "CZK", { unit: true }), "CZK 12.50");
+eq("formatMoney unit 250 CZK", formatMoney(250, "CZK", { unit: true }), "CZK 250");
+eq("formatMoney decimals 2", formatMoney(1234.5, "USD", { decimals: 2 }), "$1,234.50");
+eq("formatMoney default", formatMoney(108357.4, "CZK"), "CZK 108,357");
+eq("formatMoney 0.62 default", formatMoney(0.62, "USD"), "$1");
+eq("formatMoney compact", formatMoney(1234567, "CZK", { compact: true }), "CZK 1.2M");
+eq("formatPercent", formatPercent(0.35), "35.0%");
+eq("formatRatio", formatRatio(4.2), "4.20×");
+
+console.log(`${checks - failures}/${checks} checks passed`);
+if (failures > 0) process.exit(1);

@@ -1,14 +1,11 @@
 "use client";
 
 /**
- * Date range control — preset menu plus a two-month calendar for custom ranges.
+ * Date range control: preset menu plus a two-month calendar for custom ranges.
  *
- * Every preset ends **yesterday** — except "Today", which is opt-in. Today is
- * always partial: shops report same-day but ad platforms are structurally a day
- * behind, so a range including it can never be complete across sources and
- * every paid metric reads near zero. The default protects you from that; the
- * preset lets you ask for it anyway, and the range carries a warning when you
- * do.
+ * Every range ends **yesterday** at the latest (locked rule). Today is always
+ * partial: shops report same-day but ad platforms are a day behind, so there is
+ * no "Today" preset and today cannot be picked in the calendar.
  *
  * State lives in the URL so the view is shareable and server components can read
  * it without a round trip.
@@ -23,10 +20,10 @@ import {
   type DateRange,
   type PresetKey,
   daysInRange,
-  addDays,
+  todayUtc,
 } from "@/lib/period";
 
-const PRESETS: PresetKey[] = ["today", "7d", "28d", "30d", "90d", "mtd", "ytd", "12m", "all"];
+const PRESETS: PresetKey[] = ["7d", "28d", "30d", "90d", "mtd", "ytd", "12m", "all"];
 
 function fmt(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -75,7 +72,7 @@ export function DateRangeControl({
   // actively harmful for anything long: on "All time" the popover opened on
   // September 2021 and the two months on screen were five years ago. Picking a
   // range there is the obvious next click, and it produces a custom range in
-  // 2021 — which then follows you to every other screen, because the sidebar
+  // 2021, which then follows you to every other screen, because the sidebar
   // appends the current query string to every link. That is how a whole
   // dashboard came to read August 2021 and show nothing but dashes.
   //
@@ -106,7 +103,7 @@ export function DateRangeControl({
 
   const shownRange = pendingRange ?? range;
 
-  // Close on outside click / Escape — a popover this large is easy to strand open.
+  // Close on outside click / Escape, a popover this large is easy to strand open.
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
@@ -183,7 +180,7 @@ export function DateRangeControl({
           🗓
         </span>
         <span className="font-mono text-[12px] tracking-[-0.01em] tabular">
-          {fmt(shownRange.from)} – {fmt(shownRange.to)}
+          {fmt(shownRange.from)} to {fmt(shownRange.to)}
         </span>
         <span aria-hidden="true" className="text-[9px] text-content-muted">
           {open ? "▴" : "▾"}
@@ -301,9 +298,8 @@ export function DateRangeControl({
                         const inRange =
                           draft.to !== null && day >= draft.from && day <= draft.to;
                         const isEdge = day === draft.from || day === draft.to;
-                        // Future days only. Today is selectable now that a
-                        // preset offers it; the range warns when it is included.
-                        const disabled = day > new Date().toISOString().slice(0, 10);
+                        // Today and later are not selectable: ranges end yesterday.
+                        const disabled = day >= todayUtc();
 
                         return (
                           <button
@@ -334,7 +330,7 @@ export function DateRangeControl({
             <div className="flex items-center justify-between gap-3 border-t border-hairline px-5 py-3.5">
               <span className="font-mono text-[11.5px] tabular text-content-muted">
                 {draft.to
-                  ? `${fmt(draft.from)} – ${fmt(draft.to)} · ${draftDays} days`
+                  ? `${fmt(draft.from)} to ${fmt(draft.to)} · ${draftDays} days`
                   : "Pick an end date"}
               </span>
               <span className="flex gap-2.5">

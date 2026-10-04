@@ -3,7 +3,7 @@
  *
  * Order matters: design tokens first, then Tailwind, then the few local
  * additions. The token files under styles/tokens/ are copied verbatim from the
- * One Eighty design system handoff — treat them as read-only. Anything this app
+ * One Eighty design system handoff, treat them as read-only. Anything this app
  * needs beyond them goes in the "local extensions" block at the bottom, so a
  * future handoff can overwrite the token files without losing our additions.
  */
@@ -29,14 +29,14 @@
 }
 
 /* ==========================================================================
-   Local extensions — NOT part of the design system handoff
+   Local extensions, NOT part of the design system handoff
    ========================================================================== */
 
 :root {
   /*
    * Fonts are self-hosted through next/font (the `geist` package) rather than
    * the handoff's Google Fonts @import. Two reasons: the CDN import blocks
-   * first paint and causes a visible flash, and this app installs as a PWA —
+   * first paint and causes a visible flash, and this app installs as a PWA,
    * an offline launch must not depend on fonts.googleapis.com being reachable.
    *
    * The families are identical; only the delivery differs. `--font-geist-sans`
@@ -49,7 +49,7 @@
 
   /*
    * iPhone safe areas. `viewportFit: "cover"` (app/layout.tsx) lets the page
-   * paint edge to edge, which is what makes an installed PWA look like an app —
+   * paint edge to edge, which is what makes an installed PWA look like an app,
    * and also what puts our own header underneath the clock and the battery.
    * `env()` returns 0px everywhere there is no notch or home indicator, so
    * these are safe to apply unconditionally rather than behind a breakpoint.
@@ -59,7 +59,7 @@
 
   /*
    * Height of the sticky page header, status-bar inset included. The control
-   * bar sticks directly beneath it, so the two are coupled — this variable is
+   * bar sticks directly beneath it, so the two are coupled, this variable is
    * where that coupling lives. It used to be a bare `top-[71px]` inside
    * ControlBar, which silently overlapped the header the moment the header's
    * padding changed, and knew nothing about the notch.
@@ -91,17 +91,7 @@
   --rail-w: 0px;
   --nav-w: 0px;
 
-  /*
-   * Platform colors for the two Czech-market sources. The handoff ships
-   * Shopify / Meta / Klaviyo / Google, but our warehouse also carries Shoptet
-   * and Ecomail, and every metric card is tagged with the system it came from.
-   *
-   * ⚠ These two are approximations taken from each vendor's own marketing site,
-   * not from the One Eighty brand guide. Worth confirming before this dashboard
-   * is shown to a client.
-   */
-  --shoptet: #1a2c4e;
-  --ecomail: #00b4f1;
+  /* Platform colors (incl. Shoptet, Ecomail, WooCommerce) live in styles/tokens/colors.css. */
 }
 
 /* ==========================================================================
@@ -158,7 +148,7 @@ body {
 }
 
 /*
- * Hatched fill for cost steps that are structurally unmeasured — fulfilment and
+ * Hatched fill for cost steps that are structurally unmeasured, fulfilment and
  * other CM1 costs are hardcoded to zero in the warehouse. Drawing them hatched
  * rather than as a zero-height bar is the whole point: a zero bar reads as
  * "we have no such costs", which is false.
@@ -171,7 +161,7 @@ body {
   );
 }
 
-/* Focus ring — green, matching --focus-ring, and only for keyboard users. */
+/* Focus ring, green, matching --focus-ring, and only for keyboard users. */
 :focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -179,7 +169,7 @@ body {
 }
 
 /*
- * Calm, no bounce — a stated brand rule. Honour the OS-level reduced-motion
+ * Calm, no bounce, a stated brand rule. Honour the OS-level reduced-motion
  * preference by removing animation entirely rather than merely shortening it.
  */
 @media (prefers-reduced-motion: reduce) {
@@ -214,7 +204,7 @@ body {
 
 /*
  * Overscroll colour. iOS paints the rubber-band area beyond the page with the
- * *html* background, so this is what shows when you drag past the top — black,
+ * *html* background, so this is what shows when you drag past the top, black,
  * matching the status-bar strip. `body` stays light so nothing dark leaks in
  * below short pages.
  */
@@ -260,7 +250,7 @@ body {
   }
 }
 
-/* The section cross-fade. See components/shell/ProductTransition.tsx — this is
+/* The section cross-fade. See components/shell/ProductTransition.tsx, this is
    deliberately short and travels little; it marks a change of place without
    making every navigation feel like a page load. */
 @keyframes product-enter {
@@ -279,13 +269,13 @@ body {
 }
 
 /* ==========================================================================
-   Creative Engine — the liquid-glass surface
+   Creative Engine, the liquid-glass surface
    ==========================================================================
 
    Scoped under `.creative-ground` rather than applied globally on purpose. The
    Analytics section is a P&L view whose whole job is legibility of dense
    figures on a flat, calm surface, and translucency there would cost reading
-   speed for nothing. Creative is a visual product — a wall of thumbnails — and
+   speed for nothing. Creative is a visual product, a wall of thumbnails, and
    the glass gives the tiles somewhere to sit.
 
    Geist and the growth-green accent are unchanged. Everything below is
@@ -306,7 +296,7 @@ body {
 /*
  * The glass custom properties are declared on :root, not on .creative-ground.
  *
- * Declaring a variable renders nothing — only the `.glass` classes below do —
+ * Declaring a variable renders nothing, only the `.glass` classes below do,
  * so scoping the VALUES bought nothing and cost something real: the ad detail
  * panel is portalled to <body> to escape ancestor transforms, which put it
  * outside .creative-ground, and every one of these resolved to nothing. The
@@ -354,8 +344,8 @@ body {
 }
 
 /* Tables stay markedly more opaque than everything else. Dense figures on a
-   translucent surface become genuinely hard to read — the text competes with
-   whatever is scrolling underneath it — and this product's tables are its most
+   translucent surface become genuinely hard to read, the text competes with
+   whatever is scrolling underneath it, and this product's tables are its most
    information-dense element. */
 .glass-solid {
   background: var(--glass-2);

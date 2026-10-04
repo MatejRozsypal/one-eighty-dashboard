@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Mobile top bar — black, notch-aware, and the page switcher.
+ * Mobile top bar, black, notch-aware, and the page switcher.
  *
  * ── The notch ───────────────────────────────────────────────────────────────
  * `viewportFit: "cover"` plus `statusBarStyle: "black-translucent"` is what
  * makes the installed PWA paint edge to edge like a native app. The cost is
  * that iOS then draws the clock, signal and battery *on top of* our own header
- * — which is exactly what was happening: the title and the status bar were
+ *, which is exactly what was happening: the title and the status bar were
  * printed over each other.
  *
  * The fix is not to stop covering; it's to pad by `--safe-top` and paint that
@@ -17,10 +17,10 @@
  * status-bar strip, on a laptop there is no strip to own.
  *
  * ── The title is the navigation ─────────────────────────────────────────────
- * There is no room for a sidebar here, and the bottom pill only holds four
- * destinations. Rather than hide the other eight behind a hamburger, the page
- * title itself opens the full list — the label you are already looking at is
- * the control that changes it.
+ * There is no room for a sidebar here. Rather than hide the pages behind a
+ * hamburger, the page title itself opens the full list: the label you are
+ * already looking at is the control that changes it. The list is filtered for
+ * the selected client, like the sidebar.
  *
  * The title comes from the route rather than a prop, which is what lets the
  * app layout own this bar. That matters for the rounded shoulder: the content
@@ -31,8 +31,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { navFor, pageTitle } from "@/lib/nav";
-import { productsFor, productFor } from "@/lib/products";
+import { activeNavHref, navFor, pageTitle, railProducts, selectedClient } from "@/lib/nav";
+import { productFor } from "@/lib/products";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import type { Client } from "@/lib/clients";
 
@@ -51,14 +51,12 @@ export function MobileTopBar({
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
   const title = pageTitle(pathname);
-  const nav = navFor(isAdmin);
-  const products = productsFor(isInternal);
   const activeProduct = productFor(pathname);
+  const activeHref = activeNavHref(pathname);
 
   // Same resolution the sidebar uses: the selection lives in the URL, so both
   // switchers agree without any shared state.
-  const activeClient =
-    clients.find((c) => c.clientId === searchParams.get("client")) ?? clients[0];
+  const activeClient = selectedClient(clients, searchParams.get("client"));
 
   const { isPending, navigate } = useNavigation();
   const [optimisticClient, setOptimisticClient] = useState<Client | null>(null);
@@ -67,6 +65,10 @@ export function MobileTopBar({
   }, [isPending]);
 
   const shownClient = optimisticClient ?? activeClient;
+
+  // Pages and products the selected client has no source for are hidden.
+  const nav = navFor(isAdmin, shownClient);
+  const products = railProducts(isInternal, shownClient);
 
   function selectClient(client: Client) {
     setClientOpen(false);
@@ -77,7 +79,7 @@ export function MobileTopBar({
     navigate(`${pathname}?${next.toString()}`);
   }
 
-  // Close on route change — without this the sheet stays up over the new page
+  // Close on route change, without this the sheet stays up over the new page
   // for the whole BigQuery round trip and reads as a stuck menu.
   useEffect(() => {
     setOpen(false);
@@ -119,7 +121,7 @@ export function MobileTopBar({
         {/*
           Client switcher, mirroring the sidebar's. On a phone the sidebar is
           gone entirely, so without this the only way to change client is to
-          edit `?client=` by hand. Shows the short name rather than initials —
+          edit `?client=` by hand. Shows the short name rather than initials,
           two clients whose initials collide are a real possibility, and there
           is room for a word.
         */}
@@ -189,7 +191,7 @@ export function MobileTopBar({
         visible at scroll-top: scroll down and the curve left with the content,
         so the page went flush against the black bar. Here it sticks, so the
         content always passes underneath a rounded edge.
-        Black outside, content colour inside — the corner cut-outs are what
+        Black outside, content colour inside, the corner cut-outs are what
         show the black through.
       */}
       <div aria-hidden="true" className="h-4 bg-ink-900">
@@ -200,7 +202,7 @@ export function MobileTopBar({
         <>
           {/*
             Covers the viewport, not just the area under the sheet, so a tap
-            anywhere outside dismisses — including on the bar itself.
+            anywhere outside dismisses, including on the bar itself.
           */}
           <button
             type="button"
@@ -223,8 +225,8 @@ export function MobileTopBar({
             className="absolute left-3 top-[calc(var(--header-bar-h)+var(--safe-top))] z-[50] max-h-[70vh] w-[64%] min-w-[228px] max-w-[300px] overflow-y-auto rounded-lg bg-paper p-2 shadow-lg"
           >
             {/*
-              The rail has no mobile equivalent — there is no room for a second
-              column — so the products it holds lead this sheet instead. Putting
+              The rail has no mobile equivalent, there is no room for a second
+              column, so the products it holds lead this sheet instead. Putting
               them among the page groups would have made a product look like a
               page, which is the one distinction the rail exists to draw.
             */}
@@ -259,25 +261,7 @@ export function MobileTopBar({
                 </span>
 
                 {group.items.map((item) => {
-                  // Unbuilt pages stay visible and disabled rather than being
-                  // dropped, matching the sidebar: the shape of the product is
-                  // legible, and it's obvious what is coming.
-                  if (!item.href) {
-                    return (
-                      <span
-                        key={item.label}
-                        title={item.note}
-                        className="flex items-center justify-between gap-2 rounded-sm px-3 py-2.5 text-[15px] text-gray-250"
-                      >
-                        {item.label}
-                        <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-gray-250">
-                          Soon
-                        </span>
-                      </span>
-                    );
-                  }
-
-                  const isActive = pathname === item.href;
+                  const isActive = item.href === activeHref;
                   return (
                     <Link
                       key={item.href}

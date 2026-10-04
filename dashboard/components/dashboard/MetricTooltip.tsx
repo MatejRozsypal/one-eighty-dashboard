@@ -4,11 +4,9 @@
  * The ⓘ next to a metric label.
  *
  * Half the metrics here need a sentence of explanation and several need a
- * caveat — CM3 nets two cost lines that are hardcoded to zero, revenue doesn't
- * net refunds, Manami's margin includes VAT. Surfacing those at the point of
- * reading is what makes this dashboard more trustworthy than the Looker reports
- * it replaces, so the limitation gets its own visually distinct row rather than
- * being folded into prose.
+ * caveat. Surfacing those at the point of reading is what makes this dashboard
+ * more trustworthy than the reports it replaces, so the limitation gets its own
+ * visually distinct row rather than being folded into prose.
  *
  * Opens on hover for pointers and on focus/click for keyboard and touch.
  */
@@ -50,7 +48,7 @@ export function MetricTooltip({ definition }: { definition: MetricDefinition }) 
             Source · {definition.source}
           </span>
           {definition.limitation && (
-            <span className="flex gap-2 border-t border-hairline-inverse pt-[9px] font-sans text-[12px] leading-[1.5] text-[#F0C070]">
+            <span className="flex gap-2 border-t border-hairline-inverse pt-[9px] font-sans text-[12px] leading-[1.5] text-warning-300">
               <span aria-hidden="true">⚠</span>
               {definition.limitation}
             </span>

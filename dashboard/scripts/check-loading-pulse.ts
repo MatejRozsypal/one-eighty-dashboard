@@ -1,0 +1,209 @@
+/**
+ * Loading feedback gates.
+ *
+ *   npx tsx --tsconfig scripts/tsconfig.json scripts/check-loading-pulse.ts
+ *
+ * Pure checks, no warehouse, no server. Pins the rules that keep every load
+ * giving immediate, consistent pulsing feedback:
+ *
+ *   - one animation definition (app/globals.css) with a reduced-motion state,
+ *     and nothing else defines a pulse or shimmer;
+ *   - no link or URL change bypasses the shared navigation (`next/link` only
+ *     inside AppLink, `router.push/replace` only inside NavigationPending);
+ *   - every page segment under app/(app) has a loading.tsx at itself or its
+ *     group, and each is built from the one Skeleton primitive;
+ *   - the skeletons render, and carry the pulse class;
+ *   - the widget hook reports loading for any request its stored result does
+ *     not answer.
+ */
+
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { AppLink } from "@/components/ui/AppLink";
+import { Skeleton, SkeletonPage, type SkeletonBlock } from "@/components/ui/Skeleton";
+import { answerKey } from "@/components/reports/useWidgetData";
+
+const ROOT = join(__dirname, "..");
+const APP = join(ROOT, "app", "(app)");
+
+let passed = 0;
+const failures: string[] = [];
+
+function check(name: string, ok: boolean, detail?: string): void {
+  if (ok) passed += 1;
+  else failures.push(detail ? `${name}: ${detail}` : name);
+}
+
+function walk(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (name === "node_modules" || name === ".next") continue;
+    if (statSync(full).isDirectory()) walk(full, out);
+    else out.push(full);
+  }
+  return out;
+}
+
+const rel = (f: string) => relative(ROOT, f);
+const read = (f: string) => readFileSync(f, "utf8");
+
+const sources = [...walk(join(ROOT, "app")), ...walk(join(ROOT, "components"))].filter((f) => /\.(tsx?|css)$/.test(f));
+
+// ---------------------------------------------------------------------------
+// One animation definition
+// ---------------------------------------------------------------------------
+
+const css = read(join(ROOT, "app", "globals.css"));
+check("one @keyframes oe-pulse", (css.match(/@keyframes oe-pulse(?![-\w])/g) ?? []).length === 1);
+check("one @keyframes oe-pulse-in", (css.match(/@keyframes oe-pulse-in\b/g) ?? []).length === 1);
+check("shimmer keyframes gone", !css.includes("oe-shimmer"));
+for (const token of ["--pulse-dur", "--pulse-in", "--pulse-hi", "--pulse-lo", "--pulse-static", "--skeleton-bg"]) {
+  check(`token ${token} defined`, new RegExp(`${token}:`).test(css));
+}
+check(".oe-skeleton defined", /\.oe-skeleton\s*\{/.test(css));
+check("pending region pulses main, not a skeleton main", css.includes('[data-pending="true"] main:not([aria-busy="true"])'));
+{
+  const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)", css.indexOf("--pulse-static")));
+  check("reduced motion: pulse is static and dimmed", /\.oe-pulse[\s\S]*?animation:\s*none;[\s\S]*?opacity:\s*var\(--pulse-static\)/.test(reduced));
+  check("reduced motion: skeleton is solid", /\.oe-skeleton\s*\{[^}]*animation:\s*none;[^}]*opacity:\s*1/.test(reduced));
+}
+{
+  const tw = read(join(ROOT, "tailwind.config.ts"));
+  check("tailwind animate-pulse is the shared pulse", /pulse:\s*"oe-pulse var\(--pulse-dur\)/.test(tw));
+}
+
+const strayAnimation = sources.filter((f) => {
+  if (f.endsWith("globals.css")) return false;
+  const text = read(f);
+  // `oe-indeterminate` (the route progress sweep) is a different thing: a bar, not a pulse.
+  return /animate-pulse|animate-\[oe-(?!indeterminate)|oe-shimmer|@keyframes/.test(text);
+});
+check("no second pulse or shimmer definition", strayAnimation.length === 0, strayAnimation.map(rel).join(", "));
+
+// ---------------------------------------------------------------------------
+// Nothing bypasses the shared navigation
+// ---------------------------------------------------------------------------
+
+const rawLink = sources.filter((f) => !f.includes(`${join("app", "auth")}`) && !f.endsWith(join("ui", "AppLink.tsx")) && /from "next\/link"/.test(read(f)));
+check("next/link only in AppLink (and the signed-out pages)", rawLink.length === 0, rawLink.map(rel).join(", "));
+
+const rawPush = sources.filter((f) => !f.endsWith(join("shell", "NavigationPending.tsx")) && /\brouter\.(push|replace)\(/.test(read(f)));
+check("router.push/replace only in NavigationPending", rawPush.length === 0, rawPush.map(rel).join(", "));
+
+const ownTransition = sources.filter((f) => !f.endsWith(join("shell", "NavigationPending.tsx")) && /useTransition\(\)/.test(read(f)));
+check(
+  "useTransition only in NavigationPending and the server-action buttons",
+  ownTransition.every((f) => /creative[\\/](DecisionLog|UnmappedQueue)\.tsx$/.test(f)),
+  ownTransition.map(rel).join(", "),
+);
+
+{
+  const link = read(join(ROOT, "components", "ui", "AppLink.tsx"));
+  check("AppLink routes plain clicks through navigate", link.includes("navigate(url, { replace, scroll })"));
+  check("AppLink leaves modified clicks to the browser", ["metaKey", "ctrlKey", "shiftKey", "altKey"].every((k) => link.includes(`e.${k}`)));
+  check("AppLink leaves target and download alone", link.includes("target &&") && link.includes('"download" in rest'));
+  const html = renderToStaticMarkup(createElement(AppLink, { href: "/orders?client=x", className: "c" }, "Orders"));
+  check("AppLink outside the provider is a plain link", html === '<a class="c" href="/orders?client=x">Orders</a>', html);
+}
+
+{
+  const provider = read(join(ROOT, "components", "shell", "NavigationPending.tsx"));
+  check("provider exposes navigate and refresh", provider.includes("navigate,") && provider.includes("refresh"));
+  check("pending region marks data-pending", provider.includes('data-pending={isPending ? "true" : undefined}'));
+}
+
+// ---------------------------------------------------------------------------
+// Every page segment has a skeleton
+// ---------------------------------------------------------------------------
+
+const EXEMPT = new Set(["admin"]); // redirects, never renders
+const pageDirs = walk(APP)
+  .filter((f) => f.endsWith(`${"page.tsx"}`))
+  .map((f) => f.slice(0, -"page.tsx".length - 1));
+
+check("app/(app)/loading.tsx exists", existsSync(join(APP, "loading.tsx")));
+for (const dir of pageDirs) {
+  const name = relative(APP, dir);
+  if (name === "" || EXEMPT.has(name)) continue;
+  const own = existsSync(join(dir, "loading.tsx"));
+  const parent = join(dir, "..");
+  const group = parent !== APP && existsSync(join(parent, "loading.tsx"));
+  // channels is a one-line "not connected" page: the root fallback is its shape.
+  check(`loading.tsx covers ${name}`, own || group || name === "channels");
+}
+
+for (const f of walk(APP).filter((x) => x.endsWith("loading.tsx"))) {
+  const text = read(f);
+  check(`${rel(f)} uses the Skeleton primitive`, text.includes('@/components/ui/Skeleton'));
+  check(`${rel(f)} has no colour or timing of its own`, !/#[0-9a-fA-F]{3,8}\b|rgb\(|animate-|duration-/.test(text));
+}
+
+// ---------------------------------------------------------------------------
+// The skeletons render and pulse
+// ---------------------------------------------------------------------------
+
+{
+  const one = renderToStaticMarkup(createElement(Skeleton, { className: "h-3" }));
+  check("Skeleton is a pulsing, hidden block", one.includes("oe-skeleton") && one.includes('aria-hidden="true"'), one);
+
+  const blocks: SkeletonBlock[] = ["kpi", "kpi-6", "kpi-8", "chart", "split", "table", "table-long", "heatmap", "cards", "list"];
+  for (const block of blocks) {
+    const html = renderToStaticMarkup(createElement(SkeletonPage, { blocks: [block] }));
+    check(`SkeletonPage ${block}: renders blocks that pulse`, (html.match(/oe-skeleton/g) ?? []).length >= 3, html.slice(0, 120));
+    check(`SkeletonPage ${block}: main is aria-busy (no double pulse)`, /<main[^>]*aria-busy="true"/.test(html));
+  }
+  const withTabs = renderToStaticMarkup(createElement(SkeletonPage, { blocks: ["kpi"], tabs: true }));
+  const without = renderToStaticMarkup(createElement(SkeletonPage, { blocks: ["kpi"], controls: false }));
+  const plain = renderToStaticMarkup(createElement(SkeletonPage, { blocks: ["kpi"] }));
+  check("SkeletonPage tabs adds blocks", withTabs.length > plain.length);
+  check("SkeletonPage controls={false} removes the strip", without.length < plain.length);
+  check("SkeletonPage header is a <header> sibling of <main>", /<header[^>]*>.*<\/header>(<div|<main)/s.test(plain));
+}
+
+// ---------------------------------------------------------------------------
+// Widgets: loading whenever the stored result does not answer the request
+// ---------------------------------------------------------------------------
+
+{
+  check("answerKey changes with the request", answerKey("a", 0) !== answerKey("b", 0));
+  check("answerKey changes with Refresh", answerKey("a", 0) !== answerKey("a", 1));
+  check("answerKey is stable", answerKey("a", 3) === answerKey("a", 3));
+  const hook = read(join(ROOT, "components", "reports", "useWidgetData.ts"));
+  check("hook derives loading from forKey", hook.includes("state.forKey !== answerKey(plan.key, refreshNonce)"));
+  const parts = read(join(ROOT, "components", "reports", "ReportParts.tsx"));
+  check("widget cell pulses on refreshing", parts.includes("|| refreshing"));
+  check("widget cell pulses stale figures", parts.includes('loading ? "oe-pulse"'));
+  check("widget cell first load is a Skeleton", parts.includes("<Skeleton"));
+}
+
+// ---------------------------------------------------------------------------
+// Style gates on the files this change owns
+// ---------------------------------------------------------------------------
+
+// Built from code points so this file never contains the characters itself.
+const DASHES = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]`);
+
+const owned = [
+  join(ROOT, "components", "ui", "Skeleton.tsx"),
+  join(ROOT, "components", "ui", "AppLink.tsx"),
+  join(ROOT, "components", "ui", "PendingSubmit.tsx"),
+  join(ROOT, "components", "shell", "NavigationPending.tsx"),
+  join(ROOT, "scripts", "check-loading-pulse.ts"),
+  ...walk(APP).filter((x) => x.endsWith("loading.tsx")),
+];
+for (const f of owned) {
+  const text = read(f);
+  check(`${rel(f)}: no em or en dash`, !DASHES.test(text));
+  if (!f.endsWith("check-loading-pulse.ts")) check(`${rel(f)}: no hex literal`, !/#[0-9a-fA-F]{3,8}\b/.test(text));
+}
+
+// ---------------------------------------------------------------------------
+
+if (failures.length > 0) {
+  console.error(`FAILED ${failures.length} of ${passed + failures.length}`);
+  for (const f of failures) console.error(`  - ${f}`);
+  process.exit(1);
+}
+console.log(`check-loading-pulse: ${passed}/${passed} passed`);

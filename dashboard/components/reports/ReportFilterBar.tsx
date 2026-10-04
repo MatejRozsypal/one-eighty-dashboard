@@ -148,7 +148,7 @@ export function ReportFilterBar({ filters, defaults, clients, onSaveDefault }: R
           }}
           className={`relative h-[20px] w-[36px] shrink-0 rounded-pill transition-colors duration-fast ${
             benchOn ? "bg-accent" : "bg-gray-200"
-          } ${isPending ? "animate-pulse" : ""}`}
+          } ${isPending ? "oe-pulse" : ""}`}
         >
           <span
             aria-hidden="true"

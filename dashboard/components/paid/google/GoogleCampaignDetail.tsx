@@ -6,7 +6,7 @@
  * campaign shows its device split: spend share and ROAS per device.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { DataTable, type DataTableRow } from "@/components/ui/DataTable";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { NoData } from "@/components/ui/EmptyState";
@@ -77,14 +77,14 @@ export function GoogleCampaignDetail({
             {campaign.campaignName}
           </span>
         </div>
-        <Link
+        <AppLink
           href={closeHref}
           scroll={false}
           aria-label="Close campaign"
           className="flex-none rounded-pill border border-hairline px-3 py-1.5 font-mono text-[11px] text-content-muted transition-colors duration-fast hover:text-content-strong"
         >
           Close
-        </Link>
+        </AppLink>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">

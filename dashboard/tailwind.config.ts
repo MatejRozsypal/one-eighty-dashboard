@@ -232,6 +232,10 @@ const config: Config = {
         },
       },
       animation: {
+        // Tailwind's stock `pulse` is replaced by the dashboard's one loading
+        // pulse (keyframes in app/globals.css), so a stray `animate-pulse`
+        // cannot bring back a second definition.
+        pulse: "oe-pulse var(--pulse-dur) var(--ease-in-out) infinite",
         "live-pulse": "live-pulse 1.6s var(--ease-out) infinite",
         tick: "tick 260ms var(--ease-out) both",
       },

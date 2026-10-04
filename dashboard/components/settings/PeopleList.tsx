@@ -16,6 +16,7 @@
 import type { AppUser } from "@/lib/users/store";
 import type { Client } from "@/lib/clients";
 import { Badge } from "@/components/ui/Badge";
+import { PendingSubmit } from "@/components/ui/PendingSubmit";
 import { deleteUserAction, updateUserAction } from "@/app/(app)/admin/actions";
 import { ResetPasswordButton } from "@/app/(app)/admin/UserForms";
 
@@ -139,12 +140,9 @@ export function PeopleList({
                   Active
                 </label>
 
-                <button
-                  type="submit"
-                  className="rounded-control border border-hairline-strong px-2.5 py-1.5 font-mono text-[11px] text-content-body transition-colors duration-fast hover:bg-gray-50"
-                >
+                <PendingSubmit className="rounded-control border border-hairline-strong px-2.5 py-1.5 font-mono text-[11px] text-content-body transition-colors duration-fast hover:bg-gray-50">
                   Save
-                </button>
+                </PendingSubmit>
               </form>
 
               <ResetPasswordButton user={user} />
@@ -152,12 +150,9 @@ export function PeopleList({
               <form action={deleteUserAction}>
                 <input type="hidden" name="id" value={user.id} />
                 <input type="hidden" name="email" value={user.email} />
-                <button
-                  type="submit"
-                  className="rounded-control border border-negative/35 px-2.5 py-1.5 font-mono text-[11px] text-negative transition-colors duration-fast hover:bg-notice-negative"
-                >
+                <PendingSubmit className="rounded-control border border-negative/35 px-2.5 py-1.5 font-mono text-[11px] text-negative transition-colors duration-fast hover:bg-notice-negative">
                   Remove
-                </button>
+                </PendingSubmit>
               </form>
             </div>
           )}

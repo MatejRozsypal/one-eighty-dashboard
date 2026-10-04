@@ -17,7 +17,7 @@
  * products.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { usePathname, useSearchParams } from "next/navigation";
 import { activeNavHref, navFor, selectedClient } from "@/lib/nav";
 import { productFor } from "@/lib/products";
@@ -73,7 +73,7 @@ export function Sidebar({
               // Longest prefix wins, so a sub-route (/paid/meta) lights its parent.
               const isActive = item.href === active;
               return (
-                <Link
+                <AppLink
                   key={item.href}
                   href={qs ? `${item.href}?${qs}` : item.href}
                   aria-current={isActive ? "page" : undefined}
@@ -90,7 +90,7 @@ export function Sidebar({
                     }`}
                   />
                   {item.label}
-                </Link>
+                </AppLink>
               );
             })}
             </div>

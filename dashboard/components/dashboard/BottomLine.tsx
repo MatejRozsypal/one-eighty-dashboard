@@ -10,7 +10,7 @@
  * formatted with `lifetimeCurrency` even when the P&L above is converted.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { formatMoney, formatPercent, formatRatio } from "@/lib/currency";
@@ -170,12 +170,12 @@ export function BottomLine({
         </span>
       </div>
 
-      <Link
+      <AppLink
         href={customersHref}
         className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-growth-600 transition-colors duration-fast hover:text-growth-700"
       >
         Customers →
-      </Link>
+      </AppLink>
     </div>
   );
 }

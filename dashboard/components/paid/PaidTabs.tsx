@@ -18,7 +18,7 @@
  * Scrolls sideways on a narrow screen instead of wrapping.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { usePathname, useSearchParams } from "next/navigation";
 import { PAID_TABS, selectedClient } from "@/lib/nav";
 import { pageAvailability, matchesPrefix, type HasCapabilities } from "@/lib/capabilities";
@@ -48,7 +48,7 @@ export function PaidTabs({
           const connected =
             tab.key === "overview" || !client || pageAvailability(client, tab.href) === "available";
           return (
-            <Link
+            <AppLink
               key={tab.key}
               role="tab"
               aria-selected={active}
@@ -62,7 +62,7 @@ export function PaidTabs({
               }`}
             >
               {tab.label}
-            </Link>
+            </AppLink>
           );
         })}
       </div>

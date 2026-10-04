@@ -12,7 +12,7 @@
  * the pages and the query route enforce access themselves.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { usePathname, useSearchParams } from "next/navigation";
 import { productFor, type ProductId } from "@/lib/products";
 import { railProducts, selectedClient } from "@/lib/nav";
@@ -106,7 +106,7 @@ export function ProductRail({
       {products.map((p) => {
         const isActive = p.id === active;
         return (
-          <Link
+          <AppLink
             key={p.id}
             // The query string carries client, range and currency. Dropping it
             // when switching products would silently reset whose numbers you
@@ -122,7 +122,7 @@ export function ProductRail({
             }`}
           >
             <Icon id={p.id} />
-          </Link>
+          </AppLink>
         );
       })}
       </div>

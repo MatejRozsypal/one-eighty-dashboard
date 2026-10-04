@@ -9,13 +9,23 @@
  * can paste into Slack.
  */
 
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useNavigation } from "@/components/shell/NavigationPending";
 import { BREAKDOWN_DIMENSIONS, type BreakdownKey } from "@/lib/creative/vocabulary";
 
 export function DimensionPicker({ current }: { current: BreakdownKey }) {
-  const router = useRouter();
+  const { isPending, navigate } = useNavigation();
   const pathname = usePathname();
   const params = useSearchParams();
+
+  // A controlled select snaps back to `current` until the server answers, so
+  // the pick is held here: it answers on click, the page pulses until the data
+  // lands (same rule as SegmentedControl).
+  const [optimistic, setOptimistic] = useState<BreakdownKey | null>(null);
+  useEffect(() => {
+    if (!isPending) setOptimistic(null);
+  }, [isPending]);
 
   return (
     <label className="flex items-center gap-2">
@@ -23,13 +33,15 @@ export function DimensionPicker({ current }: { current: BreakdownKey }) {
         Break down by
       </span>
       <select
-        value={current}
+        value={optimistic ?? current}
+        aria-busy={isPending}
         onChange={(e) => {
           const next = new URLSearchParams(params.toString());
           next.set("by", e.target.value);
-          router.push(`${pathname}?${next.toString()}`);
+          setOptimistic(e.target.value as BreakdownKey);
+          navigate(`${pathname}?${next.toString()}`);
         }}
-        className="rounded-control border border-hairline-strong bg-paper/70 px-2.5 py-1.5 text-[13px] text-content-body backdrop-blur-[8px] transition-colors duration-fast hover:border-accent/40"
+        className={`rounded-control border border-hairline-strong bg-paper/70 px-2.5 py-1.5 text-[13px] text-content-body backdrop-blur-[8px] transition-colors duration-fast hover:border-accent/40 ${isPending ? "oe-pulse" : ""}`}
       >
         {BREAKDOWN_DIMENSIONS.map((d) => (
           <option key={d.key} value={d.key}>

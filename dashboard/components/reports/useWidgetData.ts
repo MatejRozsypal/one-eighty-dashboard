@@ -18,7 +18,11 @@
  *     after the response.
  *   - Stale while revalidate: when a widget's request changes (or Refresh is
  *     pressed) the previous result stays on screen with `loading: true` until
- *     the new one lands, so the figures pulse instead of blanking.
+ *     the new one lands, so the figures pulse instead of blanking. `loading`
+ *     is derived at render from the request the stored result answers (`forKey`),
+ *     not set by an effect, so the very render that carries new filters or a
+ *     Refresh already reports loading: there is no frame where an old figure
+ *     looks fresh.
  *   - Display-only edits (title, sort, limit, stacked, type changes that keep
  *     the query) do not change the request key, so they never refetch.
  *
@@ -52,6 +56,8 @@ export interface WidgetState {
   result: WidgetResult | null;
   loading: boolean;
   error: WidgetError | null;
+  /** The request (plan key and refresh count) `result` or `error` answers. Internal. */
+  forKey?: string;
 }
 
 export interface WidgetDataInput {
@@ -190,6 +196,11 @@ export interface WidgetPlan {
   fallback: ReportQueryRequest | null;
 }
 
+/** What a stored result answers: the request plus how many Refreshes had happened. */
+export function answerKey(planKey: string, refreshNonce: number): string {
+  return `${planKey}#${refreshNonce}`;
+}
+
 const dayStamp = () => new Date().toISOString().slice(0, 10);
 
 export function planWidget(input: WidgetDataInput, reportId: string, filters: ReportFilters): WidgetPlan | null {
@@ -274,16 +285,17 @@ export function useWidgetData(args: {
       if (run && run.key === plan.key && !force) continue;
       run?.abort.abort();
 
+      const forKey = answerKey(plan.key, refreshNonce);
       const hit = force ? undefined : lruGet(plan.key);
       if (hit) {
         running.current.delete(plan.id);
-        patch(plan.id, () => ({ result: hit, loading: false, error: null }));
+        patch(plan.id, () => ({ result: hit, loading: false, error: null, forKey }));
         continue;
       }
 
       const abort = new AbortController();
       running.current.set(plan.id, { key: plan.key, abort });
-      patch(plan.id, (prev) => ({ result: prev.result, loading: true, error: null }));
+      patch(plan.id, (prev) => ({ result: prev.result, loading: true, error: null, forKey }));
 
       void (async () => {
         try {
@@ -295,9 +307,9 @@ export function useWidgetData(args: {
           running.current.delete(plan.id);
           if (outcome.ok) {
             lruSet(plan.key, outcome.result);
-            patch(plan.id, () => ({ result: outcome.result, loading: false, error: null }));
+            patch(plan.id, () => ({ result: outcome.result, loading: false, error: null, forKey }));
           } else {
-            patch(plan.id, (prev) => ({ result: prev.result, loading: false, error: outcome.error }));
+            patch(plan.id, (prev) => ({ result: prev.result, loading: false, error: outcome.error, forKey }));
           }
         } catch {
           /* Aborted: the widget changed or left; whoever aborted owns the state. */
@@ -321,5 +333,18 @@ export function useWidgetData(args: {
     setRetryTick((t) => t + 1);
   }, []);
 
-  return { data, retry };
+  // Loading is true whenever the stored state does not answer the current
+  // request, whatever the effect has caught up with.
+  const view = useMemo(() => {
+    const out: Record<string, WidgetState> = { ...data };
+    for (const plan of plans) {
+      const state = data[plan.id];
+      if (state && !state.loading && state.forKey !== answerKey(plan.key, refreshNonce)) {
+        out[plan.id] = { ...state, loading: true };
+      }
+    }
+    return out;
+  }, [data, plans, refreshNonce]);
+
+  return { data: view, retry };
 }

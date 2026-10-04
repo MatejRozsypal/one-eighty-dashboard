@@ -208,7 +208,7 @@ function ReviewItem({
                   setResult(r);
                 })
               }
-              className="rounded-control bg-content-strong px-3 py-1.5 text-[12.5px] font-medium text-paper transition-transform duration-fast hover:-translate-y-px disabled:opacity-50"
+              className={`rounded-control bg-content-strong px-3 py-1.5 text-[12.5px] font-medium text-paper transition-transform duration-fast hover:-translate-y-px disabled:opacity-50 ${pending ? "oe-pulse" : ""}`}
             >
               Record
             </button>

@@ -18,9 +18,10 @@
  * Owner: RS9.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppLink } from "@/components/ui/AppLink";
 import { useRouter } from "next/navigation";
+import { useNavigation } from "@/components/shell/NavigationPending";
 import {
   createReport,
   deleteReport,
@@ -67,11 +68,14 @@ export interface ReportListTableProps {
 }
 
 export function ReportListTable({ mine, team, templates, openNew = false, deletedId }: ReportListTableProps) {
+  // Moving between pages goes through the shared navigation (the whole page
+  // pulses from the click). `router.refresh()` below is a quiet resync after an
+  // optimistic edit: the row already shows the new state.
   const router = useRouter();
+  const { navigate } = useNavigation();
   const toasts = useToasts();
   const [tab, setTab] = useState<Tab>("mine");
   const [query, setQuery] = useState("");
-  const [pending, startTransition] = useTransition();
   const [renaming, setRenaming] = useState<string | null>(null);
 
   // Optimistic copies on top of the server lists.
@@ -83,7 +87,7 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
   useEffect(() => {
     if (!deletedId || announced.current) return;
     announced.current = true;
-    router.replace("/reports", { scroll: false });
+    navigate("/reports", { replace: true, scroll: false });
     toasts.push({
       text: "Report deleted",
       action: {
@@ -130,7 +134,7 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
   // ---- actions ------------------------------------------------------------
 
   function open(id: string, edit = false) {
-    startTransition(() => router.push(edit ? `/reports/${id}?edit=1` : `/reports/${id}`));
+    navigate(edit ? `/reports/${id}?edit=1` : `/reports/${id}`);
   }
 
   async function create(key: TemplateKey | undefined, name: string) {
@@ -269,7 +273,7 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
         </div>
       </div>
 
-      <div aria-busy={pending} className={`rounded-card border border-hairline bg-paper ${pending ? "animate-pulse" : ""}`}>
+      <div className="rounded-card border border-hairline bg-paper">
         {tab === "templates" ? (
           templateRows.length === 0 ? (
             <p className="px-4 py-6 text-[13.5px] text-content-muted">No templates.</p>
@@ -309,9 +313,9 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
                 {renaming === r.id ? (
                   <RenameInput initial={r.name} onDone={(name) => void rename(r, name)} onCancel={() => setRenaming(null)} />
                 ) : (
-                  <Link href={`/reports/${r.id}`} className="truncate text-[13.5px] font-medium text-content-strong hover:underline" title={r.name}>
+                  <AppLink href={`/reports/${r.id}`} className="truncate text-[13.5px] font-medium text-content-strong hover:underline" title={r.name}>
                     {r.name}
-                  </Link>
+                  </AppLink>
                 )}
 
                 <span className="hidden text-[12.5px] text-content-body md:block">{VISIBILITY_SHORT[r.visibility]}</span>

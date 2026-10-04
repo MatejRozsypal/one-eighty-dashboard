@@ -8,7 +8,7 @@
  * and sort last. The delta columns appear only when comparison is on.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { DataTable, type DataTableRow } from "@/components/ui/DataTable";
 import { DeltaChip } from "@/components/ui/Delta";
 import { Value } from "@/components/ui/EmptyState";
@@ -72,7 +72,7 @@ export function CampaignsAcross({
     ) : null;
 
     const cells = [
-      <Link
+      <AppLink
         key="n"
         href={hrefFor(c)}
         title={c.name ?? c.id}
@@ -85,7 +85,7 @@ export function CampaignsAcross({
           }`}
         />
         <span className="truncate">{c.name ?? c.id}</span>
-      </Link>,
+      </AppLink>,
       <span key="t" className="block truncate text-[12.5px] text-content-body"><Value>{type ?? NO_VALUE}</Value></span>,
       <span key="s" className={`${NUM} font-semibold text-content-strong`}><Value>{formatMoney(c.spend, currency)}</Value></span>,
       ...(comparing ? [<DeltaChip key="ds" delta={dSpend} goodWhen="neutral" />] : []),

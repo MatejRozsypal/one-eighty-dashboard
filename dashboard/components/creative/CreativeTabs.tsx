@@ -15,7 +15,7 @@
  * you were looking at.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { usePathname, useSearchParams } from "next/navigation";
 import { CREATIVE_NAV } from "@/lib/nav";
 
@@ -31,7 +31,7 @@ export function CreativeTabs({ unmapped, href }: { unmapped: number; href: strin
       {CREATIVE_NAV.map((item) => {
         const active = item.href === pathname;
         return (
-          <Link
+          <AppLink
             key={item.label}
             role="tab"
             aria-selected={active}
@@ -43,18 +43,18 @@ export function CreativeTabs({ unmapped, href }: { unmapped: number; href: strin
             }`}
           >
             {item.label}
-          </Link>
+          </AppLink>
         );
       })}
 
       {unmapped > 0 && (
-        <Link
+        <AppLink
           href={href}
           className="ml-auto my-2 inline-flex items-center gap-2 rounded-pill border border-warning/25 bg-warning/10 px-3 py-1 text-[12.5px] font-medium text-warning transition-colors duration-fast hover:bg-warning/20"
         >
           <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
           {unmapped} {unmapped === 1 ? "ad" : "ads"} unmapped
-        </Link>
+        </AppLink>
       )}
     </nav>
   );

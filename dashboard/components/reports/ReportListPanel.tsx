@@ -12,7 +12,7 @@
  * Owner: RS9.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { usePathname } from "next/navigation";
 import { useGroupedReports, type DirectoryEntry } from "./ReportsDirectory";
 
@@ -20,7 +20,7 @@ const MAX_RECENT = 8;
 
 function Row({ entry, active }: { entry: DirectoryEntry; active: boolean }) {
   return (
-    <Link
+    <AppLink
       href={`/reports/${entry.id}`}
       aria-current={active ? "page" : undefined}
       title={entry.name}
@@ -29,7 +29,7 @@ function Row({ entry, active }: { entry: DirectoryEntry; active: boolean }) {
       }`}
     >
       {entry.name}
-    </Link>
+    </AppLink>
   );
 }
 
@@ -54,14 +54,14 @@ export function ReportListPanel() {
   return (
     <aside aria-label="Reports" className="sticky top-0 hidden h-screen w-[232px] flex-none flex-col border-r border-hairline bg-paper lg:flex">
       <div className="flex h-[var(--header-h)] flex-none items-center justify-between gap-2 border-b border-hairline px-4 pt-[var(--safe-top)]">
-        <Link
+        <AppLink
           href="/reports"
           aria-current={onList ? "page" : undefined}
           className="text-[14px] font-bold tracking-heading text-content-strong"
         >
           Reports
-        </Link>
-        <Link
+        </AppLink>
+        <AppLink
           href="/reports?new=1"
           aria-label="New report"
           title="New report"
@@ -70,7 +70,7 @@ export function ReportListPanel() {
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <path d="M7 2v10M2 7h10" />
           </svg>
-        </Link>
+        </AppLink>
       </div>
 
       <nav aria-label="Saved reports" className="flex flex-1 flex-col gap-4 overflow-y-auto px-2.5 py-4">

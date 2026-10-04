@@ -137,13 +137,73 @@ body {
   }
 }
 
-/* Skeleton shimmer, used while BigQuery runs. */
-@keyframes oe-shimmer {
-  0% {
-    background-position: -320px 0;
+/*
+ * The loading pulse: the one animation behind every "something is loading"
+ * state in the dashboard. Nothing else defines its own.
+ *
+ *   .oe-pulse       existing content while a navigation or refetch is in
+ *                   flight: it dims quickly (--pulse-in) and then breathes
+ *                   between --pulse-hi and --pulse-lo.
+ *   .oe-skeleton    a placeholder block (components/ui/Skeleton) that breathes
+ *                   between full and --pulse-lo.
+ *   [data-pending]  PendingRegion sets it while a route change is pending; the
+ *                   page's own <main> pulses. A skeleton <main> (aria-busy) is
+ *                   excluded, it already pulses through its blocks.
+ *
+ * Reduced motion: no animation. Content holds the static dimmed state
+ * (--pulse-static), skeleton blocks stay solid.
+ */
+:root {
+  --pulse-dur: 1.5s;
+  --pulse-in: var(--dur-fast);
+  --pulse-hi: 0.82;
+  --pulse-lo: 0.5;
+  --pulse-static: 0.6;
+  --skeleton-bg: var(--gray-150);
+}
+
+@keyframes oe-pulse-in {
+  from {
+    opacity: 1;
   }
+  to {
+    opacity: var(--pulse-hi);
+  }
+}
+
+@keyframes oe-pulse {
+  0%,
   100% {
-    background-position: 320px 0;
+    opacity: var(--pulse-hi);
+  }
+  50% {
+    opacity: var(--pulse-lo);
+  }
+}
+
+.oe-pulse,
+[data-pending="true"] main:not([aria-busy="true"]) {
+  animation:
+    oe-pulse-in var(--pulse-in) var(--ease-out) both,
+    oe-pulse var(--pulse-dur) var(--ease-in-out) var(--pulse-in) infinite;
+}
+
+.oe-skeleton {
+  --pulse-hi: 1;
+  background: var(--skeleton-bg);
+  animation: oe-pulse var(--pulse-dur) var(--ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oe-pulse,
+  [data-pending="true"] main:not([aria-busy="true"]) {
+    animation: none;
+    opacity: var(--pulse-static);
+  }
+
+  .oe-skeleton {
+    animation: none;
+    opacity: 1;
   }
 }
 

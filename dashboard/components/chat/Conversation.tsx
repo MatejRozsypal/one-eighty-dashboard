@@ -139,7 +139,10 @@ export function Conversation() {
           )}
 
           {pending && (
-            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-content-muted">
+            <span
+              role="status"
+              className="oe-pulse font-mono text-[11px] uppercase tracking-[0.08em] text-content-muted"
+            >
               Thinking…
             </span>
           )}

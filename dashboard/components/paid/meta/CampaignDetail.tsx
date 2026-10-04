@@ -7,7 +7,7 @@
  * and are deliberately not repeated here.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/DataTable";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
 import { isLowVolume, perThousand, ratio, sumOf, unlessLowVolume } from "@/lib/paid/math";
@@ -68,7 +68,7 @@ export function CampaignDetail({
       key: a.adsetId,
       sort: [label, a.spend, unlessLowVolume(roas, low), a.purchases, unlessLowVolume(cpa, low), cpm, ctr, cpatc],
       cells: [
-        <Link
+        <AppLink
           href={metaHref(search, { adset: selected ? null : a.adsetId }, "campaign-detail")}
           title={label}
           aria-current={selected ? "true" : undefined}
@@ -77,7 +77,7 @@ export function CampaignDetail({
           }`}
         >
           {label}
-        </Link>,
+        </AppLink>,
         <Fig strong>{formatMoney(a.spend, currency)}</Fig>,
         <LowVolumeFig low={low}>{formatRatio(roas)}</LowVolumeFig>,
         <Fig>{formatNumber(a.purchases)}</Fig>,
@@ -120,14 +120,14 @@ export function CampaignDetail({
           <span className="block min-w-0 truncate text-[13px] text-content-strong" title={label}>
             {label}
           </span>
-          <Link
+          <AppLink
             href={creativeHref(view, { field: "adId", value: a.adId })}
             aria-label="Open in Creative"
             title="Open in Creative"
             className="flex-none text-[12px] text-content-muted hover:text-content-strong"
           >
             ↗
-          </Link>
+          </AppLink>
         </span>,
         <Fig strong>{formatMoney(a.spend, currency)}</Fig>,
         <LowVolumeFig low={low}>{formatRatio(roas)}</LowVolumeFig>,
@@ -150,14 +150,14 @@ export function CampaignDetail({
         <h2 className="min-w-0 truncate text-[14px] font-semibold text-content-strong" title={campaignName}>
           {campaignName}
         </h2>
-        <Link
+        <AppLink
           href={metaHref(search, { campaign: null, adset: null })}
           aria-label="Close"
           title="Close"
           className="flex-none rounded-full px-2 text-[16px] leading-none text-content-muted hover:text-content-strong"
         >
           ×
-        </Link>
+        </AppLink>
       </div>
 
       <div className="flex flex-col gap-1">

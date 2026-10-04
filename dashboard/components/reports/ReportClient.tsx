@@ -35,6 +35,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useNavigation } from "@/components/shell/NavigationPending";
 import {
   addWidget as addWidgetAction,
   deleteReport,
@@ -132,7 +133,11 @@ export function ReportClient(props: ReportClientProps) {
   const reportId = report.id;
   const canEdit = permissions.canEdit;
 
+  // `router` is for quiet refreshes after an optimistic edit (the screen already
+  // shows the new state). Anything that moves the user, or reloads what they are
+  // looking at, goes through the shared navigation so the page pulses at once.
   const router = useRouter();
+  const { navigate, refresh: refreshPage } = useNavigation();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const toasts = useToasts();
@@ -208,9 +213,9 @@ export function ReportClient(props: ReportClientProps) {
       if (reload.current) return;
       reload.current = { minVersion: serverVersion ?? 0 };
       generation.current += 1;
-      router.refresh();
+      refreshPage();
     },
-    [router],
+    [refreshPage],
   );
 
   const afterResult = useCallback(
@@ -248,7 +253,7 @@ export function ReportClient(props: ReportClientProps) {
         } catch {
           // The gate threw (signed out, role revoked): the layout will redirect on refresh.
           setOpFailed(true);
-          router.refresh();
+          refreshPage();
           return { ok: false, code: "invalid" } as Result;
         }
       });
@@ -259,7 +264,7 @@ export function ReportClient(props: ReportClientProps) {
       void task.finally(() => setPending((n) => n - 1));
       return task;
     },
-    [afterResult, router],
+    [afterResult, refreshPage],
   );
 
   // =========================================================================
@@ -488,6 +493,7 @@ export function ReportClient(props: ReportClientProps) {
           widgetMetrics={widgetMetrics}
           caveatTexts={caveatTexts}
           canEdit={ctx.editing}
+          refreshing={refreshing}
           onRetry={() => retry(w.id)}
           onRemove={() => handle.current?.remove(w.id)}
           onReset={() => resetWidget(w.id)}
@@ -510,10 +516,10 @@ export function ReportClient(props: ReportClientProps) {
       const params = new URLSearchParams(window.location.search);
       for (const key of FILTER_PARAMS) params.delete(key);
       const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-      router.refresh();
+      navigate(qs ? `${pathname}?${qs}` : pathname, { replace: true, scroll: false });
+      refreshPage();
     });
-  }, [canEdit, enqueue, pathname, reportId, router, savedFilters]);
+  }, [canEdit, enqueue, navigate, pathname, refreshPage, reportId, savedFilters]);
 
   const rename = useCallback(
     (next: string) => {
@@ -548,14 +554,14 @@ export function ReportClient(props: ReportClientProps) {
     await handle.current?.flush();
     const res = await duplicateReport(reportId);
     if (!res.ok) return pushToast({ text: "Could not save", tone: "error" });
-    router.push(`/reports/${res.id}?edit=1`);
-  }, [flushConfigs, reportId, router, pushToast]);
+    navigate(`/reports/${res.id}?edit=1`);
+  }, [flushConfigs, navigate, reportId, pushToast]);
 
   const remove = useCallback(async () => {
     const res = await deleteReport(reportId);
     if (!res.ok) return pushToast({ text: "Could not delete", tone: "error" });
-    router.push(`/reports?deleted=${reportId}`);
-  }, [reportId, router, pushToast]);
+    navigate(`/reports?deleted=${reportId}`);
+  }, [navigate, reportId, pushToast]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -716,7 +722,7 @@ export function ReportClient(props: ReportClientProps) {
             onClick={() => void refresh()}
             aria-busy={refreshing}
             disabled={refreshing}
-            className="rounded-control border border-hairline-strong bg-paper px-3 py-1.5 text-[12.5px] text-content-body transition-colors duration-fast hover:bg-gray-50 disabled:opacity-60"
+            className={`rounded-control border border-hairline-strong bg-paper px-3 py-1.5 text-[12.5px] text-content-body transition-colors duration-fast hover:bg-gray-50 ${refreshing ? "oe-pulse" : ""}`}
           >
             Refresh
           </button>

@@ -4,6 +4,18 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-10-01: Google Ads for every client + Phase 4 (MER, aMER, CAC on `paid_spend`)
+
+- `stg_google_ads_campaign_insights` no longer hardcodes accounts: it reads the DTS base tables
+  `p_ads_*` with a wildcard and maps account to client through `ref.clients.gads_customer_id`.
+  New client = one UPDATE (`gads_customer_id`, `has_gads`, `gads_currency`), check `ops.v_gads_coverage`.
+  RawBark (9406261058) is live. SQL in `infra/bigquery/202_stg_google_ads.sql`, details in runbook 17.
+- `mart_monthly_kpis` now carries `google_*` and `paid_spend` (additive, 0 diff on existing columns).
+- Phase 4: MER, aMER, CAC repointed to `paid_spend` in METRICS.md, runbooks 10, 11, 17 and the
+  reporting process. Looker calc fields are the remaining manual step.
+- Known: `google_spend` in `mart_daily_kpis` is FLOAT64, so the same query can differ at the 14th
+  decimal between runs. Harmless, but it shows up in an exact EXCEPT regression.
+
 ## 2026-09-09 (night) — The creative fills the panel; the picker reaches every page; ClickUp made diagnosable
 
 Three items from the previous session, all of them stated by the reader as

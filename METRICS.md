@@ -4,7 +4,7 @@ The canonical reference for every metric exposed in the `mart.*` layer. Looker S
 
 **Update this file whenever:** a new metric lands, a formula changes, a placeholder cost gets wired, or a known data gap is resolved.
 
-**Last updated:** 2026-05-20 (CM stack monotonic; cost placeholders introduced)
+**Last updated:** 2026-10-01 (Google Ads columns and `paid_spend` in daily and monthly marts; MER, aMER, CAC and CM3 on `paid_spend`)
 
 ---
 
@@ -26,9 +26,10 @@ Each metric has:
 - `gross_revenue_incl_tax` is also exposed for transparency and for reconciliation against Shopify's "Total sales" view.
 
 ### Currency
-- Native per source, no FX. Manami operates in **CZK**, Dobias in **USD**.
+- Shop figures are native per source. Manami operates in **CZK**, Dobias in **USD**.
+- Ad spend (Meta, Google) is converted into the client's currency in `mart_daily_kpis` through `ref.fx_rates` when the ad-account currency differs from the client currency (`ref.clients.meta_currency` / `gads_currency`). When they match the rate is 1. A missing rate row makes the spend NULL, so keep `ref.fx_rates` current (runbook 23).
 - The 4 stray CAD orders in Dobias data per period are real-presentment CAD orders (not Matrixify ghosts; those are filtered at stg). Trivial volume.
-- Cross-client comparison is per-currency for now. `ref.fx_rates` is on the roadmap (lower priority post-Dobias-USD-only).
+- Cross-client comparison is per-currency (rows carry `currency`).
 
 ### Time / dates
 - `date` is the order date in **UTC**. Shopify's dashboard uses shop timezone, so date-aligned comparisons can show 14–20 order drift over a month. Documented as a known issue.
@@ -98,7 +99,7 @@ One row per (`client_id`, `date`, `currency`). The headline daily P&L view. Look
 |---|---|---|---|
 | `cm1` | $ | `revenue − cogs − cm1_other_costs` | Gross contribution margin. Product viability. |
 | `cm2` | $ | `cm1 − fulfillment_cost` | After-fulfillment margin. == CM1 today (placeholder). |
-| `cm3` | $ | `cm2 − meta_spend` | After-marketing margin. **The live "true ROI of paid acquisition" figure.** |
+| `cm3` | $ | `cm2 − paid_spend` | After-marketing margin, net of ALL paid media (Meta + Google). **The live "true ROI of paid acquisition" figure.** Meta-only before 2026-07-03. |
 
 When cost placeholders get populated, CM1/CM2/CM3 update automatically. No formula changes needed.
 
@@ -119,6 +120,18 @@ When cost placeholders get populated, CM1/CM2/CM3 update automatically. No formu
 | `meta_impressions` | count | `SUM(impressions)` | |
 | `meta_clicks` | count | `SUM(clicks)` | |
 | `meta_reach` | count | `SUM(reach)` | |
+
+### Google Ads and blended paid spend
+| Column | Type | Formula | Notes |
+|---|---|---|---|
+| `google_spend` | $ | `SUM(spend)` from stg_google_ads_campaign_insights, converted to client currency | NULL when the client has no Google Ads account. Account to client mapping lives in `ref.clients.gads_customer_id` (one account per client, see runbook 17). |
+| `google_revenue` | $ | `SUM(purchase_value)` | Google's view of conversion value. |
+| `google_purchases` | count | `SUM(purchases)` | Google conversions. |
+| `google_impressions` | count | `SUM(impressions)` | |
+| `google_clicks` | count | `SUM(clicks)` | |
+| `paid_spend` | $ | `COALESCE(meta_spend,0) + COALESCE(google_spend,0)` | **Denominator for MER, aMER, CAC and CM3.** Meta + Google only; other channels (TikTok, Pinterest, Sklik, Heureka and similar) are not in the warehouse, so paid_spend understates a client that runs them. Equals `meta_spend` for clients without Google. |
+
+All of these columns exist in both `mart_daily_kpis` and `mart_monthly_kpis` (monthly added 2026-10-01).
 
 ### Derived ratio metrics — NOT in the warehouse
 
@@ -146,9 +159,9 @@ Bind scorecards to `unique_opens` (industry standard "Opens") or `total_opens` (
 | `AOV (incl shipping)` | `SUM(revenue) / SUM(orders)` — if you specifically want shipping in the numerator. |
 | `Avg revenue per order (incl shipping)` | `SUM(revenue) / SUM(orders)` — same; different label for the same number. |
 | `Return customer rate (period)` | `SUM(returning_customer_orders) / SUM(orders) * 100` — **misleading. Use cohort_repeat_rate_pct from mart_customer_cohorts instead.** |
-| `MER` | `SUM(revenue) / SUM(meta_spend)` |
-| `aMER` | `SUM(new_customer_revenue) / SUM(meta_spend)` |
-| `CAC` | `SUM(meta_spend) / SUM(new_customer_orders)` |
+| `MER` | `SUM(revenue) / SUM(paid_spend)` (blended: Meta + Google) |
+| `aMER` | `SUM(new_customer_revenue) / SUM(paid_spend)` |
+| `CAC` | `SUM(paid_spend) / SUM(new_customer_orders)` |
 | `Meta ROAS` | `SUM(meta_revenue) / SUM(meta_spend)` |
 | `Meta CTR %` | `SUM(meta_clicks) / SUM(meta_impressions) * 100` |
 | `Meta CPC` | `SUM(meta_spend) / SUM(meta_clicks)` |
@@ -165,7 +178,7 @@ Bind scorecards to `unique_opens` (industry standard "Opens") or `total_opens` (
 
 Monthly rollup of `mart_daily_kpis`. One row per (`client_id`, `month_start`, `currency`).
 
-**Inherits everything from `mart_daily_kpis`** (column-for-column SUM), plus:
+**Inherits everything from `mart_daily_kpis`** (column-for-column SUM, including `google_*` and `paid_spend` since 2026-10-01), plus:
 
 | Column | Type | Formula | Notes |
 |---|---|---|---|
@@ -354,9 +367,10 @@ Ecomail-only subscriber counts. One row per (list, snapshot_date).
 - **Shopify-style AOV** (if matching their dashboard) → `SUM(net_sales) / SUM(orders)`
 
 ### Marketing efficiency (re-aggregated, correct across periods)
-- **MER** → `SUM(revenue) / SUM(meta_spend)`
-- **aMER** → `SUM(new_customer_revenue) / SUM(meta_spend)`
-- **CAC** → `SUM(meta_spend) / SUM(new_customer_orders)`
+- **MER** → `SUM(revenue) / SUM(paid_spend)`
+- **aMER** → `SUM(new_customer_revenue) / SUM(paid_spend)`
+- **CAC** → `SUM(paid_spend) / SUM(new_customer_orders)`
+- Add `Google ROAS` = `SUM(google_revenue) / SUM(google_spend)` and `Google CPA` = `SUM(google_spend) / SUM(google_purchases)` as channel diagnostics next to the Meta ones.
 - **Meta CTR** → `SUM(meta_clicks) / SUM(meta_impressions) * 100`
 - **Meta CPC** → `SUM(meta_spend) / SUM(meta_clicks)`
 - **Meta ROAS** → `SUM(meta_revenue) / SUM(meta_spend)`

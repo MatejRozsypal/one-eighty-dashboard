@@ -65,7 +65,7 @@ GA4 ingestion isn't wired yet — anything that came from GA4 (Channel Overview 
 | **Orders** | `stg.stg_shoptet_orders` | `COUNT(DISTINCT code)` |
 | **New Customers** | `stg.stg_shoptet_orders` | `COUNT(DISTINCT CASE WHEN isReturningCustomer=FALSE THEN email END)` |
 | **Returning Customers** | `stg.stg_shoptet_orders` | `COUNT(DISTINCT CASE WHEN isReturningCustomer=TRUE THEN email END)` |
-| **CAC** (2,012 Kč) "In progress" | Blended | `SUM(meta_spend) / new_customers_count` — leave "In progress" until GA4 lands for full attribution |
+| **CAC** (2,012 Kč) "In progress" | Blended | `SUM(paid_spend) / new_customers_count` (paid_spend = Meta + Google, since 2026-10-01) - leave "In progress" until GA4 lands for full attribution |
 
 ### Top SKUs bar chart (stacked Cost/Margin)
 
@@ -248,6 +248,8 @@ These require **multiple data sources** in one chart. Two ways to do it in Looke
 
 ### Option B — Build a `mart.*` view in BQ (recommended for prod)
 
+> **DO NOT RUN the SQL below.** It is the v1 draft from May 2026. `mart.mart_daily_kpis` is live and has since been rebuilt (contribution-margin stack, Woo and Shopify and Shoptet, FX, Google Ads, `paid_spend`). Running this `CREATE OR REPLACE` would overwrite the live view with a Shoptet-only, Meta-only version and break the dashboard. The live definition is in BigQuery (`mart.INFORMATION_SCHEMA.VIEWS`) and the metric definitions are in `METRICS.md`. In this draft `mer` divides by `meta_spend`; the live formula is `SUM(revenue) / SUM(paid_spend)`.
+
 Pre-aggregate per client per day in BQ. Looker just reads one source.
 
 ```sql
@@ -327,6 +329,6 @@ For each Looker Studio page:
 ## Pages that aren't built yet (Looker)
 
 Per your existing dashboard, you also have:
-- Google Ads page — pending Google Ads data ingest (not in scope for v1)
+- Google Ads page: ingest is live since 2026-07 (runbook 17, mapping data-driven since 2026-10-01); spend is in `mart_daily_kpis` and `mart_monthly_kpis`, a per-campaign mart view does not exist yet
 - Organic Instagram page — `stg.stg_instagram_media` + `stg_instagram_account_insights` (latter is currently disabled due to token scope — see `TODO_facebook_instagram_pending.md`)
 - Cross-client comparison view — needs both clients' data, will work once Shopify + Dobias Meta are flowing

@@ -2,6 +2,8 @@
 
 Every metric on every page of the existing Looker dashboard, mapped to the BQ mart view + field + formula. Use as the single source of truth when rebuilding pages in Looker against `mart.*`.
 
+> **Status 2026-10-01:** written against the May 2026 schema. `METRICS.md` is the canonical column list. Columns named here that no longer exist in `mart_daily_kpis`: `gross_profit`, `net_profit_naive`, `meta_gross_profit_naive`, `meta_ctr_pct` and any per-day `mer`. Use `cm1`, `cm2`, `cm3` and compute ratios from sums. Dobias's shop currency is USD (the CAD below is superseded). MER and CAC were repointed to `paid_spend` (Meta + Google) on 2026-10-01; CM3 already is.
+
 **Two architectural decisions baked in:**
 1. **No blending in Looker.** Every chart's data comes from one mart view. Cross-source joins happen in BQ.
 2. **No raw or stg queries from Looker.** Always mart.
@@ -20,7 +22,7 @@ Every metric on every page of the existing Looker dashboard, mapped to the BQ ma
 | **Revenue** | `mart_daily_kpis` | `SUM(revenue)` |
 | **Gross profit** | `mart_daily_kpis` | `SUM(gross_profit)` |
 | **Net profit** | `mart_daily_kpis` | `SUM(net_profit_naive)` (gross_profit − meta_spend; currency mismatch on Dobias documented) |
-| **MER** | `mart_daily_kpis` | `SUM(revenue) / SUM(meta_spend)` (or `AVG(mer)` if you trust the per-day pre-computed) |
+| **MER** | `mart_daily_kpis` | `SUM(revenue) / SUM(paid_spend)` (Meta + Google; never `AVG` of a per-day ratio) |
 | **LTV** | `mart_customer_lifetime` | `AVG(lifetime_revenue)` |
 | **Return Customer Rate** | `mart_daily_kpis` | `SUM(returning_customer_orders) / SUM(orders) * 100` |
 | **AOV** | `mart_daily_kpis` | `SUM(revenue) / SUM(orders)` |
@@ -43,7 +45,7 @@ Every metric on every page of the existing Looker dashboard, mapped to the BQ ma
 | **Orders** | `mart_daily_kpis` | `SUM(orders)` |
 | **New Customers** | `mart_daily_kpis` | `SUM(new_customer_orders)` (≈ new customers since they buy once on first acquisition) |
 | **Returning Customers** | `mart_daily_kpis` | `SUM(returning_customer_orders)` |
-| **CAC** | `mart_daily_kpis` | `SUM(meta_spend) / SUM(new_customer_orders)` |
+| **CAC** | `mart_daily_kpis` | `SUM(paid_spend) / SUM(new_customer_orders)` |
 | **Top SKUs bar (Cost + Margin)** | `mart_sku_perf` | dimension `sku_name`; stacked `SUM(cost)` (red) + `SUM(margin)` (green) |
 | **SKU table (SKU, Variant, No., Cost, Margin)** | `mart_sku_perf` | dimensions: `sku_name`, `variant`; metrics: `SUM(units_sold)`, `SUM(cost)`, `SUM(margin)` |
 | **keyEvents:purchase trend** | ❌ GA4 pending | — |
@@ -61,7 +63,7 @@ Every metric on every page of the existing Looker dashboard, mapped to the BQ ma
 | **Ad spend** | `mart_meta_campaign_perf` | `SUM(spend)` |
 | **Hrubý zisk Meta** (Meta gross profit) | `mart_daily_kpis` | `SUM(meta_gross_profit_naive)` (= meta_revenue − spend; placeholder until COGS join exists) |
 | **Website purchases** | `mart_meta_campaign_perf` | `SUM(purchases)` |
-| **CAC** | `mart_daily_kpis` | `SUM(meta_spend) / SUM(new_customer_orders)` (per Shop Performance) |
+| **CAC** | `mart_daily_kpis` | `SUM(paid_spend) / SUM(new_customer_orders)` (per Shop Performance) |
 | **Cost per Result** | `mart_daily_kpis` or `mart_meta_campaign_perf` | `SUM(spend) / SUM(purchases)` |
 | **CTR (all)** | `mart_daily_kpis` | `AVG(meta_ctr_pct)` or `SUM(meta_clicks) / SUM(meta_impressions) * 100` |
 | **ROAS** | `mart_daily_kpis` | `SUM(meta_revenue) / SUM(meta_spend)` |
@@ -112,8 +114,8 @@ Build this as Page 5 of the new dashboard for any "do early customers spend more
 
 | Metric | Needs sources | Mart that pre-joins | Looker chart query |
 |---|---|---|---|
-| MER | shop revenue + Meta spend | `mart_daily_kpis` | `SUM(revenue) / SUM(meta_spend)` — both fields in ONE view |
-| CAC | Meta spend + new customers | `mart_daily_kpis` | `SUM(meta_spend) / SUM(new_customer_orders)` — both in ONE view |
+| MER | shop revenue + paid spend (Meta + Google) | `mart_daily_kpis` | `SUM(revenue) / SUM(paid_spend)` - both fields in ONE view |
+| CAC | paid spend (Meta + Google) + new customers | `mart_daily_kpis` | `SUM(paid_spend) / SUM(new_customer_orders)` - both in ONE view |
 | Net profit | gross_profit + ad spend | `mart_daily_kpis` | `SUM(net_profit_naive)` — pre-computed |
 | LTV/LTGP | all orders per customer | `mart_customer_lifetime` | `AVG(lifetime_revenue)` — pre-aggregated to customer level |
 

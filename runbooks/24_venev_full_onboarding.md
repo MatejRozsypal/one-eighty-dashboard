@@ -8,7 +8,7 @@ were written — see §0.
 
 **What makes Venev different from the first two clients:** it is the first client
 whose **shop currency and ad-account currency disagree** (Shopify EUR, Meta CZK).
-That is not cosmetic. `mart_daily_kpis` computes `CM2 = CM1 − meta_spend` and
+That is not cosmetic. `mart_daily_kpis` computes `CM3 = CM2 − paid_spend` and
 `MER = revenue / paid_spend`; with revenue in EUR and spend in CZK those are
 arithmetic across two currencies and produce a plausible, silently wrong number.
 Handling is in §4.
@@ -24,7 +24,7 @@ Handling is in §4.
 | Instagram | ⛔ blocked | System User has no Page asset → no IG business id |
 | Ecomail | ⛔ needs work | `wf_ecomail_to_bigquery` is hardcoded single-tenant |
 | Klaviyo | ⏳ later | migration planned; secrets not created yet |
-| Google Ads | ⏳ needs customer_id | via BigQuery DTS, not n8n |
+| Google Ads | ⏳ needs customer_id | via BigQuery DTS, not n8n. Once the account sits under the MCC: one UPDATE of `ref.clients` (`gads_customer_id`, `has_gads`, `gads_currency`), then `ops.v_gads_coverage` must say `ok` (runbook 17). No view edit |
 | GA4 | ⏳ greenfield | not connected for any client; export cannot backfill |
 
 ---
@@ -375,7 +375,7 @@ property covering `venev.eu` is pending an access request.
 **A client can therefore have several GA4 properties**, which the registry's
 single `has_ga4` flag cannot express. Model it as `ref.ga4_properties`
 (`property_id → client_id`), the same shape as the Google Ads
-`customer_id → client_id` map, before wiring the first one up.
+`customer_id → client_id` mapping (a column, `ref.clients.gads_customer_id`, since 2026-10-01; it is one-to-one, so GA4's several-to-one needs the table), before wiring the first one up.
 
 ---
 
@@ -383,7 +383,7 @@ single `has_ga4` flag cannot express. Model it as `ref.ga4_properties`
 
 | Item | Needed from |
 |---|---|
-| Google Ads `customer_id`, confirmation it sits under our MCC | Matěj |
+| Google Ads `customer_id`, confirmation it sits under our MCC (then runbook 17 onboarding UPDATE) | Matěj |
 | GA4 property id — and note the BQ export **cannot backfill**, so linking late costs history permanently | Matěj |
 | Klaviyo migration date | Matěj |
 | Whether Venev maintains `InventoryItem.cost` in Shopify — without it CM1/CM2/CM3, unit economics and payback stay empty | Matěj |

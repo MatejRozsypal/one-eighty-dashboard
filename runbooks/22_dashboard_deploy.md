@@ -233,6 +233,8 @@ WHERE client_id = 'manami';
 
 Reload Data Health afterwards — both warnings should clear.
 
+> **Status 2026-10-01:** both fixes are applied in `ref.clients` (Dobias `currency = 'USD'`, Manami `has_gads = TRUE`, `gads_currency = 'CZK'`, `gads_customer_id = 5865960448`). Do not re-run them. For any new Google Ads client set `gads_customer_id`, `has_gads` and `gads_currency` together (runbook 17), otherwise Data Health shows the same drift.
+
 ---
 
 ## 7. Install as an app

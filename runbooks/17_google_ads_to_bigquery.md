@@ -183,5 +183,68 @@ the deployed, corrected version lives in `infra/bigquery/202_stg_google_ads.sql`
 (match the Google Ads account). CM3 now nets Meta + Google via `paid_spend`; Dobias unchanged
 (no Google account → `google_spend` NULL → `paid_spend = meta_spend`). Data present from 2025-10-01.
 
-**Still open:** Phase 4 (repoint MER / aMER / CAC to `paid_spend` in METRICS.md + Looker calc
-fields). Not yet done — those three metrics still divide by `meta_spend` until repointed.
+Historical note (repo state before 2026-10-01): "Still open: Phase 4 (repoint MER / aMER / CAC to `paid_spend` in METRICS.md + Looker calc fields). Not yet done, those three metrics still divide by `meta_spend` until repointed." Superseded as follows.
+
+**Phase 4 status:** closed on 2026-10-01 for METRICS.md, runbooks 10 and 11 and the reporting process
+(see the 2026-10-01 section below). The Looker calc fields still have to be changed by hand.
+
+---
+
+## 2026-10-01: Data-driven mapping, new clients need no view edits
+
+The per-account `UNION ALL` / `client_map` in the stg view is gone. `stg.stg_google_ads_campaign_insights`
+now reads the DTS **base tables** with a wildcard (`raw_google_ads.p_ads_CampaignBasicStats_*`,
+`p_ads_Campaign_*`; the `ads_*` objects are views and cannot be prefix-queried, the `p_ads_*` base
+tables can) and maps account to client through the new column `ref.clients.gads_customer_id`.
+`mart_daily_kpis` was not touched (it already joins `ref.clients` on `has_gads` / `gads_currency`).
+Full SQL: `infra/bigquery/202_stg_google_ads.sql`.
+
+**Onboarding a Google Ads client now = one UPDATE** (account must sit under the MCC the transfer runs on):
+
+```sql
+UPDATE `oneeighty-warehouse.ref.clients`
+SET gads_customer_id = 1234567890, has_gads = TRUE, gads_currency = 'CZK', updated_at = CURRENT_TIMESTAMP()
+WHERE client_id = '<client>';
+SELECT * FROM `oneeighty-warehouse.ops.v_gads_coverage`;   -- status must be 'ok'
+```
+
+**Limit: one Google Ads account per client** (`gads_customer_id` is a single column). A second account of the
+same client lands in `raw_google_ads` but shows up as `UNMAPPED` in `ops.v_gads_coverage` and its spend is
+not counted anywhere. When that happens, replace the column with a table `ref.gads_accounts(customer_id,
+client_id)` and join it in the stg view's `client_map` (and in `v_gads_coverage`).
+
+**`ops.v_gads_coverage`** lists every account in the transfer plus every client flagged `has_gads`.
+Statuses: `UNMAPPED` (account in the transfer, no client), `NO_FLAG`, `CURRENCY_MISMATCH`,
+`CLIENT_WITHOUT_ACCOUNT`, `STALE` (no transfer for more than 3 days), `ok`. Freshness is measured on the
+transfer snapshot, not on stats rows, so a paused account does not read as stale. Not yet wired into
+`ops.v_feed_health` / `v_pipeline_alerts`: check it by hand after adding an account.
+
+**Regression (SOP step 7, baseline in `mart_qa.base_*_2026_10_01`):** stg Manami identical row for row
+(0 rows either way). `mart_daily_kpis` for all non-RawBark clients, all days, all columns: 1 row differs,
+`manami` 2026-04-17, `google_spend` 480.51252 vs 480.51252000000005. That is FLOAT64 summation order in
+`google_daily` (`SUM(spend * fx)`), not data; the stg rows are identical. A `CAST ... AS NUMERIC` in the
+mart would remove the noise, left alone on purpose (not in scope, would touch every client).
+RawBark: mart Sep 2026 google_spend 83,214 CZK = raw. `mart_cm3_monthly` is empty (0 rows) before and
+after, so it gave no regression signal.
+
+### 2026-10-01: Phase 4 done (docs, reporting process, monthly mart)
+
+- `mart_monthly_kpis` gained `google_spend, google_revenue, google_purchases, google_impressions,
+  google_clicks, paid_spend` (before this it carried Meta only, so no monthly view could compute a
+  blended MER). Regression: all 211 rows and every existing column identical before and after
+  (baseline `mart_qa.base_mart_monthly_kpis_2026_10_01`).
+- MER, aMER, CAC now read `paid_spend` in METRICS.md, runbooks 10 and 11 and
+  `agency/_processes/reporting/` (data-pull, analysis). Meta ROAS, CPA, CPC, CTR stay on `meta_spend`.
+- Not done by this change, needs a human in Looker Studio: change the `MER`, `aMER`, `CAC` calc fields
+  on the Profitability page to the formulas below, then **Refresh fields** so `paid_spend` is bindable.
+  The Next.js dashboard source is not in this repo, so its tiles were not checked either.
+
+```
+MER   = SUM(revenue) / SUM(paid_spend)
+aMER  = SUM(new_customer_revenue) / SUM(paid_spend)
+CAC   = SUM(paid_spend) / SUM(new_customer_orders)
+```
+
+Effect (monthly, CZK): Manami MER Jun 2026 3.33 -> 2.56, Sep 2026 3.36 -> 2.93; aMER Jun 1.94, Sep 1.96;
+Dobias unchanged (no Google). RawBark has no Meta in the warehouse yet, so its MER (Sep 22.28) and
+aMER (1.36) are Google only and overstated until Meta lands.

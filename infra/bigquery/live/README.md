@@ -1,6 +1,6 @@
 # Live warehouse DDL snapshot
 
-Snapshot date: **2026-10-05** (re-exported after the 2026-10-04/05 deploys of migrations 228 to 234, 240 to 242, 250 and 251, plus the
+Snapshot date: **2026-10-05**; amended 2026-10-04 for migration 235 (`mart.mart_daily_kpis` and the new `ref.ad_spend_zero_days`, both taken from the deployed file, MD5 of the live view equals the file) (re-exported after the 2026-10-04/05 deploys of migrations 228 to 234, 240 to 242, 250 and 251, plus the
 243). First export: 2026-10-04 (15:00 to 16:00 UTC). Project `oneeighty-warehouse`, region EU.
 
 Verified 2026-10-05: for every view in `stg`, `mart`, `ops` and every base table in `ref`, `ops`, the MD5 of the live
@@ -20,7 +20,7 @@ Every new migration (228 and up) must cite the `live/` file it changes in its he
 | `mart.<view>.sql` | 48 | same, dataset `mart` |
 | `ops.v_*.sql` | 3 | same, dataset `ops` (`v_feed_health`, `v_gads_coverage`, `v_pipeline_alerts`) |
 | `stg.ga4_sessions.sql` | 1 | `INFORMATION_SCHEMA.TABLES.ddl` of the one base table in `stg` (derived GA4 sessions, loaded by `ops.sp_load_ga4_sessions`) |
-| `ref.<table>.sql` | 20 | `INFORMATION_SCHEMA.TABLES.ddl` of every base table in `ref` |
+| `ref.<table>.sql` | 21 | `INFORMATION_SCHEMA.TABLES.ddl` of every base table in `ref` |
 | `ops.<table>.sql` | 5 | same, every base table in `ops` |
 | `scheduled_query.refresh_feed_freshness.sql` | 1 | the hourly scheduled query that fills `ops.feed_freshness` (verbatim) |
 | `scheduled_queries.md` | 1 | list of scheduled queries and DTS transfer configs |

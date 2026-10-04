@@ -23,10 +23,12 @@ import { getClients, resolveClient } from "@/lib/clients";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
+import { RangeNote } from "@/components/ui/PageNotes";
 import { getInventory } from "@/lib/queries/inventory";
 import {
   buildReorderPlan,
   formatCover,
+  snapshotTooOldForBuying,
   COVER_TARGET_DAYS,
 } from "@/lib/inventory/model";
 import { formatMoney, formatNumber } from "@/lib/currency";
@@ -57,6 +59,7 @@ export default async function BuyingPlanPage({
     <>
       <Header title="Buying plan" />
       <PageControls client={client} params={params} />
+      <RangeNote />
     </>
   );
 
@@ -81,6 +84,19 @@ export default async function BuyingPlanPage({
         {header}
         <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
           <NoData />
+        </main>
+      </>
+    );
+  }
+
+  // A count older than 30 days is not a basis for an order. TrustBar carries the
+  // one notice; nothing is rendered below it.
+  if (snapshotTooOldForBuying(summary)) {
+    return (
+      <>
+        {header}
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+          <TrustBar summary={summary} />
         </main>
       </>
     );

@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
+import { RangeNote } from "@/components/ui/PageNotes";
 import {
   getFirstProductRepeat,
   getProductJourney,
@@ -70,6 +71,7 @@ export default async function RepurchasePage({
     <>
       <Header title="Repurchase" />
       <PageControls client={client} params={params} />
+      <RangeNote />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {!hasJourney && breakdown.length === 0 ? (
@@ -81,7 +83,7 @@ export default async function RepurchasePage({
                 <b className="text-content-strong">
                   {formatPercent(blendedRate, { decimals: 1 })}
                 </b>{" "}
-                of customers came back.
+                of customers came back, lifetime.
                 <InfoTip
                   text={`This page ignores the date range. Repurchase is a property of a customer's lifetime, and only customers whose first order is at least ${MATURITY_DAYS} days old are counted.`}
                 />

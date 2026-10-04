@@ -28,6 +28,25 @@ import { NoData, NotConnected, Value } from "@/components/ui/EmptyState";
 export const metadata: Metadata = { title: "Products" };
 export const dynamic = "force-dynamic";
 
+const TABLE_ROWS = 40;
+
+/**
+ * A product whose margin equals its revenue has no cost behind it: the mart
+ * carries a zero COGS rather than a NULL for some catalogues (Ethia), which
+ * reads as a 100% margin. No real product sells at 100%, so treat it as
+ * "no cost data" here, in the table and in the totals.
+ */
+function withoutFalseMargin(p: ProductRow): ProductRow {
+  if (p.marginPct !== null && p.marginPct >= 0.999) {
+    return { ...p, margin: null, marginPct: null };
+  }
+  return p;
+}
+
+const GRID_WITH_LINE =
+  "grid grid-cols-[2.2fr_0.7fr_0.7fr_1fr_1fr_1.4fr] items-center gap-2";
+const GRID_NO_LINE = "grid grid-cols-[2.2fr_0.7fr_1fr_1fr_1.4fr] items-center gap-2";
+
 /** Totals over every product in a range, with margin read over costed products only. */
 function totalsOf(products: ProductRow[]) {
   const revenue = products.reduce((s, p) => s + (p.revenue ?? 0), 0);
@@ -65,11 +84,13 @@ export default async function ProductsPage({
   }
 
   const comparison = params.period.comparison;
-  const [all, previous] = await Promise.all([
+  const [allRaw, previousRaw] = await Promise.all([
     getProducts(client.clientId, params.range, 1000),
     comparison ? getProducts(client.clientId, comparison, 1000) : Promise.resolve(null),
   ]);
-  const products = all.slice(0, 40);
+  const all = allRaw.map(withoutFalseMargin);
+  const previous = previousRaw ? previousRaw.map(withoutFalseMargin) : null;
+  const products = all.slice(0, TABLE_ROWS);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
 
@@ -113,6 +134,9 @@ export default async function ProductsPage({
   const lines = Array.from(
     new Set(all.map((p) => p.productLine).filter(Boolean))
   ) as string[];
+  // No product has a line (every client but Dobias): the column would be a
+  // wall of "n/a", so it is left out.
+  const showLine = lines.length > 0;
 
   return (
     <>
@@ -182,17 +206,22 @@ export default async function ProductsPage({
         )}
 
         <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
-          <div className="border-b border-hairline px-5 py-4">
+          <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
             <Eyebrow>Products</Eyebrow>
+            {all.length > TABLE_ROWS && (
+              <span className="text-[12px] text-content-muted">
+                Top {TABLE_ROWS} of {formatNumber(all.length)} by revenue
+              </span>
+            )}
           </div>
 
           <div className="overflow-x-auto">
             <div className="min-w-[820px]">
               <DataTable
-                gridClass="grid grid-cols-[2.2fr_0.7fr_0.7fr_1fr_1fr_1.4fr] items-center gap-2"
+                gridClass={showLine ? GRID_WITH_LINE : GRID_NO_LINE}
                 columns={[
                   { key: "product", label: "Product" },
-                  { key: "line", label: "Line" },
+                  ...(showLine ? [{ key: "line", label: "Line" }] : []),
                   { key: "units", label: "Units", align: "right" },
                   { key: "revenue", label: "Revenue", align: "right" },
                   { key: "margin", label: "Margin", align: "right" },
@@ -206,7 +235,7 @@ export default async function ProductsPage({
                   key: `${p.productName}|${p.productLine ?? ""}`,
                   sort: [
                     p.productName,
-                    p.productLine,
+                    ...(showLine ? [p.productLine] : []),
                     p.units,
                     p.revenue,
                     p.margin,
@@ -219,18 +248,33 @@ export default async function ProductsPage({
                     >
                       {p.productName}
                     </span>,
-                    <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-content-muted">
-                      {p.productLine ?? NO_VALUE}
-                    </span>,
+                    ...(showLine
+                      ? [
+                          <span
+                            key="line"
+                            className="font-mono text-[11px] tracking-[0.04em] text-content-muted"
+                          >
+                            {p.productLine ? (
+                              <span className="uppercase">{p.productLine}</span>
+                            ) : (
+                              NO_VALUE
+                            )}
+                          </span>,
+                        ]
+                      : []),
                     <span className="font-mono text-[12.5px] tabular text-content-body">
                       {formatNumber(p.units)}
                     </span>,
                     <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
                       <Value>{money(p.revenue)}</Value>
                     </span>,
-                    <span className="font-mono text-[12.5px] tabular text-growth-700">
-                      <Value>{money(p.margin)}</Value>
-                    </span>,
+                    p.margin === null ? (
+                      <span className="text-[12px] text-content-muted">No cost data</span>
+                    ) : (
+                      <span className="font-mono text-[12.5px] tabular text-growth-700">
+                        <Value>{money(p.margin)}</Value>
+                      </span>
+                    ),
                     <span className="flex items-center gap-2.5">
                       <span className="h-1.5 flex-1 overflow-hidden rounded-pill bg-gray-100">
                         <span

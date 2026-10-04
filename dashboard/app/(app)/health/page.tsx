@@ -178,14 +178,21 @@ export default async function HealthPage() {
                           </span>
                         )}
                       </span>,
-                      <span className="inline-flex items-center gap-2 font-mono text-[11.5px] uppercase tracking-[0.04em] text-content-strong">
-                        <span
-                          aria-hidden="true"
-                          className={`h-[9px] w-[9px] flex-none rounded-[3px] ${
-                            PLATFORM_DOT[s.platform] ?? "bg-gray-400"
-                          }`}
-                        />
-                        {s.source}
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-2 font-mono text-[11.5px] uppercase tracking-[0.04em] text-content-strong">
+                          <span
+                            aria-hidden="true"
+                            className={`h-[9px] w-[9px] flex-none rounded-[3px] ${
+                              PLATFORM_DOT[s.platform] ?? "bg-gray-400"
+                            }`}
+                          />
+                          {s.source}
+                        </span>
+                        {s.note && (
+                          <span className="pl-[17px] text-[11px] text-content-muted">
+                            {s.note}
+                          </span>
+                        )}
                       </span>,
                       <span
                         className={`font-mono text-[12px] tabular ${
@@ -216,7 +223,7 @@ export default async function HealthPage() {
 
           {runs === null ? (
             <div className="px-5 py-5 text-[12.5px] text-content-muted">
-              Pipeline log not readable.
+              No read access to the pipeline log.
             </div>
           ) : runs.length === 0 ? (
             <div className="px-5 py-5 text-[12.5px] text-content-muted">

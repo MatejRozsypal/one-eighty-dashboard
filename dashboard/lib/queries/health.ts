@@ -113,6 +113,22 @@ export async function getSourceFreshness(
      GROUP BY client_id`
   ).catch((): Array<{ client_id: string; last_send: { value: string } }> => []);
 
+  // Ecomail campaigns live in the campaign view, which holds both ESPs.
+  const ecomail = await query<{ client_id: string; last_send: { value: string } }>(
+    `SELECT client_id, MAX(send_date) AS last_send
+     FROM \`${PROJECT_ID}.mart.mart_email_campaign_perf\`
+     WHERE platform = 'ecomail' AND send_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 120 DAY)
+     GROUP BY client_id`
+  ).catch((): Array<{ client_id: string; last_send: { value: string } }> => []);
+
+  // Shopify products snapshot: the stock count behind Stock health and the
+  // Buying plan. It is not appended by a daily job, so it can quietly stop.
+  const products = await query<{ client_id: string; last_snapshot: { value: string } }>(
+    `SELECT client_id, MAX(snapshot_date) AS last_snapshot
+     FROM \`${PROJECT_ID}.mart.mart_sku_inventory\`
+     GROUP BY client_id`
+  ).catch((): Array<{ client_id: string; last_snapshot: { value: string } }> => []);
+
   // The demo client has no mart rows, so it gets a synthesised one here rather
   // than a branch inside the loop below, that way its sources are classified
   // late, stale or healthy by exactly the same rules as everyone else's.
@@ -162,6 +178,22 @@ export async function getSourceFreshness(
         expected: "Same day",
         toleranceDays: 1,
         status: classify(last, 1, today, active),
+      });
+    }
+
+    if (client.capabilities.shopify && !isDemo(client.clientId)) {
+      const last = isoDate(
+        products.find((p) => p.client_id === client.clientId)?.last_snapshot ?? null
+      );
+      out.push({
+        ...base,
+        source: "Shopify products",
+        platform: "shopify",
+        lastDate: last,
+        expected: "Weekly",
+        toleranceDays: 7,
+        status: classify(last, 7, today, active),
+        note: "Stock count",
       });
     }
 
@@ -223,15 +255,17 @@ export async function getSourceFreshness(
     }
 
     if (client.capabilities.ecomail) {
+      const last = isoDate(
+        ecomail.find((e) => e.client_id === client.clientId)?.last_send ?? null
+      );
       out.push({
         ...base,
-        source: "Ecomail",
+        source: "Ecomail campaigns",
         platform: "ecomail",
-        lastDate: null,
+        lastDate: last,
         expected: "On send",
         toleranceDays: 21,
-        status: "blocked",
-        note: "No daily view.",
+        status: classify(last, 21, today, active),
       });
     }
   }

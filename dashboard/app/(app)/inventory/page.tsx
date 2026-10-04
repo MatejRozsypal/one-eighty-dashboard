@@ -25,9 +25,11 @@ import { getClients, resolveClient } from "@/lib/clients";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
+import { RangeNote } from "@/components/ui/PageNotes";
 import { getInventory } from "@/lib/queries/inventory";
 import {
   buildExceptions,
+  snapshotTooOldForBuying,
   COVER_AT_RISK_DAYS,
   COVER_OVERSTOCK_DAYS,
 } from "@/lib/inventory/model";
@@ -61,6 +63,7 @@ export default async function StockHealthPage({
     <>
       <Header title="Stock health" />
       <PageControls client={client} params={params} />
+      <RangeNote />
     </>
   );
 
@@ -89,7 +92,12 @@ export default async function StockHealthPage({
     );
   }
 
-  const exceptions = buildExceptions(rows);
+  // Past 30 days the count is too old to buy from: the reorder lines and the
+  // Buying plan link go, the markdown and dead-stock lines stay. TrustBar says so.
+  const buyingOff = snapshotTooOldForBuying(summary);
+  const exceptions = buildExceptions(rows, client.currency, {
+    includeReorder: !buyingOff,
+  });
 
   const buckets: Array<{ label: string; value: number; tone: string; info?: string }> = [
     { label: "Healthy", value: summary.valueHealthy, tone: "text-growth-700" },
@@ -207,12 +215,14 @@ export default async function StockHealthPage({
             >
               Full catalogue
             </AppLink>
-            <AppLink
-              href={`/inventory/buying${qs}`}
-              className="font-semibold text-content-body underline underline-offset-2"
-            >
-              Buying plan
-            </AppLink>
+            {!buyingOff && (
+              <AppLink
+                href={`/inventory/buying${qs}`}
+                className="font-semibold text-content-body underline underline-offset-2"
+              >
+                Buying plan
+              </AppLink>
+            )}
           </div>
         </section>
       </main>

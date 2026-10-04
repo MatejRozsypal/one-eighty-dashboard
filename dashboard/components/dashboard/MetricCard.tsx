@@ -100,7 +100,9 @@ export function MetricCard({
 
   return (
     <div className={shell}>
-      <div className="flex items-center justify-between gap-2">
+      {/* Wraps: below sm the source tag drops under a long label rather than
+          squeezing it onto three lines. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <span className="relative inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] font-medium uppercase leading-[1.35] tracking-[0.08em] text-content-muted">
           {label}
           {definition && <MetricTooltip definition={definition} />}
@@ -158,10 +160,15 @@ export function MetricCard({
                 {state.reason}
               </span>
             ) : delta !== undefined ? (
-              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span
+                className="inline-flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap"
+                title={delta !== null && comparisonLabel ? comparisonLabel : undefined}
+              >
                 <DeltaChip delta={delta} goodWhen={goodWhen} />
+                {/* "vs prev period" is dropped below sm, where a two-column card
+                    is narrower than the chip plus the text. The title keeps it. */}
                 {delta !== null && comparisonLabel && (
-                  <span className="font-mono text-[11.5px] tracking-[0.02em] text-content-muted">
+                  <span className="hidden truncate font-mono text-[11.5px] tracking-[0.02em] text-content-muted sm:inline">
                     {comparisonLabel}
                   </span>
                 )}

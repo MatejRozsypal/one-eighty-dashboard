@@ -38,6 +38,18 @@ const CURRENCY_MARKETS: Record<string, string> = {
   CAD: "Canada (CAD)",
 };
 
+/**
+ * Grid template per column count. Literal class strings on purpose: Tailwind
+ * only generates classes it can read in the source, so a class assembled from a
+ * template literal at runtime never reaches the stylesheet and the table
+ * collapses into a stacked list.
+ */
+const GRID_BY_COLS: Record<number, string> = {
+  7: "grid grid-cols-[0.85fr_0.75fr_1.5fr_0.6fr_minmax(0,1fr)_minmax(0,1fr)_0.85fr] items-center gap-2",
+  8: "grid grid-cols-[0.85fr_0.75fr_1.5fr_0.6fr_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_0.85fr] items-center gap-2",
+  9: "grid grid-cols-[0.85fr_0.75fr_1.5fr_0.6fr_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_0.85fr] items-center gap-2",
+};
+
 function marketLabel(key: string, dimension: "country" | "currency"): string {
   if (!key) return "Not set";
   if (dimension === "currency") return CURRENCY_MARKETS[key] ?? key;
@@ -121,9 +133,7 @@ export default async function OrdersPage({
     { key: "status", label: "Type" },
   ];
 
-  const grid = `grid grid-cols-[0.85fr_0.75fr_1.5fr_0.6fr_repeat(${
-    columns.length - 5
-  },minmax(0,1fr))_0.85fr] items-center gap-2`;
+  const grid = GRID_BY_COLS[columns.length] ?? GRID_BY_COLS[9];
 
   const marketNote = isCurrencySplit
     ? "Split by transacting currency, as this platform carries no address. Amounts are shown in the client currency."
@@ -257,7 +267,11 @@ export default async function OrdersPage({
                       case "discounts":
                         return (
                           <span className="font-mono text-[12.5px] tabular text-content-muted">
-                            {o.discounts ? `\u2212${money(o.discounts)}` : NO_VALUE}
+                            {o.discounts === null
+                              ? NO_VALUE
+                              : o.discounts > 0
+                                ? `\u2212${money(o.discounts)}`
+                                : "none"}
                           </span>
                         );
                       default:

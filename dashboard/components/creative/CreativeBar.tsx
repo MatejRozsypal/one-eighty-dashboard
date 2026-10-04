@@ -22,7 +22,7 @@
  * follows you across all five screens.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 
 export function CreativeBar({
   unmapped,
@@ -53,13 +53,13 @@ export function CreativeBar({
       )}
 
       {unmapped > 0 && (
-        <Link
+        <AppLink
           href={href}
           className="inline-flex items-center gap-2 rounded-pill border border-warning/25 bg-warning/10 px-3 py-1 text-[12.5px] font-medium text-warning transition-colors duration-fast hover:bg-warning/20"
         >
           <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
           {unmapped} {unmapped === 1 ? "ad" : "ads"} unmapped
-        </Link>
+        </AppLink>
       )}
     </div>
   );

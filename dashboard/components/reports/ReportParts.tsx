@@ -11,6 +11,7 @@
 
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { WidgetBody } from "@/components/reports/widgets";
 import type { CaveatTexts, WidgetMetric } from "@/components/reports/widgets";
 import { WidgetConfigPanel } from "@/components/reports/pickers/WidgetConfigPanel";
@@ -23,9 +24,6 @@ import type { ReportClient } from "@/lib/reports/registry/types";
 import type { ReportFilters, WidgetConfig, WidgetType } from "@/lib/reports/types";
 import type { WidgetState } from "./useWidgetData";
 
-const SHIMMER =
-  "bg-[linear-gradient(90deg,var(--gray-100)_25%,var(--gray-150)_37%,var(--gray-100)_63%)] bg-[length:320px_100%] animate-[oe-shimmer_1.3s_linear_infinite]";
-
 // ---------------------------------------------------------------------------
 // Widget cell
 // ---------------------------------------------------------------------------
@@ -36,12 +34,14 @@ export interface WidgetCellProps {
   widgetMetrics: Partial<Record<MetricId, WidgetMetric>>;
   caveatTexts: CaveatTexts;
   canEdit: boolean;
+  /** Refresh was pressed and the new numbers are not requested yet: pulse now. */
+  refreshing?: boolean;
   onRetry(): void;
   onRemove(): void;
   onReset(): void;
 }
 
-export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit, onRetry, onRemove, onReset }: WidgetCellProps) {
+export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit, refreshing = false, onRetry, onRemove, onReset }: WidgetCellProps) {
   if (!config) {
     return (
       <div role="status" className="flex h-full flex-col items-start justify-center gap-2 text-[13px] text-content-muted">
@@ -61,7 +61,7 @@ export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit,
   }
 
   const result = state?.result ?? null;
-  const loading = state?.loading ?? true;
+  const loading = (state?.loading ?? true) || refreshing;
   const error = state?.error ?? null;
 
   if (error) {
@@ -79,12 +79,16 @@ export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit,
   }
 
   if (!result) {
-    return <div aria-busy="true" aria-label="Loading" className={`h-full w-full rounded-md ${SHIMMER}`} />;
+    return (
+      <div aria-busy="true" aria-label="Loading" className="h-full w-full">
+        <Skeleton className="h-full w-full rounded-md" />
+      </div>
+    );
   }
 
   const metrics = config.query.metrics.map((id) => widgetMetrics[id]).filter((m): m is WidgetMetric => m !== undefined);
   return (
-    <div aria-busy={loading} className={`h-full ${loading ? "animate-pulse" : ""}`}>
+    <div aria-busy={loading} className={`h-full ${loading ? "oe-pulse" : ""}`}>
       <WidgetBody result={result} metrics={metrics} caveatTexts={caveatTexts} view={config.view} />
     </div>
   );

@@ -10,7 +10,7 @@
  */
 
 import type { Metadata } from "next";
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
@@ -71,7 +71,7 @@ export default async function RepeatTimingPage({
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <div className="flex flex-wrap items-center gap-2">
           {HORIZONS.map((h) => (
-            <Link
+            <AppLink
               key={h}
               href={qs(h)}
               className={`rounded-control border px-3 py-1.5 font-mono text-[11px] transition-colors duration-fast ${
@@ -81,7 +81,7 @@ export default async function RepeatTimingPage({
               }`}
             >
               {h} days
-            </Link>
+            </AppLink>
           ))}
         </div>
 
@@ -187,12 +187,12 @@ export default async function RepeatTimingPage({
               </div>
             </section>
 
-            <Link
+            <AppLink
               href={params.clientId ? `/gaps?client=${params.clientId}` : "/gaps"}
               className="text-[12.5px] text-content-body underline"
             >
               Time between orders
-            </Link>
+            </AppLink>
           </>
         )}
       </main>

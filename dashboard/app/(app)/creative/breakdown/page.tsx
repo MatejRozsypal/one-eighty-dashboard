@@ -48,7 +48,7 @@ import { loadCreative, type CreativeContext } from "@/lib/creative/page";
 import { getTagCoverage } from "@/lib/queries/creative";
 import { groupBy, read, sum } from "@/lib/creative/model";
 import { BREAKDOWN_DIMENSIONS, FOCUS_FIELD, FORMAT_LABELS, isBreakdownKey, type BreakdownKey, type Format } from "@/lib/creative/vocabulary";
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { DataTable } from "@/components/ui/DataTable";
 import type { AdRow } from "@/lib/creative/model";
 
@@ -326,12 +326,12 @@ export default async function BreakdownPage({
               }
             >
               {r.focusValue ? (
-                <Link
+                <AppLink
                   href={linkTo(r.focusValue)}
                   className="text-[13px] font-medium text-content-strong underline decoration-hairline-strong underline-offset-2 transition-colors duration-fast hover:decoration-accent"
                 >
                   {r.label}
-                </Link>
+                </AppLink>
               ) : (
                 <span
                   className={`text-[13px] font-medium ${

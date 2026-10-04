@@ -61,7 +61,7 @@ export function SaveButton({
         saved
           ? "border-growth-500 bg-growth-50 text-growth-700"
           : "border-hairline-strong text-content-body hover:bg-gray-50"
-      } ${className}`}
+      } ${pending ? "oe-pulse" : ""} ${className}`}
     >
       {pending && (
         <span

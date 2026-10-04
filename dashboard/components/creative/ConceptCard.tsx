@@ -14,7 +14,7 @@
  * person acts in Ads Manager and records it afterwards.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import type { AdView, VerdictView } from "@/lib/creative/view";
 import type { Confidence } from "@/lib/creative/stats";
 import {
@@ -113,13 +113,13 @@ export function ConceptCard({
         ))}
         {extra > 0 &&
           (data.adsHref ? (
-            <Link
+            <AppLink
               href={data.adsHref}
               title={`All ${data.ads.length} creatives in this concept`}
               className="flex h-[50px] w-10 items-center justify-center rounded-[7px] border border-hairline-strong font-mono text-[11px] text-content-muted transition-colors duration-fast hover:border-accent/50 hover:text-content-accent"
             >
               +{extra}
-            </Link>
+            </AppLink>
           ) : (
             <span className="flex h-[50px] w-10 items-center justify-center rounded-[7px] border border-hairline-strong font-mono text-[11px] text-content-muted">
               +{extra}
@@ -163,9 +163,9 @@ export function ConceptCard({
         {(data.adsHref || data.clickupUrl) && (
           <span className="flex flex-wrap gap-3 text-[12.5px]">
             {data.adsHref && (
-              <Link href={data.adsHref} className="text-content-accent underline underline-offset-2">
+              <AppLink href={data.adsHref} className="text-content-accent underline underline-offset-2">
                 See the {data.ads.length} {data.ads.length === 1 ? "creative" : "creatives"}
-              </Link>
+              </AppLink>
             )}
             {data.clickupUrl && (
               <a

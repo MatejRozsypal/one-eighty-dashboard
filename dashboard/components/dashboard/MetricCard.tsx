@@ -187,24 +187,3 @@ export function MetricCard({
     </div>
   );
 }
-
-/** Skeleton shown while BigQuery runs (2 to 5 s on wide ranges). */
-export function MetricCardSkeleton({ label }: { label?: ReactNode }) {
-  const shimmer =
-    "bg-[linear-gradient(90deg,var(--gray-100)_25%,var(--gray-150)_37%,var(--gray-100)_63%)] bg-[length:320px_100%] animate-[oe-shimmer_1.3s_linear_infinite]";
-
-  return (
-    <div className="flex min-h-[132px] flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[18px_20px] shadow-sm">
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-content-muted">
-          {label ?? " "}
-        </span>
-        <span className={`h-[9px] w-[52px] rounded-pill ${shimmer}`} />
-      </div>
-      <div className="flex flex-col gap-3">
-        <span className={`h-[30px] w-[70%] rounded-xs ${shimmer}`} />
-        <span className={`h-3 w-[40%] rounded-pill ${shimmer}`} />
-      </div>
-    </div>
-  );
-}

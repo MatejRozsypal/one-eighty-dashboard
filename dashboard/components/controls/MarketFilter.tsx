@@ -66,7 +66,7 @@ export function MarketFilter({
   const hidden = markets.length - shown.length;
 
   return (
-    <div className={`flex flex-col gap-2 ${isPending ? "opacity-60" : ""}`}>
+    <div className={`flex flex-col gap-2 ${isPending ? "oe-pulse" : ""}`}>
       <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted">
         {kind === "country" ? "First-order country" : "First-order currency"}
       </span>

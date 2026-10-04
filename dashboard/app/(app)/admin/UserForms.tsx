@@ -11,6 +11,7 @@
 
 import { useFormState, useFormStatus } from "react-dom";
 import { useState } from "react";
+import { PendingSubmit } from "@/components/ui/PendingSubmit";
 import { createUserAction, resetPasswordAction, type ActionResult } from "./actions";
 import type { AppUser, Role } from "@/lib/users/store";
 import type { Client } from "@/lib/clients";
@@ -21,7 +22,8 @@ function Submit({ label, busy }: { label: string; busy: string }) {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-control bg-ink-900 px-4 py-2 text-[13px] font-medium text-content-inverse transition-colors duration-fast hover:bg-ink-800 disabled:opacity-50"
+      aria-busy={pending}
+      className={`rounded-control bg-ink-900 px-4 py-2 text-[13px] font-medium text-content-inverse transition-colors duration-fast hover:bg-ink-800 disabled:opacity-50 ${pending ? "oe-pulse" : ""}`}
     >
       {pending ? busy : label}
     </button>
@@ -169,12 +171,9 @@ export function ResetPasswordButton({ user }: { user: AppUser }) {
       <form action={action}>
         <input type="hidden" name="id" value={user.id} />
         <input type="hidden" name="email" value={user.email} />
-        <button
-          type="submit"
-          className="rounded-control border border-hairline-strong px-2.5 py-1.5 font-mono text-[11px] text-content-body transition-colors duration-fast hover:bg-gray-50"
-        >
+        <PendingSubmit className="rounded-control border border-hairline-strong px-2.5 py-1.5 font-mono text-[11px] text-content-body transition-colors duration-fast hover:bg-gray-50">
           Reset password
-        </button>
+        </PendingSubmit>
       </form>
       {result?.ok && <TemporaryPassword result={result} />}
       {result?.ok === false && (

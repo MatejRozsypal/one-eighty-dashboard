@@ -11,7 +11,7 @@
  * distinguish. Both routes render this bar; the highlight follows the path.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { usePathname, useSearchParams } from "next/navigation";
 
 const TABS = [
@@ -44,7 +44,7 @@ export function SettingsTabs() {
         const qs = query.toString();
 
         return (
-          <Link
+          <AppLink
             key={t.label}
             href={qs ? `${t.href}?${qs}` : t.href}
             className={`whitespace-nowrap border-b-2 px-3 py-3 text-[13px] transition-colors duration-fast ${
@@ -54,7 +54,7 @@ export function SettingsTabs() {
             }`}
           >
             {t.label}
-          </Link>
+          </AppLink>
         );
       })}
     </div>

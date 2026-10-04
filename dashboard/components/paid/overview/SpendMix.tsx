@@ -8,7 +8,7 @@
  * segment only when it is wider than 15%.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { formatMoney, formatPercent, formatRatio } from "@/lib/format";
 import type { MixSegment } from "@/components/paid/overview/model";
 
@@ -57,7 +57,7 @@ function Bar({
             const text = `${s.label}: ${formatMoney(s.spend, currency)}, ${formatPercent(s.share, { decimals: 0 })}, ROAS ${formatRatio(s.roas)}`;
             const dark = ["prospecting", "retargeting", "brand", "non_brand"].includes(s.key);
             return (
-              <Link
+              <AppLink
                 key={s.key}
                 role="listitem"
                 href={hrefFor(s.key)}
@@ -73,7 +73,7 @@ function Bar({
                     {s.label} {formatPercent(s.share, { decimals: 0 })}
                   </span>
                 )}
-              </Link>
+              </AppLink>
             );
           })}
         </div>

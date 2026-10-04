@@ -11,7 +11,7 @@
  */
 
 import type { Metadata } from "next";
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
@@ -183,12 +183,12 @@ export default async function PaidMetaPage({
 
         <AudienceBreakdown rows={audienceRows(rows, dim)} dim={dim} currency={currency} />
 
-        <Link
+        <AppLink
           href={creativeHref(params)}
           className="self-start text-[13px] text-content-muted hover:text-content-strong hover:underline"
         >
           Creatives
-        </Link>
+        </AppLink>
       </main>
     </>
   );

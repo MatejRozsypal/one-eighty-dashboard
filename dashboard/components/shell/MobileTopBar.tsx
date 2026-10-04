@@ -28,7 +28,7 @@
  * bar cannot live inside the per-page `Header`.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { activeNavHref, navFor, pageTitle, railProducts, selectedClient } from "@/lib/nav";
@@ -141,7 +141,7 @@ export function MobileTopBar({
               aria-haspopup="menu"
               aria-label={`Client: ${shownClient.name}`}
               className={`flex max-w-[136px] items-center gap-1.5 rounded-pill bg-white/[0.11] px-3 py-1.5 text-content-inverse transition-colors duration-fast active:bg-white/[0.18] ${
-                isPending ? "animate-pulse" : ""
+                isPending ? "oe-pulse" : ""
               }`}
             >
               <span className="truncate font-mono text-[11.5px] font-medium">
@@ -243,7 +243,7 @@ export function MobileTopBar({
               </span>
               <div className="flex gap-1 px-1.5 pb-1">
                 {products.map((p) => (
-                  <Link
+                  <AppLink
                     key={p.id}
                     href={qs ? `${p.href}?${qs}` : p.href}
                     onClick={() => setOpen(false)}
@@ -255,7 +255,7 @@ export function MobileTopBar({
                     }`}
                   >
                     {p.label}
-                  </Link>
+                  </AppLink>
                 ))}
               </div>
             </div>
@@ -270,7 +270,7 @@ export function MobileTopBar({
                 {group.items.map((item) => {
                   const isActive = item.href === activeHref;
                   return (
-                    <Link
+                    <AppLink
                       key={item.href}
                       href={qs ? `${item.href}?${qs}` : item.href}
                       aria-current={isActive ? "page" : undefined}
@@ -281,7 +281,7 @@ export function MobileTopBar({
                       }`}
                     >
                       {item.label}
-                    </Link>
+                    </AppLink>
                   );
                 })}
               </div>

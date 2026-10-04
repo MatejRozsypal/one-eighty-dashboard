@@ -2,64 +2,24 @@
  * Route-level loading state.
  *
  * Every page in this group is `force-dynamic` and awaits BigQuery, which runs
- * 2 to 5 seconds on wide ranges. Without this file the App Router holds the
+ * 2 to 5 seconds on wide ranges. Without a boundary the App Router holds the
  * previous page on screen, fully interactive, for that entire time, so
  * clicking a nav item looks like nothing happened and users click it again.
  *
- * This covers navigation *between* pages. Changing a search param on the page
- * you are already on does not remount the segment and never reaches here; that
- * case is handled by `NavigationPendingProvider`, which drives the progress bar
- * and pulses the figures. The two together mean no interaction is ever silent.
+ * This is the generic fallback for navigation between pages. Segments with a
+ * distinct shape (and every group of sibling pages, which share a boundary and
+ * would otherwise never show one) have their own `loading.tsx` next to the
+ * page. Changing a search param on the page you are already on does not remount
+ * the segment and never reaches any of them; that case is handled by
+ * `NavigationPendingProvider`, which drives the progress bar and pulses the
+ * figures. Together no interaction is ever silent.
  *
- * Deliberately generic. The pages differ below the fold, but all of them open
- * with a header, a control strip and a row of metric cards, and a skeleton
- * that guesses wrong is worse than one that stays vague.
+ * Deliberately generic: header, control strip, a row of metric cards and a
+ * chart pair. A skeleton that guesses wrong is worse than one that stays vague.
  */
 
-import { MetricCardSkeleton } from "@/components/dashboard/MetricCard";
-
-const shimmer =
-  "bg-[linear-gradient(90deg,var(--gray-100)_25%,var(--gray-150)_37%,var(--gray-100)_63%)] bg-[length:320px_100%] animate-[oe-shimmer_1.3s_linear_infinite]";
+import { SkeletonPage } from "@/components/ui/Skeleton";
 
 export default function Loading() {
-  return (
-    <>
-      {/*
-        No mobile bar here: `MobileTopBar` lives in the layout, outside this
-        boundary, so it stays put across the transition. Only the desktop
-        header is inside the swapped subtree.
-      */}
-      <div className="sticky top-0 z-30 hidden h-[var(--header-h)] items-center gap-3 border-b border-hairline bg-paper px-5 pt-[var(--safe-top)] lg:flex lg:px-8">
-        <span className={`h-[15px] w-[132px] rounded-xs ${shimmer}`} />
-        <span className={`h-[9px] w-[104px] rounded-pill ${shimmer}`} />
-      </div>
-
-      <div className="z-20 flex items-center gap-4 px-5 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline lg:bg-paper lg:px-8">
-        <span className={`h-[34px] w-[232px] rounded-control ${shimmer}`} />
-        <span className={`h-[30px] w-[216px] rounded-pill ${shimmer}`} />
-        <span className={`hidden h-[30px] w-[188px] rounded-pill lg:block ${shimmer}`} />
-      </div>
-
-      <main
-        aria-busy="true"
-        aria-label="Loading dashboard"
-        className="flex max-w-[1440px] flex-col gap-6 px-5 pb-14 pt-6 lg:px-8"
-      >
-        <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
-          {Array.from({ length: 8 }, (_, i) => (
-            <MetricCardSkeleton key={i} />
-          ))}
-        </div>
-
-        <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <span
-            className={`h-[268px] rounded-card border border-hairline ${shimmer}`}
-          />
-          <span
-            className={`h-[268px] rounded-card border border-hairline ${shimmer}`}
-          />
-        </div>
-      </main>
-    </>
-  );
+  return <SkeletonPage blocks={["kpi-8", "split"]} />;
 }

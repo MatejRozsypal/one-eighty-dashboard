@@ -93,7 +93,7 @@ export function SegmentedControl({
             aria-pressed={isActive}
             className={`whitespace-nowrap rounded-pill px-2.5 py-1.5 font-mono text-[11px] transition-colors duration-fast ${
               isActive
-                ? `bg-paper text-content-strong shadow-sm ${isPending ? "animate-pulse" : ""}`
+                ? `bg-paper text-content-strong shadow-sm ${isPending ? "oe-pulse" : ""}`
                 : "text-content-muted hover:text-content-body"
             }`}
           >

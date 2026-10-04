@@ -7,7 +7,7 @@
  * them last. Delta columns exist only while a comparison is on.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import type { ReactNode } from "react";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/DataTable";
 import { DeltaChip } from "@/components/ui/Delta";
@@ -178,7 +178,7 @@ export function GoogleCampaigns({
     const selected = c.campaignId === selectedId;
 
     const cells: ReactNode[] = [
-      <Link
+      <AppLink
         key="name"
         href={hrefFor(c.campaignId)}
         scroll={false}
@@ -189,7 +189,7 @@ export function GoogleCampaigns({
         }`}
       >
         {c.campaignName}
-      </Link>,
+      </AppLink>,
       <span key="type" className="block truncate text-[12.5px] text-content-body">
         {channelLabel(c.channelType)}
       </span>,

@@ -12,7 +12,7 @@
  * muted with a "Low volume" dot and sorts last on both.
  */
 
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/DataTable";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
@@ -134,7 +134,7 @@ export function MetaCampaigns({
 
     const nameCell = (
       <span className="flex min-w-0 items-center gap-2">
-        <Link
+        <AppLink
           href={metaHref(search, { campaign: c.campaignId, adset: null }, "campaign-detail")}
           title={c.name}
           aria-current={selected ? "true" : undefined}
@@ -143,15 +143,15 @@ export function MetaCampaigns({
           }`}
         >
           {c.name}
-        </Link>
-        <Link
+        </AppLink>
+        <AppLink
           href={creativeHref(view, { field: "campaignName", value: c.name })}
           aria-label="Open in Creative"
           title="Open in Creative"
           className="flex-none text-[12px] text-content-muted hover:text-content-strong"
         >
           ↗
-        </Link>
+        </AppLink>
       </span>
     );
     const stageCell = (

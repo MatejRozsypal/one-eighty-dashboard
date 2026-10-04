@@ -173,7 +173,7 @@ export function DateRangeControl({
         aria-expanded={open}
         aria-busy={isPending}
         className={`inline-flex items-center gap-2.5 rounded-control border border-hairline-strong bg-paper px-3 py-2 text-content-strong transition-colors duration-fast hover:bg-gray-50 ${
-          isPending ? "animate-pulse" : ""
+          isPending ? "oe-pulse" : ""
         }`}
       >
         <span aria-hidden="true" className="text-[13px]">
@@ -188,7 +188,7 @@ export function DateRangeControl({
       </button>
       <span
         className={`hidden font-mono text-[11px] uppercase tracking-[0.06em] text-content-muted sm:inline ${
-          isPending ? "opacity-40" : ""
+          isPending ? "oe-pulse" : ""
         }`}
       >
         {label}

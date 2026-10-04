@@ -20,7 +20,7 @@
  */
 
 import type { Metadata } from "next";
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { getClients, resolveClient } from "@/lib/clients";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, type SearchParams } from "@/lib/params";
@@ -201,18 +201,18 @@ export default async function StockHealthPage({
           )}
 
           <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-hairline px-5 py-3.5 text-[12px]">
-            <Link
+            <AppLink
               href={`/inventory/catalogue${qs}`}
               className="font-semibold text-content-body underline underline-offset-2"
             >
               Full catalogue
-            </Link>
-            <Link
+            </AppLink>
+            <AppLink
               href={`/inventory/buying${qs}`}
               className="font-semibold text-content-body underline underline-offset-2"
             >
               Buying plan
-            </Link>
+            </AppLink>
           </div>
         </section>
       </main>

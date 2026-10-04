@@ -9,7 +9,7 @@
 
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { currentAccess, isInternal } from "@/lib/authz";
 import { getClients, type Client } from "@/lib/clients";
 import { listUsers, type AppUser } from "@/lib/users/store";
@@ -292,7 +292,7 @@ export default async function SettingsPage({
 
         <div className="flex flex-wrap items-center gap-2">
           {clients.map((c) => (
-            <Link
+            <AppLink
               key={c.clientId}
               href={`/settings?client=${c.clientId}`}
               className={`rounded-control border px-3 py-2 text-[13px] transition-colors duration-fast ${
@@ -302,7 +302,7 @@ export default async function SettingsPage({
               }`}
             >
               {c.name}
-            </Link>
+            </AppLink>
           ))}
         </div>
 

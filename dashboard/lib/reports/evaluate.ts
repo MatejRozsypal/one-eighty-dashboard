@@ -26,13 +26,24 @@
  *   the cell is no_data ("Missing days"), never a SUM over the valued days
  *   only. "zero" components (shop columns, which are NULL on a day without
  *   orders) and terms with nullAs "zero" (fulfilment and paid spend inside
- *   CM3, the mart definition) are not affected. A rollup is a gap when any
- *   included client has a gap in a needed component, the same rule as fx_missing.
+ *   CM3, the mart definition) are not affected. Ad outcomes (purchase value,
+ *   purchases, clicks, impressions) count only the days whose platform spend
+ *   is NULL (registry `missingWhenNull`): a gap is only ever missing spend.
  * - Per-client series read native sums for non-money units and display sums
  *   for money units. Rollups read display sums for every client, so all
- *   clients are in one currency before summing; not_connected clients are
- *   left out (coverage "n of m"); a rollup bucket is null when any included
- *   client is fx_missing or not_measured there, never a partial total.
+ *   clients are in one currency before summing.
+ * - Rollups (combined, vertical) leave a client out instead of failing:
+ *   a client that is not connected for the metric, or whose own cell for that
+ *   row group (total or bucket) is a gap, fx_missing or not_measured, is not
+ *   summed at all (none of its components), and the rollup is computed from
+ *   the rest. The cell carries coverage "n of m", the excluded clients with
+ *   their reasons and, per bucket, the number summed. Only when no client is
+ *   left is the rollup cell not ok (the shared status of the excluded
+ *   clients, or no_data).
+ * - Rollup comparisons are like for like: the comparison total (and each
+ *   comparison point) is computed over exactly the clients summed in the
+ *   current total (point). When one of them is left out in the comparison,
+ *   the comparison value and the delta are null.
  * - Deltas: percentage points for percent units, relative otherwise.
  * - Status precedence: not_connected > fx_missing > not_measured > no_data > ok.
  *
@@ -269,6 +280,63 @@ function outcome(metric: RegisteredMetric, members: readonly Member[], mode: Rea
   return { value: r.value, status: "ok", fxMonths: [] };
 }
 
+/** A client left out of a rollup cell, with its own status for that row group. */
+interface Exclusion {
+  client: ReportClient;
+  status: Status;
+  reason: string;
+  fxMonths: string[];
+}
+
+interface RollupOutcome extends Outcome {
+  /** Clients summed into the value. A member without rows counts as summed (it adds nothing). */
+  kept: ReportClient[];
+  excluded: Exclusion[];
+}
+
+/** A client cell that must not be summed into a rollup: a gap, fx_missing or not_measured. */
+function isExcluded(o: Outcome): boolean {
+  return o.status === "fx_missing" || o.status === "not_measured" || (o.status === "no_data" && o.reason === GAP_REASON);
+}
+
+/**
+ * Rollup of several clients on one row group. Each member is evaluated on its
+ * own first; members that are a gap, fx_missing or not_measured are left out
+ * entirely and the rest are summed component by component.
+ */
+function rollupOutcome(metric: RegisteredMetric, members: readonly Member[], displayCurrency: string): RollupOutcome {
+  const kept: Member[] = [];
+  const excluded: Exclusion[] = [];
+  for (const m of members) {
+    const own = outcome(metric, [m], "display", displayCurrency);
+    if (isExcluded(own)) {
+      excluded.push({
+        client: m.client,
+        status: own.status,
+        reason: own.status === "fx_missing" ? fxReason(own.fxMonths) : (own.reason ?? CELL_STATUS_LABEL[own.status as Exclude<Status, "ok">]),
+        fxMonths: own.fxMonths,
+      });
+    } else kept.push(m);
+  }
+  if (kept.length === 0) {
+    if (excluded.length === 0) return { ...NO_ROWS, kept: [], excluded };
+    // Nothing left to sum: the shared status of the excluded clients, else no_data.
+    const first = excluded[0];
+    const sameStatus = excluded.every((e) => e.status === first.status);
+    const sameReason = sameStatus && excluded.every((e) => e.reason === first.reason);
+    const fxMonths = sameStatus && first.status === "fx_missing" ? [...new Set(excluded.flatMap((e) => e.fxMonths))].sort() : [];
+    return {
+      value: null,
+      status: sameStatus ? first.status : "no_data",
+      fxMonths,
+      ...(sameReason && first.status !== "fx_missing" ? { reason: first.reason } : {}),
+      kept: [],
+      excluded,
+    };
+  }
+  return { ...outcome(metric, kept, "display", displayCurrency), kept: kept.map((m) => m.client), excluded };
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "No FX Oct 2026", or "No FX 2 months". */
@@ -386,42 +454,96 @@ export const evaluateWidget: EvaluateWidget = (input) => {
       }
 
       const mode: ReadMode = isClient && metric.meta.fxMode === "native-per-client" ? "native" : "display";
-      const members = (period: "cur" | "cmp", bucket: string | null): Member[] =>
-        included.map((client) => {
-          const p = periodOf(client.id, period);
-          if (!p) return { client, agg: undefined, innerGuardFail: false };
-          if (bucket !== null) return { client, agg: p.buckets.get(bucket), innerGuardFail: false };
-          let inner = false;
-          for (const a of p.buckets.values()) if (guardFails(a, metric)) inner = true;
-          return { client, agg: p.total.nRows > 0 || p.total.values.size > 0 ? p.total : undefined, innerGuardFail: inner };
-        });
+      const memberOf = (client: ReportClient, period: "cur" | "cmp", bucket: string | null): Member => {
+        const p = periodOf(client.id, period);
+        if (!p) return { client, agg: undefined, innerGuardFail: false };
+        if (bucket !== null) return { client, agg: p.buckets.get(bucket), innerGuardFail: false };
+        let inner = false;
+        for (const a of p.buckets.values()) if (guardFails(a, metric)) inner = true;
+        return { client, agg: p.total.nRows > 0 || p.total.values.size > 0 ? p.total : undefined, innerGuardFail: inner };
+      };
+      const members = (clients: readonly ReportClient[], period: "cur" | "cmp", bucket: string | null): Member[] =>
+        clients.map((c) => memberOf(c, period, bucket));
 
-      const cur = outcome(metric, members("cur", null), mode, display);
-      const cmp = cmpRange ? outcome(metric, members("cmp", null), mode, display) : null;
-      const curPoints = grain === "total" ? null : rowKeys.map((b) => outcome(metric, members("cur", b), mode, display));
-      const cmpPoints = grain === "total" || !cmpRange ? null : buckets.map((_, i) => (i < cmpRowKeys.length ? outcome(metric, members("cmp", cmpRowKeys[i]), mode, display) : NO_ROWS));
+      let cur: Outcome;
+      let compareTotal: number | null = null;
+      let curPoints: Outcome[] | null = null;
+      let cmpPoints: Array<number | null> | null = null;
+      let pointCoverage: number[] | undefined;
+      let rollupCoverage: { included: number; of: number } | undefined;
+      let excluded: Exclusion[] = [];
+      const collectFx = (o: Outcome) => {
+        if (o.status === "fx_missing") for (const m of o.fxMonths) fxWarningMonths.add(m);
+      };
+      const collectExcludedFx = (r: RollupOutcome) => {
+        for (const e of r.excluded) if (e.status === "fx_missing") for (const m of e.fxMonths) fxWarningMonths.add(m);
+      };
 
-      for (const o of [cur, cmp, ...(curPoints ?? []), ...(cmpPoints ?? [])]) {
-        if (o && o.status === "fx_missing") for (const m of o.fxMonths) fxWarningMonths.add(m);
+      if (isClient) {
+        cur = outcome(metric, members(included, "cur", null), mode, display);
+        const cmp = cmpRange ? outcome(metric, members(included, "cmp", null), mode, display) : null;
+        if (cur.status === "ok" && cmp && cmp.status === "ok") compareTotal = cmp.value;
+        if (grain !== "total") curPoints = rowKeys.map((b) => outcome(metric, members(included, "cur", b), mode, display));
+        if (grain !== "total" && cmpRange) {
+          const cmpOs = buckets.map((_, i) => (i < cmpRowKeys.length ? outcome(metric, members(included, "cmp", cmpRowKeys[i]), mode, display) : NO_ROWS));
+          for (const o of cmpOs) collectFx(o);
+          cmpPoints = cmpOs.map((o) => o.value);
+        }
+        for (const o of [cur, cmp, ...(curPoints ?? [])]) if (o) collectFx(o);
+      } else {
+        const curR = rollupOutcome(metric, members(included, "cur", null), display);
+        cur = curR;
+        excluded = curR.excluded;
+        collectFx(curR);
+        collectExcludedFx(curR);
+        rollupCoverage = { included: curR.kept.length, of: group.clients.length };
+        if (cmpRange) {
+          // Like for like: the comparison sums exactly the clients of the current total.
+          const cmpR = rollupOutcome(metric, members(curR.kept, "cmp", null), display);
+          collectExcludedFx(cmpR);
+          if (curR.status === "ok" && cmpR.status === "ok" && cmpR.excluded.length === 0) compareTotal = cmpR.value;
+        }
+        if (grain !== "total") {
+          const curRs = rowKeys.map((b) => rollupOutcome(metric, members(included, "cur", b), display));
+          for (const r of curRs) {
+            collectFx(r);
+            collectExcludedFx(r);
+          }
+          curPoints = curRs;
+          pointCoverage = curRs.map((r) => r.kept.length);
+          if (cmpRange) {
+            cmpPoints = buckets.map((_, i) => {
+              if (i >= cmpRowKeys.length || curRs[i].kept.length === 0) return null;
+              const r = rollupOutcome(metric, members(curRs[i].kept, "cmp", cmpRowKeys[i]), display);
+              collectExcludedFx(r);
+              return r.excluded.length === 0 ? r.value : null;
+            });
+          }
+        }
       }
 
       const ok = cur.status === "ok";
-      const compareTotal = ok && cmp && cmp.status === "ok" ? cmp.value : null;
       let delta: number | null = null;
       if (ok && cur.value !== null && compareTotal !== null) {
         delta = deltaKind === "pp" ? cur.value - compareTotal : relativeDelta(cur.value, compareTotal);
       }
+      const notConnected = group.clients
+        .filter((c) => widget.availability[c.id]?.[id]?.ok !== true)
+        .map((c) => ({ id: c.id, name: c.name, reason: notConnectedReason([...(widget.availability[c.id]?.[id]?.missing ?? [])]) }));
+      const excludedList = isClient ? [] : [...notConnected, ...excluded.map((e) => ({ id: e.client.id, name: e.client.name, reason: e.reason }))];
       const cell: MetricCell = {
         status: cur.status,
         ...(cur.status !== "ok" ? { reason: cur.status === "fx_missing" ? fxReason(cur.fxMonths) : (cur.reason ?? CELL_STATUS_LABEL[cur.status]) } : {}),
         ...(cur.status === "fx_missing" ? { fxMonths: cur.fxMonths } : {}),
         total: ok ? cur.value : null,
-        compareTotal,
+        compareTotal: ok ? compareTotal : null,
         delta,
         deltaKind,
         ...(curPoints ? { points: curPoints.map((o) => o.value) } : {}),
-        ...(cmpPoints ? { comparePoints: cmpPoints.map((o) => o.value) } : {}),
-        ...(coverage ? { coverage } : {}),
+        ...(cmpPoints ? { comparePoints: cmpPoints } : {}),
+        ...(rollupCoverage ? { coverage: rollupCoverage } : {}),
+        ...(excludedList.length > 0 ? { excluded: excludedList } : {}),
+        ...(pointCoverage ? { pointCoverage } : {}),
       };
       cells[id] = cell;
     }

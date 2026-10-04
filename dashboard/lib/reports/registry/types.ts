@@ -18,7 +18,7 @@ export type { MetricId, Phase2MetricId, RegistryMetricId } from "./ids";
  * Part of every cache key. Bump it whenever a formula, a component column or
  * an evaluation rule changes, so no cached result outlives its definition.
  */
-export const SEMANTIC_VERSION = 3;
+export const SEMANTIC_VERSION = 4;
 
 export type MartId = "kpis" | "meta_campaign" | "email_campaign";
 export type Grain = "day" | "week" | "month";
@@ -130,6 +130,15 @@ export interface ComponentDef {
    * guard component is > 0 (COGS on a day with revenue).
    */
   nullMeans: "gap" | "zero";
+  /**
+   * Ad-platform outcomes (purchase value, purchases, clicks, impressions): the
+   * spend component of the same platform and mart whose NULL marks a day as
+   * missing. Only those rows are counted as gaps for this component; a NULL in
+   * this column itself on a day with spend is zero (no conversions or no
+   * delivery that day, which is how the mart encodes it). Owner rule
+   * 2026-10-04: a gap is only ever triggered by missing spend.
+   */
+  missingWhenNull?: ComponentId;
   /** A summed 0 is "not measured" when this guard component is > 0 (COGS on positive revenue). */
   zeroIsMissingWhen?: ComponentId;
 }

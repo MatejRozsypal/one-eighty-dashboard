@@ -277,8 +277,16 @@ export interface MetricCell {
   comparePoints?: Array<number | null>;
   /** Below the metric's minVolume share of the largest series. */
   lowVolume?: boolean;
-  /** Rollups only: clients included vs selected ("4 of 5 clients"). */
+  /**
+   * Rollups only: clients summed into the current total vs selected ("4 of 5
+   * clients"). A client is left out when it is not connected for the metric
+   * or when its own cell for the period is a gap, fx_missing or not_measured.
+   */
   coverage?: { included: number; of: number };
+  /** Rollups only: the clients left out of the current total, with their own status words ("Missing days"). Absent when none. */
+  excluded?: Array<{ id: string; name: string; reason: string }>;
+  /** Rollups with buckets only: clients summed into each current point (out of `coverage.of`), aligned with `points`. */
+  pointCoverage?: number[];
 }
 
 export type SeriesKind = "client" | "combined" | "vertical";

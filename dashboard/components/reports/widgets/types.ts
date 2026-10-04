@@ -44,16 +44,31 @@ export function isOk(cell: MetricCell | undefined): cell is MetricCell & { total
   return cell !== undefined && cell.status === "ok" && cell.total !== null;
 }
 
+/** "4 of 5 clients": the first hover line of a partial rollup. NotesMark shows "4 of 5" as its trigger for it. */
+export function coverageLine(included: number, of: number): string {
+  return `${included} of ${of} clients`;
+}
+
+const COVERAGE_LINE_RE = /^(\d+) of (\d+) clients$/;
+
+/** The compact marker text ("4 of 5") of a coverage line, or null. */
+export function coverageBadge(line: string | undefined): string | null {
+  const m = line === undefined ? null : COVERAGE_LINE_RE.exec(line);
+  return m ? `${m[1]} of ${m[2]}` : null;
+}
+
 /**
- * Hover lines behind the `^` marker: "1 of 2 clients" for a partial rollup,
- * then the caveats that apply to this series AND this metric. Empty means no
+ * Hover lines behind the `^` marker: "4 of 5 clients" for a partial rollup
+ * followed by each left-out client and why ("RawBark: Missing days"), then
+ * the caveats that apply to this series AND this metric. Empty means no
  * marker.
  */
 export function cellNotes(series: ResultSeries, metric: WidgetMetric, cell: MetricCell, texts: CaveatTexts): string[] {
   if (cell.status !== "ok") return [];
   const lines: string[] = [];
   if (cell.coverage && cell.coverage.included < cell.coverage.of) {
-    lines.push(`${cell.coverage.included} of ${cell.coverage.of} clients`);
+    lines.push(coverageLine(cell.coverage.included, cell.coverage.of));
+    for (const e of cell.excluded ?? []) lines.push(`${e.name}: ${e.reason}`);
   }
   const applicable = new Set(metric.caveats ?? []);
   for (const id of series.caveats) {

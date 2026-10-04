@@ -432,15 +432,25 @@ metric = SUM(numerator components) / SUM(denominator components)
 - **Gaps are NULL, never 0.** A client without a connected source is excluded from that metric
   and the widget shows coverage ("1 of 2 clients"), instead of dragging the figure to zero.
 - **A partially NULL component is a gap, never a partial sum** (review finding F1, fixed in the
-  semantic layer version 2). Each component has a `nullMeans` in the registry. `paid_spend` and the
-  `meta_*` and `google_*` columns are `gap`: they are NULL only when the day has no ad platform row,
-  which means missing data. Shop columns are `zero`: they are NULL on a day without orders, which is a real
-  zero. The query counts `COUNTIF(col IS NULL)` per component; if a bucket, a total or a rollup contains
-  one NULL day of a `gap` component, every metric that divides by it is `no_data` with the reason "Missing days",
-  at any grain (day, week, month, total) and in combined and vertical rollups (one client with a gap nulls the
-  combined cell). Before, a month with 19 of 30 NULL spend days showed a MER of about 122x because
+  semantic layer version 2, narrowed in version 4). Each component has a `nullMeans` in the registry.
+  A gap is only ever **missing spend**: `paid_spend`, `meta_spend` and `google_spend` are `gap` and count
+  their own NULL days (no ad platform row that day). The ad outcomes (`meta_revenue`, `meta_purchases`,
+  `meta_clicks`, `meta_impressions` and the `google_*` equivalents) are `gap` only on the days whose
+  platform spend is NULL (`missingWhenNull`); a NULL outcome on a day with spend is zero, because the mart
+  leaves purchase value NULL on a day without conversions (Ethia 4 and Venev 26 such Meta days in Sep 2026,
+  `meta_revenue` is never 0). Shop columns are `zero`: they are NULL on a day without orders, which is a real
+  zero. The query counts the NULL days per component; if a client's bucket or total contains one, every
+  metric that divides by it is `no_data` with the reason "Missing days" for that client, at any grain (day,
+  week, month, total). Before, a month with 19 of 30 NULL spend days showed a MER of about 122x because
   the NULL days dropped out of the sum. `cogs` is `gap` only on days with revenue above 0, and one NULL
-  there makes the cell `not_measured` ("No cost data"), also inside totals and rollups.
+  there makes the cell `not_measured` ("No cost data").
+- **Rollups leave a client out instead of failing** (version 4, owner decision 2026-10-04). In a combined or
+  vertical cell, a client that is not connected, or whose own cell for that total or bucket is a gap,
+  `fx_missing` or `not_measured`, is not summed at all (none of its components); the rest are summed and the
+  cell shows "4 of 5" with the left-out clients and reasons on hover (per bucket in the line tooltip). Only
+  when no client is left is the rollup not ok. The comparison is like for like: it sums exactly the clients
+  of the current total (and each current bucket); when one of them is left out in the comparison period,
+  the comparison value and the delta are n/a.
 - **Residual:** inside CM3 and CM3 %, fulfilment and paid spend still count NULL as 0 (the mart definition, owner
   decision), so for a connected client with missing ad days CM3 is overstated by the missing spend. Possible follow-up.
 - **Deltas**: relative change for money, ratio and count metrics; percentage points for percent
@@ -575,6 +585,12 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ### 2026-10-05 (amendment 19): Reporting registry section
 
 Documentation only, no warehouse change. New section "Reporting registry" records the contract of the Reports metric registry: ids are permanent and append-only, ratios are recomputed from summed components (also across clients, with per-month FX), gaps are NULL, cell statuses, caveats. Benchmarks are in `runbooks/31_reporting_benchmarks.md`.
+
+### 2026-10-04 (amendment 21): Reports gaps rule narrowed, rollups exclude instead of failing
+
+Frontend semantic layer only, no warehouse change. `SEMANTIC_VERSION` 3 to 4.
+1. Only missing spend is a gap. Ad outcome columns (purchase value, purchases, clicks, impressions) count as missing only on days whose platform spend is NULL; a NULL outcome on a day with spend is zero. Effect: Ethia and Venev Meta ROAS Sep 2026 show values (1.92 and 0.12) instead of "No data".
+2. Combined and vertical rollups leave out clients that are not connected, a gap, `fx_missing` or `not_measured` for that cell, and show "n of m" with the reasons. Comparisons are like for like (delta n/a when the client set differs). Effect, Paid efficiency Sep 2026, 5 clients, CZK: All clients paid spend 598,887, MER 7.91, aMER 1.75, CAC 1,010, 4 of 5 (RawBark: Missing days, Google spend NULL on 2026-09-17). RawBark's own cells stay "Missing days" until the backfill lands.
 
 ### 2026-10-05 (amendment 20): CM3 on zero-order days (migration 234) and the Reports gaps rule
 

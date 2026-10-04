@@ -32,7 +32,9 @@
  *   and the NULL-row counts that make a gap visible inside a sum (F1):
  *   <mart>__<column>__nat_nulls and <mart>__<column>__disp_nulls (money),
  *   <mart>__<column>__nulls (other). A component with a guard
- *   (zeroIsMissingWhen) counts a NULL only on rows where the guard is > 0.
+ *   (zeroIsMissingWhen) counts a NULL only on rows where the guard is > 0;
+ *   an ad outcome with missingWhenNull counts the rows where its platform's
+ *   spend column is NULL instead of its own NULLs (its own NULL is zero).
  *
  * The registry is injected: createCompiler({ marts, components }).
  * `compileWidget` at the bottom of this file is bound to registry/components.ts.
@@ -240,6 +242,12 @@ function martCte(
     const alias = componentAlias(c.id);
     // A NULL counts only where the guard component (revenue for COGS) is > 0.
     let isNull = `${col} IS NULL`;
+    // Ad outcomes: the day is missing only when the platform's spend is NULL; their own NULL is zero.
+    if (c.missingWhenNull !== undefined) {
+      const spend = components[c.missingWhenNull];
+      if (!spend || spend.mart !== mart.id) fail(`missingWhenNull ${c.missingWhenNull} of ${c.id} is not a component of mart ${mart.id}`);
+      isNull = `t.${ident(spend.column, "Spend column")} IS NULL`;
+    }
     if (c.zeroIsMissingWhen !== undefined) {
       const guard = components[c.zeroIsMissingWhen];
       if (!guard || guard.mart !== mart.id) fail(`Guard ${c.zeroIsMissingWhen} of ${c.id} is not a component of mart ${mart.id}`);

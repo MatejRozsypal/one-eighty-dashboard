@@ -60,7 +60,7 @@ export function LineWidget({ result, metrics, caveatTexts, size }: ChartWidgetPr
   const rows: Row[] = useMemo(() => {
     if (!metric) return [];
     return result.buckets.map((bucket, i) => {
-      const row: Row = { bucket, partial: partial.has(i) };
+      const row: Row = { bucket, partial: partial.has(i), i };
       result.series.forEach((s, k) => {
         const cell = cellOf(s, metric.id);
         row[`v${k}`] = cell?.points?.[i] ?? null;
@@ -121,9 +121,13 @@ export function LineWidget({ result, metrics, caveatTexts, size }: ChartWidgetPr
           const v = row[`v${k}`];
           const c = row[`c${k}`];
           const value = typeof v === "number" ? fmt(v) : cell && cell.status !== "ok" ? `${NO_VALUE} ${statusLabel(cell)}` : NO_VALUE;
+          // A rollup point that left clients out says so ("All clients (4 of 5)").
+          const summed = cell?.pointCoverage?.[Number(row.i)];
+          const of = cell?.coverage?.of;
+          const name = typeof v === "number" && summed !== undefined && of !== undefined && summed < of ? `${s.label} (${summed} of ${of})` : s.label;
           return (
             <div key={s.id}>
-              <TooltipRow color={styles[k].color} name={s.label} value={value} muted={typeof v !== "number"} />
+              <TooltipRow color={styles[k].color} name={name} value={value} muted={typeof v !== "number"} />
               {comparing && typeof c === "number" && <TooltipRow name="before" value={fmt(c)} muted />}
             </div>
           );

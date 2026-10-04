@@ -294,7 +294,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   const rUsd = evalW(wUsd, [row("bravo", "cur", "2026-09-28", { "kpis.revenue": [20000, null] }, { fxMissingRows: 3, fxMissingMonths: ["2026-10-01"] })]);
   check("same currency needs no FX", cell(rUsd, "bravo", "revenue").status === "ok" && close(cell(rUsd, "bravo", "revenue").total, 20000));
 
-  // Rollup: one client without FX nulls the combined bucket and total.
+  // Rollup: a client without FX is left out of the combined bucket and total (gap rule 2026-10-04), never a partial sum of its rows.
   const wc = widget(["mer"], { split: "combined", grain: "week", filters: { clients: { mode: "list", ids: ["alpha", "bravo"] }, compare: "none" } });
   const rcmb = evalW(wc, [
     row("alpha", "cur", "2026-09-28", { "kpis.revenue": 1000, "kpis.paid_spend": 500 }),
@@ -302,8 +302,14 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     row("bravo", "cur", "2026-09-28", { "kpis.revenue": [100, 2310], "kpis.paid_spend": [50, 1155] }, { fxMissingRows: 1, fxMissingMonths: ["2026-10-01"] }),
   ]);
   const cm = cell(rcmb, "combined", "mer");
-  check("combined ratio fx_missing", cm.status === "fx_missing" && cm.total === null);
-  check("combined fx bucket null, other bucket kept", cm.points?.[3] === null && close(cm.points?.[0], 2));
+  check("combined ratio leaves the fx_missing client out", cm.status === "ok" && close(cm.total, 2) && eqJson(cm.coverage, { included: 1, of: 2 }));
+  check("combined excluded lists the client with its FX reason", eqJson(cm.excluded, [{ id: "bravo", name: bravo.name, reason: "No FX Oct 2026" }]));
+  check("combined fx bucket computed from the rest, other bucket kept", close(cm.points?.[3], 2) && close(cm.points?.[0], 2) && eqJson(cm.pointCoverage, [2, 2, 2, 1]));
+  check("combined fx exclusion still warns", rcmb.warnings.some((x) => x.code === "fx_missing" && eqJson(x.months, ["2026-10-01"])));
+  const onlyFx = evalW(widget(["mer"], { split: "combined", filters: { clients: { mode: "list", ids: ["bravo"] }, compare: "none" } }), [
+    row("bravo", "cur", "1970-01-01", { "kpis.revenue": [100, 2310], "kpis.paid_spend": [50, 1155] }, { fxMissingRows: 1, fxMissingMonths: ["2026-10-01"] }),
+  ]);
+  check("combined with every client fx_missing is fx_missing", cell(onlyFx, "combined", "mer").status === "fx_missing" && cell(onlyFx, "combined", "mer").reason === "No FX Oct 2026" && eqJson(cell(onlyFx, "combined", "mer").coverage, { included: 0, of: 1 }));
 }
 
 // 4.4 COGS zero and NULL guard.
@@ -334,13 +340,14 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   const nulls = evalW(wk, [row("alpha", "cur", "2026-09-07", { "kpis.revenue": 1000, "kpis.cogs": 300, "kpis.paid_spend": null, "kpis.fulfillment_cost": null })]);
   check("null paid and fulfilment count as 0", close(cell(nulls, "alpha", "cm3").total, 700));
 
-  // Rollup: an included client with no cost data nulls the combined cell.
+  // Rollup: a client with no cost data is left out of the combined cell.
   const wcmb = widget(["cm3_pct"], { split: "combined", filters: { clients: { mode: "list", ids: ["alpha", "charlie"] }, compare: "none" } });
   const rcmb = evalW(wcmb, [
     row("alpha", "cur", "1970-01-01", { "kpis.revenue": 1000, "kpis.cogs": 300, "kpis.paid_spend": 100, "kpis.fulfillment_cost": 0 }),
     row("charlie", "cur", "1970-01-01", { "kpis.revenue": 500, "kpis.cogs": null, "kpis.paid_spend": 50, "kpis.fulfillment_cost": 0 }),
   ]);
-  check("combined not measured when a client is", cell(rcmb, "combined", "cm3_pct").status === "not_measured" && cell(rcmb, "combined", "cm3_pct").total === null);
+  const cnm = cell(rcmb, "combined", "cm3_pct");
+  check("combined leaves the not measured client out", cnm.status === "ok" && close(cnm.total, 0.6) && eqJson(cnm.coverage, { included: 1, of: 2 }) && eqJson(cnm.excluded, [{ id: "charlie", name: charlie.name, reason: "No cost data" }]));
 }
 
 // 4.5 not_connected exclusion and coverage.
@@ -352,6 +359,8 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   ]);
   const c = cell(r, "combined", "meta_roas");
   check("rollup excludes not_connected client", c.status === "ok" && close(c.total, 2.4) && eqJson(c.coverage, { included: 1, of: 2 }));
+  check("rollup lists the not_connected client with its reason", eqJson(c.excluded, [{ id: "charlie", name: charlie.name, reason: "Meta not connected" }]));
+  check("rollup with everybody included has no excluded list", cell(r, "combined", "mer").excluded === undefined);
   check("rollup MER includes both", close(cell(r, "combined", "mer").total, 1500 / 250) && eqJson(cell(r, "combined", "mer").coverage, { included: 2, of: 2 }));
 
   const wc = widget(["meta_roas"], { grain: "week", filters: { clients: { mode: "list", ids: ["charlie"] } } });
@@ -496,7 +505,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     return c.status === "ok" && close(c.total, 10) && c.compareTotal === null && c.delta === null;
   })());
 
-  // Rollups: one client with a gap makes the combined cell a gap, however complete the others are. Coverage still counts it as included.
+  // Rollups: a client with a gap is left out (owner rule 2026-10-04), the rest are summed, coverage and excluded say so.
   const wCmb = widget(["mer"], { split: "combined", filters: { clients: { mode: "list", ids: ["alpha", "bravo", "charlie"] }, compare: "none" } });
   const cmbGap = evalW(wCmb, [
     row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 4) }),
@@ -504,7 +513,70 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     row("charlie", "cur", TOTAL, { "kpis.revenue": 500, "kpis.paid_spend": 50 }),
   ]);
   const cg = cell(cmbGap, "combined", "mer");
-  check("F1: combined MER is a gap when one client has a gap", cg.status === "no_data" && cg.total === null && cg.reason === "Missing days");
+  check("Gap rule: combined MER leaves the gap client out", cg.status === "ok" && close(cg.total, (2300 + 500) / (230 + 50)) && eqJson(cg.coverage, { included: 2, of: 3 }));
+  check("Gap rule: excluded client named with Missing days", eqJson(cg.excluded, [{ id: "alpha", name: alpha.name, reason: "Missing days" }]));
+  const bigGap = evalW(wCmb, [
+    row("alpha", "cur", TOTAL, { "kpis.revenue": 9000, "kpis.paid_spend": withNulls(100, 4) }),
+    row("bravo", "cur", TOTAL, { "kpis.revenue": [100, 2300], "kpis.paid_spend": [10, 230] }),
+    row("charlie", "cur", TOTAL, { "kpis.revenue": 500, "kpis.paid_spend": 50 }),
+  ]);
+  check("Gap rule: the excluded client's revenue is not summed either (no partial ratio)", close(cell(bigGap, "combined", "mer").total, 2800 / 280));
+  const allGap = evalW(wCmb, [
+    row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 4) }),
+    row("bravo", "cur", TOTAL, { "kpis.revenue": [100, 2300], "kpis.paid_spend": { nat: 10, disp: 230, natNulls: 1, dispNulls: 1 } }),
+    row("charlie", "cur", TOTAL, { "kpis.revenue": 500, "kpis.paid_spend": withNulls(50, 2) }),
+  ]);
+  const ag = cell(allGap, "combined", "mer");
+  check("Gap rule: no client left is a gap with Missing days", ag.status === "no_data" && ag.total === null && ag.reason === "Missing days" && eqJson(ag.coverage, { included: 0, of: 3 }) && ag.excluded?.length === 3);
+  const mixedOut = evalW(widget(["cm3_pct"], { split: "combined", filters: { clients: { mode: "list", ids: ["bravo", "charlie"] }, compare: "none" } }), [
+    row("bravo", "cur", TOTAL, { "kpis.revenue": [100, 2300], "kpis.cogs": [30, 690], "kpis.paid_spend": [10, 230], "kpis.fulfillment_cost": [0, 0] }, { fxMissingRows: 1, fxMissingMonths: ["2026-10-01"] }),
+    row("charlie", "cur", TOTAL, { "kpis.revenue": 500, "kpis.cogs": null, "kpis.paid_spend": 50, "kpis.fulfillment_cost": 0 }),
+  ]);
+  check("Gap rule: mixed reasons with nobody left is no_data", cell(mixedOut, "combined", "cm3_pct").status === "no_data" && cell(mixedOut, "combined", "cm3_pct").reason === "No data");
+
+  // Comparison like for like: the comparison sums exactly the clients of the current total.
+  const wCmp = widget(["mer"], { split: "combined", filters: { clients: { mode: "list", ids: ["alpha", "charlie"] }, compare: "previous_period" } });
+  const cmpSame = evalW(wCmp, [
+    row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 1) }),
+    row("charlie", "cur", TOTAL, { "kpis.revenue": 500, "kpis.paid_spend": withNulls(50, 0) }),
+    row("alpha", "cmp", TOTAL, { "kpis.revenue": 9000, "kpis.paid_spend": withNulls(100, 0) }),
+    row("charlie", "cmp", TOTAL, { "kpis.revenue": 400, "kpis.paid_spend": withNulls(50, 0) }),
+  ]);
+  const cs = cell(cmpSame, "combined", "mer");
+  check("Gap rule: comparison over the same client set as the current total", close(cs.total, 10) && close(cs.compareTotal, 8) && close(cs.delta, 0.25));
+  const cmpDiff = evalW(wCmp, [
+    row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 0) }),
+    row("charlie", "cur", TOTAL, { "kpis.revenue": 500, "kpis.paid_spend": withNulls(50, 0) }),
+    row("alpha", "cmp", TOTAL, { "kpis.revenue": 900, "kpis.paid_spend": withNulls(100, 2) }),
+    row("charlie", "cmp", TOTAL, { "kpis.revenue": 400, "kpis.paid_spend": withNulls(50, 0) }),
+  ]);
+  const cd = cell(cmpDiff, "combined", "mer");
+  check("Gap rule: a client left out only in the comparison: value kept, comparison and delta n/a", cd.status === "ok" && close(cd.total, 10) && cd.compareTotal === null && cd.delta === null && eqJson(cd.coverage, { included: 2, of: 2 }));
+
+  // Buckets: each point leaves out its own gap clients; comparison points are like for like too.
+  const wWk = widget(["mer"], { split: "combined", grain: "week", filters: { clients: { mode: "list", ids: ["alpha", "charlie"] }, period: { kind: "custom", from: "2026-09-07", to: "2026-09-20" }, compare: "previous_period" } });
+  const wk = evalW(wWk, [
+    row("alpha", "cur", "2026-09-07", { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 0) }),
+    row("alpha", "cur", "2026-09-14", { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 1) }),
+    row("charlie", "cur", "2026-09-07", { "kpis.revenue": 500, "kpis.paid_spend": withNulls(100, 0) }),
+    row("charlie", "cur", "2026-09-14", { "kpis.revenue": 500, "kpis.paid_spend": withNulls(100, 0) }),
+    row("alpha", "cmp", "2026-08-24", { "kpis.revenue": 800, "kpis.paid_spend": withNulls(100, 3) }),
+    row("alpha", "cmp", "2026-08-31", { "kpis.revenue": 800, "kpis.paid_spend": withNulls(100, 0) }),
+    row("charlie", "cmp", "2026-08-24", { "kpis.revenue": 400, "kpis.paid_spend": withNulls(100, 0) }),
+    row("charlie", "cmp", "2026-08-31", { "kpis.revenue": 400, "kpis.paid_spend": withNulls(100, 0) }),
+  ]);
+  const wc2 = cell(wk, "combined", "mer");
+  check("Gap rule: week points leave out the gap client per bucket", close(wc2.points?.[0], 7.5) && close(wc2.points?.[1], 5) && eqJson(wc2.pointCoverage, [2, 1]));
+  check("Gap rule: comparison point null when its set differs, like for like otherwise", wc2.comparePoints?.[0] === null && close(wc2.comparePoints?.[1], 4));
+  check("Gap rule: week total leaves alpha out (gap in one of its weeks)", close(wc2.total, 5) && eqJson(wc2.coverage, { included: 1, of: 2 }) && close(wc2.compareTotal, 4) && close(wc2.delta, 0.25));
+
+  // Vertical rollups follow the same rule.
+  const vr = evalW(widget(["mer"], { split: "vertical", filters: { clients: { mode: "list", ids: ["alpha", "bravo"] }, compare: "none" } }), [
+    row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 3) }),
+    row("bravo", "cur", TOTAL, { "kpis.revenue": [100, 2300], "kpis.paid_spend": [10, 230] }),
+  ]);
+  const vc = cell(vr, verticalSeriesId("vertical_a"), "mer");
+  check("Gap rule: vertical rollup leaves the gap client out", vc.status === "ok" && close(vc.total, 10) && eqJson(vc.coverage, { included: 1, of: 2 }) && vc.excluded?.[0]?.id === "alpha");
   const cmbOk = evalW(wCmb, [
     row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.paid_spend": withNulls(100, 0) }),
     row("bravo", "cur", TOTAL, { "kpis.revenue": [100, 2300], "kpis.paid_spend": [10, 230] }),
@@ -540,6 +612,14 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   const shopZero = evalW(wkMer, [row("alpha", "cur", "2026-09-07", { "kpis.revenue": withNulls(2000, 3), "kpis.paid_spend": withNulls(200, 0), "kpis.orders": withNulls(8, 3) })]);
   check("F1: shop columns NULL on no-order days (nullMeans zero) keep MER", close(cell(shopZero, "alpha", "mer").points?.[0], 10));
   check("F1: registry nullMeans: shop zero, ad platform gap, cogs gap", COMPONENTS["kpis.revenue"].nullMeans === "zero" && COMPONENTS["kpis.orders"].nullMeans === "zero" && COMPONENTS["kpis.paid_spend"].nullMeans === "gap" && COMPONENTS["kpis.meta_spend"].nullMeans === "gap" && COMPONENTS["kpis.cogs"].nullMeans === "gap");
+  check("Gap rule: spend components count their own NULLs", (["kpis.paid_spend", "kpis.meta_spend", "kpis.google_spend"] as const).every((id) => COMPONENTS[id].missingWhenNull === undefined));
+  check("Gap rule: ad outcomes are gaps only on days without their platform's spend", (["revenue", "purchases", "impressions", "clicks"] as const).every((c) => COMPONENTS[`kpis.meta_${c}`].missingWhenNull === "kpis.meta_spend" && COMPONENTS[`kpis.google_${c}`].missingWhenNull === "kpis.google_spend"));
+  check("Gap rule: only ad outcomes use missingWhenNull", Object.values(COMPONENTS).filter((c) => c.missingWhenNull !== undefined).length === 8);
+  // Ethia/venev Sep 2026: meta_revenue NULL on days with Meta spend. The SQL counts only NULL-spend days for it (0 here), so Meta ROAS is a value.
+  const ethiaLike = evalW(widget(["meta_roas", "meta_cpa"], { grain: "total", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } }), [
+    row("alpha", "cur", TOTAL, { "kpis.meta_revenue": withNulls(2440, 0), "kpis.meta_spend": withNulls(1000, 0), "kpis.meta_purchases": withNulls(10, 0) }),
+  ]);
+  check("Gap rule: Meta ROAS with zero-conversion days is a value", close(cell(ethiaLike, "alpha", "meta_roas").total, 2.44) && close(cell(ethiaLike, "alpha", "meta_cpa").total, 100));
   check("F1: every component declares nullMeans", Object.values(COMPONENTS).every((c) => c.nullMeans === "gap" || c.nullMeans === "zero"));
 
   // Google-only client (RawBark): Meta columns are NULL on every day and must not null MER, spend or CM3 inputs; Meta-only metrics stay not_connected.
@@ -571,7 +651,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     row("alpha", "cur", TOTAL, { "kpis.revenue": 1000, "kpis.cogs": withNulls(300, 0), "kpis.paid_spend": 100, "kpis.fulfillment_cost": 0 }),
     row("bravo", "cur", TOTAL, { "kpis.revenue": [100, 2300], "kpis.cogs": { nat: 30, disp: 690, natNulls: 1, dispNulls: 1 }, "kpis.paid_spend": [10, 230], "kpis.fulfillment_cost": [0, 0] }),
   ]);
-  check("F1: combined CM3 % not measured when one client is partly costed", cell(cmbCogs, "combined", "cm3_pct").status === "not_measured");
+  check("Gap rule: combined CM3 % leaves the partly costed client out", cell(cmbCogs, "combined", "cm3_pct").status === "ok" && close(cell(cmbCogs, "combined", "cm3_pct").total, 0.6) && cell(cmbCogs, "combined", "cm3_pct").excluded?.[0]?.reason === "No cost data");
 
   // Old-shape rows (no counts at all, as the fixtures and cached rows from before F1) behave exactly as before.
   const legacy = evalW(wkMer, [row("alpha", "cur", "2026-09-07", { "kpis.revenue": 2000, "kpis.paid_spend": 100 })]);

@@ -6,8 +6,9 @@
  * - `StatusText`: the `n/a` glyph plus two or three muted words ("Not
  *   connected", "No data", "No cost data", "No FX Oct 2026"). A gap is never
  *   0 and never a dash. The cell's own reason is on hover when it says more.
- * - `NotesMark`: the `^` caveat marker. Hover (and keyboard focus, and tap)
- *   lists the caveats that apply to this client and metric.
+ * - `NotesMark`: the `^` caveat marker ("4 of 5" for a partial rollup).
+ *   Hover (and keyboard focus, and tap) lists the left-out clients and the
+ *   caveats that apply to this client and metric.
  * - `CellDelta`: the change chip, relative or in pp, coloured by whether the
  *   movement is good for this metric.
  * - `HoverCard`: the dark card every hover in the widgets uses. Rendered in a
@@ -28,6 +29,7 @@ import { NoValue } from "@/components/ui/EmptyState";
 import type { GoodWhen } from "@/lib/reports/registry/types";
 import type { MetricCell } from "@/lib/reports/types";
 import { statusDetail, statusLabel, formatDeltaMagnitude } from "./format";
+import { coverageBadge } from "./types";
 import { HATCH_STROKE } from "./chartTheme";
 
 // ---------------------------------------------------------------------------
@@ -193,14 +195,25 @@ export function StatusText({
   );
 }
 
-/** The `^` caveat marker. Renders nothing for an empty list. */
+/**
+ * The `^` caveat marker. Renders nothing for an empty list. A partial rollup
+ * (first line "4 of 5 clients") shows the compact "4 of 5" instead of `^`;
+ * the hover lists the left-out clients and their reasons.
+ */
 export function NotesMark({ lines }: { lines: readonly string[] }) {
   if (lines.length === 0) return null;
+  const badge = coverageBadge(lines[0]);
   return (
     <HoverCard
       label={lines.join(". ")}
-      className="align-super"
-      trigger={<span className="ml-0.5 font-mono text-[10px] leading-none text-content-muted hover:text-content-strong">^</span>}
+      className={badge ? "ml-1.5 self-center" : "align-super"}
+      trigger={
+        badge ? (
+          <span className="whitespace-nowrap font-mono text-[10px] leading-none text-content-muted hover:text-content-strong">{badge}</span>
+        ) : (
+          <span className="ml-0.5 font-mono text-[10px] leading-none text-content-muted hover:text-content-strong">^</span>
+        )
+      }
     >
       <ul className="space-y-1">
         {lines.map((line) => (

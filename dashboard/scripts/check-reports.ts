@@ -444,6 +444,18 @@ if (real.registry) {
       cogsQ.sql.includes("COUNTIF(t.cogs IS NULL AND t.revenue > 0) AS kpis__cogs__disp_nulls") &&
       cogsQ.sql.includes("COUNTIF(t.currency = c.currency AND t.revenue IS NULL) AS kpis__revenue__nat_nulls")
   );
+  // Gap rule 2026-10-04: ad outcomes count the days without their platform's spend, never their own NULLs (a NULL purchase value on a day with spend is zero).
+  const roasQ = createCompiler(real.registry, { projectId: PROJECT })(
+    resolved({ clientIds: ["ethia", "venev"], components: ["kpis.meta_revenue", "kpis.meta_spend", "kpis.google_clicks", "kpis.google_spend"], grain: "week", current: { from: "2026-09-01", to: "2026-09-30" }, compare: "none" })
+  );
+  check(
+    "Gap rule sql: Meta purchase value counts NULL Meta spend days",
+    roasQ.sql.includes("COUNTIF(t.currency = c.currency AND t.meta_spend IS NULL) AS kpis__meta_revenue__nat_nulls") &&
+      roasQ.sql.includes("COUNTIF(t.meta_spend IS NULL) AS kpis__meta_revenue__disp_nulls") &&
+      !roasQ.sql.includes("t.meta_revenue IS NULL")
+  );
+  check("Gap rule sql: Google clicks count NULL Google spend days", roasQ.sql.includes("COUNTIF(t.google_spend IS NULL) AS kpis__google_clicks__nulls") && !roasQ.sql.includes("t.google_clicks IS NULL"));
+  check("Gap rule sql: spend still counts its own NULLs", roasQ.sql.includes("COUNTIF(t.meta_spend IS NULL) AS kpis__meta_spend__disp_nulls"));
 }
 
 function firstDiff(a: string, b: string): string {

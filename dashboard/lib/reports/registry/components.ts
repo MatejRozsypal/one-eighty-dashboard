@@ -40,10 +40,14 @@ export const MARTS = {
 } as const satisfies MartRegistry;
 
 // nullMeans (see ComponentDef): shop columns are NULL on a day without orders
-// (zero); ad-platform columns are NULL when no ad rows exist for the day (gap,
-// for example Dobias Meta before April 2026); COGS is a gap only on days with
-// revenue; phase 2 campaign marts have one row per campaign, where NULL means
-// the platform reported nothing (zero). Checked live 2026-10-04.
+// (zero); ad spend columns are NULL when no ad rows exist for the day (gap,
+// for example Dobias Meta before April 2026, RawBark Google 2026-09-17); ad
+// outcome columns (purchase value, purchases, clicks, impressions) are a gap
+// only on days whose spend is NULL (missingWhenNull): the mart leaves them
+// NULL on a day with spend and no conversions (Ethia 4 and venev 26 Meta days
+// in Sep 2026, meta_revenue is never 0), which is zero. COGS is a gap only on
+// days with revenue; phase 2 campaign marts have one row per campaign, where
+// NULL means the platform reported nothing (zero). Checked live 2026-10-04.
 const PAID: CapExpr = { any: ["meta", "googleAds"] };
 
 type ComponentSpec = Omit<ComponentDef, "id" | "mart" | "column">;
@@ -65,6 +69,15 @@ function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>
     const g = (out as Record<string, ComponentDef | undefined>)[guard];
     if (!g) throw new Error(`Reports registry: ${def.id} guard ${guard} is not a component`);
     if (g.mart !== def.mart) throw new Error(`Reports registry: ${def.id} guard ${guard} is in another mart`);
+  }
+  for (const def of Object.values(out) as ComponentDef[]) {
+    const spend = def.missingWhenNull;
+    if (spend === undefined) continue;
+    const g = (out as Record<string, ComponentDef | undefined>)[spend];
+    if (!g) throw new Error(`Reports registry: ${def.id} missingWhenNull ${spend} is not a component`);
+    if (g.mart !== def.mart) throw new Error(`Reports registry: ${def.id} missingWhenNull ${spend} is in another mart`);
+    if (def.nullMeans !== "gap") throw new Error(`Reports registry: ${def.id} has missingWhenNull but nullMeans is not "gap"`);
+    if (def.zeroIsMissingWhen !== undefined) throw new Error(`Reports registry: ${def.id} cannot combine missingWhenNull and zeroIsMissingWhen`);
   }
   for (const m of Object.values(MARTS)) {
     for (const ident of [...m.table.split("."), m.dateColumn, ...(m.currencyColumn ? [m.currencyColumn] : [])]) {
@@ -90,15 +103,15 @@ export const COMPONENTS = defineComponents({
   "kpis.returning_customer_orders": { money: false, requires: "shop", nullMeans: "zero" },
   "kpis.paid_spend": { money: true, requires: PAID, nullMeans: "gap" },
   "kpis.meta_spend": { money: true, requires: "meta", nullMeans: "gap" },
-  "kpis.meta_revenue": { money: true, requires: "meta", nullMeans: "gap" },
-  "kpis.meta_purchases": { money: false, requires: "meta", nullMeans: "gap" },
-  "kpis.meta_impressions": { money: false, requires: "meta", nullMeans: "gap" },
-  "kpis.meta_clicks": { money: false, requires: "meta", nullMeans: "gap" },
+  "kpis.meta_revenue": { money: true, requires: "meta", nullMeans: "gap", missingWhenNull: "kpis.meta_spend" },
+  "kpis.meta_purchases": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "kpis.meta_spend" },
+  "kpis.meta_impressions": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "kpis.meta_spend" },
+  "kpis.meta_clicks": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "kpis.meta_spend" },
   "kpis.google_spend": { money: true, requires: "googleAds", nullMeans: "gap" },
-  "kpis.google_revenue": { money: true, requires: "googleAds", nullMeans: "gap" },
-  "kpis.google_purchases": { money: false, requires: "googleAds", nullMeans: "gap" },
-  "kpis.google_impressions": { money: false, requires: "googleAds", nullMeans: "gap" },
-  "kpis.google_clicks": { money: false, requires: "googleAds", nullMeans: "gap" },
+  "kpis.google_revenue": { money: true, requires: "googleAds", nullMeans: "gap", missingWhenNull: "kpis.google_spend" },
+  "kpis.google_purchases": { money: false, requires: "googleAds", nullMeans: "gap", missingWhenNull: "kpis.google_spend" },
+  "kpis.google_impressions": { money: false, requires: "googleAds", nullMeans: "gap", missingWhenNull: "kpis.google_spend" },
+  "kpis.google_clicks": { money: false, requires: "googleAds", nullMeans: "gap", missingWhenNull: "kpis.google_spend" },
   // phase 2
   "meta_campaign.link_clicks": { money: false, requires: "meta", nullMeans: "zero" },
   "meta_campaign.add_to_cart": { money: false, requires: "meta", nullMeans: "zero" },

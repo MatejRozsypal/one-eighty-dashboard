@@ -257,6 +257,27 @@ for (const [name, result] of RESULTS) {
     createElement(KpiWidget, { ...props(FIXTURE_RESULTS.combinedTotalBenchmarks, [cpm], "kpi"), metricId: "meta_cpm" })
   );
   check("coverage 1 of 2 behind the marker", kpi.includes("1 of 2 clients"));
+  check("partial rollup marker is the compact 1 of 2, not ^", kpi.includes(">1 of 2</span>"));
+
+  // Gap rule 2026-10-04: left-out clients are named with their reason behind the compact marker.
+  {
+    const base = FIXTURE_RESULTS.combinedTotalBenchmarks;
+    const withExcluded = {
+      ...base,
+      series: base.series.map((s) => ({
+        ...s,
+        cells: {
+          ...s.cells,
+          mer: { ...s.cells.mer!, coverage: { included: 4, of: 5 }, excluded: [{ id: "rawbark", name: "RawBark", reason: "Missing days" }] },
+        },
+      })),
+    };
+    const ex = renderToStaticMarkup(createElement(KpiWidget, { ...props(withExcluded, [mer], "kpi"), metricId: "mer" }));
+    check("excluded: compact 4 of 5 marker", ex.includes(">4 of 5</span>"));
+    check("excluded: hover names the client and reason", ex.includes("4 of 5 clients. RawBark: Missing days"));
+    check("excluded: value still shown", !ex.includes("No data"));
+    check("excluded: no em dash in the marker", !ex.includes("\u2014"));
+  }
   check("benchmark no_fx hidden with its reason", kpi.includes("I") && kpi.includes("No FX Dec 2026"));
 
   const merKpi = renderToStaticMarkup(createElement(KpiWidget, { ...props(FIXTURE_RESULTS.combinedTotalBenchmarks, [mer], "kpi"), metricId: "mer" }));

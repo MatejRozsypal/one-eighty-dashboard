@@ -35,6 +35,11 @@
  *   (zeroIsMissingWhen) counts a NULL only on rows where the guard is > 0;
  *   an ad outcome with missingWhenNull counts the rows where its platform's
  *   spend column is NULL instead of its own NULLs (its own NULL is zero).
+ *   A component with a row filter (onlyWhenPositive, e.g. impressions of
+ *   video ads) sums and counts only rows where the filter column is > 0.
+ * - Several marts (kpis plus the Meta campaign and ad marts): every CTE has
+ *   its own date predicate, guards, NULL counts and FX joins on its own
+ *   currency column, so the evaluator can keep each mart's guards apart.
  *
  * The registry is injected: createCompiler({ marts, components }).
  * `compileWidget` at the bottom of this file is bound to registry/components.ts.
@@ -238,8 +243,16 @@ function martCte(
   ];
 
   for (const c of plan.components) {
-    const col = `t.${ident(c.column, "Component column")}`;
+    let col = `t.${ident(c.column, "Component column")}`;
     const alias = componentAlias(c.id);
+    // Row filter (impressions of video ads): only rows where the filter column is > 0 are summed and counted.
+    let rowFilter: string | null = null;
+    if (c.onlyWhenPositive !== undefined) {
+      const f = components[c.onlyWhenPositive];
+      if (!f || f.mart !== mart.id) fail(`onlyWhenPositive ${c.onlyWhenPositive} of ${c.id} is not a component of mart ${mart.id}`);
+      if (c.money) fail(`Row filter on money component ${c.id}`);
+      rowFilter = `t.${ident(f.column, "Filter column")} > 0`;
+    }
     // A NULL counts only where the guard component (revenue for COGS) is > 0.
     let isNull = `${col} IS NULL`;
     // Ad outcomes: the day is missing only when the platform's spend is NULL; their own NULL is zero.
@@ -252,6 +265,10 @@ function martCte(
       const guard = components[c.zeroIsMissingWhen];
       if (!guard || guard.mart !== mart.id) fail(`Guard ${c.zeroIsMissingWhen} of ${c.id} is not a component of mart ${mart.id}`);
       isNull = `${col} IS NULL AND t.${ident(guard.column, "Guard column")} > 0`;
+    }
+    if (rowFilter !== null) {
+      isNull = `${rowFilter} AND ${isNull}`;
+      col = `IF(${rowFilter}, ${col}, NULL)`;
     }
     if (c.money) {
       if (!ccyCol) fail(`Money component ${c.id} on mart ${mart.id} without a currency column`);

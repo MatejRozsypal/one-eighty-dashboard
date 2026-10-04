@@ -45,6 +45,10 @@ import {
 
 const t = (c: keyof typeof COMPONENTS, sign: 1 | -1 = 1, nullAs: "gap" | "zero" = "gap"): Term => ({ c, sign, nullAs });
 
+/** Meta campaign mart and Meta ad mart terms. */
+const mc = (column: string): Term => t(`meta_campaign.${column}` as keyof typeof COMPONENTS);
+const ma = (column: string): Term => t(`meta_ad.${column}` as keyof typeof COMPONENTS);
+
 const F = {
   money: { style: "money", decimals: 0, compact: true },
   unitCost: { style: "money", decimals: 0, smallDecimals: 2 },
@@ -52,6 +56,7 @@ const F = {
   pct: { style: "percent", decimals: 1 },
   pct2: { style: "percent", decimals: 2 },
   n: { style: "number", decimals: 0, compact: true },
+  num2: { style: "number", decimals: 2 },
 } as const satisfies Record<string, FormatSpec>;
 
 interface Opts {
@@ -358,7 +363,115 @@ export const METRICS: MetricRegistry = defineMetrics({
   }),
   google_cpc: ratio("Google CPC", "google", [t("kpis.google_spend")], [t("kpis.google_clicks")], { ...COST, description: "Spend per click.", benchmarkable: true }),
 
-  // Phase 2: email campaigns (flows are cumulative snapshots) and the Meta funnel
+  // Meta soft metrics: campaign and ad marts, money in the ad account currency
+  // converted per row and month like the KPI view. Every ratio is a sum over
+  // a sum. Meta CPM and Meta CPA stay on the daily KPI view above.
+  meta_cost_per_lpv: ratio("Cost per LPV", "meta", [mc("spend")], [mc("landing_page_views")], {
+    ...COST,
+    description: "Meta spend per landing page view. A view counts only once the page has loaded after an ad click.",
+    benchmarkable: true,
+    aliases: ["cost per landing page view", "cplpv"],
+    definitionKey: "Cost / LPV",
+  }),
+  meta_lpv: sum("Landing page views", "meta", [mc("landing_page_views")], {
+    ...COUNT_UP,
+    description: "Landing page loads after a Meta ad click.",
+    benchmarkable: false,
+    aliases: ["lpv"],
+  }),
+  meta_link_ctr: ratio("Link CTR", "meta", [mc("link_clicks")], [mc("impressions")], {
+    unit: "percent",
+    format: F.pct2,
+    goodWhen: "up",
+    description: "Meta link clicks per impression. Only clicks to a destination count, not reactions or comments.",
+    benchmarkable: true,
+    aliases: ["link click-through rate"],
+    definitionKey: "Link CTR",
+  }),
+  meta_cpc_link: ratio("CPC (link)", "meta", [mc("spend")], [mc("link_clicks")], {
+    ...COST,
+    description: "Meta spend per link click.",
+    benchmarkable: true,
+    aliases: ["cpc link", "cost per link click"],
+  }),
+  meta_add_to_cart: sum("Add to carts", "meta", [mc("add_to_cart")], {
+    ...COUNT_UP,
+    description: "Add-to-cart events Meta attributes to its ads.",
+    benchmarkable: false,
+    caveats: ["platform_attributed"],
+    aliases: ["add to cart", "atc"],
+  }),
+  meta_cost_per_atc: ratio("Cost per ATC", "meta", [mc("spend")], [mc("add_to_cart")], {
+    ...COST,
+    description: "Meta spend per Meta-attributed add to cart. A pixel tracking gap inflates it.",
+    benchmarkable: true,
+    caveats: ["platform_attributed"],
+    aliases: ["cost per add to cart"],
+    definitionKey: "Cost / ATC",
+  }),
+  meta_atc_rate: ratio("ATC rate", "meta", [mc("add_to_cart")], [mc("landing_page_views")], {
+    ...PCT_UP,
+    description: "Meta-attributed adds to cart per landing page view.",
+    benchmarkable: true,
+    caveats: ["platform_attributed"],
+    aliases: ["add to cart rate", "meta add-to-cart rate"],
+  }),
+  meta_atc_to_purchase: ratio("ATC to purchase", "meta", [mc("purchases")], [mc("add_to_cart")], {
+    ...PCT_UP,
+    description: "Meta-attributed purchases per add to cart. Both counts are platform-reported.",
+    benchmarkable: true,
+    caveats: ["platform_attributed"],
+    aliases: ["add to cart to purchase"],
+    definitionKey: "ATC to purchase",
+  }),
+  meta_initiate_checkout: sum("Initiate checkouts", "meta", [mc("initiate_checkout")], {
+    ...COUNT_UP,
+    description: "Checkout starts Meta attributes to its ads.",
+    benchmarkable: false,
+    caveats: ["platform_attributed"],
+    aliases: ["initiate checkout", "checkouts"],
+  }),
+  meta_cost_per_ic: ratio("Cost per checkout", "meta", [mc("spend")], [mc("initiate_checkout")], {
+    ...COST,
+    description: "Meta spend per Meta-attributed checkout start.",
+    benchmarkable: true,
+    caveats: ["platform_attributed"],
+    aliases: ["cost per initiate checkout"],
+  }),
+  meta_hook_rate: ratio("Hook rate", "meta", [ma("video_play_actions")], [ma("video_impressions")], {
+    ...PCT_UP,
+    description: "3-second video plays per impression, video ads only (ad days with plays).",
+    benchmarkable: true,
+    aliases: ["hit rate", "thumbstop rate"],
+    definitionKey: "Hook rate",
+  }),
+  meta_hold_rate: ratio("Hold rate", "meta", [ma("video_thruplays")], [ma("video_impressions")], {
+    ...PCT_UP,
+    description: "ThruPlays per impression, video ads only. A ThruPlay is 15 seconds watched, or the whole video if shorter.",
+    benchmarkable: true,
+    aliases: ["thruplay rate"],
+    definitionKey: "Hold rate",
+  }),
+  meta_frequency: ratio("Frequency", "meta", [mc("impressions")], [mc("reach")], {
+    unit: "ratio",
+    format: F.num2,
+    goodWhen: "neutral",
+    description: "Average daily frequency: impressions over reach, summed over campaign days. A person reached on several days counts again, so it reads below true period frequency.",
+    benchmarkable: false,
+    aliases: ["average daily frequency"],
+    definitionKey: "Avg daily frequency",
+  }),
+  meta_conversion_rate: ratio("Meta conversion rate", "meta", [mc("purchases")], [mc("link_clicks")], {
+    unit: "percent",
+    format: F.pct2,
+    goodWhen: "up",
+    description: "Meta-attributed purchases per link click.",
+    benchmarkable: true,
+    caveats: ["platform_attributed"],
+    aliases: ["conversion rate", "meta cvr"],
+  }),
+
+  // Phase 2: email campaigns (flows are cumulative snapshots)
   email_revenue: sum("Email campaign revenue", "email", [t("email_campaign.revenue")], {
     ...MONEY_UP,
     description: "Revenue attributed to email campaigns.",
@@ -390,12 +503,6 @@ export const METRICS: MetricRegistry = defineMetrics({
     benchmarkable: false,
     phase: 2,
     grains: ["week", "month"],
-  }),
-  meta_atc_rate: ratio("Meta add-to-cart rate", "meta", [t("meta_campaign.add_to_cart")], [t("meta_campaign.link_clicks")], {
-    ...PCT_UP,
-    description: "Adds to cart per link click.",
-    benchmarkable: true,
-    phase: 2,
   }),
 });
 

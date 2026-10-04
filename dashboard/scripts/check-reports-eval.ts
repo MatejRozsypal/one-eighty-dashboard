@@ -100,9 +100,11 @@ const LIVE_KPIS_COLUMNS = [
   "meta_purchases", "meta_impressions", "meta_clicks", "meta_reach", "google_spend", "google_revenue", "google_purchases",
   "google_impressions", "google_clicks", "paid_spend", "cm1_other_costs", "fulfillment_cost", "cm1", "cm2", "cm3",
 ];
-const LIVE_META_CAMPAIGN_COLUMNS = ["date", "currency", "link_clicks", "add_to_cart"];
+/** Live columns used from mart.mart_meta_campaign_perf and mart.mart_meta_ad_perf, INFORMATION_SCHEMA.COLUMNS, 2026-10-04. */
+const LIVE_META_CAMPAIGN_COLUMNS = ["date", "currency", "spend", "impressions", "reach", "link_clicks", "landing_page_views", "add_to_cart", "initiate_checkout", "purchases"];
+const LIVE_META_AD_COLUMNS = ["date", "currency", "spend", "impressions", "video_play_actions", "video_thruplays"];
 const LIVE_EMAIL_CAMPAIGN_COLUMNS = ["send_date", "currency", "sent", "delivered", "unique_opens", "unique_clicks", "revenue"];
-const LIVE = { kpis: LIVE_KPIS_COLUMNS, meta_campaign: LIVE_META_CAMPAIGN_COLUMNS, email_campaign: LIVE_EMAIL_CAMPAIGN_COLUMNS } as const;
+const LIVE = { kpis: LIVE_KPIS_COLUMNS, meta_campaign: LIVE_META_CAMPAIGN_COLUMNS, meta_ad: LIVE_META_AD_COLUMNS, email_campaign: LIVE_EMAIL_CAMPAIGN_COLUMNS } as const;
 
 for (const c of Object.values(COMPONENTS)) {
   check(`component ${c.id} column is an identifier`, IDENTIFIER_RE.test(c.column));
@@ -116,9 +118,9 @@ check("excluded columns are not components", !["unique_customers", "cm1", "cm2",
 check("cogs guard is revenue", COMPONENTS["kpis.cogs"].zeroIsMissingWhen === "kpis.revenue");
 
 check("every registry id defined", REGISTRY_METRIC_IDS.every((id) => METRICS[id]?.id === id));
-check("30 phase-1 metrics", METRIC_IDS.length === 30 && METRIC_IDS.every((id) => METRICS[id].phase === 1));
-check("5 phase-2 metrics", PHASE2_METRIC_IDS.every((id) => METRICS[id].phase === 2));
-check("picker list holds the 30 queryable metrics", METRIC_LIST.length === 30);
+check("44 queryable metrics (30 KPI view + 14 Meta soft)", METRIC_IDS.length === 44 && METRIC_IDS.every((id) => METRICS[id].phase === 1));
+check("4 phase-2 metrics (email)", PHASE2_METRIC_IDS.length === 4 && PHASE2_METRIC_IDS.every((id) => METRICS[id].phase === 2));
+check("picker list holds the 44 queryable metrics", METRIC_LIST.length === 44);
 check("cm3 = revenue - cogs - fulfillment - paid (mart definition)", METRICS.cm3.kind === "sum" && eqJson(METRICS.cm3.terms, [
   { c: "kpis.revenue", sign: 1, nullAs: "gap" },
   { c: "kpis.cogs", sign: -1, nullAs: "gap" },
@@ -614,7 +616,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   check("F1: registry nullMeans: shop zero, ad platform gap, cogs gap", COMPONENTS["kpis.revenue"].nullMeans === "zero" && COMPONENTS["kpis.orders"].nullMeans === "zero" && COMPONENTS["kpis.paid_spend"].nullMeans === "gap" && COMPONENTS["kpis.meta_spend"].nullMeans === "gap" && COMPONENTS["kpis.cogs"].nullMeans === "gap");
   check("Gap rule: spend components count their own NULLs", (["kpis.paid_spend", "kpis.meta_spend", "kpis.google_spend"] as const).every((id) => COMPONENTS[id].missingWhenNull === undefined));
   check("Gap rule: ad outcomes are gaps only on days without their platform's spend", (["revenue", "purchases", "impressions", "clicks"] as const).every((c) => COMPONENTS[`kpis.meta_${c}`].missingWhenNull === "kpis.meta_spend" && COMPONENTS[`kpis.google_${c}`].missingWhenNull === "kpis.google_spend"));
-  check("Gap rule: only ad outcomes use missingWhenNull", Object.values(COMPONENTS).filter((c) => c.missingWhenNull !== undefined).length === 8);
+  check("Gap rule: only ad outcomes use missingWhenNull (8 KPI view, 7 Meta campaign, 3 Meta ad)", Object.values(COMPONENTS).filter((c) => c.missingWhenNull !== undefined).length === 18);
   // Ethia/venev Sep 2026: meta_revenue NULL on days with Meta spend. The SQL counts only NULL-spend days for it (0 here), so Meta ROAS is a value.
   const ethiaLike = evalW(widget(["meta_roas", "meta_cpa"], { grain: "total", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } }), [
     row("alpha", "cur", TOTAL, { "kpis.meta_revenue": withNulls(2440, 0), "kpis.meta_spend": withNulls(1000, 0), "kpis.meta_purchases": withNulls(10, 0) }),
@@ -658,6 +660,124 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   check("F1: rows without NULL counts evaluate as before", close(cell(legacy, "alpha", "mer").points?.[0], 20));
   // The status of a gap loses to fx_missing and not_connected.
   check("F1: reason text has no dash", !"Missing days".includes("-"));
+}
+
+// 4.13 Meta soft metrics: campaign and ad marts next to the daily KPI view (FX4).
+{
+  const TOTAL = "1970-01-01";
+  const META_SOFT: MetricId[] = [
+    "meta_cost_per_lpv", "meta_lpv", "meta_link_ctr", "meta_cpc_link", "meta_add_to_cart", "meta_cost_per_atc", "meta_atc_rate",
+    "meta_atc_to_purchase", "meta_initiate_checkout", "meta_cost_per_ic", "meta_hook_rate", "meta_hold_rate", "meta_frequency", "meta_conversion_rate",
+  ];
+  check("FX4: every Meta soft metric is queryable, in the meta group, requires meta", META_SOFT.every((id) => (METRIC_IDS as readonly string[]).includes(id) && METRICS[id].group === "meta" && METRICS[id].meta.requires === "meta"));
+  check("FX4: picker keeps Meta soft metrics in the Meta group", METRIC_LIST.filter((m) => m.group === "meta").length === 21);
+  const words = (t: string) => t.trim().split(/\s+/).length;
+  check("FX4: descriptions at most 40 words, no dash, tenant-neutral", META_SOFT.every((id) => {
+    const d = METRICS[id].description;
+    return words(d) <= 40 && ![0x2013, 0x2014].some((cp) => d.includes(String.fromCharCode(cp))) && !/dobias|manami|ethia|venev|rawbark/i.test(d);
+  }));
+  const f = (id: MetricId) => METRICS[id];
+  const termIds = (terms: readonly { c: string }[]) => terms.map((x) => x.c).join();
+  const r = (id: MetricId) => f(id) as Extract<(typeof METRICS)[MetricId], { kind: "ratio" }>;
+  check("FX4: cost per LPV = spend / LPV", termIds(r("meta_cost_per_lpv").numerator) === "meta_campaign.spend" && termIds(r("meta_cost_per_lpv").denominator) === "meta_campaign.landing_page_views");
+  check("FX4: link CTR = link clicks / impressions", termIds(r("meta_link_ctr").numerator) === "meta_campaign.link_clicks" && termIds(r("meta_link_ctr").denominator) === "meta_campaign.impressions");
+  check("FX4: ATC rate = ATC / LPV (owner formula, replaces the reserved ATC / link clicks)", termIds(r("meta_atc_rate").numerator) === "meta_campaign.add_to_cart" && termIds(r("meta_atc_rate").denominator) === "meta_campaign.landing_page_views");
+  check("FX4: ATC to purchase, conversion rate", termIds(r("meta_atc_to_purchase").numerator) === "meta_campaign.purchases" && termIds(r("meta_atc_to_purchase").denominator) === "meta_campaign.add_to_cart" && termIds(r("meta_conversion_rate").denominator) === "meta_campaign.link_clicks");
+  check("FX4: hook and hold over video-ad impressions", termIds(r("meta_hook_rate").numerator) === "meta_ad.video_play_actions" && termIds(r("meta_hold_rate").numerator) === "meta_ad.video_thruplays" && termIds(r("meta_hook_rate").denominator) === "meta_ad.video_impressions");
+  check("FX4: video impressions = impressions filtered on plays > 0", COMPONENTS["meta_ad.video_impressions"].column === "impressions" && COMPONENTS["meta_ad.video_impressions"].onlyWhenPositive === "meta_ad.video_play_actions");
+  check("FX4: frequency = impressions / reach, neutral, not benchmarkable", termIds(r("meta_frequency").numerator) === "meta_campaign.impressions" && termIds(r("meta_frequency").denominator) === "meta_campaign.reach" && f("meta_frequency").goodWhen === "neutral" && !f("meta_frequency").benchmarkable && /average daily frequency/i.test(f("meta_frequency").description));
+  check("FX4: Meta CPM and CPA stay on the KPI view", termIds(r("meta_cpm").numerator) === "kpis.meta_spend" && termIds(r("meta_cpa").denominator) === "kpis.meta_purchases");
+  check("FX4: cost metrics are money (display), rates native", f("meta_cost_per_lpv").meta.fxMode === "display" && f("meta_link_ctr").meta.fxMode === "native-per-client");
+  check("FX4: benchmarkable where it makes sense", ["meta_cost_per_lpv", "meta_link_ctr", "meta_cpc_link", "meta_cost_per_atc", "meta_atc_rate", "meta_atc_to_purchase", "meta_cost_per_ic", "meta_hook_rate", "meta_hold_rate", "meta_conversion_rate"].every((id) => f(id as MetricId).benchmarkable) && !f("meta_lpv").benchmarkable && !f("meta_add_to_cart").benchmarkable);
+  check("FX4: Meta marts in ad account currency", MARTS.meta_campaign.accountCurrency === true && MARTS.meta_ad.accountCurrency === true && !("accountCurrency" in MARTS.kpis) && MARTS.meta_campaign.phase === 1 && MARTS.meta_ad.phase === 1);
+  check("FX4: outcomes are gaps only when spend is NULL", ["impressions", "reach", "link_clicks", "landing_page_views", "add_to_cart", "initiate_checkout", "purchases"].every((c) => COMPONENTS[`meta_campaign.${c}` as keyof typeof COMPONENTS].missingWhenNull === "meta_campaign.spend") && COMPONENTS["meta_ad.video_impressions"].missingWhenNull === "meta_ad.spend");
+  check("FX4: alias 'hit rate' finds hook rate", findMetricId("hit rate") === "meta_hook_rate" && findMetricId("cost per landing page view") === "meta_cost_per_lpv" && findMetricId("average daily frequency") === "meta_frequency");
+  {
+    const aliases = METRIC_IDS.flatMap((id) => [...new Set([id, METRICS[id].label.toLowerCase(), ...(METRICS[id].aliases ?? []).map((a) => a.toLowerCase())])]);
+    check("FX4: ids, labels and aliases unique", new Set(aliases).size === aliases.length);
+  }
+
+  const wm = widget(["meta_cost_per_lpv", "revenue", "meta_hook_rate"], { filters: { clients: { mode: "list", ids: ["alpha"] } } });
+  check("FX4: resolve lists the three marts", eqJson(wm.marts, ["kpis", "meta_ad", "meta_campaign"]));
+  check("FX4: resolve components", eqJson(wm.components, ["kpis.revenue", "meta_ad.video_impressions", "meta_ad.video_play_actions", "meta_campaign.landing_page_views", "meta_campaign.spend"]));
+
+  type MG = Partial<{ nRows: number; foreignCcyRows: number; fxMissingRows: number; fxMissingMonths: string[] }>;
+  const rowM = (clientId: string, bucket: string, guards: Partial<Record<"kpis" | "meta_campaign" | "meta_ad", MG>>, values: Partial<Record<ComponentId, V>>, period: "cur" | "cmp" = "cur"): ComponentRow => {
+    const base = row(clientId, period, bucket, values);
+    const g: ComponentRow["guards"] = {};
+    for (const [m, x] of Object.entries(guards)) {
+      g[m as "kpis"] = { nRows: x?.nRows ?? 1, foreignCcyRows: x?.foreignCcyRows ?? 0, fxMissingRows: x?.fxMissingRows ?? 0, fxMissingMonths: x?.fxMissingMonths ?? [] };
+    }
+    return { ...base, guards: g };
+  };
+
+  // delta trades in EUR; its Meta account is in CZK (like an EUR shop with a CZK ad account).
+  const wd = widget(["meta_cost_per_lpv", "meta_link_ctr", "revenue", "meta_frequency"], { filters: { clients: { mode: "list", ids: ["delta"] }, currency: "native", compare: "none" } });
+  check("FX4: native for one EUR client is EUR", wd.displayCurrency === "EUR");
+  const rd = evalW(wd, [
+    rowM("delta", TOTAL, { kpis: {}, meta_campaign: { nRows: 30, foreignCcyRows: 30 } }, {
+      "kpis.revenue": 10000,
+      "meta_campaign.spend": [null, 2000],
+      "meta_campaign.landing_page_views": 500,
+      "meta_campaign.link_clicks": 800,
+      "meta_campaign.impressions": 40000,
+      "meta_campaign.reach": 25000,
+    }),
+  ]);
+  check("FX4: Meta money in another account currency reads the converted display sum", close(cell(rd, "delta", "meta_cost_per_lpv").total, 4));
+  check("FX4: KPI money of the same client keeps the native shortcut", close(cell(rd, "delta", "revenue").total, 10000));
+  check("FX4: link CTR and frequency from summed components", close(cell(rd, "delta", "meta_link_ctr").total, 0.02) && close(cell(rd, "delta", "meta_frequency").total, 1.6));
+  check("FX4: account-currency rows raise no foreign currency caveat", !rd.series[0].caveats.includes("foreign_currency_rows"));
+  const rdk = evalW(wd, [rowM("delta", TOTAL, { kpis: { foreignCcyRows: 1 }, meta_campaign: { foreignCcyRows: 30 } }, { "kpis.revenue": [9000, 10000], "meta_campaign.spend": [null, 2000], "meta_campaign.landing_page_views": 500 })]);
+  check("FX4: a foreign KPI row still raises the caveat", rdk.series[0].caveats.includes("foreign_currency_rows") && close(cell(rdk, "delta", "revenue").total, 10000));
+
+  // FX guards are per mart: no Meta rate nulls only Meta money.
+  const rfx = evalW(wd, [
+    rowM("delta", TOTAL, { kpis: {}, meta_campaign: { foreignCcyRows: 30, fxMissingRows: 3, fxMissingMonths: ["2026-10-01"] } }, {
+      "kpis.revenue": 10000,
+      "meta_campaign.spend": [null, 1800],
+      "meta_campaign.landing_page_views": 500,
+      "meta_campaign.link_clicks": 800,
+      "meta_campaign.impressions": 40000,
+      "meta_campaign.reach": 25000,
+    }),
+  ]);
+  check("FX4: missing Meta FX nulls Meta money only", cell(rfx, "delta", "meta_cost_per_lpv").status === "fx_missing" && cell(rfx, "delta", "meta_cost_per_lpv").reason === "No FX Oct 2026");
+  check("FX4: KPI money and Meta rates unaffected by a Meta FX gap", cell(rfx, "delta", "revenue").status === "ok" && cell(rfx, "delta", "meta_link_ctr").status === "ok");
+  check("FX4: Meta FX months reach the widget warning", rfx.warnings.some((x) => x.code === "fx_missing" && eqJson(x.months, ["2026-10-01"])));
+  const rfx2 = evalW(wd, [rowM("delta", TOTAL, { kpis: { fxMissingRows: 2, fxMissingMonths: ["2026-09-01"] }, meta_campaign: { foreignCcyRows: 30 } }, { "kpis.revenue": [10000, 10000], "meta_campaign.spend": [null, 2000], "meta_campaign.landing_page_views": 500 })]);
+  check("FX4: KPI FX gap does not null Meta money", cell(rfx2, "delta", "meta_cost_per_lpv").status === "ok" && close(cell(rfx2, "delta", "meta_cost_per_lpv").total, 4));
+
+  // Gaps: spend NULL rows make every Meta term a gap; NULL outcomes with spend present are zero.
+  const wg = widget(["meta_cost_per_lpv", "meta_lpv", "meta_atc_rate"], { filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } });
+  const zeroOutcome = evalW(wg, [rowM("alpha", TOTAL, { meta_campaign: { nRows: 10 } }, { "meta_campaign.spend": withNulls(1000, 0), "meta_campaign.landing_page_views": withNulls(100, 0), "meta_campaign.add_to_cart": withNulls(5, 0) })]);
+  check("FX4: NULL outcome with spend is zero (ATC rate ok)", close(cell(zeroOutcome, "alpha", "meta_atc_rate").total, 0.05) && close(cell(zeroOutcome, "alpha", "meta_cost_per_lpv").total, 10));
+  const spendGap = evalW(wg, [rowM("alpha", TOTAL, { meta_campaign: { nRows: 10 } }, { "meta_campaign.spend": withNulls(1000, 2), "meta_campaign.landing_page_views": withNulls(100, 2), "meta_campaign.add_to_cart": withNulls(5, 2) })]);
+  check("FX4: NULL Meta spend rows are a gap for cost, count and rate", ["meta_cost_per_lpv", "meta_lpv", "meta_atc_rate"].every((id) => cell(spendGap, "alpha", id as MetricId).status === "no_data" && cell(spendGap, "alpha", id as MetricId).reason === "Missing days"));
+
+  // Not connected: a client without Meta, and the rollup "n of m".
+  const wc = widget(["meta_link_ctr", "meta_cost_per_lpv", "meta_hook_rate"], { split: "combined", filters: { clients: { mode: "list", ids: ["alpha", "bravo", "charlie"] }, compare: "none" } });
+  check("FX4: client without Meta is not queried", !wc.queryClientIds.includes("charlie") && wc.availability.charlie?.meta_link_ctr?.ok === false);
+  const rc2 = evalW(wc, [
+    rowM("alpha", TOTAL, { meta_campaign: {}, meta_ad: {} }, { "meta_campaign.link_clicks": 100, "meta_campaign.impressions": 10000, "meta_campaign.spend": 2000, "meta_campaign.landing_page_views": 80, "meta_ad.video_play_actions": 300, "meta_ad.video_impressions": 1000 }),
+    rowM("bravo", TOTAL, { meta_campaign: {}, meta_ad: {} }, { "meta_campaign.link_clicks": [300, 300], "meta_campaign.impressions": 10000, "meta_campaign.spend": [100, 2200], "meta_campaign.landing_page_views": 120, "meta_ad.video_play_actions": 100, "meta_ad.video_impressions": 1000 }),
+  ]);
+  const cc = cell(rc2, "combined", "meta_link_ctr");
+  check("FX4: combined link CTR from summed components, 2 of 3", close(cc.total, 0.02) && eqJson(cc.coverage, { included: 2, of: 3 }) && cc.excluded?.[0]?.id === "charlie" && cc.excluded?.[0]?.reason === "Meta not connected");
+  check("FX4: combined cost per LPV from display sums", close(cell(rc2, "combined", "meta_cost_per_lpv").total, 4200 / 200));
+  check("FX4: combined hook rate from the ad mart", close(cell(rc2, "combined", "meta_hook_rate").total, 0.2));
+  const wcl = widget(["meta_link_ctr"], { filters: { clients: { mode: "list", ids: ["charlie"] }, compare: "none" } });
+  const rcl = evalW(wcl, []);
+  check("FX4: no Meta: not_connected cell", cell(rcl, "charlie", "meta_link_ctr").status === "not_connected" && cell(rcl, "charlie", "meta_link_ctr").reason === "Meta not connected");
+
+  // A bucket with KPI rows but no Meta rows (FULL OUTER JOIN gives NULL Meta columns): no data, never 0.
+  const wb = widget(["meta_link_ctr", "revenue"], { grain: "week", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } });
+  const rb = evalW(wb, [
+    rowM("alpha", "2026-09-07", { kpis: {}, meta_campaign: { nRows: 0 } }, { "kpis.revenue": 500, "meta_campaign.link_clicks": null, "meta_campaign.impressions": null }),
+    rowM("alpha", "2026-09-14", { kpis: {}, meta_campaign: { nRows: 7 } }, { "kpis.revenue": 700, "meta_campaign.link_clicks": 50, "meta_campaign.impressions": 2500 }),
+  ]);
+  const cb = cell(rb, "alpha", "meta_link_ctr");
+  check("FX4: week without Meta rows is a null point, the total uses the other week", cb.points?.[0] === null && close(cb.points?.[1], 0.02) && close(cb.total, 0.02) && cell(rb, "alpha", "revenue").total === 1200);
 }
 
 // ---------------------------------------------------------------------------

@@ -70,7 +70,7 @@ function check(name: string, ok: boolean, detail?: string): void {
 // Ids and limits
 // ---------------------------------------------------------------------------
 
-check("30 phase-1 metric ids", METRIC_IDS.length === 30, String(METRIC_IDS.length));
+check("44 queryable metric ids (30 KPI view + 14 Meta soft)", METRIC_IDS.length === 44, String(METRIC_IDS.length));
 check("metric ids unique", new Set([...METRIC_IDS, ...PHASE2_METRIC_IDS]).size === METRIC_IDS.length + PHASE2_METRIC_IDS.length);
 check("phase 2 ids are not queryable", PHASE2_METRIC_IDS.every((id) => !isMetricId(id)));
 check("client role never gets Reports", !(REPORTS_ROLES as readonly string[]).includes("client"));
@@ -204,6 +204,7 @@ void _runConforms;
 const FIXTURE_MARTS: Record<MartId, MartDef> = {
   kpis: { id: "kpis", table: "mart.mart_daily_kpis", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1 },
   meta_campaign: { id: "meta_campaign", table: "mart.mart_meta_campaign_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 2 },
+  meta_ad: { id: "meta_ad", table: "mart.mart_meta_ad_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 2 },
   email_campaign: { id: "email_campaign", table: "mart.mart_email_campaign_perf", dateColumn: "send_date", currencyColumn: "currency", grains: ["week", "month"], phase: 2 },
 };
 
@@ -456,6 +457,41 @@ if (real.registry) {
   );
   check("Gap rule sql: Google clicks count NULL Google spend days", roasQ.sql.includes("COUNTIF(t.google_spend IS NULL) AS kpis__google_clicks__nulls") && !roasQ.sql.includes("t.google_clicks IS NULL"));
   check("Gap rule sql: spend still counts its own NULLs", roasQ.sql.includes("COUNTIF(t.meta_spend IS NULL) AS kpis__meta_spend__disp_nulls"));
+
+  // FX4: Meta soft metrics read the campaign and ad marts next to the KPI view, one CTE per mart.
+  const metaQ = createCompiler(real.registry, { projectId: PROJECT })(
+    resolved({
+      clientIds: ["dobias", "venev"],
+      components: ["kpis.meta_spend", "kpis.meta_impressions", "meta_campaign.spend", "meta_campaign.landing_page_views", "meta_campaign.link_clicks", "meta_campaign.impressions", "meta_ad.video_play_actions", "meta_ad.video_impressions"],
+      grain: "week",
+      current: { from: "2026-09-01", to: "2026-09-30" },
+      compare: "previous_period",
+    })
+  );
+  check("FX4 sql: three mart CTEs joined USING (client_id, period, bucket)", metaQ.marts.join() === "kpis,meta_ad,meta_campaign" && metaQ.sql.includes("FROM kpis\nFULL OUTER JOIN meta_ad USING (client_id, period, bucket)\nFULL OUTER JOIN meta_campaign USING (client_id, period, bucket)"));
+  check("FX4 sql: every mart CTE has its own date predicate", (["kpis", "meta_ad", "meta_campaign"] as const).every((m) => {
+    const start = metaQ.sql.indexOf(`\n${m} AS (\n`);
+    const end = metaQ.sql.indexOf("\n)", start + 5);
+    return start >= 0 && metaQ.sql.slice(start, end).includes("t.date BETWEEN @scanFrom AND @scanTo") && metaQ.sql.slice(start, end).includes("t.date BETWEEN p.from_date AND p.to_date");
+  }));
+  check("FX4 sql: Meta money converted per row from the account currency", metaQ.sql.includes("SUM(t.spend * src.to_czk / dst.to_czk) AS meta_campaign__spend__disp") && metaQ.sql.includes("SUM(IF(t.currency = c.currency, t.spend, NULL)) AS meta_campaign__spend__nat"));
+  check("FX4 sql: per-mart guards", (["kpis", "meta_ad", "meta_campaign"] as const).every((m) => metaQ.sql.includes(`AS ${m}__n_rows`) && metaQ.sql.includes(`AS ${m}__foreign_ccy_rows`)) && metaQ.sql.includes("AS meta_campaign__fx_missing_rows") && metaQ.sql.includes("0 AS meta_ad__fx_missing_rows"));
+  check("FX4 sql: Meta outcomes count NULL spend rows of their own mart", metaQ.sql.includes("COUNTIF(t.spend IS NULL) AS meta_campaign__landing_page_views__nulls") && !metaQ.sql.includes("t.landing_page_views IS NULL"));
+  check("FX4 sql: video impressions filtered on plays > 0", metaQ.sql.includes("SUM(IF(t.video_play_actions > 0, t.impressions, NULL)) AS meta_ad__video_impressions") && metaQ.sql.includes("COUNTIF(t.video_play_actions > 0 AND t.spend IS NULL) AS meta_ad__video_impressions__nulls"));
+  check("FX4 sql: assertDatePredicates passes for all three marts", (() => { try { assertDatePredicates(metaQ.sql, [real.registry!.marts.kpis!, real.registry!.marts.meta_ad!, real.registry!.marts.meta_campaign!]); return true; } catch { return false; } })());
+  check("FX4: tampered Meta CTE without its date predicate is rejected", (() => {
+    try {
+      assertDatePredicates(metaQ.sql.replace(/(\nmeta_ad AS \([\s\S]*?)AND t\.date BETWEEN @scanFrom AND @scanTo/, "$1AND TRUE"), [real.registry!.marts.meta_ad!]);
+      return false;
+    } catch (error) {
+      return /date predicate/.test(String(error));
+    }
+  })());
+  const nm = normaliseRows(
+    [{ client_id: "venev", period: "cur", bucket: { value: "2026-09-07" }, kpis__n_rows: 7, kpis__foreign_ccy_rows: 0, kpis__fx_missing_rows: 0, kpis__fx_missing_months: [], meta_campaign__n_rows: null, meta_campaign__foreign_ccy_rows: null, meta_campaign__fx_missing_rows: null, meta_campaign__fx_missing_months: null, meta_campaign__spend__nat: null, meta_campaign__spend__disp: null, meta_campaign__landing_page_views: null }],
+    { components: ["meta_campaign.landing_page_views", "meta_campaign.spend"], marts: ["kpis", "meta_campaign"] }
+  );
+  check("FX4 normalise: absent joined side gives zero guards and null sums", nm[0].guards.meta_campaign?.nRows === 0 && nm[0].values["meta_campaign.spend"]?.disp === null && nm[0].values["meta_campaign.landing_page_views"]?.nat === null && nm[0].values["meta_campaign.landing_page_views"]?.natNulls === 0);
 }
 
 function firstDiff(a: string, b: string): string {

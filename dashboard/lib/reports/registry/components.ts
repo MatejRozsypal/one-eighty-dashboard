@@ -5,7 +5,8 @@
  *
  * Every column below was checked against the LIVE views on 2026-10-04
  * (INFORMATION_SCHEMA.COLUMNS of mart.mart_daily_kpis,
- * mart.mart_meta_campaign_perf, mart.mart_email_campaign_perf).
+ * mart.mart_meta_campaign_perf, mart.mart_meta_ad_perf,
+ * mart.mart_email_campaign_perf).
  *
  * Deliberately left out:
  * - unique_customers: a sum over days is not a count of unique customers.
@@ -16,6 +17,9 @@
  *   uses the same columns (see metrics.ts `cm3`).
  * - cm1_other_costs: a constant 0 in the live view.
  * - mart_email_flow_perf: a cumulative snapshot, not safe over a period.
+ * - Meta ad level outbound_clicks, unique_outbound_clicks and the video
+ *   quartile / 30s columns: 100 percent NULL live (not requested by the
+ *   ad-insights ingest), so no metric can be built on them yet.
  *
  * Pure module, safe for the browser bundle. No project id: compile.ts
  * prefixes the table server-side.
@@ -35,7 +39,9 @@ import {
 
 export const MARTS = {
   kpis: { id: "kpis", table: "mart.mart_daily_kpis", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1 },
-  meta_campaign: { id: "meta_campaign", table: "mart.mart_meta_campaign_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 2 },
+  // Meta marts: one row per campaign (ad) and day, money in the ad account currency (`currency`).
+  meta_campaign: { id: "meta_campaign", table: "mart.mart_meta_campaign_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1, accountCurrency: true },
+  meta_ad: { id: "meta_ad", table: "mart.mart_meta_ad_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1, accountCurrency: true },
   email_campaign: { id: "email_campaign", table: "mart.mart_email_campaign_perf", dateColumn: "send_date", currencyColumn: "currency", grains: ["week", "month"], phase: 2 },
 } as const satisfies MartRegistry;
 
@@ -46,21 +52,32 @@ export const MARTS = {
 // only on days whose spend is NULL (missingWhenNull): the mart leaves them
 // NULL on a day with spend and no conversions (Ethia 4 and venev 26 Meta days
 // in Sep 2026, meta_revenue is never 0), which is zero. COGS is a gap only on
-// days with revenue; phase 2 campaign marts have one row per campaign, where
-// NULL means the platform reported nothing (zero). Checked live 2026-10-04.
+// days with revenue; phase 2 email campaign rows: NULL means the platform
+// reported nothing (zero). Meta campaign and ad marts follow the ad rule:
+// spend counts its own NULLs, every outcome counts the rows whose spend is
+// NULL (missingWhenNull) and its own NULL is zero (live Sep 2026: spend never
+// NULL; add_to_cart, initiate_checkout, purchases NULL on campaign days
+// without the event; video plays NULL on static ads). A day without any Meta
+// row is absent from these marts, so it adds nothing (no_data when a whole
+// bucket is empty). Checked live 2026-10-04.
 const PAID: CapExpr = { any: ["meta", "googleAds"] };
 
-type ComponentSpec = Omit<ComponentDef, "id" | "mart" | "column">;
+type ComponentSpec = Omit<ComponentDef, "id" | "mart" | "column"> & { column?: string };
 
 function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>): Readonly<Record<K, ComponentDef>> {
   const out = {} as Record<K, ComponentDef>;
   for (const id of Object.keys(specs) as K[]) {
     const dot = id.indexOf(".");
     const mart = id.slice(0, dot) as MartId;
-    const column = id.slice(dot + 1);
+    const { column: columnOverride, ...spec } = specs[id];
+    const column = columnOverride ?? id.slice(dot + 1);
     if (!(mart in MARTS)) throw new Error(`Reports registry: component ${id} names an unknown mart`);
+    if (!IDENTIFIER_RE.test(id.slice(dot + 1))) throw new Error(`Reports registry: component ${id} has an invalid id`);
     if (!IDENTIFIER_RE.test(column)) throw new Error(`Reports registry: component ${id} has an invalid column name`);
-    const def: ComponentDef = { id, mart, column, ...specs[id] };
+    if (columnOverride !== undefined && spec.onlyWhenPositive === undefined) {
+      throw new Error(`Reports registry: component ${id} renames its column without a row filter`);
+    }
+    const def: ComponentDef = { id, mart, column, ...spec };
     out[id] = Object.freeze(def);
   }
   for (const def of Object.values(out) as ComponentDef[]) {
@@ -78,6 +95,15 @@ function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>
     if (g.mart !== def.mart) throw new Error(`Reports registry: ${def.id} missingWhenNull ${spend} is in another mart`);
     if (def.nullMeans !== "gap") throw new Error(`Reports registry: ${def.id} has missingWhenNull but nullMeans is not "gap"`);
     if (def.zeroIsMissingWhen !== undefined) throw new Error(`Reports registry: ${def.id} cannot combine missingWhenNull and zeroIsMissingWhen`);
+  }
+  for (const def of Object.values(out) as ComponentDef[]) {
+    const filter = def.onlyWhenPositive;
+    if (filter === undefined) continue;
+    const g = (out as Record<string, ComponentDef | undefined>)[filter];
+    if (!g) throw new Error(`Reports registry: ${def.id} onlyWhenPositive ${filter} is not a component`);
+    if (g.mart !== def.mart) throw new Error(`Reports registry: ${def.id} onlyWhenPositive ${filter} is in another mart`);
+    if (g.money || def.money) throw new Error(`Reports registry: ${def.id} row filters are for counts only`);
+    if (def.zeroIsMissingWhen !== undefined) throw new Error(`Reports registry: ${def.id} cannot combine onlyWhenPositive and zeroIsMissingWhen`);
   }
   for (const m of Object.values(MARTS)) {
     for (const ident of [...m.table.split("."), m.dateColumn, ...(m.currencyColumn ? [m.currencyColumn] : [])]) {
@@ -112,9 +138,29 @@ export const COMPONENTS = defineComponents({
   "kpis.google_purchases": { money: false, requires: "googleAds", nullMeans: "gap", missingWhenNull: "kpis.google_spend" },
   "kpis.google_impressions": { money: false, requires: "googleAds", nullMeans: "gap", missingWhenNull: "kpis.google_spend" },
   "kpis.google_clicks": { money: false, requires: "googleAds", nullMeans: "gap", missingWhenNull: "kpis.google_spend" },
+  // Meta campaign mart (money in the ad account currency)
+  "meta_campaign.spend": { money: true, requires: "meta", nullMeans: "gap" },
+  "meta_campaign.impressions": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
+  "meta_campaign.reach": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
+  "meta_campaign.link_clicks": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
+  "meta_campaign.landing_page_views": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
+  "meta_campaign.add_to_cart": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
+  "meta_campaign.initiate_checkout": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
+  "meta_campaign.purchases": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
+  // Meta ad mart: video plays live only here. video_play_actions is the 3-second play count (hook numerator), video_thruplays the hold numerator.
+  "meta_ad.spend": { money: true, requires: "meta", nullMeans: "gap" },
+  "meta_ad.video_play_actions": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_ad.spend" },
+  "meta_ad.video_thruplays": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_ad.spend" },
+  /** Impressions of rows with video plays (video ads only): hook and hold denominator, as on the Meta tab. */
+  "meta_ad.video_impressions": {
+    money: false,
+    requires: "meta",
+    nullMeans: "gap",
+    missingWhenNull: "meta_ad.spend",
+    column: "impressions",
+    onlyWhenPositive: "meta_ad.video_play_actions",
+  },
   // phase 2
-  "meta_campaign.link_clicks": { money: false, requires: "meta", nullMeans: "zero" },
-  "meta_campaign.add_to_cart": { money: false, requires: "meta", nullMeans: "zero" },
   "email_campaign.sent": { money: false, requires: "email", nullMeans: "zero" },
   "email_campaign.delivered": { money: false, requires: "email", nullMeans: "zero" },
   "email_campaign.unique_opens": { money: false, requires: "email", nullMeans: "zero" },

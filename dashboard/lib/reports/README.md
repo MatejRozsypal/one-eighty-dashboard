@@ -22,7 +22,7 @@ Every signature and intermediate type on this path is declared in `contracts.ts`
 
 | File | Pure (browser-safe) | Purpose |
 |---|---|---|
-| `registry/ids.ts` | yes | `METRIC_IDS` (30 phase-1 ids, the only queryable ones), reserved `PHASE2_METRIC_IDS`. Append only. |
+| `registry/ids.ts` | yes | `METRIC_IDS` (44 queryable ids: 30 from the daily KPI view, 14 Meta soft metrics from the Meta campaign and ad marts), reserved `PHASE2_METRIC_IDS` (email). Append only. |
 | `registry/types.ts` | yes | Marts, components, metrics, caveats, capabilities, `ReportClient`, `SEMANTIC_VERSION`. |
 | `registry/*.ts` (others) | yes | Registry data and `evalCapExpr`. No `server-only`, no project id. |
 | `types.ts` | yes | zod request contracts (`ReportFilters`, `WidgetQuery`, `WidgetView`, `WidgetConfig`, `LayoutItem`, `ReportQueryRequest`) and the result shape (`WidgetResult`, `MetricCell`, `BenchmarkMatch`). |
@@ -40,6 +40,7 @@ Rules that hold everywhere:
 - Reports never call `resolveClient()`; they use `getReportClients()`.
 - Default display currency is CZK. Manami VAT is flagged with the `revenue_incl_vat` caveat, not recalculated. CM3 is the mart definition: `mart_daily_kpis.cm3` = revenue - COGS - fulfillment_cost - paid_spend (fulfilment and paid spend coalesced to 0), so the registry needs a `kpis.fulfillment_cost` component (design 2.3 omits it).
 - Since migration 228 (deployed 2026-10-05) WooCommerce fee lines are netted and Woo COGS is NULL, not 0, when no costed line exists. `woo_fees_not_netted` no longer applies; a NULL COGS sum on positive revenue is `not_measured`, like a 0.
+- Several marts per widget: `kpis` (`mart_daily_kpis`), `meta_campaign` (`mart_meta_campaign_perf`) and `meta_ad` (`mart_meta_ad_perf`). One CTE per mart, each with its own date predicate, guards, NULL counts and FX joins, `FULL OUTER JOIN USING (client_id, period, bucket)`. The evaluator keeps FX and foreign-currency guards per mart. Meta mart money is in the ad account currency (`currency` per row), converted per row and month like the KPI view; those marts are `accountCurrency`, so an ad account in another currency than the shop (an EUR shop with a CZK account) raises no "another currency" caveat. A day without Meta rows is absent from these marts (no data, never 0). Hook and hold rate divide by impressions of ad days with video plays (`meta_ad.video_impressions`, a row-filtered component).
 - No em dash anywhere (`npm run check:reports` enforces it for this folder).
 
 ## Packages and file ownership

@@ -2,54 +2,16 @@
   "name": "wf_ecomail_to_bigquery",
   "nodes": [
     {
+      "id": "3c88c6df-f645-475b-b059-74da2f5f8b77",
+      "name": "BQ: insert campaigns",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        -384,
+        1312
+      ],
       "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "hours",
-              "hoursInterval": 6
-            }
-          ]
-        }
-      },
-      "id": "a1000000-0000-0000-0000-000000000001",
-      "name": "Every 6 hours",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [-1280, 720]
-    },
-
-    {
-      "parameters": {
-        "url": "https://api2.ecomailapp.cz/campaigns/all-stats/",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {}
-      },
-      "id": "a1000000-0000-0000-0000-000000000010",
-      "name": "GET campaigns/all-stats",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-1040, 480],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "qIhwM9YqFfztKKuy",
-          "name": "Ecomail"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const stats = $input.first().json.stats;\nconst CLIENT_ID = 'manami';\nconst INGESTED_AT = new Date().toISOString();\n\nfunction parseEcomailDate(raw) {\n  if (!raw) return null;\n  const s = String(raw);\n  if (s.length === 14) {\n    return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T${s.slice(8,10)}:${s.slice(10,12)}:${s.slice(12,14)}Z`;\n  }\n  return s;\n}\n\nconst num = v => (v === null || v === undefined || v === '' ? 0 : Number(v));\n\nreturn Object.entries(stats || {}).map(([campaignId, data]) => {\n  const row = {\n    campaign_id:       String(campaignId),\n    title:             data.title ?? '',\n    sent_at:           parseEcomailDate(data.sent_at),\n    inject:            num(data.inject),\n    delivery:          num(data.delivery),\n    delivery_rate:     num(data.delivery_rate),\n    open:              num(data.open),\n    total_open:        num(data.total_open),\n    open_rate:         num(data.open_rate),\n    click:             num(data.click),\n    total_click:       num(data.total_click),\n    click_rate:        num(data.click_rate),\n    bounce:            num(data.bounce),\n    bounce_rate:       num(data.bounce_rate),\n    spam:              num(data.spam),\n    spam_rate:         num(data.spam_rate),\n    unsub:             num(data.unsub),\n    unsub_rate:        num(data.unsub_rate),\n    conversions:       num(data.conversions),\n    conversions_value: num(data.conversions_value),\n    currency:          'CZK'\n  };\n  return {\n    json: {\n      client_id:    CLIENT_ID,\n      ingested_at:  INGESTED_AT,\n      payload_json: JSON.stringify(data),\n      ...row\n    }\n  };\n});\n"
-      },
-      "id": "a1000000-0000-0000-0000-000000000011",
-      "name": "Transform campaigns",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [-800, 480]
-    },
-    {
-      "parameters": {
+        "authentication": "serviceAccount",
         "operation": "insert",
         "projectId": {
           "__rl": true,
@@ -69,86 +31,24 @@
           "mode": "list",
           "cachedResultName": "raw_ecomail_campaigns"
         },
-        "dataMode": "autoMapInputData",
         "options": {}
       },
-      "id": "a1000000-0000-0000-0000-000000000012",
-      "name": "BQ: insert campaigns",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2.1,
-      "position": [-560, 480]
-    },
-
-    {
-      "parameters": {
-        "url": "https://api2.ecomailapp.cz/pipelines",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {}
-      },
-      "id": "a1000000-0000-0000-0000-000000000020",
-      "name": "GET pipelines",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-1040, 720],
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "qIhwM9YqFfztKKuy",
-          "name": "Ecomail"
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
         }
       }
     },
     {
-      "parameters": {
-        "jsCode": "const items = $input.all();\n\nreturn items\n  .map(i => i.json)\n  .filter(p => p !== null && typeof p === 'object' && p.id !== undefined)\n  .map(p => ({\n    json: {\n      pipeline_id: String(p.id),\n      list_id: String(p.list_id ?? ''),\n      name: p.name ?? '',\n      created_at: p.created_at ?? '',\n      updated_at: p.updated_at ?? ''\n    }\n  }));\n"
-      },
-      "id": "a1000000-0000-0000-0000-000000000021",
-      "name": "Extract pipeline IDs",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [-800, 720]
-    },
-    {
-      "parameters": {
-        "url": "=https://api2.ecomailapp.cz/pipelines/{{ $json.pipeline_id }}/stats",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {}
-      },
-      "id": "a1000000-0000-0000-0000-000000000022",
-      "name": "GET pipeline stats",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-560, 720],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "qIhwM9YqFfztKKuy",
-          "name": "Ecomail"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nconst num = v => (v === null || v === undefined || v === '' ? 0 : Number(v));\n\nreturn items.map(item => {\n  const s = item.json.stats ?? item.json;\n  return {\n    json: {\n      pipeline_id:         String(s.pipeline_id ?? ''),\n      triggered:           num(s.triggered),\n      active:              num(s.active),\n      ended:               num(s.ended),\n      send:                num(s.send),\n      inject:              num(s.inject),\n      open:                num(s.open),\n      total_open:          num(s.total_open),\n      open_rate:           num(s.open_rate),\n      click:               num(s.click),\n      total_click:         num(s.total_click),\n      click_rate:          num(s.click_rate),\n      ctr:                 num(s.ctr),\n      bounce:              num(s.bounce),\n      bounce_rate:         num(s.bounce_rate),\n      soft_bounce:         num(s.soft_bounce),\n      hard_bounce:         num(s.hard_bounce),\n      spam:                num(s.spam),\n      unsub:               num(s.unsub),\n      delivery_rate:       num(s.delivery_rate),\n      conversions:         num(s.conversions),\n      conversions_value:   num(s.conversions_value),\n      conversions_average: num(s.conversions_average),\n      conversionrate:      num(s.conversionrate)\n    }\n  };\n});\n"
-      },
-      "id": "a1000000-0000-0000-0000-000000000023",
-      "name": "Transform pipeline stats",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [-320, 720]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "const CLIENT_ID = 'manami';\nconst INGESTED_AT = new Date().toISOString();\nconst SNAPSHOT_DATE = INGESTED_AT.slice(0, 10);\n\nconst statsItem = $input.item.json;\nconst pipelineId = String(statsItem.pipeline_id ?? '');\n\nconst allPipelineItems = $('Extract pipeline IDs').all();\nconst pipelineInfo = allPipelineItems.find(\n  i => String(i.json.pipeline_id) === pipelineId\n)?.json ?? {};\n\nconst merged = {\n  pipeline_id:         pipelineId,\n  list_id:             pipelineInfo.list_id ?? '',\n  name:                pipelineInfo.name ?? '',\n  created_at:          pipelineInfo.created_at || null,\n  updated_at:          pipelineInfo.updated_at || null,\n  metric_type:         'cumulative',\n  triggered:           statsItem.triggered ?? 0,\n  active:              statsItem.active ?? 0,\n  ended:               statsItem.ended ?? 0,\n  send:                statsItem.send ?? 0,\n  inject:              statsItem.inject ?? 0,\n  open:                statsItem.open ?? 0,\n  total_open:          statsItem.total_open ?? 0,\n  open_rate:           statsItem.open_rate ?? 0,\n  click:               statsItem.click ?? 0,\n  total_click:         statsItem.total_click ?? 0,\n  click_rate:          statsItem.click_rate ?? 0,\n  ctr:                 statsItem.ctr ?? 0,\n  bounce:              statsItem.bounce ?? 0,\n  bounce_rate:         statsItem.bounce_rate ?? 0,\n  soft_bounce:         statsItem.soft_bounce ?? 0,\n  hard_bounce:         statsItem.hard_bounce ?? 0,\n  spam:                statsItem.spam ?? 0,\n  unsub:               statsItem.unsub ?? 0,\n  delivery_rate:       statsItem.delivery_rate ?? 0,\n  conversions:         statsItem.conversions ?? 0,\n  conversions_value:   statsItem.conversions_value ?? 0,\n  conversions_average: statsItem.conversions_average ?? 0,\n  conversionrate:      statsItem.conversionrate ?? 0\n};\n\nreturn {\n  client_id:     CLIENT_ID,\n  ingested_at:   INGESTED_AT,\n  snapshot_date: SNAPSHOT_DATE,\n  ...merged,\n  payload_json:  JSON.stringify({ pipeline: pipelineInfo, stats: statsItem })\n};\n"
-      },
-      "id": "a1000000-0000-0000-0000-000000000024",
-      "name": "Merge pipeline info + stats",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [-80, 720]
-    },
-    {
+      "id": "9f8bd9b5-469c-4e91-93fd-80889a2cf320",
+      "name": "Filter empty pipeline_id",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        336,
+        1552
+      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -172,15 +72,19 @@
           "combinator": "and"
         },
         "options": {}
-      },
-      "id": "a1000000-0000-0000-0000-000000000025",
-      "name": "Filter empty pipeline_id",
-      "type": "n8n-nodes-base.filter",
-      "typeVersion": 2.3,
-      "position": [160, 720]
+      }
     },
     {
+      "id": "8ed008d1-6523-4124-aee1-145ff097cfa5",
+      "name": "BQ: insert automations",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        576,
+        1552
+      ],
       "parameters": {
+        "authentication": "serviceAccount",
         "operation": "insert",
         "projectId": {
           "__rl": true,
@@ -200,28 +104,30 @@
           "mode": "list",
           "cachedResultName": "raw_ecomail_automations"
         },
-        "dataMode": "autoMapInputData",
         "options": {}
       },
-      "id": "a1000000-0000-0000-0000-000000000026",
-      "name": "BQ: insert automations",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2.1,
-      "position": [400, 720]
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
     },
-
     {
+      "id": "c2bb3c1e-88db-4a14-ad51-32b37d65c779",
+      "name": "GET lists",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -864,
+        1792
+      ],
       "parameters": {
         "url": "https://api2.ecomailapp.cz/lists",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {}
       },
-      "id": "a1000000-0000-0000-0000-000000000030",
-      "name": "GET lists",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-1040, 960],
       "credentials": {
         "httpHeaderAuth": {
           "id": "qIhwM9YqFfztKKuy",
@@ -230,27 +136,33 @@
       }
     },
     {
-      "parameters": {
-        "jsCode": "const items = $input.all();\n\nconst lists = items\n  .map(i => i.json)\n  .filter(item =>\n    item !== null &&\n    typeof item === 'object' &&\n    !Array.isArray(item) &&\n    item.id !== undefined\n  );\n\nreturn lists.map(list => ({\n  json: {\n    list_id: String(list.id),\n    list_name: list.name ?? ''\n  }\n}));\n"
-      },
-      "id": "a1000000-0000-0000-0000-000000000031",
+      "id": "d28bb4a8-81fa-4e0b-88c2-f5676e251d48",
       "name": "Extract list IDs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-800, 960]
+      "position": [
+        -624,
+        1792
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst lists = items\n  .map(i => i.json)\n  .filter(item =>\n    item !== null &&\n    typeof item === 'object' &&\n    !Array.isArray(item) &&\n    item.id !== undefined\n  );\n\nreturn lists.map(list => ({\n  json: {\n    list_id: String(list.id),\n    list_name: list.name ?? ''\n  }\n}));\n"
+      }
     },
     {
+      "id": "cb4d0a01-b115-4651-be44-a37d34f56f5a",
+      "name": "GET list detail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -384,
+        1792
+      ],
       "parameters": {
         "url": "=https://api2.ecomailapp.cz/lists/{{ $json.list_id }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {}
       },
-      "id": "a1000000-0000-0000-0000-000000000032",
-      "name": "GET list detail",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-560, 960],
       "credentials": {
         "httpHeaderAuth": {
           "id": "qIhwM9YqFfztKKuy",
@@ -259,17 +171,29 @@
       }
     },
     {
-      "parameters": {
-        "jsCode": "const CLIENT_ID = 'manami';\nconst INGESTED_AT = new Date().toISOString();\nconst SNAPSHOT_DATE = INGESTED_AT.slice(0, 10);\nconst num = v => (v === null || v === undefined || v === '' ? 0 : Number(v));\n\nfunction parseCzDate(raw) {\n  if (!raw) return null;\n  const s = String(raw).trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s;\n  const m = s.match(/^(\\d{1,2})\\.\\s*(\\d{1,2})\\.\\s*(\\d{4})$/);\n  if (m) {\n    const [, d, mo, y] = m;\n    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00Z`;\n  }\n  return null;\n}\n\nreturn $input.all().map(item => {\n  const d    = item.json.list ?? {};\n  const subs = item.json.subscribers ?? {};\n\n  const row = {\n    list_id:            String(d.id ?? ''),\n    list_name:          d.name ?? '',\n    active_subscribers: num(d.active_subscribers),\n    subscribed:         num(subs.subscribed),\n    unsubscribed:       num(subs.unsubscribed),\n    hard_bounced:       num(subs.hard_bounced),\n    soft_bounced:       num(subs.soft_bounced),\n    complained:         num(subs.complained),\n    unconfirmed:        num(subs.unconfirmed),\n    unknown:            num(subs.unknown),\n    currency:           d.settings?.currency ?? '',\n    locale:             d.settings?.locale ?? '',\n    created:            parseCzDate(d.created)\n  };\n\n  return {\n    json: {\n      client_id:     CLIENT_ID,\n      ingested_at:   INGESTED_AT,\n      snapshot_date: SNAPSHOT_DATE,\n      ...row,\n      payload_json:  JSON.stringify(item.json)\n    }\n  };\n});\n"
-      },
-      "id": "a1000000-0000-0000-0000-000000000033",
+      "id": "d542e440-0c33-482d-8dd0-865afece81e9",
       "name": "Transform snapshots",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-320, 960]
+      "position": [
+        -144,
+        1792
+      ],
+      "parameters": {
+        "jsCode": "const CLIENT_ID = 'manami';\nconst INGESTED_AT = new Date().toISOString();\nconst SNAPSHOT_DATE = INGESTED_AT.slice(0, 10);\nconst num = v => (v === null || v === undefined || v === '' ? 0 : Number(v));\n\nfunction parseCzDate(raw) {\n  if (!raw) return null;\n  const s = String(raw).trim();\n  // ISO already? (e.g. \"2025-06-15T...\" or \"2025-06-15\")\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s;\n  // Czech format \"D.M.YYYY\" or \"D. M. YYYY\"\n  const m = s.match(/^(\\d{1,2})\\.\\s*(\\d{1,2})\\.\\s*(\\d{4})$/);\n  if (m) {\n    const [, d, mo, y] = m;\n    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00Z`;\n  }\n  return null; // unparseable → null, don't crash BQ\n}\n\nreturn $input.all().map(item => {\n  const d    = item.json.list ?? {};\n  const subs = item.json.subscribers ?? {};\n\n  const row = {\n    list_id:            String(d.id ?? ''),\n    list_name:          d.name ?? '',\n    active_subscribers: num(d.active_subscribers),\n    subscribed:         num(subs.subscribed),\n    unsubscribed:       num(subs.unsubscribed),\n    hard_bounced:       num(subs.hard_bounced),\n    soft_bounced:       num(subs.soft_bounced),\n    complained:         num(subs.complained),\n    unconfirmed:        num(subs.unconfirmed),\n    unknown:            num(subs.unknown),\n    currency:           d.settings?.currency ?? '',\n    locale:             d.settings?.locale ?? '',\n    created:            parseCzDate(d.created)\n  };\n\n  return {\n    json: {\n      client_id:     CLIENT_ID,\n      ingested_at:   INGESTED_AT,\n      snapshot_date: SNAPSHOT_DATE,\n      ...row,\n      payload_json:  JSON.stringify(item.json)\n    }\n  };\n});"
+      }
     },
     {
+      "id": "cf332ff8-ed77-4602-baf2-7bdeb91c63d1",
+      "name": "BQ: insert lists",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        96,
+        1792
+      ],
       "parameters": {
+        "authentication": "serviceAccount",
         "operation": "insert",
         "projectId": {
           "__rl": true,
@@ -289,69 +213,319 @@
           "mode": "list",
           "cachedResultName": "raw_ecomail_lists"
         },
-        "dataMode": "autoMapInputData",
         "options": {}
       },
-      "id": "a1000000-0000-0000-0000-000000000034",
-      "name": "BQ: insert lists",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2.1,
-      "position": [-80, 960]
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "2f3dc7ff-f5f0-4d47-97c4-4f2a70e3cecb",
+      "name": "Every 6 hours1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1104,
+        1552
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "45ea270f-bc8c-46cf-8561-38f94a4dba38",
+      "name": "GET campaigns/all-stats1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -864,
+        1312
+      ],
+      "parameters": {
+        "url": "https://api2.ecomailapp.cz/campaigns/all-stats/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "qIhwM9YqFfztKKuy",
+          "name": "Ecomail"
+        }
+      }
+    },
+    {
+      "id": "7820ea69-36f5-4ec7-8e2b-bfa748ae4dfe",
+      "name": "Transform campaigns1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        1312
+      ],
+      "parameters": {
+        "jsCode": "const stats = $input.first().json.stats;\nconst CLIENT_ID = 'manami';\nconst INGESTED_AT = new Date().toISOString();\n\nfunction parseEcomailDate(raw) {\n  if (!raw) return null;\n  const s = String(raw);\n  if (s.length === 14) {\n    return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T${s.slice(8,10)}:${s.slice(10,12)}:${s.slice(12,14)}Z`;\n  }\n  return s;\n}\n\nconst num = v => (v === null || v === undefined || v === '' ? 0 : Number(v));\nconst rnd = (v, d) => { const n = Number(v); const f = Math.pow(10, d); return Math.round((n + Number.EPSILON) * f) / f; };  // BQ NUMERIC guard: no float noise\n\nreturn Object.entries(stats || {}).map(([campaignId, data]) => {\n  const row = {\n    campaign_id:       String(campaignId),\n    title:             data.title ?? '',\n    sent_at:           parseEcomailDate(data.sent_at),\n    inject:            num(data.inject),\n    delivery:          num(data.delivery),\n    delivery_rate:     rnd(data.delivery_rate, 4),\n    open:              num(data.open),\n    total_open:        num(data.total_open),\n    open_rate:         rnd(data.open_rate, 4),\n    click:             num(data.click),\n    total_click:       num(data.total_click),\n    click_rate:        rnd(data.click_rate, 4),\n    bounce:            num(data.bounce),\n    bounce_rate:       rnd(data.bounce_rate, 4),\n    spam:              num(data.spam),\n    spam_rate:         rnd(data.spam_rate, 4),\n    unsub:             num(data.unsub),\n    unsub_rate:        rnd(data.unsub_rate, 4),\n    conversions:       num(data.conversions),\n    conversions_value: rnd(data.conversions_value, 2),\n    currency:          'CZK'\n  };\n  return {\n    json: {\n      client_id:    CLIENT_ID,\n      ingested_at:  INGESTED_AT,\n      payload_json: JSON.stringify(data),\n      ...row\n    }\n  };\n});\n"
+      }
+    },
+    {
+      "id": "a357d187-71dc-4ad4-ab8a-24958bdeb942",
+      "name": "GET pipelines1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -864,
+        1552
+      ],
+      "parameters": {
+        "url": "https://api2.ecomailapp.cz/pipelines",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "qIhwM9YqFfztKKuy",
+          "name": "Ecomail"
+        }
+      }
+    },
+    {
+      "id": "e2e0d0e6-6030-40fa-b323-0ae7d8f10fcb",
+      "name": "Extract pipeline IDs1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        1552
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items\n  .map(i => i.json)\n  .filter(p => p !== null && typeof p === 'object' && p.id !== undefined)\n  .map(p => ({\n    json: {\n      pipeline_id: String(p.id),\n      list_id: String(p.list_id ?? ''),\n      name: p.name ?? '',\n      created_at: p.created_at ?? '',\n      updated_at: p.updated_at ?? ''\n    }\n  }));\n"
+      }
+    },
+    {
+      "id": "142e36e0-2b4f-4265-83ec-c5be549d9c8c",
+      "name": "GET pipeline stats1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -384,
+        1552
+      ],
+      "parameters": {
+        "url": "=https://api2.ecomailapp.cz/pipelines/{{ $json.pipeline_id }}/stats",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "qIhwM9YqFfztKKuy",
+          "name": "Ecomail"
+        }
+      }
+    },
+    {
+      "id": "74066aba-83b9-437b-9b51-02dd0bf82345",
+      "name": "Transform pipeline stats1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        1552
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst num = v => (v === null || v === undefined || v === '' ? 0 : Number(v));\nconst rnd = (v, d) => { const n = Number(v); const f = Math.pow(10, d); return Math.round((n + Number.EPSILON) * f) / f; };  // BQ NUMERIC guard: no float noise\n\nreturn items.map(item => {\n  const s = item.json.stats ?? item.json;\n  return {\n    json: {\n      pipeline_id:         String(s.pipeline_id ?? ''),\n      triggered:           num(s.triggered),\n      active:              num(s.active),\n      ended:               num(s.ended),\n      send:                num(s.send),\n      inject:              num(s.inject),\n      open:                num(s.open),\n      total_open:          num(s.total_open),\n      open_rate:           rnd(s.open_rate, 4),\n      click:               num(s.click),\n      total_click:         num(s.total_click),\n      click_rate:          rnd(s.click_rate, 4),\n      ctr:                 rnd(s.ctr, 4),\n      bounce:              num(s.bounce),\n      bounce_rate:         rnd(s.bounce_rate, 4),\n      soft_bounce:         num(s.soft_bounce),\n      hard_bounce:         num(s.hard_bounce),\n      spam:                num(s.spam),\n      unsub:               num(s.unsub),\n      delivery_rate:       rnd(s.delivery_rate, 4),\n      conversions:         num(s.conversions),\n      conversions_value:   rnd(s.conversions_value, 2),\n      conversions_average: rnd(s.conversions_average, 2),\n      conversionrate:      rnd(s.conversionrate, 4)\n    }\n  };\n});\n"
+      }
+    },
+    {
+      "id": "c2ac79f8-65e4-4ecf-97ef-d0b2f099cf97",
+      "name": "Merge pipeline info + stats1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        1552
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const CLIENT_ID = 'manami';\nconst INGESTED_AT = new Date().toISOString();\nconst SNAPSHOT_DATE = INGESTED_AT.slice(0, 10);\n\nconst statsItem = $input.item.json;\nconst pipelineId = String(statsItem.pipeline_id ?? '');\n\nconst allPipelineItems = $('Extract pipeline IDs1').all();\nconst pipelineInfo = allPipelineItems.find(\n  i => String(i.json.pipeline_id) === pipelineId\n)?.json ?? {};\n\nconst merged = {\n  pipeline_id:         pipelineId,\n  list_id:             pipelineInfo.list_id ?? '',\n  name:                pipelineInfo.name ?? '',\n  created_at:          pipelineInfo.created_at || null,\n  updated_at:          pipelineInfo.updated_at || null,\n  metric_type:         'cumulative',\n  triggered:           statsItem.triggered ?? 0,\n  active:              statsItem.active ?? 0,\n  ended:               statsItem.ended ?? 0,\n  send:                statsItem.send ?? 0,\n  inject:              statsItem.inject ?? 0,\n  open:                statsItem.open ?? 0,\n  total_open:          statsItem.total_open ?? 0,\n  open_rate:           statsItem.open_rate ?? 0,\n  click:               statsItem.click ?? 0,\n  total_click:         statsItem.total_click ?? 0,\n  click_rate:          statsItem.click_rate ?? 0,\n  ctr:                 statsItem.ctr ?? 0,\n  bounce:              statsItem.bounce ?? 0,\n  bounce_rate:         statsItem.bounce_rate ?? 0,\n  soft_bounce:         statsItem.soft_bounce ?? 0,\n  hard_bounce:         statsItem.hard_bounce ?? 0,\n  spam:                statsItem.spam ?? 0,\n  unsub:               statsItem.unsub ?? 0,\n  delivery_rate:       statsItem.delivery_rate ?? 0,\n  conversions:         statsItem.conversions ?? 0,\n  conversions_value:   statsItem.conversions_value ?? 0,\n  conversions_average: statsItem.conversions_average ?? 0,\n  conversionrate:      statsItem.conversionrate ?? 0\n};\n\nreturn {\n  client_id:     CLIENT_ID,\n  ingested_at:   INGESTED_AT,\n  snapshot_date: SNAPSHOT_DATE,\n  ...merged,\n  payload_json:  JSON.stringify({ pipeline: pipelineInfo, stats: statsItem })\n};\n"
+      }
     }
   ],
   "pinData": {},
   "connections": {
-    "Every 6 hours": {
+    "Filter empty pipeline_id": {
       "main": [
         [
-          { "node": "GET campaigns/all-stats", "type": "main", "index": 0 },
-          { "node": "GET pipelines",            "type": "main", "index": 0 },
-          { "node": "GET lists",                "type": "main", "index": 0 }
+          {
+            "node": "BQ: insert automations",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
-    "GET campaigns/all-stats": {
-      "main": [[ { "node": "Transform campaigns", "type": "main", "index": 0 } ]]
-    },
-    "Transform campaigns": {
-      "main": [[ { "node": "BQ: insert campaigns", "type": "main", "index": 0 } ]]
-    },
-    "GET pipelines": {
-      "main": [[ { "node": "Extract pipeline IDs", "type": "main", "index": 0 } ]]
-    },
-    "Extract pipeline IDs": {
-      "main": [[ { "node": "GET pipeline stats", "type": "main", "index": 0 } ]]
-    },
-    "GET pipeline stats": {
-      "main": [[ { "node": "Transform pipeline stats", "type": "main", "index": 0 } ]]
-    },
-    "Transform pipeline stats": {
-      "main": [[ { "node": "Merge pipeline info + stats", "type": "main", "index": 0 } ]]
-    },
-    "Merge pipeline info + stats": {
-      "main": [[ { "node": "Filter empty pipeline_id", "type": "main", "index": 0 } ]]
-    },
-    "Filter empty pipeline_id": {
-      "main": [[ { "node": "BQ: insert automations", "type": "main", "index": 0 } ]]
-    },
     "GET lists": {
-      "main": [[ { "node": "Extract list IDs", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Extract list IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Extract list IDs": {
-      "main": [[ { "node": "GET list detail", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "GET list detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "GET list detail": {
-      "main": [[ { "node": "Transform snapshots", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Transform snapshots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Transform snapshots": {
-      "main": [[ { "node": "BQ: insert lists", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "BQ: insert lists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 6 hours1": {
+      "main": [
+        [
+          {
+            "node": "GET campaigns/all-stats1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GET pipelines1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GET lists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET campaigns/all-stats1": {
+      "main": [
+        [
+          {
+            "node": "Transform campaigns1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform campaigns1": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET pipelines1": {
+      "main": [
+        [
+          {
+            "node": "Extract pipeline IDs1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract pipeline IDs1": {
+      "main": [
+        [
+          {
+            "node": "GET pipeline stats1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET pipeline stats1": {
+      "main": [
+        [
+          {
+            "node": "Transform pipeline stats1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform pipeline stats1": {
+      "main": [
+        [
+          {
+            "node": "Merge pipeline info + stats1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge pipeline info + stats1": {
+      "main": [
+        [
+          {
+            "node": "Filter empty pipeline_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
-    "callerPolicy": "workflowsFromSameOwner"
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "lslDsvbP8jLKEgw0"
   },
   "tags": []
 }

@@ -1,10 +1,12 @@
 /**
- * Paid media — the Meta funnel and ad-level performance.
+ * Paid media: the Meta funnel and ad-level performance.
  *
  * Everything here is platform-reported and labelled as such. Meta's attributed
  * revenue systematically overstates: it will claim a purchase it merely showed
- * an ad before. Presenting it beside warehouse revenue without that label is
- * the confusion this whole warehouse exists to end.
+ * an ad before.
+ *
+ * Minimum fix only (the page is redesigned separately): Meta is gated on the
+ * client's capability flag, and the Meta block is one line when it is off.
  */
 
 import type { Metadata } from "next";
@@ -15,10 +17,12 @@ import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/cur
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
 import { Eyebrow } from "@/components/ui/Eyebrow";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NotConnected, NoData, Value } from "@/components/ui/EmptyState";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { Funnel } from "@/components/dashboard/Funnel";
 import { KpiTile, type Kpi } from "@/components/dashboard/KpiTile";
 import { DataTable } from "@/components/ui/DataTable";
-import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Paid" };
 // Rendered per request: every page is behind auth and parameterised by the URL,
@@ -35,22 +39,45 @@ export default async function PaidPage({
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
 
+  if (pageAvailability(client, "/paid") !== "available") {
+    return (
+      <>
+        <Header title="Paid" />
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/paid") ?? "Ads"} />
+        </main>
+      </>
+    );
+  }
+
+  const hasMeta = client.capabilities.meta;
+
+  // Meta queries only run for a client that has Meta.
   const [totals, ads, channels] = await Promise.all([
-    getMetaTotals(client.clientId, params.range),
-    getTopAds(client.clientId, params.range, 10),
-    getChannelTotals(client.clientId, params.range, client.capabilities.googleAds),
+    hasMeta ? getMetaTotals(client.clientId, params.range) : null,
+    hasMeta ? getTopAds(client.clientId, params.range, 10) : [],
+    getChannelTotals(
+      client.clientId,
+      params.range,
+      client.capabilities.googleAds,
+      hasMeta
+    ),
   ]);
+
+  // Meta is connected but reported nothing in the range.
+  const hasMetaRows =
+    totals !== null && (totals.impressions !== null || totals.spend !== null);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
 
-  // Funnel steps, top to bottom. Each is a real Meta column — no interpolation.
+  // Funnel steps, top to bottom. Each is a real Meta column, no interpolation.
   const funnel = [
-    { label: "Impressions", value: totals.impressions },
-    { label: "Link clicks", value: totals.linkClicks ?? totals.clicks },
-    { label: "Landing page views", value: totals.landingPageViews },
-    { label: "Add to cart", value: totals.addToCart },
-    { label: "Initiate checkout", value: totals.initiateCheckout },
-    { label: "Purchases", value: totals.purchases },
+    { label: "Impressions", value: totals?.impressions ?? null },
+    { label: "Link clicks", value: totals?.linkClicks ?? totals?.clicks ?? null },
+    { label: "Landing page views", value: totals?.landingPageViews ?? null },
+    { label: "Add to cart", value: totals?.addToCart ?? null },
+    { label: "Initiate checkout", value: totals?.initiateCheckout ?? null },
+    { label: "Purchases", value: totals?.purchases ?? null },
   ].filter((s) => s.value !== null) as Array<{ label: string; value: number }>;
 
   const paidRevenue = channels.reduce<number | null>(
@@ -69,36 +96,36 @@ export default async function PaidPage({
   // ── Scope is part of the metric, not a footnote ────────────────────────────
   // This row used to mix two of them silently: Spend was Meta-only while
   // Revenue and ROAS covered every platform. With Google spending CZK 13,008
-  // against Meta's 75,904, the tile understated paid spend by 15% — and because
+  // against Meta's 75,904, the tile understated paid spend by 15%, and because
   // ROAS was (correctly) computed on the combined figure, the ROAS shown could
   // not be reproduced from the two numbers next to it. A row of numbers you
   // cannot check against each other is how a dashboard quietly loses its
   // reader.
   //
   // Spend now matches Revenue and ROAS. Reach, Frequency, CTR and CPM stay
-  // Meta-only because they genuinely are — Google reports no comparable reach
-  // or frequency — so they carry the platform on the tile instead.
+  // Meta-only because they genuinely are, Google reports no comparable reach
+  // or frequency, so they carry the platform on the tile instead.
   const kpis: Kpi[] = [
     { label: "Spend", value: money(paidSpend) },
     { label: "Revenue", value: money(paidRevenue) },
-    { label: "ROAS", value: paidRoas !== null ? formatRatio(paidRoas) : "—" },
-    { label: "Reach", value: formatNumber(totals.reach), scope: "meta" },
+    { label: "ROAS", value: formatRatio(paidRoas) },
+    { label: "Reach", value: formatNumber(totals?.reach), scope: "meta" },
     {
       label: "Frequency",
-      value: totals.frequency !== null ? totals.frequency.toFixed(2) : "—",
+      value: formatNumber(totals?.frequency, { decimals: 2 }),
       scope: "meta",
     },
+    { label: "CTR", value: formatPercent(totals?.ctr, { decimals: 2 }), scope: "meta" },
     {
-      label: "CTR",
-      value: totals.ctr !== null ? formatPercent(totals.ctr, { decimals: 2 }) : "—",
+      label: "CPM",
+      value: formatMoney(totals?.cpm, client.currency, { unit: true }),
       scope: "meta",
     },
-    { label: "CPM", value: money(totals.cpm), scope: "meta" },
   ];
 
   // ── Two rows, split on the seam that already exists ────────────────────────
   // Seven tiles in one auto-fit row left each a 130px content box, and
-  // `CZK 108,357` measures 140px at 22px mono — so the two money tiles drew
+  // `CZK 108,357` measures 140px at 22px mono, so the two money tiles drew
   // their numbers outside their own cards. Wrapping on the scope boundary
   // rather than wherever the grid happened to run out gives the widest tiles to
   // the widest numbers, and puts the four Meta-only rates on a line of their
@@ -111,10 +138,7 @@ export default async function PaidPage({
 
   return (
     <>
-      <Header
-        eyebrow={pageEyebrow("/paid", client.name)}
-        title="Paid"
-      />
+      <Header title="Paid" />
 
       <PageControls client={client} params={params} />
 
@@ -125,7 +149,11 @@ export default async function PaidPage({
               <KpiTile key={k.label} {...k} />
             ))}
           </div>
-          {metaKpis.length > 0 && (
+          {!hasMeta ? (
+            <NotConnected source="Meta" />
+          ) : !hasMetaRows ? (
+            <NoData />
+          ) : (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               {metaKpis.map((k) => (
                 <KpiTile key={k.label} {...k} />
@@ -137,13 +165,10 @@ export default async function PaidPage({
         {livePlatforms.length > 1 && (
           <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
             <div className="flex flex-col gap-[5px]">
-              <Eyebrow>By platform</Eyebrow>
-              <span className="text-[12.5px] leading-[1.5] text-content-muted">
-                Each platform reports conversions under its own attribution
-                window, so these revenues can claim the same order twice and do
-                not sum to shop revenue. They are the right numerator for a
-                platform ROAS and the wrong one for anything else.
-              </span>
+              <Eyebrow>
+                By platform
+                <InfoTip text="Each platform reports conversions in its own attribution window, so revenues can claim the same order twice and do not sum to shop revenue." />
+              </Eyebrow>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -170,22 +195,21 @@ export default async function PaidPage({
                       {[
                         { k: "Spend", v: money(c.spend) },
                         { k: "Revenue", v: money(c.revenue) },
-                        { k: "ROAS", v: roas !== null ? formatRatio(roas) : "—" },
+                        { k: "ROAS", v: formatRatio(roas) },
                       ].map((x) => (
                         <span key={x.k} className="flex flex-col gap-1">
                           <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-content-muted">
                             {x.k}
                           </span>
                           <span className="font-mono text-[16px] font-semibold tabular text-content-strong">
-                            {x.v}
+                            <Value>{x.v}</Value>
                           </span>
                         </span>
                       ))}
                     </div>
                     {c.revenue === null && (
                       <span className="text-[12px] leading-[1.5] text-content-muted">
-                        No attributed revenue reported for this platform in the
-                        range — spend is real, the return is unmeasured.
+                        No attributed revenue.
                       </span>
                     )}
                   </div>
@@ -195,15 +219,10 @@ export default async function PaidPage({
           </section>
         )}
 
-        {funnel.length > 1 ? (
+        {hasMetaRows && funnel.length > 1 && (
           <section className="flex flex-col gap-[18px] rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <div className="flex flex-col gap-1.5">
-                <Eyebrow>Meta funnel</Eyebrow>
-                <h2 className="m-0 text-[20px] font-bold tracking-heading text-content-strong">
-                  Impressions to purchases, <i className="font-medium">step by step.</i>
-                </h2>
-              </div>
+            <div className="flex flex-wrap items-center justify-between gap-6">
+              <Eyebrow>Meta funnel</Eyebrow>
               <span className="inline-flex items-center gap-[7px] font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
                 <span aria-hidden="true" className="h-[9px] w-[9px] rounded-[3px] bg-platform-meta" />
                 Meta · platform-reported
@@ -211,45 +230,13 @@ export default async function PaidPage({
             </div>
 
             <Funnel steps={funnel} />
-
-            <p className="text-[12px] leading-[1.6] text-content-muted">
-              Meta only, and last on the page on purpose. Leading with it framed
-              everything above as Meta&apos;s numbers, which is wrong for the
-              three totals at the top — those cover every connected platform.
-            </p>
           </section>
-        ) : (
-          <div className="flex flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[24px]">
-            <span className="text-[15px] font-semibold text-content-strong">
-              No Meta data in this range.
-            </span>
-            <span className="text-[13px] text-content-body">
-              Either no campaigns ran, or Meta hasn&apos;t reported yet for these
-              dates.
-            </span>
-          </div>
         )}
 
-        <div className="flex items-start gap-3 rounded-card border border-warning/[0.38] bg-[#FFFBF4] p-[14px_18px]">
-          <span aria-hidden="true" className="text-[13px] leading-[1.4] text-warning">
-            ⚠
-          </span>
-          <span className="flex flex-col gap-1">
-            <span className="text-[13.5px] font-semibold text-content-strong">
-              Rate columns are recomputed, never summed.
-            </span>
-            <span className="text-[12.5px] leading-[1.6] text-content-body">
-              frequency_per_day, ctr_per_day, cpc_per_day and roas_per_day cannot
-              be averaged across a date range — doing so is 10–30% wrong. Every
-              rate on this page is derived from summed components.
-            </span>
-          </span>
-        </div>
-
-        {ads.length > 0 && (
+        {hasMetaRows && ads.length > 0 && (
           <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
             <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
-              <Eyebrow>Ad-level performance · mart_meta_ad_perf</Eyebrow>
+              <Eyebrow>Top ads</Eyebrow>
               <span className="text-[12px] text-content-muted">
                 Top {ads.length} by spend
               </span>
@@ -264,12 +251,22 @@ export default async function PaidPage({
                     { key: "campaign", label: "Campaign" },
                     { key: "spend", label: "Spend", align: "right" },
                     { key: "revenue", label: "Revenue", align: "right" },
-                    { key: "roas", label: "ROAS", align: "right" },
+                    {
+                      key: "roas",
+                      label: "ROAS",
+                      align: "right",
+                      info: "n/a means Meta attributed no conversions to the ad. That is not a 0.00× return, so read it next to spend.",
+                    },
                     { key: "reach", label: "Reach", align: "right" },
                     { key: "ctr", label: "CTR", align: "right" },
                     { key: "cpc", label: "CPC", align: "right" },
                     { key: "freq", label: "Freq.", align: "right" },
-                    { key: "cpa", label: "CPA", align: "right" },
+                    {
+                      key: "cpa",
+                      label: "CPA",
+                      align: "right",
+                      info: "n/a means Meta attributed no purchases to the ad.",
+                    },
                   ]}
                   rows={ads.map((a) => ({
                     key: `${a.adName}-${a.campaignName}`,
@@ -296,34 +293,29 @@ export default async function PaidPage({
                         {a.campaignName}
                       </span>,
                       <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                        {money(a.spend)}
+                        <Value>{money(a.spend)}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-strong">
-                        {money(a.revenue)}
+                        <Value>{money(a.revenue)}</Value>
                       </span>,
-                      // Null ROAS means nothing was attributed — not 0.00×.
-                      <span
-                        className={`font-mono text-[12.5px] tabular ${
-                          a.roas === null ? "text-gray-250" : "text-growth-700"
-                        }`}
-                        title={a.roas === null ? "No conversions attributed" : undefined}
-                      >
-                        {formatRatio(a.roas)}
+                      // Null ROAS means nothing was attributed, not 0.00×.
+                      <span className="font-mono text-[12.5px] tabular text-growth-700">
+                        <Value>{formatRatio(a.roas)}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-strong">
-                        {formatNumber(a.reach)}
+                        <Value>{formatNumber(a.reach)}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-strong">
-                        {a.ctr !== null ? formatPercent(a.ctr, { decimals: 2 }) : "—"}
+                        <Value>{formatPercent(a.ctr, { decimals: 2 })}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-strong">
-                        {money(a.cpc)}
+                        <Value>{formatMoney(a.cpc, client.currency, { unit: true })}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-muted">
-                        {a.frequency !== null ? a.frequency.toFixed(2) : "—"}
+                        <Value>{formatNumber(a.frequency, { decimals: 2 })}</Value>
                       </span>,
                       <span className="font-mono text-[12.5px] tabular text-content-strong">
-                        {money(a.cpa)}
+                        <Value>{formatMoney(a.cpa, client.currency, { unit: true })}</Value>
                       </span>,
                     ],
                   }))}
@@ -331,12 +323,6 @@ export default async function PaidPage({
               </div>
             </div>
 
-            <div className="px-5 py-3.5 text-[12px] leading-[1.6] text-content-muted">
-              A dash in ROAS or CPA means Meta attributed no conversions to that
-              ad — the money was spent and nothing came back measured. That is not
-              the same as a 0.00× return, and sorting by ROAS will rank a
-              rounding-error campaign above a real one, so read spend alongside it.
-            </div>
           </section>
         )}
       </main>

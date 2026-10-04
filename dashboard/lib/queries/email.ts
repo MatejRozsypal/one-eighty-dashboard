@@ -1,14 +1,14 @@
 /**
- * Email — campaign performance.
+ * Email, campaign performance.
  *
  * ── Click rate here is not click-to-open ────────────────────────────────────
  * `click_rate_pct` is unique clicks ÷ **delivered**, which is the honest
  * denominator and reads far lower than the CTOR most ESP dashboards show
- * (0.4–1.0% rather than 3–5%). It's labelled explicitly in the UI, because
+ * (0.4-1.0% rather than 3-5%). It's labelled explicitly in the UI, because
  * someone used to Klaviyo's number will otherwise think it's broken.
  *
  * ── Open rate is not the story ──────────────────────────────────────────────
- * On Dobias open rates sit flat at 32–35% across every campaign while revenue
+ * On Dobias open rates sit flat at 32-35% across every campaign while revenue
  * ranges 2×. So the table leads with revenue per recipient, which is what
  * actually separates a good send from a bad one.
  */
@@ -17,6 +17,7 @@ import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isMissingObject } from "@/lib/queries/errors";
 import { num, isoDate, safeDiv } from "@/lib/coerce";
 import type { DateRange } from "@/lib/period";
+import { NO_VALUE } from "@/lib/format";
 import { isDemo } from "@/lib/demo/client";
 import { demoEmailSummary, demoFlows } from "@/lib/demo/media";
 
@@ -30,7 +31,7 @@ export interface CampaignRow {
   uniqueOrders: number | null;
   revenue: number | null;
   openRate: number | null;
-  /** unique clicks ÷ delivered — NOT click-to-open. */
+  /** unique clicks ÷ delivered, NOT click-to-open. */
   clickRate: number | null;
   orderRate: number | null;
   aov: number | null;
@@ -38,36 +39,85 @@ export interface CampaignRow {
 }
 
 export interface EmailSummary {
+  /** The top campaigns by revenue, capped for the table. */
   campaigns: CampaignRow[];
+  /** Every campaign sent in the range, not only those in `campaigns`. */
+  campaignCount?: number;
   totalRevenue: number | null;
   totalSent: number | null;
-  /** Recomputed from sums, never averaged across campaigns. */
+  /** Recomputed from sums over every campaign in the range. */
   avgOpenRate: number | null;
   avgClickRate: number | null;
   revenuePerRecipient: number | null;
 }
 
+/**
+ * Where campaigns are read from, by ESP.
+ *
+ * Klaviyo has a per-message view. Ecomail has no messages, only campaigns, so
+ * it reads the campaign view (which holds both platforms; the filter on
+ * `platform` keeps each client on its own ESP's rows). Both expose the same
+ * columns once aliased below.
+ */
+function campaignSource(platform: string | null): {
+  from: string;
+  where: string;
+  orders: string;
+} {
+  if (platform === "ecomail") {
+    return {
+      from: `\`${PROJECT_ID}.mart.mart_email_campaign_perf\``,
+      where: "client_id = @clientId AND platform = 'ecomail'",
+      orders: "conversions",
+    };
+  }
+  return {
+    from: `\`${PROJECT_ID}.mart.mart_email_campaign_message_perf\``,
+    where: "client_id = @clientId",
+    orders: "unique_orders",
+  };
+}
+
 export async function getEmailSummary(
   clientId: string,
   range: DateRange,
-  limit = 30
+  limit = 30,
+  platform: string | null = null
 ): Promise<EmailSummary | null> {
   // Demo client: served from memory, never from the warehouse.
   if (isDemo(clientId)) return demoEmailSummary(range, limit);
 
-  try {
-    const rows = await query<Record<string, unknown>>(
-      `SELECT
-         campaign_name, send_date, sent, delivered,
-         unique_opens, unique_clicks, unique_orders, revenue, aov
-       FROM \`${PROJECT_ID}.mart.mart_email_campaign_message_perf\`
-       WHERE client_id = @clientId AND send_date BETWEEN @from AND @to
-       ORDER BY revenue DESC
-       LIMIT @limit`,
-      { clientId, from: range.from, to: range.to, limit }
-    );
+  const src = campaignSource(platform);
 
-    if (rows.length === 0) return null;
+  try {
+    // Headline totals come from their own query with no LIMIT, so they cover
+    // every campaign in the range and not only the rows the table shows.
+    const [totalsRows, rows] = await Promise.all([
+      query<Record<string, unknown>>(
+        `SELECT COUNT(*) AS campaigns,
+                SUM(revenue) AS revenue, SUM(sent) AS sent,
+                SUM(delivered) AS delivered,
+                SUM(unique_opens) AS unique_opens,
+                SUM(unique_clicks) AS unique_clicks
+         FROM ${src.from}
+         WHERE ${src.where} AND send_date BETWEEN @from AND @to`,
+        { clientId, from: range.from, to: range.to }
+      ),
+      query<Record<string, unknown>>(
+        `SELECT
+           campaign_name, send_date, sent, delivered,
+           unique_opens, unique_clicks, ${src.orders} AS unique_orders, revenue
+         FROM ${src.from}
+         WHERE ${src.where} AND send_date BETWEEN @from AND @to
+         ORDER BY revenue DESC NULLS LAST
+         LIMIT @limit`,
+        { clientId, from: range.from, to: range.to, limit }
+      ),
+    ]);
+
+    const t = totalsRows[0];
+    const campaignCount = num(t?.campaigns) ?? 0;
+    if (campaignCount === 0 || rows.length === 0) return null;
 
     const campaigns: CampaignRow[] = rows.map((r) => {
       const delivered = num(r.delivered);
@@ -78,7 +128,7 @@ export async function getEmailSummary(
       const uniqueOrders = num(r.unique_orders);
 
       return {
-        campaignName: String(r.campaign_name ?? "—").trim(),
+        campaignName: String(r.campaign_name ?? NO_VALUE).trim(),
         sendDate: isoDate(r.send_date as never),
         sent,
         delivered,
@@ -89,26 +139,25 @@ export async function getEmailSummary(
         openRate: safeDiv(uniqueOpens, delivered),
         clickRate: safeDiv(uniqueClicks, delivered),
         orderRate: safeDiv(uniqueOrders, delivered),
-        aov: num(r.aov),
+        aov: safeDiv(revenue, uniqueOrders),
         revenuePerRecipient: safeDiv(revenue, sent),
       };
     });
 
-    // Period rates come from summed components — averaging per-campaign rates
+    // Period rates come from summed components. Averaging per-campaign rates
     // would weight a 400-recipient send the same as a 44,000-recipient one.
-    const sum = (pick: (c: CampaignRow) => number | null) =>
-      campaigns.reduce((s, c) => s + (pick(c) ?? 0), 0);
-
-    const totalDelivered = sum((c) => c.delivered);
-    const totalSent = sum((c) => c.sent);
+    const totalRevenue = num(t?.revenue);
+    const totalSent = num(t?.sent);
+    const totalDelivered = num(t?.delivered);
 
     return {
       campaigns,
-      totalRevenue: sum((c) => c.revenue),
+      campaignCount,
+      totalRevenue,
       totalSent,
-      avgOpenRate: safeDiv(sum((c) => c.uniqueOpens), totalDelivered),
-      avgClickRate: safeDiv(sum((c) => c.uniqueClicks), totalDelivered),
-      revenuePerRecipient: safeDiv(sum((c) => c.revenue), totalSent),
+      avgOpenRate: safeDiv(num(t?.unique_opens), totalDelivered),
+      avgClickRate: safeDiv(num(t?.unique_clicks), totalDelivered),
+      revenuePerRecipient: safeDiv(totalRevenue, totalSent),
     };
   } catch (error) {
     if (!isMissingObject(error)) throw error;
@@ -125,14 +174,14 @@ export async function getEmailSummary(
  *
  * ── Lifetime, not the selected range, and that is not a choice ──────────────
  * `mart_email_flow_perf` is the latest snapshot of each flow's **cumulative**
- * counters — Klaviyo and Ecomail both report a flow's totals since it was
+ * counters, Klaviyo and Ecomail both report a flow's totals since it was
  * switched on, not per period. There is no date filter that could be applied
  * here without inventing one.
  *
  * A daily series does exist (`mart_email_flow_daily`) but only for Dobias, and
  * it stops at 2026-06-20 because the backfill in runbook 20 was never wired to
  * an ongoing sync. Driving this page from it would silently show nothing for
- * any recent range, and nothing at all for Manami — which is why the page uses
+ * any recent range, and nothing at all for Manami, which is why the page uses
  * the cumulative view and says so, rather than looking date-aware and being
  * wrong.
  */
@@ -150,7 +199,7 @@ export interface FlowRow {
   conversions: number | null;
   conversionRate: number | null;
   revenue: number | null;
-  /** Revenue ÷ emails sent — what one more send of this flow is worth. */
+  /** Revenue ÷ emails sent, what one more send of this flow is worth. */
   revenuePerEmail: number | null;
 }
 
@@ -183,14 +232,14 @@ export interface FlowSummary {
  * `mart_email_flow_perf` holds each flow's totals *since it was switched on*,
  * snapshotted whenever the sync last ran. Reading it for a page that carries a
  * date range produced the failure this function exists to prevent: Dobias
- * showed $253k of "flow revenue" for 4 Jul – 2 Aug beside $76k of campaign
+ * showed $253k of "flow revenue" for 4 Jul - 2 Aug beside $76k of campaign
  * revenue for the same window. Checked against Klaviyo's own flow-values report
- * for those dates, the true figure is **$19.2k** — the dashboard was over by
+ * for those dates, the true figure is **$19.2k**, the dashboard was over by
  * 13x, and had the ranking backwards, because it was comparing two years of
  * flow history against one month of campaigns.
  *
  * It was worse than a stale number. Two of the largest rows were snapshotted on
- * 2026-06-12 and carried `manual` and `draft` status — flows that are not even
+ * 2026-06-12 and carried `manual` and `draft` status, flows that are not even
  * running contributed roughly $101k of that total.
  *
  * The page used to explain this away with "Klaviyo reports a flow's totals
@@ -200,7 +249,7 @@ export interface FlowSummary {
  * former.
  *
  * ── Why an uncovered range returns nulls rather than a fallback ─────────────
- * The daily series is currently only fed to 2026-06-20 — its n8n node stopped
+ * The daily series is currently only fed to 2026-06-20, its n8n node stopped
  * writing while the snapshot node kept running. When the requested range is not
  * covered, this returns the coverage window and no figures, so the page can say
  * what it does not know. Falling back to the snapshot is exactly the bug; and
@@ -273,7 +322,7 @@ export async function getFlows(
 
       return {
         flowId: String(r.flow_id ?? ""),
-        flowName: String(r.flow_name ?? "—"),
+        flowName: String(r.flow_name ?? NO_VALUE),
         platform: "klaviyo",
         status: r.status === null ? null : String(r.status),
         emailsSent: sent,

@@ -1,5 +1,5 @@
 /**
- * Customers — lifetime value and the gap between it and gross profit.
+ * Customers, lifetime value and the gap between it and gross profit.
  *
  * LTV next to LTGP is the point of this page. The distance between them is the
  * cost of goods, so the pair answers "what is a customer worth" and "what do we
@@ -15,9 +15,12 @@ import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { optional } from "@/lib/queries/errors";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NotConnected, NoData, Value } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable } from "@/components/ui/DataTable";
-import { pageEyebrow } from "@/lib/nav";
+import { NO_VALUE } from "@/lib/format";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 
 export const metadata: Metadata = { title: "Customers" };
 // Rendered per request: every page is behind auth and parameterised by the URL,
@@ -26,7 +29,7 @@ export const metadata: Metadata = { title: "Customers" };
 export const dynamic = "force-dynamic";
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return NO_VALUE;
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
     month: "short",
@@ -45,61 +48,70 @@ export default async function CustomersPage({
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
 
+  if (pageAvailability(client, "/customers") !== "available") {
+    return (
+      <>
+        <Header title="Customers" />
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/customers") ?? "Shop"} />
+        </main>
+      </>
+    );
+  }
+
   const [summary, rows] = await Promise.all([
     getLifetimeSummary(client.clientId, client.currency),
     optional(() => getTopCustomers(client.clientId, client.currency, 25), []),
   ]);
 
+  // Lifetime figures cover the full window and ignore the date picker, so the
+  // controls stay out of the way of a page with no data.
+  if (!summary) {
+    return (
+      <>
+        <Header title="Customers" />
+        <PageControls client={client} params={params} />
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+          <NoData />
+        </main>
+      </>
+    );
+  }
+
   const money = (v: number | null) => formatMoney(v, client.currency);
 
-  const stats = [
+  const stats: Array<{ label: string; value: string; accent?: boolean; info?: string }> = [
     { label: "Customers", value: formatNumber(summary.customers) },
     {
       label: "Orders / customer",
-      value:
-        summary.ordersPerCustomer !== null
-          ? summary.ordersPerCustomer.toFixed(2)
-          : "—",
+      value: formatNumber(summary.ordersPerCustomer, { decimals: 2 }),
       accent: true,
     },
     { label: "Avg AOV", value: money(summary.avgAov) },
     {
       label: "Repeat rate",
-      value: summary.repeatRate !== null ? formatPercent(summary.repeatRate) : "—",
-      note: "≥2 orders",
+      value: formatPercent(summary.repeatRate),
+      info: "Share of customers with 2 or more orders.",
     },
     {
       label: "Days active",
-      value:
-        summary.avgDaysActive !== null
-          ? Math.round(summary.avgDaysActive).toString()
-          : "—",
-      note: "repeat customers",
+      value: formatNumber(summary.avgDaysActive),
+      info: "Mean days between first and last order, repeat customers only.",
     },
   ];
 
   return (
     <>
-      <Header
-        eyebrow={pageEyebrow("/customers", client.name)}
-        title="Customers"
-      />
-      <PageControls client={client} params={params} scope="lifetime" />
+      <Header title="Customers" />
+      <PageControls client={client} params={params} />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-        {/*
-          Lifetime figures are cumulative over everything we hold, so this page
-          is not filtered by the date picker. Stated next to the numbers rather
-          than in the header, where it read as a range that had been applied.
-        */}
-        <span className="text-[12.5px] leading-[1.5] text-content-muted">
-          Lifetime values across the full 36-month window — not the selected date
-          range.
-        </span>
-
         <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">
           <div className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
-            <Eyebrow>Lifetime value vs lifetime gross profit</Eyebrow>
+            <Eyebrow>
+              LTV vs LTGP
+              <InfoTip text="Lifetime value and lifetime gross profit per customer. All figures cover a 36-month window and ignore the date range. Customers first seen before the window count as new." />
+            </Eyebrow>
 
             <div className="flex flex-wrap items-end gap-5">
               <span className="flex min-w-0 flex-col gap-2">
@@ -107,7 +119,7 @@ export default async function CustomersPage({
                   LTV
                 </span>
                 <span className="whitespace-nowrap font-mono text-[clamp(22px,2.4vw,32px)] font-semibold leading-none tracking-heading tabular text-content-strong">
-                  {money(summary.ltv)}
+                  <Value>{money(summary.ltv)}</Value>
                 </span>
               </span>
               <span aria-hidden="true" className="pb-1 font-mono text-[20px] text-gray-250">
@@ -118,60 +130,53 @@ export default async function CustomersPage({
                   LTGP
                 </span>
                 <span className="whitespace-nowrap font-mono text-[clamp(22px,2.4vw,32px)] font-semibold leading-none tracking-heading tabular text-growth-700">
-                  {money(summary.ltgp)}
+                  <Value>{money(summary.ltgp)}</Value>
                 </span>
               </span>
             </div>
 
-            <span className="block h-2.5 overflow-hidden rounded-pill bg-gray-100">
-              <span
-                className="block h-2.5 bg-accent"
-                style={{
-                  width:
-                    summary.ltgpRatio !== null
-                      ? `${Math.min(100, summary.ltgpRatio * 100)}%`
-                      : "0%",
-                }}
-              />
-            </span>
+            {summary.ltgpRatio !== null && (
+              <span className="block h-2.5 overflow-hidden rounded-pill bg-gray-100">
+                <span
+                  className="block h-2.5 bg-accent"
+                  style={{ width: `${Math.min(100, summary.ltgpRatio * 100)}%` }}
+                />
+              </span>
+            )}
 
-            <span className="text-[12.5px] leading-[1.6] text-content-body">
+            <span className="font-mono text-[12.5px] text-content-body">
               <b className="text-content-strong">
-                {summary.ltgpRatio !== null
-                  ? formatPercent(summary.ltgpRatio)
-                  : "—"}
+                <Value>{formatPercent(summary.ltgpRatio)}</Value>
               </b>{" "}
-              of lifetime revenue survives as gross profit. The gap between the two
-              numbers is the cost of goods.
+              LTGP / LTV
             </span>
           </div>
 
           <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-x-4 gap-y-5 rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
             {stats.map((s) => (
               <span key={s.label} className="flex flex-col gap-2">
-                <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+                <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
                   {s.label}
+                  {s.info && <InfoTip text={s.info} />}
                 </span>
                 <span
                   className={`font-mono text-[22px] font-semibold tracking-heading tabular ${
                     s.accent ? "text-growth-700" : "text-content-strong"
                   }`}
                 >
-                  {s.value}
+                  <Value>{s.value}</Value>
                 </span>
-                {s.note && (
-                  <span className="text-[11.5px] text-gray-300">{s.note}</span>
-                )}
               </span>
             ))}
           </div>
         </section>
 
+        {rows.length > 0 && (
         <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
-            <Eyebrow>Customer lifetime · mart_customer_lifetime</Eyebrow>
+            <Eyebrow>Customer lifetime</Eyebrow>
             <span className="text-[12px] text-content-muted">
-              Top {rows.length} by lifetime revenue
+              Top {rows.length} by revenue
             </span>
           </div>
 
@@ -205,35 +210,37 @@ export default async function CustomersPage({
                   ],
                   cells: [
                     <span className="block truncate font-mono text-[12px] text-content-strong">
-                      {r.email}
+                      <Value>{r.email}</Value>
                     </span>,
                     <span className="font-mono text-[12px] text-content-muted">
-                      {fmtDate(r.firstOrder)}
+                      <Value>{fmtDate(r.firstOrder)}</Value>
                     </span>,
                     <span className="font-mono text-[12px] text-content-muted">
-                      {fmtDate(r.lastOrder)}
+                      <Value>{fmtDate(r.lastOrder)}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                      {formatNumber(r.orders)}
+                      <Value>{formatNumber(r.orders)}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {money(r.lifetimeRevenue)}
+                      <Value>{money(r.lifetimeRevenue)}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-growth-700">
-                      {money(r.lifetimeGrossProfit)}
+                      <Value>{money(r.lifetimeGrossProfit)}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {money(r.aov)}
+                      <Value>{money(r.aov)}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-content-muted">
-                      {formatNumber(r.daysActive)}
+                      <Value>{formatNumber(r.daysActive)}</Value>
                     </span>,
                     r.isReturning ? (
                       <Badge variant="positive" size="sm">
                         Returning
                       </Badge>
                     ) : (
-                      <span />
+                      <Badge variant="outline" size="sm">
+                        New
+                      </Badge>
                     ),
                   ],
                 }))}
@@ -241,14 +248,8 @@ export default async function CustomersPage({
             </div>
           </div>
 
-          <div className="px-5 py-3.5 text-[12px] leading-[1.6] text-content-muted">
-            All figures cover a <b className="text-content-strong">36-month window</b>,
-            not true all-time history. Customers whose first order predates the
-            window are misclassified as new, which understates both repeat rate and
-            LTV. Email addresses are masked server-side — the full address never
-            reaches the browser.
-          </div>
         </section>
+        )}
       </main>
     </>
   );

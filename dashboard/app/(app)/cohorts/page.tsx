@@ -2,11 +2,11 @@
  * Cohorts.
  *
  * The whole design problem on this page is that the repeat-rate column looks
- * like a collapse and isn't — it's cohort age. Three things make that visible
+ * like a collapse and isn't, it's cohort age. Three things make that visible
  * instead of requiring prior knowledge:
  *
  *  1. An explicit "age" column, so the confound is a variable you can see.
- *  2. Immature cohorts shaded, with their repeat rate rendered muted — the
+ *  2. Immature cohorts shaded, with their repeat rate rendered muted, the
  *     number is real but not yet comparable to the row below it.
  *  3. Y1 columns, which measure every customer over the same 365 days. Most
  *     rows are empty there, and that emptiness is the honest part.
@@ -26,12 +26,13 @@ import {
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
-import { Badge } from "@/components/ui/Badge";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NotConnected, NoData, Value } from "@/components/ui/EmptyState";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
 import { MarketFilter } from "@/components/controls/MarketFilter";
 import { CohortHeatmap } from "@/components/dashboard/CohortHeatmap";
 import { DataTable } from "@/components/ui/DataTable";
-import { pageEyebrow } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Cohorts" };
 export const dynamic = "force-dynamic";
@@ -45,6 +46,14 @@ function monthLabel(iso: string): string {
   });
 }
 
+/** Mean of the values that exist. Null when none do, never 0. */
+function meanOf(values: Array<number | null>): number | null {
+  const present = values.filter((v): v is number => v !== null);
+  return present.length === 0
+    ? null
+    : present.reduce((a, b) => a + b, 0) / present.length;
+}
+
 export default async function CohortsPage({
   searchParams,
 }: {
@@ -53,6 +62,18 @@ export default async function CohortsPage({
   const params = parseViewParams(searchParams);
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
+
+  if (pageAvailability(client, "/cohorts") !== "available") {
+    return (
+      <>
+        <Header title="Cohorts" />
+        <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/cohorts") ?? "Shop"} />
+        </main>
+      </>
+    );
+  }
+
   const metric = (COHORT_METRICS.some((m) => m.value === searchParams.metric)
     ? searchParams.metric
     : "retention") as CohortMetric;
@@ -65,7 +86,7 @@ export default async function CohortsPage({
         ? searchParams.market
         : [];
 
-  // 13 rows by default — this month plus the previous twelve. The warehouse
+  // 13 rows by default, this month plus the previous twelve. The warehouse
   // holds 36, and at that length the grid is 37 columns wide as well, which is
   // a wall rather than a chart. The longer views stay one click away.
   const RANGES = [
@@ -95,11 +116,8 @@ export default async function CohortsPage({
 
   const header = (
     <>
-      <Header
-        eyebrow={pageEyebrow("/cohorts", client.name)}
-        title="Cohorts"
-      />
-      <PageControls client={client} params={params} scope="cohort window, set below" />
+      <Header title="Cohorts" />
+      <PageControls client={client} params={params} />
     </>
   );
 
@@ -108,63 +126,25 @@ export default async function CohortsPage({
       <>
         {header}
         <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-          <div className="flex max-w-[640px] flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[32px_24px]">
-            <span className="self-start">
-              <Badge variant="outline" size="sm">
-                No data
-              </Badge>
-            </span>
-            <span className="text-[15px] font-semibold text-content-strong">
-              No cohorts for {client.name} in {client.currency}.
-            </span>
-          </div>
+          <NoData />
         </main>
       </>
     );
   }
 
+  const gridHasValues = grid.rows.some((r) => r.cells.some((c) => c !== null));
+
   return (
     <>
       {header}
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-        {/*
-          This page ignores the date picker: cohorts are cut by the month of a
-          customer's FIRST order, not by the selected range. Saying so here
-          rather than in the header keeps it next to the numbers it qualifies.
-        */}
-        <span className="text-[12.5px] leading-[1.5] text-content-muted">
-          Grouped by first-order month, across the full 36-month window — not the
-          selected date range.
-        </span>
-
-        <div className="flex items-start gap-3 rounded-card border border-warning/[0.38] bg-[#FFFBF4] p-[14px_18px]">
-          <span aria-hidden="true" className="mt-0.5 text-[13px] text-warning">
-            ⚠
-          </span>
-          <span className="flex flex-col gap-1">
-            <span className="text-[13.5px] font-semibold text-content-strong">
-              Repeat rate falls as you read down this table. That is age, not
-              decline.
-            </span>
-            <span className="text-[12.5px] leading-[1.6] text-content-body">
-              This month&apos;s cohort has had weeks to make a second purchase;
-              a year-old cohort has had a year. Only the{" "}
-              <b className="text-content-strong">Y1 columns</b> are comparable
-              across rows — they measure every customer over the same 365 days,
-              which is why they&apos;re empty until a cohort matures.
-            </span>
-          </span>
-        </div>
-
         <section className="flex flex-col gap-4 overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
           <div className="flex flex-col gap-4 px-5 pt-5">
             <div className="flex flex-col gap-[5px]">
-              <Eyebrow>Cohort grid · mart_customer_cohort_grid</Eyebrow>
-              <span className="text-[12.5px] leading-[1.5] text-content-muted">
-                {spec.blurb} Columns are months since the cohort&apos;s first
-                order. Blank means the cohort hasn&apos;t lived that long yet —
-                not that it went to zero.
-              </span>
+              <Eyebrow>
+                Cohort grid
+                <InfoTip text={`${spec.blurb} Columns are months since the first order. Blank means not yet reached. Cohorts group by first-order month over the full data window, not the date range.`} />
+              </Eyebrow>
             </div>
 
             <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
@@ -203,19 +183,11 @@ export default async function CohortsPage({
                 />
               )}
             </div>
-
-            {grid.marketKind === "currency" && (
-              <span className="text-[12px] leading-[1.5] text-content-muted">
-                Shoptet puts no address on an order, so these are the currency
-                each customer first transacted in — the closest thing to a
-                market the data holds, not a country.
-              </span>
-            )}
           </div>
 
-          {grid.rows.length === 0 ? (
-            <div className="px-5 py-8 text-[13px] text-content-muted">
-              No cohorts match this filter.
+          {grid.rows.length === 0 || !gridHasValues ? (
+            <div className="px-5 pb-5">
+              <NoData />
             </div>
           ) : (
             <CohortHeatmap
@@ -232,49 +204,40 @@ export default async function CohortsPage({
               {
                 label: "Mature cohorts",
                 value: formatNumber(mature.length),
-                note: "≥12 months old",
+                info: "Cohorts at least 12 months old.",
               },
               {
                 label: "Y1 LTV",
-                value: money(
-                  mature.reduce((s, c) => s + (c.y1Ltv ?? 0), 0) /
-                    (mature.filter((c) => c.y1Ltv !== null).length || 1)
-                ),
-                note: "mean across mature",
+                value: money(meanOf(mature.map((c) => c.y1Ltv))),
+                info: "Mean across mature cohorts.",
                 accent: true,
               },
               {
                 label: "Y1 LTGP",
-                value: money(
-                  mature.reduce((s, c) => s + (c.y1Ltgp ?? 0), 0) /
-                    (mature.filter((c) => c.y1Ltgp !== null).length || 1)
-                ),
-                note: "gross profit per customer",
+                value: money(meanOf(mature.map((c) => c.y1Ltgp))),
+                info: "Gross profit per customer, mean across mature cohorts.",
               },
               {
                 label: "Repeat rate",
-                value: formatPercent(
-                  mature.reduce((s, c) => s + (c.repeatRate ?? 0), 0) /
-                    (mature.filter((c) => c.repeatRate !== null).length || 1)
-                ),
-                note: "mature cohorts only",
+                value: formatPercent(meanOf(mature.map((c) => c.repeatRate))),
+                info: "Mature cohorts only.",
               },
             ].map((s) => (
               <div
                 key={s.label}
                 className="flex flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm"
               >
-                <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+                <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
                   {s.label}
+                  <InfoTip text={s.info} />
                 </span>
                 <span
                   className={`font-mono text-[22px] font-semibold leading-none tracking-heading tabular ${
                     s.accent ? "text-growth-700" : "text-content-strong"
                   }`}
                 >
-                  {s.value}
+                  <Value>{s.value}</Value>
                 </span>
-                <span className="text-[11.5px] text-gray-300">{s.note}</span>
               </div>
             ))}
           </section>
@@ -282,7 +245,7 @@ export default async function CohortsPage({
 
         <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
-            <Eyebrow>Cohorts · mart_customer_cohorts</Eyebrow>
+            <Eyebrow>Cohorts</Eyebrow>
             <span className="text-[12px] text-content-muted">
               {cohorts.length} months
             </span>
@@ -324,8 +287,8 @@ export default async function CohortsPage({
                       }`}
                       title={
                         c.isMature
-                          ? "Fully matured — Y1 figures are comparable"
-                          : "Still maturing — repeat rate will keep rising"
+                          ? "Fully matured"
+                          : "Still maturing"
                       }
                     >
                       {c.ageMonths}m
@@ -334,24 +297,20 @@ export default async function CohortsPage({
                       {formatNumber(c.customerCount)}
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-content-strong">
-                      {money(c.ltv)}
+                      <Value>{money(c.ltv)}</Value>
                     </span>,
                     <span className="font-mono text-[12.5px] tabular text-content-body">
-                      {money(c.ltgp)}
+                      <Value>{money(c.ltgp)}</Value>
                     </span>,
                     <span
-                      className={`font-mono text-[12.5px] tabular ${
-                        c.y1Ltv === null ? "text-gray-250" : "text-growth-700"
-                      }`}
+                      className="font-mono text-[12.5px] tabular text-growth-700"
                     >
-                      {c.y1Ltv === null ? "—" : money(c.y1Ltv)}
+                      <Value>{money(c.y1Ltv)}</Value>
                     </span>,
                     <span
-                      className={`font-mono text-[12.5px] tabular ${
-                        c.y1Ltgp === null ? "text-gray-250" : "text-content-strong"
-                      }`}
+                      className="font-mono text-[12.5px] tabular text-content-strong"
                     >
-                      {c.y1Ltgp === null ? "—" : money(c.y1Ltgp)}
+                      <Value>{money(c.y1Ltgp)}</Value>
                     </span>,
                     // Muted while immature: the figure is real but not yet
                     // comparable to the rows below it.
@@ -360,7 +319,7 @@ export default async function CohortsPage({
                         c.isMature ? "text-content-strong" : "text-gray-400"
                       }`}
                     >
-                      {c.repeatRate !== null ? formatPercent(c.repeatRate) : "—"}
+                      <Value>{formatPercent(c.repeatRate)}</Value>
                     </span>,
                   ],
                 }))}
@@ -368,13 +327,6 @@ export default async function CohortsPage({
             </div>
           </div>
 
-          <div className="px-5 py-3.5 text-[12px] leading-[1.6] text-content-muted">
-            Shaded rows are still maturing — their repeat rate carries a ↗ because
-            it will keep rising on its own, with no change in customer behaviour.
-            Y1 columns fill in once a cohort passes 12 months. All figures sit
-            inside a 36-month data window, so cohorts near its edge understate
-            slightly.
-          </div>
         </section>
       </main>
     </>

@@ -1,5 +1,5 @@
 /**
- * Funnel — steps across, not down.
+ * Funnel, steps across, not down.
  *
  * Modelled on Shopify's "Conversion rate breakdown": each step is a column
  * carrying its own label, share and count, with a solid block whose height is
@@ -15,7 +15,7 @@
  * On a real ad funnel the top step is impressions and the rest are three or
  * four orders of magnitude smaller. Scaled linearly against impressions, every
  * step after the first collapses to a two-pixel sliver: you can see that the
- * first drop is enormous and nothing else at all — which is backwards, because
+ * first drop is enormous and nothing else at all, which is backwards, because
  * the drops you can act on are the later ones.
  *
  * So the scale is broken, the way a bar chart with one runaway value normally
@@ -25,13 +25,14 @@
  * cut, do not read its height". Its true value is right above it, and the
  * "% of previous" on the connector still states the real drop.
  *
- * The break only appears when it is earned — a gentle funnel keeps one honest
+ * The break only appears when it is earned, a gentle funnel keeps one honest
  * linear scale and no mark, so the notation never appears where nothing was
  * compressed.
  */
 
 import { formatNumber, formatPercent } from "@/lib/currency";
 import { safeDiv } from "@/lib/coerce";
+import { InfoTip } from "@/components/ui/InfoTip";
 
 export interface FunnelStep {
   label: string;
@@ -74,7 +75,7 @@ export function Funnel({ steps }: { steps: FunnelStep[] }) {
             const isLast = i === steps.length - 1;
             const tallest = Math.max(h, nextH);
 
-            // Share of the previous step — the actual drop this slope draws.
+            // Share of the previous step, the actual drop this slope draws.
             const stepRate = i === 0 ? null : safeDiv(step.value, steps[i - 1].value);
 
             return (
@@ -135,12 +136,9 @@ export function Funnel({ steps }: { steps: FunnelStep[] }) {
       </div>
 
       {broken && (
-        <span className="text-[11.5px] leading-[1.5] text-content-muted">
-          <b className="text-content-strong">Scale is broken</b> at{" "}
-          {steps[0].label.toLowerCase()} — it is {Math.round(top / restMax)}× the
-          next tallest step, so the bars after it are scaled against each other
-          instead. Read the numbers, not the first bar&apos;s height; the
-          percentages are unaffected.
+        <span className="inline-flex items-center gap-1.5 text-[11.5px] text-content-muted">
+          Scale broken
+          <InfoTip text="The first bar is cut. Later bars are scaled against each other. Read the numbers and percentages, not the first bar's height." />
         </span>
       )}
     </div>

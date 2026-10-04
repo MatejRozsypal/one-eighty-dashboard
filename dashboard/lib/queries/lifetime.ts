@@ -1,5 +1,5 @@
 /**
- * Customer lifetime economics — LTV, LTGP, orders per customer.
+ * Customer lifetime economics, LTV, LTGP, orders per customer.
  *
  * Reads `mart.mart_customer_lifetime`, which aggregates every order in the
  * 36-month window down to one row per customer. That window is a real limit,
@@ -10,6 +10,7 @@
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { num, safeDiv, isoDate } from "@/lib/coerce";
+import { NO_VALUE } from "@/lib/format";
 import { isMissingObject } from "@/lib/queries/errors";
 import { isDemo } from "@/lib/demo/client";
 import { demoLifetimeSummary, demoPayback, demoTopCustomers } from "@/lib/demo/customers";
@@ -41,15 +42,16 @@ export interface CustomerRow {
   isReturning: boolean;
 }
 
+/** Null when the client has no customer rows, so the page never shows a 0. */
 export async function getLifetimeSummary(
   clientId: string,
   currency: string
-): Promise<LifetimeSummary> {
+): Promise<LifetimeSummary | null> {
   // Demo client: served from memory, never from the warehouse.
   if (isDemo(clientId)) return demoLifetimeSummary();
 
   // The inner SELECT is not cosmetic. `mart_customer_lifetime` is a view whose
-  // columns are themselves aggregates — `aov` is SAFE_DIVIDE(SUM(...), COUNT(*))
+  // columns are themselves aggregates, `aov` is SAFE_DIVIDE(SUM(...), COUNT(*))
   // and `is_returning` is COUNT(*) > 1. Aggregating those directly makes
   // BigQuery inline the view and reject the query with "Aggregations of
   // aggregations are not allowed". Selecting the columns in a subquery first
@@ -72,12 +74,16 @@ export async function getLifetimeSummary(
     { clientId, currency }
   );
 
+  // COUNT(*) is 0, not NULL, over an empty set.
+  const customers = num(row?.customers);
+  if (!customers) return null;
+
   const ltv = num(row?.ltv);
   const ltgp = num(row?.ltgp);
 
   return {
     currency,
-    customers: num(row?.customers),
+    customers,
     ltv,
     ltgp,
     ltgpRatio: safeDiv(ltgp, ltv),
@@ -93,7 +99,7 @@ export async function getLifetimeSummary(
  *
  * Emails are masked in SQL, not in TypeScript. The design mocks them as
  * `p••••a@seznam.cz`, and doing the masking server-side means a full address
- * never reaches the browser at all — this is customer PII on an internal tool
+ * never reaches the browser at all, this is customer PII on an internal tool
  * that will eventually be shown to clients.
  */
 export async function getTopCustomers(
@@ -124,7 +130,7 @@ export async function getTopCustomers(
   );
 
   return rows.map((r) => ({
-    email: String(r.email ?? "—"),
+    email: String(r.email ?? NO_VALUE),
     firstOrder: isoDate(r.first_order_date as never),
     lastOrder: isoDate(r.last_order_date as never),
     orders: num(r.total_orders),
@@ -137,7 +143,7 @@ export async function getTopCustomers(
 }
 
 /**
- * Payback windows — gross profit per new customer at 30 and 90 days.
+ * Payback windows, gross profit per new customer at 30 and 90 days.
  *
  * Answers the question CAC and lifetime LTGP together cannot: *how long* until
  * an acquired customer has paid for themselves. Lifetime value says a customer
@@ -146,7 +152,7 @@ export async function getTopCustomers(
  * ── Both numbers cover the same customers, on purpose ───────────────────────
  * A 30-day average over everyone 30 days old and a 90-day average over everyone
  * 90 days old are computed on different populations, and the 90-day figure can
- * land *below* the 30-day one — impossible for a cumulative measure, and purely
+ * land *below* the 30-day one, impossible for a cumulative measure, and purely
  * an artefact of which cohorts each includes. Manami showed exactly that
  * (2,882 vs 2,775). Both figures here are restricted to customers whose 90-day
  * window has fully elapsed, so the pair is a real curve.
@@ -159,7 +165,7 @@ export interface Payback {
   customers: number | null;
   ltgp30: number | null;
   ltgp90: number | null;
-  /** Blended CAC over the same span — paid spend ÷ new customers. */
+  /** Blended CAC over the same span, paid spend ÷ new customers. */
   cac: number | null;
   /** Share of CAC recovered in 30 days. */
   recovery30: number | null;

@@ -1,5 +1,5 @@
 /**
- * The shape of a product journey — ranking, bucketing, colouring, main path.
+ * The shape of a product journey, ranking, bucketing, colouring, main path.
  *
  * Split from `journey.ts` so it imports nothing: the query module pulls in the
  * BigQuery client and `server-only`, which makes the logic below impossible to
@@ -15,7 +15,7 @@ export const OTHER_PRODUCT = "Other products";
  * Validated with the design system's palette checker, all-pairs, light surface:
  * lightness band PASS, chroma floor PASS, CVD separation PASS (worst 9.2),
  * normal-vision floor PASS (worst 20.5). Green is slot one, so the highest
- * volume product — the main path — carries the brand colour.
+ * volume product, the main path, carries the brand colour.
  *
  * The checker warns that green is below 3:1 against the surface, which obliges
  * visible labels or a table view. The page has both.
@@ -53,7 +53,7 @@ export interface FirstProductRepeat {
   product: string;
   customers: number;
   repeaters: number;
-  /** Recomputed here from the two counts — never read as a stored percentage. */
+  /** Recomputed here from the two counts, never read as a stored percentage. */
   repeatRate: number | null;
   avgLifetimeOrders: number | null;
 }
@@ -125,7 +125,7 @@ export function buildJourney(
   //
   // "Other" is excluded at every hop. It is the residue of a hundred tail
   // products, so it is almost always the largest node on the board and a naive
-  // greedy walk picks it every time — highlighting "the most common journey is
+  // greedy walk picks it every time, highlighting "the most common journey is
   // miscellaneous → miscellaneous", which is an artefact of bucketing rather
   // than anything a reader can act on. Caught by rendering it and looking.
   const named = (p: string) => p !== OTHER_PRODUCT;

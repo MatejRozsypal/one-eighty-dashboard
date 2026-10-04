@@ -1,5 +1,5 @@
 /**
- * Product journey — a Sankey of what customers buy next.
+ * Product journey, a Sankey of what customers buy next.
  *
  * ── Why this is hand-drawn SVG ──────────────────────────────────────────────
  * The two things that make this diagram readable are the ones a generic Sankey
@@ -16,7 +16,7 @@
  *
  * ── What the colours mean ───────────────────────────────────────────────────
  * A ribbon takes the colour of the product it *leaves*, so "where did GutSense
- * buyers go" is one colour fanning outwards. Colour is identity, never rank —
+ * buyers go" is one colour fanning outwards. Colour is identity, never rank,
  * the assignment comes from overall volume computed once, so a product keeps
  * its colour in every column.
  *
@@ -28,6 +28,7 @@
 
 import type { ProductJourney } from "@/lib/queries/journey";
 import { OTHER_PRODUCT } from "@/lib/queries/journey";
+import { formatNumber } from "@/lib/format";
 
 const WIDTH = 980;
 const NODE_W = 13;
@@ -162,7 +163,7 @@ export function ProductJourneyChart({ journey }: { journey: ProductJourney }) {
             .map((r) => (
               <path key={r.key} d={r.d} fill={r.color} fillOpacity={0.17}>
                 <title>
-                  {`${r.link.fromProduct} → ${r.link.toProduct}: ${r.link.customers.toLocaleString()} customers`}
+                  {`${r.link.fromProduct} → ${r.link.toProduct}: ${formatNumber(r.link.customers)} customers`}
                 </title>
               </path>
             ))}
@@ -171,7 +172,7 @@ export function ProductJourneyChart({ journey }: { journey: ProductJourney }) {
             .map((r) => (
               <path key={r.key} d={r.d} fill={r.color} fillOpacity={0.62}>
                 <title>
-                  {`Main path · ${r.link.fromProduct} → ${r.link.toProduct}: ${r.link.customers.toLocaleString()} customers`}
+                  {`${r.link.fromProduct} → ${r.link.toProduct}: ${formatNumber(r.link.customers)} customers`}
                 </title>
               </path>
             ))}
@@ -191,7 +192,7 @@ export function ProductJourneyChart({ journey }: { journey: ProductJourney }) {
                   fill={color}
                 >
                   <title>
-                    {`${n.product} · ${stepLabel(n.step)}: ${n.customers.toLocaleString()} customers`}
+                    {`${n.product} · ${stepLabel(n.step)}: ${formatNumber(n.customers)} customers`}
                   </title>
                 </rect>
                 {/*
@@ -214,7 +215,7 @@ export function ProductJourneyChart({ journey }: { journey: ProductJourney }) {
         </svg>
       </div>
 
-      {/* Legend — identity is never colour alone, and ≥2 series always has one */}
+      {/* Legend, identity is never colour alone, and ≥2 series always has one */}
       <figcaption className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {journey.legend.map((item, i) => (
@@ -243,14 +244,6 @@ export function ProductJourneyChart({ journey }: { journey: ProductJourney }) {
             <span className="text-[12px] text-content-body">{OTHER_PRODUCT}</span>
           </span>
         </div>
-
-        <p className="max-w-[86ch] text-[12px] leading-relaxed text-content-muted">
-          A ribbon carries the colour of the product it leaves, so one colour
-          fanning out is where that product&rsquo;s buyers went next. The heaviest
-          route through the diagram is drawn solid; everything else is faint.
-          Only four products can be told apart by colour at once, so the rest are
-          grouped — they are still in the table below.
-        </p>
       </figcaption>
     </figure>
   );

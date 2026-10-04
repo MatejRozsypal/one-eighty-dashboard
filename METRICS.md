@@ -25,6 +25,32 @@ Each metric has:
 - **`revenue` is net sales + shipping income, ex-tax** — i.e., what the customer pays us, minus the part that goes to the tax authority. This is the headline top-line figure.
 - `gross_revenue_incl_tax` is also exposed for transparency and for reconciliation against Shopify's "Total sales" view.
 
+#### WooCommerce revenue and fee lines (decided 2026-10-04, migration 228)
+WooCommerce orders carry "fee lines" next to product and shipping lines. Both Woo shops use them mostly as discounts (loyalty tiers, "Sleva za tlapičky", "Věrnostní sleva 3/5/8 %", "Sleva 5 % za balíček", paid-from-another-order credits), and only rarely as surcharges. Measured on the deduped, revenue-bearing orders of the last 24 months (amounts ex tax, order currency):
+
+| Client | Negative fee lines (discounts) | Positive fee lines (surcharges) |
+|---|---|---|
+| rawbark CZK (24,654 orders) | 10,633 lines on 8,254 orders, -1,681,114.88 CZK | 4 lines, +2,571.45 CZK ("Granule 10kg", "Příplatek za 2kg", a 1 CZK fee, one mis-signed loyalty line) |
+| rawbark EUR (4,184 orders) | 1,679 lines on 1,330 orders, -11,600.44 EUR | 1 line, +86.04 EUR (a payment moved between two orders) |
+| ethia CZK (1,804 orders) | 137 lines on 135 orders, -9,925 CZK | none |
+
+Every order's payload `fee_lines` sums exactly to `fees_total`, so the split is reliable.
+
+Definition (stg.stg_woo_orders, all ex tax, converted to the client currency):
+- `fee_discounts` = SUM of negative fee lines (signed, 0 or less). Falls back to `LEAST(fees_total, 0)` if a payload ever has no `fee_lines`.
+- `other_charges` = SUM of positive fee lines (0 or more). **Not revenue**: over 24 months it is 4,674 CZK on 52.5M CZK of RawBark revenue (0.009 %) and 0 for Ethia, so it is immaterial. Revisit if it ever passes 0.5 % of revenue in a month.
+- `subtotal_price` (net sales) = `subtotal_ex_tax + fee_discounts`. `mart_daily_kpis.net_sales`, `mart_orders.net_sales` and line revenue in `stg_woo_order_items` follow it.
+- `net_revenue` (revenue) = `subtotal_ex_tax + fee_discounts + shipping - refunds * net_ratio`. So the locked rule holds: revenue = net sales + shipping, ex tax (Woo also deducts the net part of refunds).
+- `total_discounts` = coupon discount + `ABS(fee_discounts)`.
+- Order identity: `net_revenue + other_charges + total_tax = total_price - total_refunded`, within 1 CZK. Holds for all 1,805 Ethia orders and for all RawBark orders except 105 whose own Woo payload is internally inconsistent (see known gaps).
+- Line level: the order's `fee_discounts` is spread over its lines in proportion to line `total` (equally if the line totals are 0). `stg_woo_order_items.fee_discount_alloc` holds the share; `revenue`, `margin` and `line_discount` include it, so Products reconciles with Snapshot net sales.
+
+Effect vs the previous definition: RawBark revenue -7.0 % over the last 90 days (-379k CZK), -6.6 % in September 2026, -3.6 % over 24 months; Ethia -1.2 % over 90 days, -0.5 % over 24 months. The per-day change equals the per-day fee sum exactly.
+
+#### WooCommerce COGS: no data is NULL, never 0
+The Woo branch of `mart_daily_kpis` returns `cogs` = NULL (not 0) on a day where no line has a cost, so `cm1`, `cm2` and `cm3` are NULL too. `mart_cm3_monthly.cm3` is NULL for a month without COGS. Shopify and Shoptet are unchanged. A day where only some lines are costed still sums the costed lines (partial COGS); see known gaps.
+Cost sources for Woo lines, in order: the cost stamped on the Woo line (Ethia has it on every line), then `ref.product_costs` matched on client and `variation_id`, else `product_id`, else `sku`, latest `effective_from` on or before the order date, converted with `ref.fx_rates` when the cost currency differs. No Woo client has `ref.product_costs` rows yet.
+
 ### Currency
 - Shop figures are native per source. Manami operates in **CZK**, Dobias in **USD**.
 - Ad spend (Meta, Google) is converted into the client's currency in `mart_daily_kpis` through `ref.fx_rates` when the ad-account currency differs from the client currency (`ref.clients.meta_currency` / `gads_currency`). When they match the rate is 1. A missing rate row makes the spend NULL, so keep `ref.fx_rates` current (runbook 23).
@@ -60,6 +86,12 @@ Why: avoids dollar/percent dual-field confusion in field pickers, and percentage
 | **Klaviyo ongoing daily sync not wired in n8n** | The 24-month backfill is in BQ but won't refresh automatically. New campaigns and updated conversion stats need the `wf_klaviyo_to_bigquery` workflow to add a campaign-values-reports branch. | Build n8n branch (next workstream) |
 | **Dobias Meta spend missing Dec'25 – Mar'26** | aMER NULL for those months in monthly view | Investigate backfill |
 | **Cost placeholders** | `cm1_other_costs` (inbound freight + duties + packaging + payment fees) and `fulfillment_cost` (outbound fulfillment + returns) are 0 until data is wired. CM1 = CM2 today. | Roadmap |
+| **RawBark has no COGS** | No cost on any Woo line and no `ref.product_costs` rows, so RawBark `cogs`, `cm1`, `cm2`, `cm3` are NULL on every day (since migration 228; before it they were 0 and CM equalled revenue). | Owner sends the cost list; load into `ref.product_costs` keyed by `variation_id` / `product_id` / `sku` |
+| **Partial COGS days (Woo)** | If only some lines of a day are costed, `cogs` sums those lines and CM is overstated. Not the case today (Ethia 100 % costed, RawBark 0 %), but it will happen when RawBark costs start at an `effective_from` date, and SUMs over a range that mixes costed and NULL days skip the NULL days. | Watch when RawBark costs land |
+| **Woo positive fee lines not in revenue** | `other_charges` (surcharges booked as fee lines) is excluded from revenue: 4,674 CZK over 24 months for RawBark, 0 for Ethia. | Accepted, immaterial |
+| **RawBark orders with an inconsistent Woo total** | 105 orders (102 of them 2025-11-04 to 2025-11-12, plus 2 in 2026-03 and 1 in 2026-07) have a Woo `total` that differs from their own line, shipping, fee and tax lines, net +23.5k CZK. Revenue is built from the lines, so these orders fail the identity `net_revenue + other_charges + tax = total - refunds`. Last 90 days: -118 CZK (0.002 %). | Document only |
+| **RawBark line items vs order subtotal** | 5 orders (2026-08 to 2026-10) have line items summing to about twice the order subtotal (duplicated lines in `raw_woo_order_items`), and 2 orders have no lines (one carries a -66.71 CZK credit fee). Products revenue for those orders does not reconcile with Snapshot. | Investigate the Woo items feed |
+| **Woo fee credits between orders** | A few negative fee lines are credits for money paid on another order ("zaplacena částka z obj …", "Platba z obj …"); they reduce revenue like discounts. Largest is -2,523 CZK. | Accepted |
 
 ---
 

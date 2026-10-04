@@ -1,11 +1,11 @@
 /**
- * Revenue mix over time — daily revenue split into first-time and returning.
+ * Revenue mix over time, daily revenue split into first-time and returning.
  *
  * A stacked area rather than two lines: the question is composition, and the
  * total is meaningful in its own right. Server-rendered SVG, so it costs no JS.
  *
  * The last day is shaded. Ad platforms report a day behind, so the final point
- * is structurally incomplete — without the shading it looks like a cliff, and
+ * is structurally incomplete, without the shading it looks like a cliff, and
  * "did we just crash?" is the most common false alarm a dashboard like this
  * produces.
  */
@@ -53,7 +53,7 @@ export function RevenueMix({
       <div className="rounded-card border border-hairline bg-surface-card p-[22px_26px] shadow-sm">
         <Eyebrow>Revenue mix over time</Eyebrow>
         <p className="mt-4 text-[12.5px] text-content-muted">
-          Not enough days in this range to draw a trend.
+          Not enough days for trend.
         </p>
       </div>
     );
@@ -90,12 +90,7 @@ export function RevenueMix({
   return (
     <div className="rounded-card border border-hairline bg-surface-card p-[22px_20px_18px] shadow-sm lg:p-[22px_26px_18px]">
       <div className="mb-[18px] flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-[5px]">
-          <Eyebrow>Revenue mix over time</Eyebrow>
-          <span className="text-[12.5px] text-content-muted">
-            Daily revenue split by first-time vs returning customer
-          </span>
-        </div>
+        <Eyebrow>Revenue mix over time</Eyebrow>
         <div className="flex items-center gap-4">
           <span className="inline-flex items-center gap-[7px] font-mono text-[11px] text-content-body">
             <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[3px] bg-accent" />
@@ -120,8 +115,8 @@ export function RevenueMix({
           Soft vertical gradients with a crisp line along the top of each band,
           rather than two flat saturated slabs. Flat fills at 80-85% opacity
           made the chart read as poster art: the two colours competed at equal
-          weight everywhere, and neither boundary — the one that actually
-          carries the split — stood out from the mass behind it.
+          weight everywhere, and neither boundary, the one that actually
+          carries the split, stood out from the mass behind it.
 
           The fade also puts the strongest colour where each band begins, so
           thickness reads as magnitude instead of the whole area shouting at
@@ -187,8 +182,7 @@ export function RevenueMix({
       <div className="mt-3 flex items-center gap-2 border-t border-hairline pt-[11px]">
         <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-warning" />
         <span className="text-[12px] leading-[1.5] text-content-muted">
-          Shaded day is partial — ad platforms report one day behind, so the last
-          point is not a drop.
+          Shaded day is partial.
         </span>
       </div>
     </div>

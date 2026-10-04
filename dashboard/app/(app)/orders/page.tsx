@@ -1,27 +1,31 @@
 /**
- * Orders — order-level detail and the market split.
+ * Orders: order-level detail and the market split.
  *
  * The page you open when a number on the Snapshot looks wrong. Its job is to
  * let you get from a total down to the individual orders behind it.
  *
- * Serves both platforms. Where they differ, the page drops the column rather
- * than printing a row of dashes: Shoptet has no address on the order and no
- * separable shipping or discounts, so those columns simply aren't rendered for
- * it, and the market split is cut by transacting currency (CZK = CZ, EUR =
- * SK/EU for Manami) under a heading that says so.
+ * Serves every shop platform. Where they differ, the page drops the column
+ * rather than printing a row of "n/a": a platform with no per-order discounts
+ * or shipping split simply doesn't render those columns, and a platform with no
+ * address on the order is split by transacting currency instead of country,
+ * under a label that says so.
  */
 
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { getOrdersSummary, getRecentOrders } from "@/lib/queries/orders";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
+import { NO_VALUE } from "@/lib/format";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
+import { MetricCard } from "@/components/dashboard/MetricCard";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { DataTable } from "@/components/ui/DataTable";
-import { pageEyebrow } from "@/lib/nav";
+import { NoData, NotConnected, Value } from "@/components/ui/EmptyState";
 
 export const metadata: Metadata = { title: "Orders" };
 export const dynamic = "force-dynamic";
@@ -53,6 +57,17 @@ export default async function OrdersPage({
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
 
+  if (pageAvailability(client, "/orders") !== "available") {
+    return (
+      <>
+        <Header title="Orders" />
+        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/orders") ?? "Shop"} />
+        </main>
+      </>
+    );
+  }
+
   const [summary, orders] = await Promise.all([
     getOrdersSummary(client.clientId, params.range),
     getRecentOrders(client.clientId, params.range, 50),
@@ -62,10 +77,7 @@ export default async function OrdersPage({
 
   const header = (
     <>
-      <Header
-        eyebrow={pageEyebrow("/orders", client.name)}
-        title="Orders"
-      />
+      <Header title="Orders" />
 
       <PageControls client={client} params={params} />
     </>
@@ -76,22 +88,7 @@ export default async function OrdersPage({
       <>
         {header}
         <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-          <div className="flex max-w-[640px] flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[32px_24px]">
-            <span className="self-start">
-              <Badge variant="outline" size="sm">
-                No data
-              </Badge>
-            </span>
-            <span className="text-[15px] font-semibold text-content-strong">
-              No order-level data for {client.name}.
-            </span>
-            <span className="text-[13px] leading-[1.6] text-content-body">
-              <code className="font-mono">mart_orders</code> returned no rows for{" "}
-              {client.name} in this range. It carries both Shopify and Shoptet,
-              so this is an empty range rather than an unsupported platform —
-              try widening the dates.
-            </span>
-          </div>
+          <NoData />
         </main>
       </>
     );
@@ -103,10 +100,11 @@ export default async function OrdersPage({
   );
 
   const isCurrencySplit = summary.dimension === "currency";
+  const source = client.shopPlatform ?? "Shop";
 
-  // Columns follow the platform. Shoptet exposes neither per-order discounts
-  // nor a shipping/merchandise split, so those columns are dropped rather than
-  // rendered as a column of em dashes that looks like missing data.
+  // Columns follow the platform. A platform with no per-order discounts or
+  // shipping split drops those columns rather than rendering a column of "n/a"
+  // that looks like missing data.
   const columns: Array<{ key: string; label: string; align?: "right" }> = [
     { key: "date", label: "Date" },
     { key: "order", label: "Order" },
@@ -127,85 +125,40 @@ export default async function OrdersPage({
     columns.length - 5
   },minmax(0,1fr))_0.85fr] items-center gap-2`;
 
-  const cards = [
-    { label: "Orders", value: formatNumber(summary.orders) },
-    { label: "Revenue", value: money(summary.revenue) },
-    { label: "AOV (net)", value: money(summary.aovNet), note: "net sales ÷ orders" },
-    ...(summary.hasShippingSplit
-      ? [
-          {
-            label: "AOV incl. shipping",
-            value: money(summary.aovInclShipping),
-            muted: true,
-          },
-        ]
-      : []),
-    ...(summary.margin !== null
-      ? [
-          {
-            label: "Gross profit",
-            value: money(summary.margin),
-            note:
-              summary.marginRate !== null
-                ? `${formatPercent(summary.marginRate, { decimals: 1 })} of net sales`
-                : undefined,
-          },
-        ]
-      : []),
-    {
-      label: "Returning",
-      value:
-        summary.returningShare !== null
-          ? formatPercent(summary.returningShare)
-          : "—",
-    },
-  ];
+  const marketNote = isCurrencySplit
+    ? "Split by transacting currency, as this platform carries no address. Amounts are shown in the client currency."
+    : "Split by shipping country. A blank market means the order has no shipping country.";
 
   return (
     <>
       {header}
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <section className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-          {cards.map((s) => (
-            <div
-              key={s.label}
-              className="flex flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm"
-            >
-              <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                {s.label}
-              </span>
-              <span
-                className={`font-mono text-[22px] font-semibold leading-none tracking-heading tabular ${
-                  "muted" in s && s.muted ? "text-gray-400" : "text-content-strong"
-                }`}
-              >
-                {s.value}
-              </span>
-              {"note" in s && s.note && (
-                <span className="text-[11.5px] text-gray-300">{s.note}</span>
-              )}
-            </div>
-          ))}
+          <MetricCard label="Orders" value={formatNumber(summary.orders)} source={source} />
+          <MetricCard label="Revenue" value={money(summary.revenue)} source={source} />
+          <MetricCard label="AOV (net)" value={money(summary.aovNet)} source={source} />
+          {summary.hasShippingSplit && (
+            <MetricCard
+              label="AOV incl. shipping"
+              value={money(summary.aovInclShipping)}
+              source={source}
+            />
+          )}
+          {summary.margin !== null && (
+            <MetricCard label="Gross profit" value={money(summary.margin)} source={source} />
+          )}
+          <MetricCard
+            label="Returning"
+            value={formatPercent(summary.returningShare)}
+            source={source}
+          />
         </section>
 
         <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-          <div className="flex flex-col gap-[5px]">
-            <Eyebrow>
-              {isCurrencySplit ? "Market split · by currency" : "Market split"}
-            </Eyebrow>
-            <span className="text-[12.5px] leading-[1.5] text-content-muted">
-              {isCurrencySplit ? (
-                <>
-                  Shoptet puts no address on an order, so this is split by the
-                  currency the customer transacted in — the closest thing to a
-                  market boundary that the data actually contains. Amounts are
-                  still shown in CZK.
-                </>
-              ) : (
-                <>Where the orders shipped. One store, several markets.</>
-              )}
-            </span>
-          </div>
+          <span className="inline-flex items-center gap-1.5">
+            <Eyebrow>Market split</Eyebrow>
+            <InfoTip text={marketNote} />
+          </span>
 
           <div className="flex flex-col">
             {summary.markets.map((m) => (
@@ -229,38 +182,24 @@ export default async function OrdersPage({
                   />
                 </span>
                 <span className="text-right font-mono text-[12.5px] tabular text-content-strong">
-                  {money(m.revenue)}
+                  <Value>{money(m.revenue)}</Value>
                 </span>
                 <span className="text-right font-mono text-[12.5px] tabular text-content-muted">
                   {formatNumber(m.orders)}
                 </span>
                 <span className="text-right font-mono text-[12.5px] tabular text-content-muted">
-                  {m.returningShare !== null
-                    ? formatPercent(m.returningShare, { decimals: 0 })
-                    : "—"}
+                  {formatPercent(m.returningShare, { decimals: 0 })}
                 </span>
               </div>
             ))}
           </div>
-
-          <span className="text-[12px] leading-[1.6] text-content-muted">
-            Columns are revenue, orders, and share of orders from returning
-            customers.
-            {!isCurrencySplit && (
-              <>
-                {" "}
-                A blank market means the order carried no shipping country —
-                that&apos;s missing data, not a place.
-              </>
-            )}
-          </span>
         </section>
 
         <section className="overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
-            <Eyebrow>Recent orders · mart_orders</Eyebrow>
+            <Eyebrow>Recent orders</Eyebrow>
             <span className="text-[12px] text-content-muted">
-              Latest {orders.length} · click a heading to sort
+              Latest {orders.length}
             </span>
           </div>
 
@@ -276,49 +215,49 @@ export default async function OrdersPage({
                       case "date":
                         return (
                           <span className="font-mono text-[12px] tabular text-content-muted">
-                            {o.date ?? "—"}
+                            <Value>{o.date ?? NO_VALUE}</Value>
                           </span>
                         );
                       case "order":
                         return (
                           <span className="block truncate font-mono text-[12px] text-content-strong">
-                            {o.orderNumber}
+                            <Value>{o.orderNumber || NO_VALUE}</Value>
                           </span>
                         );
                       case "customer":
                         return (
                           <span className="block truncate font-mono text-[12px] text-content-body">
-                            {o.customerEmail}
+                            <Value>{o.customerEmail || NO_VALUE}</Value>
                           </span>
                         );
                       case "market":
                         return (
                           <span className="font-mono text-[12px] text-content-muted">
-                            {o.market || "—"}
+                            {o.market || NO_VALUE}
                           </span>
                         );
                       case "revenue":
                         return (
                           <span className="font-mono text-[12.5px] font-semibold tabular text-content-strong">
-                            {money(o.revenue)}
+                            <Value>{money(o.revenue)}</Value>
                           </span>
                         );
                       case "net":
                         return (
                           <span className="font-mono text-[12.5px] tabular text-content-body">
-                            {money(o.netSales)}
+                            <Value>{money(o.netSales)}</Value>
                           </span>
                         );
                       case "margin":
                         return (
                           <span className="font-mono text-[12.5px] tabular text-content-body">
-                            {o.margin !== null ? money(o.margin) : "—"}
+                            <Value>{money(o.margin)}</Value>
                           </span>
                         );
                       case "discounts":
                         return (
                           <span className="font-mono text-[12.5px] tabular text-content-muted">
-                            {o.discounts ? `−${money(o.discounts)}` : "—"}
+                            {o.discounts ? `\u2212${money(o.discounts)}` : NO_VALUE}
                           </span>
                         );
                       default:

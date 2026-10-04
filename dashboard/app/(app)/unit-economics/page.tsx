@@ -1,28 +1,45 @@
 /**
- * Unit economics — first-time vs returning.
+ * Unit economics: first-time vs returning.
  *
  * A ledger, not a dashboard: two columns of the same metrics so the difference
  * between acquiring a customer and keeping one reads down the page. Laid out
- * like Shopify's Total sales breakdown — zebra rows, label left, value right —
+ * like a shop's "Total sales" breakdown (zebra rows, label left, value right)
  * because the point is comparison line by line, and anything that pushes two
  * numbers apart works against that.
  *
- * Rows the warehouse cannot measure stay in place and say so. Dropping them
- * would leave a leakage section that looks complete and isn't.
+ * Rows the warehouse cannot measure stay in place and say so in one line.
+ * Dropping them would leave a section that looks complete and isn't.
  */
 
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
-import { parseViewParams, type SearchParams } from "@/lib/params";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
+import { parseViewParams, comparisonLabel, type SearchParams } from "@/lib/params";
+import { delta } from "@/lib/period";
 import { getUnitEconomics, type SegmentEconomics } from "@/lib/queries/unitEconomics";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
-import { Badge } from "@/components/ui/Badge";
-import { pageEyebrow } from "@/lib/nav";
+import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { NoData, NotConnected, Value } from "@/components/ui/EmptyState";
 
 export const metadata: Metadata = { title: "Unit economics" };
 export const dynamic = "force-dynamic";
+
+type Row =
+  | { kind: "head"; label: string }
+  | {
+      kind: "row";
+      label: string;
+      /** Definition shown in an (i) beside the label. */
+      info?: string;
+      value: (s: SegmentEconomics) => number | null;
+      format: (v: number | null) => string;
+      goodWhen: GoodWhen;
+      /** Shown in place of both values when the row cannot be measured. */
+      unmeasured?: string;
+    };
 
 export default async function UnitEconomicsPage({
   searchParams,
@@ -32,16 +49,35 @@ export default async function UnitEconomicsPage({
   const params = parseViewParams(searchParams);
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
-  const data = await getUnitEconomics(client.clientId, client.currency, params.range);
+
+  if (pageAvailability(client, "/unit-economics") !== "available") {
+    return (
+      <>
+        <Header title="Unit economics" />
+        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/unit-economics") ?? "Shop"} />
+        </main>
+      </>
+    );
+  }
+
+  const comparison = params.period.comparison;
+  const [data, previous] = await Promise.all([
+    getUnitEconomics(client.clientId, client.currency, params.range),
+    comparison
+      ? getUnitEconomics(client.clientId, client.currency, comparison)
+      : Promise.resolve(null),
+  ]);
 
   const money = (v: number | null) => formatMoney(v, client.currency);
-  const pct = (v: number | null) =>
-    v === null ? null : formatPercent(v, { decimals: 1 });
+  const unitMoney = (v: number | null) => formatMoney(v, client.currency, { unit: true });
+  const pct = (v: number | null) => formatPercent(v, { decimals: 1 });
+  const compareLabel = comparisonLabel(params);
 
   const header = (
     <>
-      <Header eyebrow={pageEyebrow("/unit-economics", client.name)} title="Unit economics" />
-      <PageControls client={client} params={params} />
+      <Header title="Unit economics" />
+      <PageControls client={client} params={params} compare />
     </>
   );
 
@@ -50,63 +86,114 @@ export default async function UnitEconomicsPage({
       <>
         {header}
         <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-          <div className="flex max-w-[640px] flex-col gap-3 rounded-card border border-dashed border-hairline-strong bg-paper p-[32px_24px]">
-            <span className="self-start">
-              <Badge variant="outline" size="sm">No data</Badge>
-            </span>
-            <span className="text-[15px] font-semibold text-content-strong">
-              No orders for {client.name} in this range.
-            </span>
-          </div>
+          <NoData />
         </main>
       </>
     );
   }
 
-  type Row =
-    | { kind: "head"; label: string }
-    | {
-        kind: "row";
-        label: string;
-        pick: (s: SegmentEconomics) => string | null;
-        /** Shown instead of values when the warehouse cannot measure it. */
-        unmeasured?: string;
-      };
+  // Revenue exists but no product costs do: COGS and everything built on it
+  // says so, instead of reading as a margin of zero or 100%.
+  const noCost =
+    (data.first.orders ?? 0) + (data.returning.orders ?? 0) > 0 &&
+    data.first.cogsPct === null &&
+    data.returning.cogsPct === null;
+  const noCostLine = noCost ? "No cost data" : undefined;
 
   const rows: Row[] = [
     { kind: "head", label: "Basket composition" },
-    { kind: "row", label: "AUR (avg unit retail)", pick: (s) => money(s.aur) },
     {
       kind: "row",
-      label: "UPT (units per transaction)",
-      pick: (s) => (s.upt === null ? null : s.upt.toFixed(2)),
+      label: "AUR",
+      info: "Average unit retail: gross retail / units, before discounts.",
+      value: (s) => s.aur,
+      format: unitMoney,
+      goodWhen: "neutral",
     },
-    { kind: "row", label: "Gross retail / order", pick: (s) => money(s.grossRetailPerOrder) },
-    { kind: "row", label: "True AOV", pick: (s) => money(s.trueAov) },
-    { kind: "row", label: "Orders", pick: (s) => formatNumber(s.orders) },
+    {
+      kind: "row",
+      label: "UPT",
+      info: "Units per transaction.",
+      value: (s) => s.upt,
+      format: (v) => (v === null ? formatNumber(null) : v.toFixed(2)),
+      goodWhen: "up",
+    },
+    {
+      kind: "row",
+      label: "Gross per order",
+      info: "Gross retail per order, before discounts.",
+      value: (s) => s.grossRetailPerOrder,
+      format: money,
+      goodWhen: "neutral",
+    },
+    {
+      kind: "row",
+      label: "True AOV",
+      info: "Net sales / orders, ex-shipping and ex-tax.",
+      value: (s) => s.trueAov,
+      format: money,
+      goodWhen: "up",
+    },
+    {
+      kind: "row",
+      label: "Orders",
+      info: "Only orders whose customer is classified as new or returning, so the total can sit under the Orders page.",
+      value: (s) => s.orders,
+      format: formatNumber,
+      goodWhen: "neutral",
+    },
 
     { kind: "head", label: "Leakage" },
     {
       kind: "row",
       label: "Discount rate",
-      pick: (s) => pct(s.discountRate),
-      unmeasured: data.hasDiscounts
-        ? undefined
-        : `${client.shopPlatform ?? "This platform"} reports a per-item discount percentage, not an amount — reconstructing the amount would invent money.`,
+      value: (s) => s.discountRate,
+      format: pct,
+      goodWhen: "down",
+      unmeasured: data.hasDiscounts ? undefined : "Not measured",
     },
     {
       kind: "row",
       label: "Return rate",
-      pick: () => null,
-      unmeasured:
-        "No refund data in the warehouse at all. Needs the Shopify orders backfill refetched with totalRefundedSet.",
+      value: () => null,
+      format: pct,
+      goodWhen: "down",
+      unmeasured: "No refund data",
     },
 
     { kind: "head", label: "Margin stack" },
-    { kind: "row", label: "COGS %", pick: (s) => pct(s.cogsPct) },
-    { kind: "row", label: "Gross profit %", pick: (s) => pct(s.grossProfitPct) },
-    { kind: "row", label: "Contribution margin %", pick: (s) => pct(s.contributionMarginPct) },
-    { kind: "row", label: "Paid spend applied", pick: (s) => money(s.paidSpend) },
+    {
+      kind: "row",
+      label: "COGS %",
+      value: (s) => s.cogsPct,
+      format: pct,
+      goodWhen: "down",
+      unmeasured: noCostLine,
+    },
+    {
+      kind: "row",
+      label: "Gross profit %",
+      value: (s) => s.grossProfitPct,
+      format: pct,
+      goodWhen: "up",
+      unmeasured: noCostLine,
+    },
+    {
+      kind: "row",
+      label: "Contribution margin %",
+      info: "All paid spend is applied to first-time customers, so returning customers' CM equals gross profit.",
+      value: (s) => s.contributionMarginPct,
+      format: pct,
+      goodWhen: "up",
+      unmeasured: noCostLine,
+    },
+    {
+      kind: "row",
+      label: "Paid spend applied",
+      value: (s) => s.paidSpend,
+      format: money,
+      goodWhen: "neutral",
+    },
   ];
 
   let zebra = 0;
@@ -116,15 +203,9 @@ export default async function UnitEconomicsPage({
       {header}
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-          <div className="flex flex-col gap-[5px]">
-            <h2 className="m-0 text-[17px] font-bold tracking-heading text-content-strong">
-              First-time vs returning
-            </h2>
-            <span className="text-[12.5px] leading-[1.5] text-content-muted">
-              Warehouse definitions, not Shopify defaults. True AOV is net sales
-              ÷ orders — ex-shipping, ex-tax.
-            </span>
-          </div>
+          <h2 className="m-0 text-[17px] font-bold tracking-heading text-content-strong">
+            First-time vs returning
+          </h2>
 
           <div className="overflow-hidden rounded-sm">
             <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(90px,1fr)_minmax(90px,1fr)] gap-3 border-b border-hairline px-3 py-2.5">
@@ -154,8 +235,31 @@ export default async function UnitEconomicsPage({
               }
 
               const striped = zebra++ % 2 === 1;
-              const a = row.pick(data.first);
-              const b = row.pick(data.returning);
+
+              const cell = (seg: "first" | "returning") => {
+                const now = row.value(data[seg]);
+                const change =
+                  previous
+                    ? delta(now, row.value(previous[seg]))
+                    : null;
+                return (
+                  <span className="flex flex-col items-end gap-0.5">
+                    <span className="whitespace-nowrap font-mono text-[14px] tabular text-content-strong">
+                      <Value>{row.format(now)}</Value>
+                    </span>
+                    {change !== null && (
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <DeltaChip delta={change} goodWhen={row.goodWhen} />
+                        {compareLabel && (
+                          <span className="font-mono text-[10.5px] text-content-muted">
+                            {compareLabel}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </span>
+                );
+              };
 
               return (
                 <div
@@ -164,46 +268,24 @@ export default async function UnitEconomicsPage({
                     striped ? "bg-gray-50/70" : ""
                   }`}
                 >
-                  <span className="min-w-0 text-[13.5px] text-content-body">
+                  <span className="flex min-w-0 items-center gap-1.5 text-[13.5px] text-content-body">
                     {row.label}
+                    {row.info && <InfoTip text={row.info} />}
                   </span>
                   {row.unmeasured ? (
-                    <span
-                      className="col-span-2 text-right text-[12px] leading-[1.5] text-content-muted"
-                      title={row.unmeasured}
-                    >
-                      <b className="text-gray-400">Not measured</b> — {row.unmeasured}
+                    <span className="col-span-2 text-right text-[12px] leading-[1.5] text-content-muted">
+                      {row.unmeasured}
                     </span>
                   ) : (
                     <>
-                      <span className="whitespace-nowrap text-right font-mono text-[14px] tabular text-content-strong">
-                        {a ?? "—"}
-                      </span>
-                      <span className="whitespace-nowrap text-right font-mono text-[14px] tabular text-content-strong">
-                        {b ?? "—"}
-                      </span>
+                      {cell("first")}
+                      {cell("returning")}
                     </>
                   )}
                 </div>
               );
             })}
           </div>
-
-          <span className="flex flex-col gap-1.5 text-[12px] leading-[1.6] text-content-muted">
-            <span>
-              <b className="text-content-strong">Contribution margin puts every
-              paid-media currency unit on first-time customers.</b>{" "}
-              Spend cannot be attributed to an individual order, so it cannot be
-              split from the data — this is a chosen convention, and it flatters
-              returning customers by construction: theirs carries no acquisition
-              cost, so their CM equals gross profit.
-            </span>
-            <span>
-              Orders here count only those whose customer could be classified as
-              new or returning, so the total can sit slightly under the Orders
-              page.
-            </span>
-          </span>
         </section>
       </main>
     </>

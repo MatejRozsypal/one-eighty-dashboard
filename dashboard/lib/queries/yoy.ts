@@ -4,7 +4,7 @@
  * ── Why the current year is compared capped ────────────────────────────────
  * Seven months of 2026 against twelve of 2025 is not a comparison, it is a
  * subtraction of five months. So the current year is matched against the
- * **same months** of every earlier year — Jan–Jul vs Jan–Jul — and the table
+ * **same months** of every earlier year, Jan-Jul vs Jan-Jul, and the table
  * says how many months that is. The uncapped full-year totals are still shown
  * for the years that are actually complete.
  *
@@ -12,7 +12,7 @@
  * Seasonal-naive: for each prior complete year, work out what share of that
  * year's revenue had landed by month N. Average those shares, then divide this
  * year's N months by it. That is the standard way to annualise a partial year
- * and it encodes the one thing a straight-line ×12/N does not — that Q4 is not
+ * and it encodes the one thing a straight-line ×12/N does not, that Q4 is not
  * a twelfth of the year in retail.
  *
  * Its honesty depends entirely on how many prior years exist, which is why the
@@ -21,7 +21,7 @@
  * says so rather than printing a confident number.
  *
  * The spread between the highest and lowest prior-year share is reported as the
- * range. It is not a confidence interval — there is no distribution here — it
+ * range. It is not a confidence interval, there is no distribution here, it
  * is the span the past few years would each have implied, which is the honest
  * version of "how much does this depend on which year you copy".
  *
@@ -45,14 +45,14 @@ export interface YearRow {
   isCurrent: boolean;
   /** A full twelve closed months. */
   isComplete: boolean;
-  /** Revenue over the capped window only — months 1..cappedThroughMonth. */
+  /** Revenue over the capped window only, months 1..cappedThroughMonth. */
   cappedRevenue: number | null;
   /** Same window a year earlier, so the row can state its own YoY. */
   cappedYoY: number | null;
 }
 
 export interface Projection {
-  /** Mid estimate — this year's capped revenue ÷ the mean seasonal share. */
+  /** Mid estimate, this year's capped revenue ÷ the mean seasonal share. */
   mid: number;
   low: number;
   high: number;
@@ -70,7 +70,7 @@ export interface Projection {
 
 export interface YoYSummary {
   years: YearRow[];
-  /** Last fully closed month, 1–12. Every capped figure stops here. */
+  /** Last fully closed month, 1-12. Every capped figure stops here. */
   cappedThroughMonth: number;
   currentYear: number;
   projection: Projection | null;
@@ -93,7 +93,7 @@ export async function getYearOverYear(
 ): Promise<YoYSummary> {
   // Month grain, arithmetic in TypeScript. `revenue` on this view is already an
   // aggregate, and re-aggregating a mart's aggregate columns is what BigQuery
-  // rejects once it inlines the view — the same trap that broke three pages on
+  // rejects once it inlines the view, the same trap that broke three pages on
   // first deploy. The row count here is a few dozen.
   // Demo client: rows are synthesised, then run through the same year
   // assembly and seasonal projection as a real client's.
@@ -104,6 +104,7 @@ export async function getYearOverYear(
        EXTRACT(YEAR  FROM month_start) AS yr,
        EXTRACT(MONTH FROM month_start) AS mo,
        revenue,
+       cogs,
        cm3
      FROM \`${PROJECT_ID}.mart.mart_monthly_kpis\`
      WHERE client_id = @clientId AND currency = @currency
@@ -119,12 +120,16 @@ export async function getYearOverYear(
   // this year at all, so the cap is 0 and nothing capped can be computed.
   const cappedThroughMonth = currentMonth - 1;
 
-  const byYear = new Map<number, Map<number, { revenue: number | null; cm3: number | null }>>();
+  const byYear = new Map<number, Map<number, { revenue: number | null; cm3: number | null; uncosted: boolean }>>();
   for (const r of rows) {
     const yr = Number(r.yr);
     const mo = Number(r.mo);
     if (!byYear.has(yr)) byYear.set(yr, new Map());
-    byYear.get(yr)!.set(mo, { revenue: num(r.revenue), cm3: num(r.cm3) });
+    // Coverage rule: a month with revenue but no COGS has no CM3.
+    const revenue = num(r.revenue);
+    // (Demo rows carry no cogs column and are exempt.)
+    const uncosted = "cogs" in r && (revenue ?? 0) > 0 && num(r.cogs) === null;
+    byYear.get(yr)!.set(mo, { revenue, cm3: uncosted ? null : num(r.cm3), uncosted });
   }
 
   const sumRange = (yr: number, fromMonth: number, toMonth: number): number | null => {
@@ -149,14 +154,17 @@ export async function getYearOverYear(
     const monthsWithData = months.size;
     const isCurrent = yr === currentYear;
 
-    // "Complete" means twelve closed months — a past year with a gap is not.
+    // "Complete" means twelve closed months, a past year with a gap is not.
     const isComplete = !isCurrent && monthsWithData === 12;
 
     const revenue = sumRange(yr, 1, 12);
-    const cm3 = [...months.values()].reduce<number | null>(
-      (acc, m) => (m.cm3 === null ? acc : (acc ?? 0) + m.cm3),
-      null
-    );
+    // A year with any uncosted month has no CM3 total, not a partial one.
+    const cm3 = [...months.values()].some((m) => m.uncosted)
+      ? null
+      : [...months.values()].reduce<number | null>(
+          (acc, m) => (m.cm3 === null ? acc : (acc ?? 0) + m.cm3),
+          null
+        );
 
     const capped =
       cappedThroughMonth >= 1 ? sumRange(yr, 1, cappedThroughMonth) : null;
@@ -196,8 +204,7 @@ function buildProjection(
   if (cappedThroughMonth < 1) {
     return {
       projection: null,
-      projectionBlockedBy:
-        "No month of this year has closed yet — there is nothing to project from.",
+      projectionBlockedBy: "No closed month yet.",
     };
   }
 
@@ -205,12 +212,12 @@ function buildProjection(
   if (!thisYear?.cappedRevenue) {
     return {
       projection: null,
-      projectionBlockedBy: "No revenue recorded for this year yet.",
+      projectionBlockedBy: "No revenue this year yet.",
     };
   }
 
   // Only years with all twelve months can say what share of a year lands by
-  // month N — a year missing months would understate its own total and
+  // month N, a year missing months would understate its own total and
   // overstate the share.
   const shares = years
     .filter((y) => y.isComplete)
@@ -224,9 +231,7 @@ function buildProjection(
   if (shares.length === 0) {
     return {
       projection: null,
-      projectionBlockedBy:
-        "No complete earlier year to read seasonality from — the warehouse holds " +
-        `${byYear.size} year${byYear.size === 1 ? "" : "s"}, none of them a full twelve closed months.`,
+      projectionBlockedBy: "No full prior year.",
     };
   }
 
@@ -240,7 +245,7 @@ function buildProjection(
   // years therefore describe a differently-shaped, differently-sized business.
   //
   // Concretely, averaging 2024's 28% share with 2025's 47% projected ~24%
-  // growth for a business whose Jan–Jun was flat year on year. The most recent
+  // growth for a business whose Jan-Jun was flat year on year. The most recent
   // year is the only one that reflects the current store configuration.
   //
   // Every year's share is still reported, and the full span is the range, so
@@ -248,7 +253,7 @@ function buildProjection(
   const mostRecent = shares.reduce((a, b) => (b.year > a.year ? b : a));
 
   // A bigger share means more of the year is already banked, so dividing by it
-  // gives a *smaller* projection — the highest share produces the low estimate.
+  // gives a *smaller* projection, the highest share produces the low estimate.
   return {
     projection: {
       mid: thisYear.cappedRevenue / mostRecent.share,

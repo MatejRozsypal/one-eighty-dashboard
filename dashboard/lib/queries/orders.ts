@@ -1,5 +1,5 @@
 /**
- * Orders — order-level detail and the market split.
+ * Orders, order-level detail and the market split.
  *
  * `mart_orders` carries **both** platforms since migration 209: Shopify for
  * Dobias, Shoptet for Manami, reconciled to `mart_daily_kpis` to the cent for
@@ -9,13 +9,13 @@
  * ── The two platforms are not symmetrical, and the page must not pretend ────
  * Shoptet's order payload carries **no address at all** (verified against
  * `raw_shoptet_orders.payload_json`), so `shipping_country` is structurally
- * NULL there — not missing data that might arrive later. Splitting Manami by
+ * NULL there, not missing data that might arrive later. Splitting Manami by
  * "country" would mean inventing one.
  *
  * What Shoptet does have is the currency the customer transacted in, and for
  * Manami that is a real market boundary: CZK is the Czech market, EUR is
- * SK/EU. So the split dimension follows the platform — country where we know
- * it, transacting currency where we don't — and the UI labels which one it is
+ * SK/EU. So the split dimension follows the platform, country where we know
+ * it, transacting currency where we don't, and the UI labels which one it is
  * rather than calling both "market" and hoping nobody asks.
  *
  * Shoptet also reports per-order margin directly, which Shopify does not; on
@@ -29,7 +29,7 @@ import type { DateRange } from "@/lib/period";
 import { isDemo } from "@/lib/demo/client";
 import { demoOrdersSummary, demoRecentOrders } from "@/lib/demo/commerce";
 
-export type ShopPlatform = "shopify" | "shoptet";
+export type ShopPlatform = "shopify" | "shoptet" | "woocommerce";
 
 /** Which dimension the market split is actually cut by. */
 export type MarketDimension = "country" | "currency";
@@ -66,7 +66,7 @@ export interface OrdersSummary {
   /** Gross profit. Null when no order in the range carries a cost. */
   margin: number | null;
   marginRate: number | null;
-  /** Canonical AOV — net sales ÷ orders, matching Shopify. */
+  /** Canonical AOV, net sales ÷ orders, matching Shopify. */
   aovNet: number | null;
   /** The other AOV, with shipping in the numerator. */
   aovInclShipping: number | null;
@@ -86,7 +86,8 @@ export async function getOrdersSummary(
   if (isDemo(clientId)) return demoOrdersSummary(range);
 
   try {
-    const rows = await query<Record<string, unknown>>(
+    const [rows, coverage] = await Promise.all([
+      query<Record<string, unknown>>(
       `SELECT
          ANY_VALUE(platform)                                AS platform,
          COALESCE(shipping_country, market_currency, '')    AS market_key,
@@ -103,7 +104,22 @@ export async function getOrdersSummary(
        GROUP BY market_key
        ORDER BY revenue DESC`,
       { clientId, from: range.from, to: range.to }
-    );
+    ),
+      // Coverage rule: a day with revenue and no order carrying a margin is a
+      // day without cost data. Any such day means no margin for the range,
+      // never a partial sum.
+      query<Record<string, unknown>>(
+        `SELECT COUNTIF(day_revenue > 0 AND costed_orders = 0) AS uncosted_days
+         FROM (
+           SELECT date, SUM(revenue) AS day_revenue,
+                  COUNTIF(order_margin IS NOT NULL) AS costed_orders
+           FROM \`${PROJECT_ID}.mart.mart_orders\`
+           WHERE client_id = @clientId AND date BETWEEN @from AND @to
+           GROUP BY date
+         )`,
+        { clientId, from: range.from, to: range.to }
+      ),
+    ]);
 
     if (rows.length === 0) return null;
 
@@ -122,13 +138,27 @@ export async function getOrdersSummary(
       };
     });
 
-    const sum = (field: string) =>
-      rows.reduce((s, r) => s + (num(r[field]) ?? 0), 0);
+    // Null only when every market is null: a month of orders whose revenue has
+    // no FX rate yet is "unknown", not "zero".
+    const sumOrNull = (field: string): number | null => {
+      let total = 0;
+      let seen = false;
+      for (const r of rows) {
+        const v = num(r[field]);
+        if (v !== null) {
+          total += v;
+          seen = true;
+        }
+      }
+      return seen ? total : null;
+    };
+    const sum = (field: string) => sumOrNull(field) ?? 0;
 
     const orders = markets.reduce((s, m) => s + m.orders, 0);
-    const revenue = sum("revenue");
-    const netSales = sum("net_sales");
-    const margin = sum("margin");
+    const revenue = sumOrNull("revenue");
+    const netSales = sumOrNull("net_sales");
+    const uncostedDays = num(coverage[0]?.uncosted_days) ?? 0;
+    const margin = uncostedDays > 0 ? null : sumOrNull("margin");
 
     return {
       platform,
@@ -136,10 +166,10 @@ export async function getOrdersSummary(
       orders,
       revenue,
       netSales,
-      // A margin of exactly zero across every order means no cost data, not a
-      // business running at cost.
-      margin: margin === 0 ? null : margin,
-      marginRate: margin === 0 ? null : safeDiv(margin, netSales),
+      // No margin on any order, or a margin of exactly zero across every order,
+      // means no cost data, not a business running at cost.
+      margin: margin === null || margin === 0 ? null : margin,
+      marginRate: margin === null || margin === 0 ? null : safeDiv(margin, netSales),
       aovNet: safeDiv(netSales, orders),
       aovInclShipping: safeDiv(revenue, orders),
       returningShare: safeDiv(sum("returning_orders"), orders),
@@ -154,7 +184,7 @@ export async function getOrdersSummary(
 }
 
 /**
- * Recent orders. Emails are masked in SQL — a full address never reaches the
+ * Recent orders. Emails are masked in SQL, a full address never reaches the
  * browser, same as on the Customers screen.
  */
 export async function getRecentOrders(
@@ -175,10 +205,10 @@ export async function getRecentOrders(
               SUBSTR(SPLIT(customer_email, '@')[OFFSET(0)], -1), '@',
               SPLIT(customer_email, '@')[SAFE_OFFSET(1)]
             ),
-            '—') AS email,
+            NULL) AS email,
          COALESCE(shipping_country, market_currency, '') AS market,
          revenue, net_sales, order_margin, total_discounts,
-         COALESCE(financial_status, '—') AS financial_status,
+         financial_status,
          is_returning_customer
        FROM \`${PROJECT_ID}.mart.mart_orders\`
        WHERE client_id = @clientId AND date BETWEEN @from AND @to
@@ -189,14 +219,14 @@ export async function getRecentOrders(
 
     return rows.map((r) => ({
       date: isoDate(r.date as never),
-      orderNumber: String(r.order_number ?? "—"),
-      customerEmail: String(r.email ?? "—"),
+      orderNumber: String(r.order_number ?? ""),
+      customerEmail: r.email === null || r.email === undefined ? "" : String(r.email),
       market: String(r.market ?? ""),
       revenue: num(r.revenue),
       netSales: num(r.net_sales),
       margin: num(r.order_margin),
       discounts: num(r.total_discounts),
-      financialStatus: String(r.financial_status ?? "—"),
+      financialStatus: String(r.financial_status ?? ""),
       isReturning: r.is_returning_customer === true,
     }));
   } catch (error) {

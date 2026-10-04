@@ -1,12 +1,13 @@
 /**
- * Goals — targets against what actually happened.
+ * Goals: targets against what actually happened.
  *
  * Targets are set per client in Settings; this page only reads them. The split
  * matters: a page that both sets and reports a target invites editing the plan
  * to match the result.
  *
- * Actuals come from the same daily spine as the snapshot, so a month here and
- * the headline figure for that month are the same number.
+ * Actuals come from the same daily rows and the same per-order costs as the
+ * Snapshot, so a month here and the headline figure for that month are the same
+ * number, CM3 included.
  */
 
 import type { Metadata } from "next";
@@ -23,9 +24,15 @@ import {
   type Attainment,
 } from "@/lib/goals/progress";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
+import { NO_VALUE } from "@/lib/format";
+import { optional } from "@/lib/queries/errors";
+import { getClientSettings } from "@/lib/users/settings";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
+import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
-import { pageEyebrow } from "@/lib/nav";
+import { NotConnected } from "@/components/ui/EmptyState";
+import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 
 export const metadata: Metadata = { title: "Goals" };
 export const dynamic = "force-dynamic";
@@ -43,7 +50,7 @@ function formatValue(
   metric: GoalMetric,
   currency: string
 ): string {
-  if (value === null) return "—";
+  if (value === null) return NO_VALUE;
   const spec = GOAL_METRICS.find((m) => m.key === metric)!;
   return spec.format === "money"
     ? formatMoney(value, currency, { compact: true })
@@ -72,14 +79,12 @@ function toneOf(a: Attainment): string {
 
 function AttainmentBar({ a }: { a: Attainment }) {
   if (a.target === null) {
-    return (
-      <span className="text-[12px] text-content-muted">No target set</span>
-    );
+    return <span className="text-[12px] text-content-muted">No target set</span>;
   }
 
   const pct = a.ratio === null ? 0 : Math.min(1.25, a.ratio);
   const width = `${Math.round((pct / 1.25) * 100)}%`;
-  // Where an even pace would have reached by now — the line to beat.
+  // Where an even pace would have reached by now, the line to beat.
   const markAt = `${Math.round((Math.min(1.25, a.elapsed) / 1.25) * 100)}%`;
 
   return (
@@ -124,19 +129,37 @@ export default async function GoalsPage({
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
 
+  if (pageAvailability(client, "/goals") !== "available") {
+    return (
+      <>
+        <Header title="Goals" />
+        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/goals") ?? "Shop"} />
+        </main>
+      </>
+    );
+  }
+
   // Anchored on today rather than the page's date range: a target belongs to a
   // calendar month, and letting the range picker move it would let someone read
   // "March's goal" against April's numbers.
   const today = new Date().toISOString().slice(0, 10);
   // The year the selected range ends in, so the picker reaches this screen
-  // too — goals are annual, so a range is read as "which year", not as a
+  // too, goals are annual, so a range is read as "which year", not as a
   // window. Picking any range inside 2025 shows the 2025 goals.
   const year = Number(params.range.to.slice(0, 4));
   const thisMonth = `${today.slice(0, 7)}-01`;
 
+  // The same stated per-order costs the Snapshot deducts, so CM3 agrees.
+  const settings = await optional(() => getClientSettings(client.clientId), null);
+  const costs = {
+    fulfilmentPerOrder: settings?.fulfilmentPerOrder ?? null,
+    otherCm1PerOrder: settings?.otherCm1PerOrder ?? null,
+  };
+
   const [goals, actuals] = await Promise.all([
     getGoals(client.clientId, year),
-    getGoalActuals(client.clientId, client.currency, year),
+    getGoalActuals(client.clientId, client.currency, year, costs),
   ]);
 
   const metrics = GOAL_METRIC_KEYS;
@@ -154,23 +177,14 @@ export default async function GoalsPage({
 
   return (
     <>
-      <Header
-        eyebrow={pageEyebrow("/goals", client.name)}
-        title="Goals"
-      />
+      <Header title="Goals" />
       <PageControls client={client} params={params} />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         {!anyTarget && (
-          <section className="rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-            <Eyebrow>No targets yet</Eyebrow>
-            <p className="mt-2 max-w-[62ch] text-[13px] leading-relaxed text-content-body">
-              Nothing has been set for {client.name} in {year}. Targets are
-              entered per month under Settings → Clients → {client.name} →
-              Goals. Until then this page has nothing to measure against, which
-              is why it shows no attainment rather than 0%.
-            </p>
-          </section>
+          <p className="m-0 rounded-card border border-hairline bg-surface-card px-5 py-4 text-[13.5px] text-content-body shadow-sm">
+            No targets set. Set targets in Settings.
+          </p>
         )}
 
         {periods.map((period) => (
@@ -183,7 +197,7 @@ export default async function GoalsPage({
               <span className="text-[12px] text-content-muted">
                 {period.months.length === 1
                   ? monthLabel(period.months[0])
-                  : `${monthLabel(period.months[0])}–${monthLabel(
+                  : `${monthLabel(period.months[0])} to ${monthLabel(
                       period.months[period.months.length - 1]
                     )}`}
               </span>
@@ -219,7 +233,10 @@ export default async function GoalsPage({
         ))}
 
         <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-          <Eyebrow>Month by month · {year}</Eyebrow>
+          <span className="inline-flex items-center gap-1.5">
+            <Eyebrow>Month by month, {year}</Eyebrow>
+            <MetricTooltip definition={METRIC_DEFINITIONS.Attainment} />
+          </span>
 
           <div className="overflow-x-auto">
             <div className="min-w-[720px]">
@@ -265,7 +282,7 @@ export default async function GoalsPage({
                           }`}
                         >
                           {a.target === null ? (
-                            <span className="text-content-muted">—</span>
+                            <span className="text-content-muted">{NO_VALUE}</span>
                           ) : (
                             formatPercent(a.ratio, { decimals: 0 })
                           )}
@@ -277,14 +294,6 @@ export default async function GoalsPage({
               })}
             </div>
           </div>
-
-          <p className="max-w-[76ch] text-[12px] leading-relaxed text-content-muted">
-            Attainment is actual ÷ target. An em dash means no target was set for
-            that month — not that the target was missed. Months still in flight
-            are judged against an even pace through the month, shown as the
-            marker on the bars above; a closed month is judged on the final
-            figure alone.
-          </p>
         </section>
       </main>
     </>

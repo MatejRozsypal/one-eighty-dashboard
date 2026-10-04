@@ -1,5 +1,5 @@
 /**
- * Growth — revenue and new customers, month by month.
+ * Growth: revenue and new customers, month by month.
  *
  * The partial month is the trap this page has to defuse. A month three days old
  * always looks like a collapse next to a closed one, and a MoM figure computed
@@ -22,7 +22,10 @@ import { DeltaChip } from "@/components/ui/Delta";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
 import { DataTable } from "@/components/ui/DataTable";
 import { YearOverYear } from "@/components/dashboard/YearOverYear";
-import { pageEyebrow } from "@/lib/nav";
+import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
+import { NotConnected, NoData, NoValue, Value } from "@/components/ui/EmptyState";
+import { pageAvailability, missingSource } from "@/lib/capabilities";
+import { METRIC_DEFINITIONS } from "@/lib/metrics";
 
 export const metadata: Metadata = { title: "Growth" };
 // Rendered per request: every page is behind auth and parameterised by the URL,
@@ -51,6 +54,17 @@ export default async function GrowthPage({
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
 
+  if (pageAvailability(client, "/growth") !== "available") {
+    return (
+      <>
+        <Header title="Growth" />
+        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+          <NotConnected source={missingSource(client, "/growth") ?? "Shop"} />
+        </main>
+      </>
+    );
+  }
+
   // `view` is its own param so the choice survives navigating away and back,
   // and so a YoY view is a shareable link like everything else here.
   const view = searchParams.view === "yoy" ? "yoy" : "mom";
@@ -62,7 +76,7 @@ export default async function GrowthPage({
       : Promise.resolve(null),
   ]);
 
-  // Chronological for the chart, newest-first for the table — a chart reads
+  // Chronological for the chart, newest-first for the table, a chart reads
   // left to right, a table reads most-recent first.
   const chrono = [...months].reverse();
   const maxRevenue = Math.max(...chrono.map((m) => m.revenue ?? 0), 1) * 1.08;
@@ -79,10 +93,7 @@ export default async function GrowthPage({
 
   return (
     <>
-      <Header
-        eyebrow={pageEyebrow("/growth", client.name)}
-        title="Growth"
-      />
+      <Header title="Growth" />
       <PageControls client={client} params={params} />
 
       <div className="flex flex-wrap items-center gap-2 px-5 pt-4 lg:px-8">
@@ -105,16 +116,13 @@ export default async function GrowthPage({
           <YearOverYear data={yoy} currency={client.currency} />
         )}
 
-        {view === "mom" && (
+        {view === "mom" && months.length === 0 && <NoData />}
+
+        {view === "mom" && months.length > 0 && (
           <>
           <section className="flex flex-col gap-5 rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
             <div className="flex flex-wrap items-start justify-between gap-6">
-              <div className="flex flex-col gap-1.5">
-                <Eyebrow>Month over month</Eyebrow>
-                <h2 className="m-0 text-[20px] font-bold tracking-heading text-content-strong">
-                  Revenue and new customers, <i className="font-medium">month by month.</i>
-                </h2>
-              </div>
+              <Eyebrow>Month over month</Eyebrow>
               <div className="flex items-center gap-[18px]">
                 <span className="inline-flex items-center gap-[7px] font-mono text-[11px] text-content-muted">
                   <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[3px] bg-ink-700" />
@@ -144,7 +152,7 @@ export default async function GrowthPage({
                     width={slot * 0.64}
                     height={h}
                     rx={3}
-                    // Partial months are drawn faded — the bar is real, the
+                    // Partial months are drawn faded, the bar is real, the
                     // comparison isn't.
                     fill={m.isPartial ? "rgba(38,38,43,0.35)" : "var(--ink-700)"}
                   />
@@ -199,13 +207,21 @@ export default async function GrowthPage({
                         {monthLabel(m.monthStart)}
                       </span>,
                       <span className="font-mono text-[14px] font-semibold tracking-heading tabular text-content-strong">
-                        {formatMoney(m.revenue, client.currency)}
+                        <Value>{formatMoney(m.revenue, client.currency)}</Value>
                       </span>,
-                      <DeltaChip delta={m.revenueMoM} goodWhen="up" />,
+                      m.revenueMoM !== null ? (
+                        <DeltaChip delta={m.revenueMoM} goodWhen="up" />
+                      ) : (
+                        <NoValue />
+                      ),
                       <span className="font-mono text-[14px] tracking-heading tabular text-content-strong">
-                        {formatNumber(m.newCustomerOrders)}
+                        <Value>{formatNumber(m.newCustomerOrders)}</Value>
                       </span>,
-                      <DeltaChip delta={m.newCustomerOrdersMoM} goodWhen="up" />,
+                      m.newCustomerOrdersMoM !== null ? (
+                        <DeltaChip delta={m.newCustomerOrdersMoM} goodWhen="up" />
+                      ) : (
+                        <NoValue />
+                      ),
                       m.isPartial ? (
                         <Badge variant="neutral" size="sm" dot>
                           Partial
@@ -219,22 +235,15 @@ export default async function GrowthPage({
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5 px-5 py-3.5">
-              <span className="text-[12.5px] leading-[1.6] text-content-body">
-                Average monthly growth across the closed months:{" "}
-                <b className="text-content-strong">
-                  {avgMonthlyGrowth !== null ? formatPercent(avgMonthlyGrowth) : "—"}
-                </b>{" "}
-                · cumulative across the range:{" "}
-                <b className="text-content-strong">
-                  {cumulativeGrowth !== null ? formatPercent(cumulativeGrowth) : "—"}
-                </b>
-                .
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-5 py-3.5 text-[12.5px] leading-[1.6] text-content-body">
+              <span className="inline-flex items-center gap-1.5">
+                Avg monthly growth:{" "}
+                <b className="text-content-strong">{formatPercent(avgMonthlyGrowth)}</b>
+                <MetricTooltip definition={METRIC_DEFINITIONS.Growth} />
               </span>
-              <span className="text-[12px] leading-[1.6] text-content-muted">
-                Both are computed over the visible closed months only — change the
-                range and they change. The current month is partial, so its MoM is
-                not comparable to a closed one and is excluded from these figures.
+              <span>
+                Cumulative:{" "}
+                <b className="text-content-strong">{formatPercent(cumulativeGrowth)}</b>
               </span>
             </div>
           </section>

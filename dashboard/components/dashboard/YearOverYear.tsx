@@ -2,17 +2,19 @@
  * Year-over-year, with the running year capped and projected.
  *
  * Two things are shown side by side and they must not be confused, so they are
- * in separate columns with separate headings: the **capped** comparison, which
+ * in separate sections with separate headings: the **capped** comparison, which
  * is real measured revenue over identical months, and the **projection**, which
  * is arithmetic on top of an assumption. The capped column is the one to argue
- * from; the projection is there to answer "are we on track", and it says how it
+ * from; the projection answers "are we on track", and its tooltip says how it
  * was built.
  */
 
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
 import { DeltaChip } from "@/components/ui/Delta";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { formatMoney, formatPercent } from "@/lib/currency";
+import { NO_VALUE } from "@/lib/format";
 import { monthName, type YoYSummary } from "@/lib/queries/yoy";
 
 export function YearOverYear({
@@ -26,7 +28,7 @@ export function YearOverYear({
   const { years, cappedThroughMonth, projection, projectionBlockedBy } = data;
   const capLabel =
     cappedThroughMonth >= 1
-      ? `Jan–${monthName(cappedThroughMonth)}`
+      ? `Jan to ${monthName(cappedThroughMonth)}`
       : "no closed month yet";
 
   const current = years.find((y) => y.isCurrent);
@@ -34,14 +36,10 @@ export function YearOverYear({
   return (
     <div className="flex flex-col gap-5">
       <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-        <div className="flex flex-col gap-[5px]">
+        <span className="inline-flex items-center gap-1.5">
           <Eyebrow>Year over year</Eyebrow>
-          <span className="text-[12.5px] leading-[1.5] text-content-muted">
-            The running year is compared over <b>{capLabel}</b> only — the same
-            months in every year. Comparing seven months against twelve is not a
-            comparison, it&apos;s a subtraction of five months.
-          </span>
-        </div>
+          <InfoTip text="The running year is compared over the same months in every year, so seven months are never set against twelve." />
+        </span>
 
         <div className="overflow-x-auto">
           <div className="min-w-[620px]">
@@ -84,9 +82,9 @@ export function YearOverYear({
                   ) : (
                     <span
                       className="font-mono text-[12px] text-gray-300"
-                      title="No prior year held in the warehouse for these months"
+                      title="No prior year data"
                     >
-                      —
+                      {NO_VALUE}
                     </span>
                   )}
                 </span>
@@ -121,100 +119,67 @@ export function YearOverYear({
       </section>
 
       <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-        <div className="flex flex-col gap-[5px]">
-          <Eyebrow>Where {data.currentYear} lands</Eyebrow>
-          <span className="text-[12.5px] leading-[1.5] text-content-muted">
-            Seasonal projection — not a target, and not measured revenue.
-          </span>
-        </div>
+        <Eyebrow>Where {data.currentYear} lands</Eyebrow>
 
         {projection === null ? (
-          <div className="flex flex-col gap-2 rounded-card border border-dashed border-hairline-strong p-[18px_20px]">
-            <span className="text-[13.5px] font-semibold text-content-strong">
-              No projection possible.
-            </span>
-            <span className="text-[12.5px] leading-[1.6] text-content-body">
-              {projectionBlockedBy}
-            </span>
-          </div>
+          <span className="text-[13.5px] text-content-muted">
+            {projectionBlockedBy ?? "No projection."}
+          </span>
         ) : (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
-              <span className="flex flex-col gap-1.5">
-                <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                  Projected full year
-                </span>
-                <span className="font-mono text-[28px] font-semibold leading-none tracking-display tabular text-content-strong">
-                  {money(projection.mid)}
-                </span>
+          <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
+            <span className="flex flex-col gap-1.5">
+              <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+                Projected full year
+                <InfoTip text={projectionNote(projection, capLabel, cappedThroughMonth)} />
               </span>
+              <span className="font-mono text-[28px] font-semibold leading-none tracking-display tabular text-content-strong">
+                {money(projection.mid)}
+              </span>
+            </span>
 
+            <span className="flex flex-col gap-1.5">
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+                Range across prior years
+              </span>
+              <span className="font-mono text-[15px] tabular text-content-body">
+                {money(projection.low)} to {money(projection.high)}
+              </span>
+            </span>
+
+            {current?.cappedRevenue != null && (
               <span className="flex flex-col gap-1.5">
                 <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                  Range across prior years
+                  Banked so far ({capLabel})
                 </span>
                 <span className="font-mono text-[15px] tabular text-content-body">
-                  {money(projection.low)} – {money(projection.high)}
+                  {money(current.cappedRevenue)}
                 </span>
               </span>
-
-              {current?.cappedRevenue != null && (
-                <span className="flex flex-col gap-1.5">
-                  <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                    Banked so far ({capLabel})
-                  </span>
-                  <span className="font-mono text-[15px] tabular text-content-body">
-                    {money(current.cappedRevenue)}
-                  </span>
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-2 rounded-card bg-gray-50 p-[14px_16px]">
-              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-content-muted">
-                How this is built
-              </span>
-              <span className="text-[12.5px] leading-[1.6] text-content-body">
-                In each complete earlier year, this share of the year&apos;s
-                revenue had landed by the end of {monthName(cappedThroughMonth)}:{" "}
-                {projection.shares
-                  .map(
-                    (s) =>
-                      `${s.year} ${formatPercent(s.share, { decimals: 1 })}`
-                  )
-                  .join(" · ")}
-                . This year&apos;s {capLabel} revenue is divided by the{" "}
-                <b>most recent</b> of those, not the average — a business that
-                changed size or store setup makes older years a worse model, and
-                averaging them in quietly invents growth. The range is what each
-                individual year would have implied on its own; it is not a
-                confidence interval, since there is no distribution here.
-              </span>
-
-              {projection.basisYears >= 2 && projection.shareSpread > 1.25 && (
-                <span className="text-[12.5px] leading-[1.6] text-warning">
-                  <b>The prior years disagree badly</b> — the highest share is{" "}
-                  {projection.shareSpread.toFixed(1)}× the lowest. When a
-                  business changes size quickly, the share of the year banked by
-                  a given month moves with growth rather than with the calendar,
-                  so this is measuring the trend more than the season. Read the
-                  range, not the midpoint.
-                </span>
-              )}
-
-              {projection.basisYears < 2 && (
-                <span className="text-[12.5px] leading-[1.6] text-warning">
-                  <b>Built on a single prior year.</b> With one year of history
-                  this restates {projection.shares[0]?.year}&apos;s shape rather
-                  than forecasting — it carries no information about whether
-                  that shape repeats. Treat it as an illustration until a second
-                  complete year exists.
-                </span>
-              )}
-            </div>
+            )}
           </div>
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * The projection tooltip: how it is built, and the one caveat that applies.
+ * At most 40 words, so the two warnings that used to be banners fold into it.
+ */
+function projectionNote(
+  projection: NonNullable<YoYSummary["projection"]>,
+  capLabel: string,
+  cappedThroughMonth: number
+): string {
+  const caveat =
+    projection.basisYears < 2
+      ? " Built on one prior year, so it restates that year's shape."
+      : projection.shareSpread > 1.25
+        ? ` Prior years disagree (${projection.shareSpread.toFixed(1)}x), so read the range.`
+        : "";
+  return (
+    `Not a target. ${capLabel} revenue divided by the share of the year banked by ${monthName(cappedThroughMonth)} in the latest full year.` +
+    caveat
   );
 }

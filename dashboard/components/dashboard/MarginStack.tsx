@@ -1,22 +1,24 @@
 /**
- * The margin stack — how revenue becomes contribution margin.
+ * The margin stack: how revenue becomes contribution margin.
  *
  * This is the section that justifies building this dashboard instead of buying
  * a retention tool. Retention platforms can't show contribution margin because
  * they can't see cost of goods or ad spend; this warehouse can.
  *
- * ── Unstated steps are the honest part ──────────────────────────────────────
- * `cm1_other_costs` (inbound freight, duties, packaging, payment fees) and
- * `fulfillment_cost` (outbound shipping, warehousing, returns) are hardcoded to
- * zero in `mart_daily_kpis` — no connected source reports either. They become
- * real once someone states a per-order rate under Settings, which the P&L then
- * multiplies by orders and deducts.
+ * ── Unmeasured steps are the honest part ────────────────────────────────────
+ * Other CM1 costs (inbound freight, duties, packaging, payment fees) and
+ * fulfilment (outbound shipping, warehousing, returns) have no connected source.
+ * They become real once someone states a per-order rate in Settings, which the
+ * P&L then multiplies by orders and deducts.
  *
- * Until a rate is stated, the step is drawn hatched and labelled "not stated"
+ * Until a rate is stated, the step is drawn hatched and labelled "Not measured"
  * rather than as a zero-height bar, because a zero-height step reads as "this
- * business has no fulfilment costs" — false, and a more dangerous kind of wrong
- * than an admitted gap. Stating a rate fills the step in and nothing else on
- * the page moves.
+ * business has no fulfilment costs", which is false and a more dangerous kind
+ * of wrong than an admitted gap.
+ *
+ * The same hatched style carries "No cost data": when revenue exists but no
+ * product costs do (COGS is null), COGS, CM1, CM2 and CM3 are drawn hatched too,
+ * never as revenue and never as zero.
  *
  * Rendered as a waterfall on desktop and a vertical stepped list on mobile: a
  * horizontal waterfall does not survive a 375pt viewport.
@@ -25,13 +27,20 @@
 import { DeltaChip } from "@/components/ui/Delta";
 import { formatMoney } from "@/lib/currency";
 import { Eyebrow } from "@/components/ui/Eyebrow";
+import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
+import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import type { PnlSnapshot } from "@/lib/queries/pnl";
-import { metric } from "@/lib/queries/pnl";
+import { metric, hasNoCostData } from "@/lib/queries/pnl";
 
 const CHART_HEIGHT = 290;
 
+/** The one line a hatched step shows in place of its figure. */
+type Missing = "Not measured" | "No cost data";
+
 interface Step {
   label: string;
+  /** Metric whose definition is shown beside the label. */
+  definition?: string;
   /** Null for placeholder steps. */
   value: number | null;
   /** Where the bar starts, in currency units. */
@@ -42,10 +51,13 @@ interface Step {
   delta?: number | null;
   goodWhen?: "up" | "down" | "neutral";
   isHero?: boolean;
+  /** Set on placeholder steps. */
+  missing?: Missing;
 }
 
 export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
   const t = snapshot.current;
+  const noCost = hasNoCostData(snapshot.current);
   const currency = snapshot.currency;
   const money = (v: number | null) => formatMoney(v, currency);
 
@@ -53,6 +65,17 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
   const cm1 = t.cm1 ?? 0;
   const cm2 = t.cm2 ?? 0;
   const cm3 = t.cm3 ?? 0;
+
+  // A placeholder step: hatched, no figure, one line saying why.
+  const gap = (label: string, missing: Missing, extra: Partial<Step> = {}): Step => ({
+    label,
+    value: null,
+    base: 0,
+    magnitude: 0,
+    kind: "placeholder",
+    missing,
+    ...extra,
+  });
 
   const steps: Step[] = [
     {
@@ -64,68 +87,84 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
       delta: metric(snapshot, (x) => x.revenue).delta,
       goodWhen: "up",
     },
+    noCost
+      ? gap("\u2212 COGS", "No cost data")
+      : {
+          label: "\u2212 COGS",
+          value: t.cogs === null ? null : -t.cogs,
+          base: cm1,
+          magnitude: t.cogs ?? 0,
+          kind: "cost",
+          delta: metric(snapshot, (x) => x.cogs).delta,
+          goodWhen: "down",
+        },
+    noCost
+      ? gap("CM1", "No cost data")
+      : {
+          label: "CM1",
+          value: t.cm1,
+          base: 0,
+          magnitude: cm1,
+          kind: "total",
+          delta: metric(snapshot, (x) => x.cm1).delta,
+          goodWhen: "up",
+        },
+    t.otherCm1Cost === null
+      ? gap("\u2212 Other CM1", "Not measured", { base: noCost ? 0 : cm1 })
+      : {
+          label: "\u2212 Other CM1",
+          value: -t.otherCm1Cost,
+          base: noCost ? 0 : cm1,
+          magnitude: t.otherCm1Cost,
+          kind: "cost",
+          goodWhen: "down",
+        },
+    t.fulfilmentCost === null
+      ? gap("\u2212 Fulfilment", "Not measured", {
+          base: noCost ? 0 : cm2,
+          definition: "Fulfilment",
+        })
+      : {
+          label: "\u2212 Fulfilment",
+          definition: "Fulfilment",
+          value: -t.fulfilmentCost,
+          base: noCost ? 0 : cm2,
+          magnitude: t.fulfilmentCost,
+          kind: "cost",
+          goodWhen: "down",
+        },
+    noCost
+      ? gap("CM2", "No cost data")
+      : {
+          label: "CM2",
+          value: t.cm2,
+          base: 0,
+          magnitude: cm2,
+          kind: "total",
+          delta: metric(snapshot, (x) => x.cm2).delta,
+          goodWhen: "up",
+        },
     {
-      label: "− COGS",
-      value: t.cogs === null ? null : -t.cogs,
-      base: cm1,
-      magnitude: t.cogs ?? 0,
-      kind: "cost",
-      delta: metric(snapshot, (x) => x.cogs).delta,
-      goodWhen: "down",
-    },
-    {
-      label: "CM1",
-      value: t.cm1,
-      base: 0,
-      magnitude: cm1,
-      kind: "total",
-      delta: metric(snapshot, (x) => x.cm1).delta,
-      goodWhen: "up",
-    },
-    {
-      label: "− Other CM1",
-      value: t.otherCm1Cost === null ? null : -t.otherCm1Cost,
-      base: cm1,
-      magnitude: t.otherCm1Cost ?? 0,
-      kind: t.otherCm1Cost === null ? "placeholder" : "cost",
-      goodWhen: "down",
-    },
-    {
-      label: "− Fulfilment",
-      value: t.fulfilmentCost === null ? null : -t.fulfilmentCost,
-      base: cm2,
-      magnitude: t.fulfilmentCost ?? 0,
-      kind: t.fulfilmentCost === null ? "placeholder" : "cost",
-      goodWhen: "down",
-    },
-    {
-      label: "CM2",
-      value: t.cm2,
-      base: 0,
-      magnitude: cm2,
-      kind: "total",
-      delta: metric(snapshot, (x) => x.cm2).delta,
-      goodWhen: "up",
-    },
-    {
-      label: "− Paid spend",
+      label: "\u2212 Paid spend",
       value: t.paidSpend === null ? null : -t.paidSpend,
-      base: cm3,
+      base: noCost ? 0 : cm3,
       magnitude: t.paidSpend ?? 0,
       kind: "cost",
       delta: metric(snapshot, (x) => x.paidSpend).delta,
       goodWhen: "neutral",
     },
-    {
-      label: "CM3",
-      value: t.cm3,
-      base: 0,
-      magnitude: cm3,
-      kind: "total",
-      delta: metric(snapshot, (x) => x.cm3).delta,
-      goodWhen: "up",
-      isHero: true,
-    },
+    noCost
+      ? gap("CM3", "No cost data", { isHero: true })
+      : {
+          label: "CM3",
+          value: t.cm3,
+          base: 0,
+          magnitude: cm3,
+          kind: "total",
+          delta: metric(snapshot, (x) => x.cm3).delta,
+          goodWhen: "up",
+          isHero: true,
+        },
   ];
 
   // Scale every bar against revenue, the largest quantity in the stack.
@@ -138,7 +177,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
         <div className="flex flex-col gap-1.5">
           <Eyebrow tone="accent">The margin stack</Eyebrow>
           <h2 className="m-0 text-[20px] font-bold tracking-heading text-content-strong">
-            How revenue becomes <i className="font-medium">contribution margin.</i>
+            Revenue to CM3
           </h2>
         </div>
         <div className="flex items-center gap-[18px]">
@@ -174,7 +213,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
                       : "rounded-t-lg bg-ink-600"
                     : step.kind === "cost"
                       ? "rounded-md border border-negative/55 bg-negative/[0.18]"
-                      : "hatched rounded-md border border-dashed border-hairline-strong"
+                      : "hatched rounded-md border border-hairline-strong"
                 }`}
                 style={{
                   bottom: `${px(step.base)}px`,
@@ -184,14 +223,6 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
                       : `${Math.max(px(step.magnitude), 4)}px`,
                 }}
               />
-              {step.kind === "placeholder" && (
-                <span
-                  className="absolute inset-x-0 text-center font-mono text-[9.5px] uppercase tracking-[0.06em] text-gray-400"
-                  style={{ bottom: `${px(step.base) + 40}px` }}
-                >
-                  Not stated
-                </span>
-              )}
             </div>
 
             <div
@@ -200,18 +231,21 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
               }`}
             >
               <span
-                className={`font-mono text-[10.5px] uppercase tracking-[0.08em] ${
+                className={`relative inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] ${
                   step.isHero ? "text-growth-700" : "text-content-muted"
                 }`}
               >
                 {step.label}
+                {step.definition && <MetricTooltip definition={METRIC_DEFINITIONS[step.definition]} />}
               </span>
               <span
                 className={`whitespace-nowrap font-mono text-[15px] font-semibold tracking-heading tabular ${
-                  step.kind === "placeholder" ? "text-gray-400" : "text-content-strong"
+                  step.kind === "placeholder" || step.value === null
+                    ? "text-gray-400"
+                    : "text-content-strong"
                 }`}
               >
-                {step.kind === "placeholder" ? "Not stated" : money(step.value)}
+                {step.kind === "placeholder" ? step.missing : money(step.value)}
               </span>
               <span className="h-[17px]">
                 {step.delta !== undefined && (
@@ -223,7 +257,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
         ))}
       </div>
 
-      {/* Mobile: vertical stepped list — bar length still encodes value */}
+      {/* Mobile: vertical stepped list, bar length still encodes value */}
       <div className="flex flex-col gap-3.5 md:hidden">
         {steps.map((step) => {
           const widthPct =
@@ -245,10 +279,12 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
                 </span>
                 <span
                   className={`font-mono text-[14px] font-semibold tabular ${
-                    step.kind === "placeholder" ? "text-gray-400" : "text-content-strong"
+                    step.kind === "placeholder" || step.value === null
+                      ? "text-gray-400"
+                      : "text-content-strong"
                   }`}
                 >
-                  {step.kind === "placeholder" ? "Not stated" : money(step.value)}
+                  {step.kind === "placeholder" ? step.missing : money(step.value)}
                 </span>
               </div>
               <div
@@ -259,7 +295,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
                       : "h-3.5 bg-ink-600"
                     : step.kind === "cost"
                       ? "h-2.5 border border-negative/55 bg-negative/[0.18]"
-                      : "hatched h-3.5 border border-dashed border-hairline-strong"
+                      : "hatched h-3.5 border border-hairline-strong"
                 }`}
                 style={{
                   width: `${widthPct}%`,
@@ -267,27 +303,11 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
                     step.kind === "cost" ? `${Math.max(0, 100 - widthPct - 2)}%` : 0,
                 }}
               />
-              {step.kind === "placeholder" && (
-                <span className="font-mono text-[9.5px] uppercase tracking-[0.06em] text-gray-400">
-                  Not stated
-                </span>
-              )}
             </div>
           );
         })}
       </div>
 
-      <div className="flex flex-col items-start gap-2.5 rounded-control border border-dashed border-hairline-strong bg-gray-50 p-[11px_14px] sm:flex-row sm:items-center">
-        <span className="rounded-pill border border-dashed border-hairline-strong px-2 py-[3px] font-mono text-[9.5px] uppercase tracking-[0.1em] text-gray-400">
-          No data
-        </span>
-        <span className="text-[12.5px] leading-[1.6] text-content-body">
-          <b className="text-content-strong">Fulfilment</b> (outbound shipping,
-          warehousing) is not measured, so CM1 and CM2 are identical today. The
-          step is drawn empty rather than as zero; when a rate is set it fills in
-          and nothing else moves.
-        </span>
-      </div>
     </section>
   );
 }

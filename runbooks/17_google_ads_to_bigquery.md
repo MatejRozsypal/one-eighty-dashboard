@@ -248,3 +248,98 @@ CAC   = SUM(paid_spend) / SUM(new_customer_orders)
 Effect (monthly, CZK): Manami MER Jun 2026 3.33 -> 2.56, Sep 2026 3.36 -> 2.93; aMER Jun 1.94, Sep 1.96;
 Dobias unchanged (no Google). RawBark has no Meta in the warehouse yet, so its MER (Sep 22.28) and
 aMER (1.36) are Google only and overstated until Meta lands.
+
+---
+
+## 2026-10-04: Paid marts and brand terms (package PA2, for the Paid > Google tab)
+
+Seven views model the DTS tables that were loading but unused, and a per-client brand-terms list
+classifies Google spend as brand or non-brand. Files: `infra/bigquery/241_ref_client_brand_terms.sql`,
+`infra/bigquery/242_gads_marts.sql`, regression in `infra/bigquery/qa/242_regression.sql`.
+`mart_daily_kpis` and `stg.stg_google_ads_campaign_insights` are not changed.
+
+**Deploy order:** PA1 migration (creates `ref.naming_rules`, `ref.campaign_overrides`), then 241, then 242,
+then run `qa/242_regression.sql` as is. Every block of the regression must read OK / 0 (R4, R5 and R9 are
+review tables, not pass/fail). 242 also seeds one Google market rule into `ref.naming_rules` (idempotent).
+
+| View (dataset `mart`) | Grain | Use |
+|---|---|---|
+| `mart_gads_campaign_dim` | client, campaign | name, type, status, bid strategy, budget/day, `brand_class`, `market` |
+| `mart_gads_campaign_daily` | client, date, campaign, network | spend, value, purchases, impression-share components, `*_client_ccy` |
+| `mart_gads_campaign_device_daily` | client, date, campaign, device | device split (the network view cannot carry device) |
+| `mart_gads_adgroup_daily` | client, date, campaign, ad group | ad group table (no PMax: PMax has asset groups) |
+| `mart_gads_search_terms_daily` | client, date, campaign, ad group, term, match type, status, keyword | search terms, `is_brand`, brand leakage |
+| `mart_gads_keywords_daily` | client, date, campaign, ad group, keyword | keyword table, quality score, `is_brand` |
+| `mart_gads_products_daily` | client, date, campaign, item and product attributes | product table (Shopping, Demand Gen, part of PMax) |
+
+**Rules to keep (each one was a real trap in the DTS data):**
+
+- Spend comes from `CampaignBasicStats` only. `CampaignStats` is 12 percent low for RawBark.
+- `date = DATE(_PARTITIONTIME)` equals `segments_date` (0 mismatches in the regression), so a dashboard
+  `date BETWEEN` prunes partitions. Views end at yesterday and start 25 months back.
+- Conversions: `conversions` / `conversions_value` are the account's primary-conversion totals (these equal
+  `mart_daily_kpis.google_purchases` / `google_revenue`). `purchases` / `purchase_value` are the PURCHASE
+  conversion category. Both accounts only have PURCHASE today, so they are equal; the Google tab uses the
+  purchase columns by default (owner decision) so it stays correct when other conversion types appear.
+- Impression share is stored as components. Never average the shares:
+  `Search IS = SUM(is_impressions) / SUM(eligible_impressions)`; lost to budget and lost to rank use
+  `lost_budget_impressions` and `lost_rank_impressions` over the same denominator; absolute top IS uses
+  `abs_top_impressions`; **top IS = SUM(top_impressions) / SUM(top_eligible_impressions)** (Shopping reports top
+  IS as 0, so those rows are excluded from both sums); click share =
+  `SUM(click_share_clicks) / SUM(eligible_clicks)`. DTS writes 0.0 for "not reported", so a share of 0 is
+  treated as missing. "<10%" arrives as 0.0999: about 60 percent of RawBark rows have a component at that floor,
+  so lost-share figures are upper bounds (the regression R3 counts `rows_at_floor`).
+- `KeywordStats` repeats impressions per click type. The keyword view takes impressions from `URL_CLICKS` rows
+  only; spend, clicks and conversions are summed over all click types (R8 proves both reconcile exactly).
+- Search terms cover only part of Search spend (privacy threshold): RawBark 62.7 percent (30 days to 2026-10-03).
+  Products cover RawBark Shopping 100 percent, RawBark PMax 0 percent, Manami PMax 25.8 percent. The tab shows
+  these as "Covers N% of spend"; they are not errors.
+- Money is in the Google Ads account currency; `*_client_ccy` columns apply the month's `ref.fx_rates` rate per
+  row, NULL when the rate is missing. `ref.fx_rates` currently ends 2026-09-01; both live accounts are CZK with a
+  CZK client currency, so the factor is 1 and nothing is NULL.
+
+**Brand class of a campaign** (`mart_gads_campaign_dim.brand_class`): 1) `ref.campaign_overrides` row with
+`platform = 'google'`; 2) channel SHOPPING or PERFORMANCE_MAX gives `shopping_pmax`; 3) channel SEARCH and the name
+has the token `brand` or `brd` (split on any non letter or digit, so `PER_BRD_KW_CZ~Brand CPC` counts) or matches a
+brand term of scope `campaign` or `all` gives `brand`; 4) other SEARCH gives `non_brand`; 5) everything else
+(Display, Video, Demand Gen) gives `other`. Search terms and keywords get `is_brand` from the same list with scope
+`search_term` or `all`. Brand leakage = brand search-term spend in `non_brand` campaigns divided by search-term
+spend in `non_brand` campaigns.
+
+### Add brand terms (INSERT helper)
+
+`ref.client_brand_terms` has one row per term variant; misspellings and product-line brand names are separate
+rows. The helper writes `term_norm` (lower case, diacritics stripped, whitespace collapsed) for you and skips
+rows that already exist. Edit the client and the list, run it, then re-run regression R5 and R9.
+
+```sql
+INSERT INTO `oneeighty-warehouse.ref.client_brand_terms`
+  (client_id, term, term_norm, match_type, is_exclusion, applies_to, note, added_by, updated_at)
+SELECT 'rawbark', t,
+       TRIM(REGEXP_REPLACE(REGEXP_REPLACE(LOWER(NORMALIZE(t, NFD)), r'\p{M}', ''), r'\s+', ' ')),
+       'contains',   -- 'contains' | 'word' | 'exact' | 'regex'
+       FALSE,        -- TRUE = a match makes the text NOT brand (generic word that contains the brand)
+       'all',        -- 'all' | 'search_term' | 'campaign'
+       NULL, 'matej', CURRENT_TIMESTAMP()
+FROM UNNEST(['raw bark', 'rawbark', 'rawbrk']) t           -- the variants as typed
+WHERE NOT EXISTS (
+  SELECT 1 FROM `oneeighty-warehouse.ref.client_brand_terms` x
+  WHERE x.client_id = 'rawbark'
+    AND x.term_norm = TRIM(REGEXP_REPLACE(REGEXP_REPLACE(LOWER(NORMALIZE(t, NFD)), r'\p{M}', ''), r'\s+', ' '))
+    AND x.match_type = 'contains' AND x.is_exclusion = FALSE AND x.applies_to = 'all'
+);
+```
+
+- `contains` matches anywhere in the text; `word` matches a whole word (the term is regex-escaped); `exact`
+  needs the whole text to equal the term; `regex` uses `term_norm` as an RE2 pattern as typed, so for regex rows
+  write `term_norm` yourself instead of using the helper (an invalid pattern is ignored, it does not break the views).
+- An exclusion row (`is_exclusion = TRUE`) beats any brand match on the same text, for example to stop a generic
+  word that happens to contain the brand from counting.
+- Remove a term: `DELETE FROM ref.client_brand_terms WHERE client_id = '...' AND term_norm = '...'`.
+- Fix one campaign by hand instead of by name: add a row to `ref.campaign_overrides` with `platform = 'google'`,
+  the `campaign_id` and a `brand_class` (`brand`, `non_brand`, `shopping_pmax`, `other`) and/or a `market`.
+
+Review the result with regression R9 (every campaign with spend in the last 90 days, its class and market).
+Live on 2026-10-04 with only the seed terms: RawBark `CZ - S: Brand`, `SK - S: Brand` are `brand`, the
+`S: Granule` campaigns are `non_brand`, PMax and PLA are `shopping_pmax`; Manami has no Search spend and no
+brand campaign, so all of it is `shopping_pmax`. Demand Gen RMK campaigns carry no country token, so their market is NULL.

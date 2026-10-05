@@ -26,7 +26,7 @@ WITH prod AS (
   SELECT TO_JSON_STRING(t) j FROM `oneeighty-warehouse.mart.mart_meta_ad_perf` t WHERE date < CURRENT_DATE()
 ), cand AS (
   SELECT TO_JSON_STRING(t) j FROM (
-    SELECT * EXCEPT(attribution_windows, purchases_7d_click, revenue_7d_click, purchases_1d_view, revenue_1d_view, purchases_1d_ev, revenue_1d_ev)
+    SELECT * EXCEPT(attribution_windows, purchases_7d_click, revenue_7d_click, purchases_1d_view, revenue_1d_view, purchases_1d_ev, revenue_1d_ev, purchases_7dc_1dv, revenue_7dc_1dv)
     FROM `oneeighty-warehouse.mart_qa.me2_mart_meta_ad_perf` WHERE date < CURRENT_DATE()) t
 )
 SELECT 'prod_minus_cand' k, COUNT(*) n FROM (SELECT j FROM prod EXCEPT DISTINCT SELECT j FROM cand)
@@ -42,7 +42,7 @@ WITH prod AS (
   SELECT TO_JSON_STRING(t) j FROM `oneeighty-warehouse.mart.mart_creative_perf` t WHERE date < CURRENT_DATE()
 ), cand AS (
   SELECT TO_JSON_STRING(t) j FROM (
-    SELECT * EXCEPT(attribution_windows, purchases_7d_click, revenue_7d_click, purchases_1d_view, revenue_1d_view, purchases_1d_ev, revenue_1d_ev)
+    SELECT * EXCEPT(attribution_windows, purchases_7d_click, revenue_7d_click, purchases_1d_view, revenue_1d_view, purchases_1d_ev, revenue_1d_ev, purchases_7dc_1dv, revenue_7dc_1dv)
     FROM `oneeighty-warehouse.mart_qa.me2_mart_creative_perf` WHERE date < CURRENT_DATE()) t
 )
 SELECT 'prod_minus_cand' k, COUNT(*) n FROM (SELECT j FROM prod EXCEPT DISTINCT SELECT j FROM cand)
@@ -53,12 +53,13 @@ UNION ALL SELECT 'cand_rows', COUNT(*) FROM cand;
 
 -- -----------------------------------------------------------------------------
 -- B1. rpt_ad_launch: the 31 existing columns equal the live 255 logic built in the same
---     script (CALL me2base_...; CALL me2_...;). Expect 0, 0, 459 rows, 41 columns.
+--     script (CALL me2base_...; CALL me2_...;). Expect 0, 0, 459 rows, 44 columns (41 before the
+--     standard-basis columns were added on 2026-10-05).
 -- -----------------------------------------------------------------------------
 WITH base AS (SELECT TO_JSON_STRING(t) j FROM (SELECT * EXCEPT(refreshed_at) FROM `oneeighty-warehouse.mart_qa.me2base_rpt_ad_launch`) t),
 cand AS (SELECT TO_JSON_STRING(t) j FROM (SELECT * EXCEPT(refreshed_at, attribution_split_days, attribution_split_complete,
   purchases_7d_click, revenue_7d_click, purchases_1d_view, revenue_1d_view, purchases_1d_ev, revenue_1d_ev,
-  prior_roas_7d_click, prior_split_coverage) FROM `oneeighty-warehouse.mart_qa.me2_rpt_ad_launch`) t)
+  prior_roas_7d_click, prior_split_coverage, purchases_7dc_1dv, revenue_7dc_1dv, prior_roas_7dc_1dv) FROM `oneeighty-warehouse.mart_qa.me2_rpt_ad_launch`) t)
 SELECT 'base_minus_cand' k, COUNT(*) n FROM (SELECT j FROM base EXCEPT DISTINCT SELECT j FROM cand)
 UNION ALL SELECT 'cand_minus_base', COUNT(*) FROM (SELECT j FROM cand EXCEPT DISTINCT SELECT j FROM base)
 UNION ALL SELECT 'base_rows', COUNT(*) FROM base
@@ -90,8 +91,9 @@ FROM `oneeighty-warehouse.mart_qa.me2_rpt_ad_launch` GROUP BY 1 ORDER BY 1;
 -- C. AFTER DEPLOY: reconciliation of the split with the legacy columns, per ad set setting.
 --    Needs the ad set settings: mart_qa.me2_adset_attribution (pulled 2026-10-05 from the
 --    Meta Ads MCP, expires 2026-11-05; re-pull for ad sets created later).
---    Expect mismatch_days near 0 for days older than 2 days (both fetches land in the same
---    hourly run; the newest days can differ by the minutes between the two requests).
+--    Identity measured 2026-10-05: legacy = 7d_click (+ 1d_view if the ad set has a view window),
+--    1d_ev is never in the legacy figure. Expect mismatch_days near 0 for days older than 2 days
+--    (the newest days can differ by the minutes between the two requests).
 -- -----------------------------------------------------------------------------
 WITH j AS (
   SELECT m.client_id, m.date, a.attribution_setting AS s,
@@ -104,11 +106,12 @@ WITH j AS (
     AND m.attribution_windows IS NOT NULL
 )
 SELECT client_id, s, COUNT(*) AS ad_days,
-  COUNTIF(p_legacy != p7 + IF(s LIKE '%1d_view%', p1v, 0) + IF(s LIKE '%1d_ev%', pev, 0)) AS mismatch_days,
+  -- legacy = 7d_click (+ 1d_view when the ad set has a view window); 1d_ev is never in legacy
+  COUNTIF(p_legacy != p7 + IF(s LIKE '%1d_view%', p1v, 0)) AS mismatch_days,
   SUM(p_legacy) AS p_legacy,
-  SUM(p7 + IF(s LIKE '%1d_view%', p1v, 0) + IF(s LIKE '%1d_ev%', pev, 0)) AS p_rebuilt,
+  SUM(p7 + IF(s LIKE '%1d_view%', p1v, 0)) AS p_rebuilt,
   ROUND(SUM(v_legacy), 2) AS v_legacy,
-  ROUND(SUM(v7 + IF(s LIKE '%1d_view%', v1v, 0) + IF(s LIKE '%1d_ev%', vev, 0)), 2) AS v_rebuilt
+  ROUND(SUM(v7 + IF(s LIKE '%1d_view%', v1v, 0)), 2) AS v_rebuilt
 FROM j GROUP BY 1, 2 ORDER BY 1, 2;
 
 -- C2. Coverage: delivery days without the split, per client (expect 0 after the backfill).
@@ -122,29 +125,32 @@ WHERE date < CURRENT_DATE()
 GROUP BY 1 ORDER BY 1;
 
 -- -----------------------------------------------------------------------------
--- D. AFTER BACKFILL: the measurement stage 1 could not make (the Meta Ads MCP does not
---    expose action_attribution_windows). Run on prod names.
--- D1. Share of purchases and value that is 1-day view (and engaged view), last 90 complete days.
+-- D. AFTER BACKFILL: the measurement (owner decision D3 as amended 2026-10-05: standard
+--    decision basis = 7d_click + 1d_view; 1d_ev stored, excluded). Run on prod names, or on
+--    mart_qa.me2_* candidates that read the prod stg view before the mart views are deployed.
+-- D1. Share of purchases and value by window, last 90 complete days and lifetime.
 -- -----------------------------------------------------------------------------
-SELECT client_id,
+SELECT client_id, IF(date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY), 'last_90d', 'older') AS period,
   SUM(purchases) AS p_legacy,
-  SUM(purchases_7d_click) AS p_7d_click,
-  SUM(purchases_1d_view) AS p_1d_view,
-  SUM(purchases_1d_ev) AS p_1d_ev,
-  ROUND(SAFE_DIVIDE(SUM(purchases_1d_view), SUM(IFNULL(purchases_7d_click, 0) + IFNULL(purchases_1d_view, 0))), 3) AS view_share_p,
-  ROUND(SAFE_DIVIDE(SUM(revenue_1d_view), SUM(IFNULL(revenue_7d_click, 0) + IFNULL(revenue_1d_view, 0))), 3) AS view_share_v,
-  ROUND(SAFE_DIVIDE(SUM(purchases_7d_click), SUM(purchases)), 3) AS p7_over_legacy,
-  ROUND(SAFE_DIVIDE(SUM(revenue_7d_click), SUM(spend)), 3) AS roas_7d_click,
+  SUM(purchases_7d_click) AS p_7d_click, SUM(purchases_1d_view) AS p_1d_view, SUM(purchases_1d_ev) AS p_1d_ev,
+  ROUND(SAFE_DIVIDE(SUM(purchases_7d_click), SUM(purchases_7d_click + purchases_1d_view + purchases_1d_ev)), 3) AS share_p_7d_click,
+  ROUND(SAFE_DIVIDE(SUM(purchases_1d_view),  SUM(purchases_7d_click + purchases_1d_view + purchases_1d_ev)), 3) AS share_p_1d_view,
+  ROUND(SAFE_DIVIDE(SUM(purchases_1d_ev),    SUM(purchases_7d_click + purchases_1d_view + purchases_1d_ev)), 3) AS share_p_1d_ev,
+  ROUND(SAFE_DIVIDE(SUM(revenue_7d_click), SUM(revenue_7d_click + revenue_1d_view + revenue_1d_ev)), 3) AS share_v_7d_click,
+  ROUND(SAFE_DIVIDE(SUM(revenue_1d_view),  SUM(revenue_7d_click + revenue_1d_view + revenue_1d_ev)), 3) AS share_v_1d_view,
+  ROUND(SAFE_DIVIDE(SUM(revenue_1d_ev),    SUM(revenue_7d_click + revenue_1d_view + revenue_1d_ev)), 3) AS share_v_1d_ev,
   ROUND(SAFE_DIVIDE(SUM(revenue), SUM(spend)), 3) AS roas_legacy,
+  ROUND(SAFE_DIVIDE(SUM(revenue_7dc_1dv), SUM(spend)), 3) AS roas_7dc_1dv,
+  ROUND(SAFE_DIVIDE(SUM(revenue_7d_click), SUM(spend)), 3) AS roas_7d_click,
   COUNTIF(impressions > 0 AND attribution_windows IS NULL) AS days_without_split
 FROM `oneeighty-warehouse.mart.mart_meta_ad_perf`
-WHERE client_id IN ('dobias', 'ethia', 'manami', 'venev')
-  AND date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
-GROUP BY 1 ORDER BY 1;
+WHERE client_id IN ('dobias', 'ethia', 'manami', 'venev') AND date < CURRENT_DATE()
+GROUP BY 1, 2 ORDER BY 1, 2;
 
--- D2. Dashboard winners (purchases >= N and shrunk ROAS >= target, shrinkage weight N, anchor
---     prior) on the legacy numbers vs on 7-day click, with the stored prior (as the dashboard
---     anchors today) and with the 7-day click prior. Thresholds as in Settings 2026-10-05.
+-- D2. Dashboard winners (purchases >= N and shrunk ROAS >= target, shrinkage weight N) on
+--     (i) the current mixed per-ad-set numbers with the stored prior, vs (ii) the standard basis
+--     7d_click + 1d_view with the stored prior and with the prior on the same basis.
+--     Thresholds as in Settings 2026-10-05.
 WITH thr AS (
   SELECT * FROM UNNEST([STRUCT('dobias' AS client_id, 3.00 AS tgt, 25 AS n),
                         ('ethia', 2.50, 10), ('manami', 2.25, 15), ('venev', 2.10, 10)])
@@ -152,22 +158,46 @@ WITH thr AS (
 r AS (
   SELECT r.*, t.tgt, t.n,
     r.purchases >= t.n
-      AND SAFE_DIVIDE(r.purchases * SAFE_DIVIDE(r.revenue, r.spend) + t.n * r.prior_roas, r.purchases + t.n) >= t.tgt AS win_now,
-    r.purchases_7d_click >= t.n
-      AND SAFE_DIVIDE(r.purchases_7d_click * SAFE_DIVIDE(r.revenue_7d_click, r.spend) + t.n * r.prior_roas, r.purchases_7d_click + t.n) >= t.tgt AS win_7d_stored_prior,
-    r.purchases_7d_click >= t.n
-      AND SAFE_DIVIDE(r.purchases_7d_click * SAFE_DIVIDE(r.revenue_7d_click, r.spend) + t.n * r.prior_roas_7d_click, r.purchases_7d_click + t.n) >= t.tgt AS win_7d_own_prior
+      AND SAFE_DIVIDE(r.purchases * SAFE_DIVIDE(r.revenue, r.spend) + t.n * r.prior_roas, r.purchases + t.n) >= t.tgt AS win_mixed,
+    r.purchases_7dc_1dv >= t.n
+      AND SAFE_DIVIDE(r.purchases_7dc_1dv * SAFE_DIVIDE(r.revenue_7dc_1dv, r.spend) + t.n * r.prior_roas, r.purchases_7dc_1dv + t.n) >= t.tgt AS win_std_stored_prior,
+    r.purchases_7dc_1dv >= t.n
+      AND SAFE_DIVIDE(r.purchases_7dc_1dv * SAFE_DIVIDE(r.revenue_7dc_1dv, r.spend) + t.n * r.prior_roas_7dc_1dv, r.purchases_7dc_1dv + t.n) >= t.tgt AS win_std_own_prior
   FROM `oneeighty-warehouse.mart.rpt_ad_launch` r JOIN thr t USING (client_id)
 )
 SELECT client_id,
-  COUNTIF(win_now) AS winners_now,
-  COUNTIF(win_now AND NOT IFNULL(win_7d_stored_prior, FALSE)) AS lost_on_7d_stored_prior,
-  COUNTIF(NOT IFNULL(win_now, FALSE) AND win_7d_stored_prior) AS gained_on_7d_stored_prior,
-  COUNTIF(win_now AND NOT IFNULL(win_7d_own_prior, FALSE)) AS lost_on_7d_own_prior,
-  COUNTIF(NOT IFNULL(win_now, FALSE) AND win_7d_own_prior) AS gained_on_7d_own_prior,
+  COUNTIF(win_mixed) AS winners_mixed,
+  COUNTIF(win_std_stored_prior) AS winners_std_stored_prior,
+  COUNTIF(win_mixed AND NOT IFNULL(win_std_stored_prior, FALSE)) AS lost_std_stored_prior,
+  COUNTIF(NOT IFNULL(win_mixed, FALSE) AND win_std_stored_prior) AS gained_std_stored_prior,
+  COUNTIF(win_std_own_prior) AS winners_std_own_prior,
+  COUNTIF(win_mixed AND NOT IFNULL(win_std_own_prior, FALSE)) AS lost_std_own_prior,
+  COUNTIF(NOT IFNULL(win_mixed, FALSE) AND win_std_own_prior) AS gained_std_own_prior,
   COUNTIF(NOT attribution_split_complete) AS ads_without_complete_split,
-  ANY_VALUE(prior_roas) AS prior_roas, ANY_VALUE(prior_roas_7d_click) AS prior_roas_7d_click
+  ANY_VALUE(prior_roas) AS prior_roas, ANY_VALUE(prior_roas_7dc_1dv) AS prior_roas_7dc_1dv,
+  ANY_VALUE(prior_roas_7d_click) AS prior_roas_7d_click, ANY_VALUE(prior_split_coverage) AS prior_split_coverage
 FROM r GROUP BY 1 ORDER BY 1;
+
+-- D3. The ads whose status differs between (i) and (ii), for the owner.
+WITH thr AS (
+  SELECT * FROM UNNEST([STRUCT('dobias' AS client_id, 3.00 AS tgt, 25 AS n),
+                        ('ethia', 2.50, 10), ('manami', 2.25, 15), ('venev', 2.10, 10)])
+),
+r AS (
+  SELECT r.client_id, r.ad_name, r.first_date, r.purchases, r.purchases_7dc_1dv, r.purchases_1d_ev,
+    ROUND(SAFE_DIVIDE(r.revenue, r.spend), 2) AS roas_mixed, ROUND(SAFE_DIVIDE(r.revenue_7dc_1dv, r.spend), 2) AS roas_std,
+    r.purchases >= t.n
+      AND SAFE_DIVIDE(r.purchases * SAFE_DIVIDE(r.revenue, r.spend) + t.n * r.prior_roas, r.purchases + t.n) >= t.tgt AS win_mixed,
+    r.purchases_7dc_1dv >= t.n
+      AND SAFE_DIVIDE(r.purchases_7dc_1dv * SAFE_DIVIDE(r.revenue_7dc_1dv, r.spend) + t.n * r.prior_roas, r.purchases_7dc_1dv + t.n) >= t.tgt AS win_std_stored_prior,
+    r.purchases_7dc_1dv >= t.n
+      AND SAFE_DIVIDE(r.purchases_7dc_1dv * SAFE_DIVIDE(r.revenue_7dc_1dv, r.spend) + t.n * r.prior_roas_7dc_1dv, r.purchases_7dc_1dv + t.n) >= t.tgt AS win_std_own_prior
+  FROM `oneeighty-warehouse.mart.rpt_ad_launch` r JOIN thr t USING (client_id)
+)
+SELECT * FROM r
+WHERE IFNULL(win_mixed, FALSE) != IFNULL(win_std_stored_prior, FALSE)
+   OR IFNULL(win_mixed, FALSE) != IFNULL(win_std_own_prior, FALSE)
+ORDER BY client_id, ad_name;
 
 -- -----------------------------------------------------------------------------
 -- E. Stage 1 sensitivity (run 2026-10-05, before any split exists).

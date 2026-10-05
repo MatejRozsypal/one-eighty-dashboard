@@ -1,5 +1,5 @@
 CREATE OR REPLACE PROCEDURE `oneeighty-warehouse.mart.sp_refresh_rpt_ad_launch`()
-OPTIONS (description = 'Rebuilds mart.rpt_ad_launch (one row per Meta ad: first delivery date, lifetime totals, pre-existing and relaunch flags, 12 month prior ROAS) from mart.mart_meta_ad_perf. Builds mart.rpt_ad_launch__next, checks it (rows > 0, >= 90 % of the current table, unique client_id and ad_id, latest day not older than 2 days), then swaps it in with CREATE OR REPLACE TABLE ... COPY. Any failure leaves the current table untouched. Migration 254. Run daily by a BigQuery scheduled query.')
+OPTIONS (description = 'Rebuilds mart.rpt_ad_launch (one row per Meta ad: first delivery date, lifetime totals, pre-existing and relaunch flags, video flag, ad set launch context, 12 month prior ROAS, purchases per attribution window) from mart.mart_meta_ad_perf. Builds mart.rpt_ad_launch__next, checks it (rows > 0, >= 90 % of the current table, unique client_id and ad_id, latest day not older than 2 days), then swaps it in with CREATE OR REPLACE TABLE ... COPY. Any failure leaves the current table untouched. Migrations 254, 255 and 256. Run daily by a BigQuery scheduled query.')
 BEGIN
   DECLARE prev_rows INT64;
   DECLARE new_rows INT64;
@@ -20,7 +20,13 @@ BEGIN
   AS
   WITH d AS (
     SELECT client_id, ad_id, date, ad_name, campaign_id, adset_id, currency,
-           spend, revenue, purchases, impressions, video_play_actions
+           spend, revenue, purchases, impressions, video_play_actions,
+           -- 256: attribution split
+           attribution_windows,
+           purchases_7d_click, revenue_7d_click,
+           purchases_1d_view, revenue_1d_view,
+           purchases_1d_ev, revenue_1d_ev,
+           purchases_7dc_1dv, revenue_7dc_1dv
     FROM `oneeighty-warehouse.mart.mart_meta_ad_perf`
     WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH) AND date < CURRENT_DATE()
   ),
@@ -31,7 +37,15 @@ BEGIN
   ),
   prior AS (
     -- Shrinkage anchor: trailing 365 days of the client's Meta ROAS, sum over sum.
-    SELECT d.client_id, SAFE_DIVIDE(SUM(d.revenue), SUM(d.spend)) AS prior_roas
+    SELECT d.client_id, SAFE_DIVIDE(SUM(d.revenue), SUM(d.spend)) AS prior_roas,
+      -- 256: the same anchor on 7-day click. NULL unless every delivery day of the window
+      -- carries the split, so a half-backfilled year cannot pose as the anchor.
+      IF(COUNTIF(d.impressions > 0 AND d.attribution_windows IS NULL) = 0,
+         SAFE_DIVIDE(SUM(d.revenue_7d_click), SUM(d.spend)), NULL) AS prior_roas_7d_click,
+      -- 256: the standard basis anchor (7-day click + 1-day view), same coverage rule.
+      IF(COUNTIF(d.impressions > 0 AND d.attribution_windows IS NULL) = 0,
+         SAFE_DIVIDE(SUM(d.revenue_7dc_1dv), SUM(d.spend)), NULL) AS prior_roas_7dc_1dv,
+      SAFE_DIVIDE(SUM(IF(d.attribution_windows IS NOT NULL, d.spend, 0)), SUM(d.spend)) AS prior_split_coverage
     FROM d JOIN hist h USING (client_id)
     WHERE d.date > DATE_SUB(h.through, INTERVAL 365 DAY)
     GROUP BY d.client_id
@@ -49,7 +63,17 @@ BEGIN
       IFNULL(SUM(revenue), 0) AS revenue,
       IFNULL(SUM(purchases), 0) AS purchases,
       IFNULL(SUM(impressions), 0) AS impressions,
-      IFNULL(SUM(video_play_actions), 0) AS video_plays
+      IFNULL(SUM(video_play_actions), 0) AS video_plays,
+      -- 256: attribution split, lifetime
+      COUNTIF(impressions > 0 AND attribution_windows IS NOT NULL) AS split_days,
+      IFNULL(SUM(purchases_7d_click), 0) AS purchases_7d_click,
+      IFNULL(SUM(revenue_7d_click), 0) AS revenue_7d_click,
+      IFNULL(SUM(purchases_1d_view), 0) AS purchases_1d_view,
+      IFNULL(SUM(revenue_1d_view), 0) AS revenue_1d_view,
+      IFNULL(SUM(purchases_1d_ev), 0) AS purchases_1d_ev,
+      IFNULL(SUM(revenue_1d_ev), 0) AS revenue_1d_ev,
+      IFNULL(SUM(purchases_7dc_1dv), 0) AS purchases_7dc_1dv,
+      IFNULL(SUM(revenue_7dc_1dv), 0) AS revenue_7dc_1dv
     FROM d
     GROUP BY client_id, ad_id
     HAVING first_date IS NOT NULL
@@ -58,8 +82,15 @@ BEGIN
     -- The creative asset: video, else image, else post, else creative.
     SELECT client_id, ad_id,
       COALESCE(NULLIF(video_id, ''), NULLIF(image_hash, ''),
-               NULLIF(effective_object_story_id, ''), NULLIF(creative_id, '')) AS asset_key
+               NULLIF(effective_object_story_id, ''), NULLIF(creative_id, '')) AS asset_key,
+      NULLIF(video_id, '') IS NOT NULL AS has_video_asset
     FROM `oneeighty-warehouse.mart.mart_creative_asset`
+  ),
+  life2 AS (
+    -- Ad set launch context (255): first delivery day of the ad set = earliest first_date of
+    -- its ads. An ad whose first delivery is within 2 days of that day launched with its ad set.
+    SELECT l.*, MIN(l.first_date) OVER (PARTITION BY l.client_id, l.adset_id) AS adset_first_date
+    FROM life l
   )
   SELECT
     l.client_id, l.ad_id, l.ad_name, l.campaign_id, l.adset_id, l.currency,
@@ -68,15 +99,35 @@ BEGIN
     h.history_start, h.through,
     DATE_DIFF(h.through, l.first_date, DAY) AS age_days,
     l.first_date <= DATE_ADD(h.history_start, INTERVAL 2 DAY) AS is_preexisting,
-    l.video_plays > 0 AS is_video,
+    -- 255: video when video starts are >= 30 % of impressions (a few plays on a banner are not
+    -- a video), or when the creative asset carries a video_id.
+    SAFE_DIVIDE(l.video_plays, l.impressions) >= 0.30 OR IFNULL(a.has_video_asset, FALSE) AS is_video,
     a.asset_key,
     IFNULL(a.asset_key IS NOT NULL AND ROW_NUMBER() OVER (
       PARTITION BY l.client_id, a.asset_key ORDER BY l.first_date, l.ad_id) > 1, FALSE) AS is_relaunch,
     t.concept_id, cn.name AS concept_name, t.persona_id,
     t.format AS format_tag, t.production_type,
     p.prior_roas,
-    CURRENT_TIMESTAMP() AS refreshed_at
-  FROM life l
+    CURRENT_TIMESTAMP() AS refreshed_at,
+    SAFE_DIVIDE(l.video_plays, l.impressions) AS video_start_share,
+    l.adset_first_date,
+    IFNULL(l.first_date <= DATE_ADD(l.adset_first_date, INTERVAL 2 DAY), FALSE) AS is_new_adset,
+    -- 256: attribution split. Lifetime window figures only when every delivery day has them.
+    l.split_days AS attribution_split_days,
+    l.split_days = l.active_days AS attribution_split_complete,
+    IF(l.split_days = l.active_days, l.purchases_7d_click, NULL) AS purchases_7d_click,
+    IF(l.split_days = l.active_days, l.revenue_7d_click, NULL)   AS revenue_7d_click,
+    IF(l.split_days = l.active_days, l.purchases_1d_view, NULL)  AS purchases_1d_view,
+    IF(l.split_days = l.active_days, l.revenue_1d_view, NULL)    AS revenue_1d_view,
+    IF(l.split_days = l.active_days, l.purchases_1d_ev, NULL)    AS purchases_1d_ev,
+    IF(l.split_days = l.active_days, l.revenue_1d_ev, NULL)      AS revenue_1d_ev,
+    p.prior_roas_7d_click,
+    p.prior_split_coverage,
+    -- 256: standard decision basis, 7-day click + 1-day view (1d_ev excluded).
+    IF(l.split_days = l.active_days, l.purchases_7dc_1dv, NULL)  AS purchases_7dc_1dv,
+    IF(l.split_days = l.active_days, l.revenue_7dc_1dv, NULL)    AS revenue_7dc_1dv,
+    p.prior_roas_7dc_1dv
+  FROM life2 l
   JOIN hist h USING (client_id)
   LEFT JOIN prior p USING (client_id)
   LEFT JOIN asset a USING (client_id, ad_id)
@@ -104,7 +155,7 @@ BEGIN
   -- 3. Swap. One statement: readers see the old table or the new one, never a mix.
   CREATE OR REPLACE TABLE `oneeighty-warehouse.mart.rpt_ad_launch`
   COPY `oneeighty-warehouse.mart.rpt_ad_launch__next`
-  OPTIONS (description = 'One row per Meta ad: first delivery date, lifetime totals to the latest loaded day, pre-existing and relaunch flags, 12 month client ROAS prior. Built from mart.mart_meta_ad_perf by mart.sp_refresh_rpt_ad_launch (daily). Base for the creative hit rate. Migration 254.');
+  OPTIONS (description = 'One row per Meta ad: first delivery date, lifetime totals to the latest loaded day, pre-existing and relaunch flags, video flag and share, ad set launch context, 12 month client ROAS prior, lifetime purchases per attribution window (7d_click, 1d_view, 1d_ev) and on the standard basis 7d_click + 1d_view (NULL until the split covers every delivery day). Built from mart.mart_meta_ad_perf by mart.sp_refresh_rpt_ad_launch (daily). Base for the creative hit rate. Migrations 254, 255 and 256.');
 
   DROP TABLE IF EXISTS `oneeighty-warehouse.mart.rpt_ad_launch__next`;
 END;

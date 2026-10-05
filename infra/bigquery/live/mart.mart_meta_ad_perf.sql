@@ -26,7 +26,22 @@ SELECT
     WHERE JSON_VALUE(a, '$.action_type') = 'omni_view_content')  AS view_content,
   (SELECT CAST(SUM(SAFE_CAST(JSON_VALUE(a, '$.value') AS NUMERIC)) AS INT64)
      FROM UNNEST(JSON_QUERY_ARRAY(SAFE.PARSE_JSON(i.actions))) a
-    WHERE JSON_VALUE(a, '$.action_type') = 'add_payment_info')   AS add_payment_info
+    WHERE JSON_VALUE(a, '$.action_type') = 'add_payment_info')   AS add_payment_info,
+  -- additive (256, ME2). Purchases per attribution window. purchases / revenue above stay
+  -- on each ad set's own attribution setting. attribution_windows NULL = split not ingested.
+  w.attribution_windows,
+  CAST(w.purchases_7d_click AS INT64) AS purchases_7d_click,
+  w.purchase_value_7d_click           AS revenue_7d_click,
+  CAST(w.purchases_1d_view AS INT64)  AS purchases_1d_view,
+  w.purchase_value_1d_view            AS revenue_1d_view,
+  CAST(w.purchases_1d_ev AS INT64)    AS purchases_1d_ev,
+  w.purchase_value_1d_ev              AS revenue_1d_ev,
+  -- Standard decision basis (owner, D3 as amended 2026-10-05): 7-day click + 1-day view.
+  -- 1d_ev is stored above but is not part of the standard basis.
+  CAST(w.purchases_7d_click + w.purchases_1d_view AS INT64) AS purchases_7dc_1dv,
+  w.purchase_value_7d_click + w.purchase_value_1d_view      AS revenue_7dc_1dv
 FROM `oneeighty-warehouse.stg.stg_meta_ad_insights` i
 JOIN `oneeighty-warehouse.ref.clients` c USING (client_id)
+LEFT JOIN `oneeighty-warehouse.stg.stg_meta_ad_attribution_windows` w
+  ON w.client_id = i.client_id AND w.ad_id = i.ad_id AND w.date_start = i.date_start
 WHERE i.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH);

@@ -81,6 +81,14 @@ Notes:
   views and `stg`/`ref`/`ops` tables only; export the `mart` table with
   `WHERE table_schema = "mart" AND table_type = "BASE TABLE"` and the procedure from `INFORMATION_SCHEMA.ROUTINES`.
 
+## Amendment 2026-10-05, migration 256 (ME2, deployed)
+
+`stg.stg_meta_ad_attribution_windows` (new), `mart.mart_meta_ad_perf`, `mart.mart_creative_perf`: taken from
+`../256_meta_attribution_windows.sql`; MD5 of the live `view_definition` equals the file body for all three
+(dc0f7d0f..., 3d4cefba..., f07ac7d9...). `mart.sp_refresh_rpt_ad_launch.sql` is statement 5 of 256 verbatim as
+sent (it contains the 255 changes), `mart.rpt_ad_launch.sql` is `INFORMATION_SCHEMA.TABLES.ddl` after the CALL
+(44 columns). The new base table `raw.raw_meta_ad_attribution_windows` is in `raw`, which this mirror does not cover.
+
 ## Known live oddities worth a ticket (not fixed here)
 
 - `ref.product_costs` is documented as "RECORD ONLY"; since 228 `stg_woo_order_items` joins it by `product_id` and `variation_id` (columns added by 228).

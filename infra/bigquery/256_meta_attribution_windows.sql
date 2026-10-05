@@ -2,10 +2,18 @@
 -- 256_meta_attribution_windows.sql
 -- Meta purchases and purchase value per attribution window (7-day click, 1-day view,
 -- 1-day engaged view) next to the existing columns, from raw to mart.rpt_ad_launch.
--- Package ME2 of the Meta engine audit follow-up (03_audit.md change C2, owner decision D3:
--- store both 7d_click and 1d_view per row, decide on 7-day click, the label states the truth).
+-- Package ME2 of the Meta engine audit follow-up (03_audit.md change C2, owner decision D3 as
+-- amended 2026-10-05: store 7d_click, 1d_view and 1d_ev per row; the STANDARD decision basis is
+-- 7d_click + 1d_view, 1d_ev is stored but excluded; the label states the truth).
 --
--- STATUS: NOT DEPLOYED. Stage 2 needs orchestrator and owner approval (runbooks/32_meta_attribution.md).
+-- STATUS: DEPLOYED 2026-10-05 (owner approved stage 2: deploy and measure; no dashboard switch).
+--   ~11:13 UTC statements 1 and 2 (raw table, stg view)
+--   11:14-11:27 backfill, n8n ByGJ1fZkgEAj0EPm executions 24948 (venev) and 24951 (dobias, ethia,
+--               manami): 12,634 ad-days, every delivery day since each client's first ad-insights day
+--               (dobias 2026-04-20, ethia 2025-02-20, manami 2025-05-07, venev 2026-08-18)
+--   ~11:31 statements 3 and 4 (mart views; live MD5 = file), ~11:32 statement 5 + CALL (44 columns)
+--   11:33 live n8n workflow AnfdTVrS83ioPsd3 version 6fbc5931 published (windows branch)
+-- Deploy log and measurement in runbooks/32_meta_attribution.md and the ME2 report.
 --
 -- Problem
 --   The ad ingest (n8n wf_meta_ads_to_bigquery, id AnfdTVrS83ioPsd3) requests no attribution
@@ -32,18 +40,19 @@
 --                 Grain: one row per (client_id, ad_id, date_start, ingested_at); append-only
 --                 like the legacy table, the stg view keeps the latest ingest.
 --   2. NEW VIEW   stg.stg_meta_ad_attribution_windows (latest ingest per client, ad, day).
---   3. VIEW       mart.mart_meta_ad_perf: LEFT JOIN of (2), 7 columns appended at the end:
+--   3. VIEW       mart.mart_meta_ad_perf: LEFT JOIN of (2), 9 columns appended at the end:
 --                   attribution_windows   '7d_click,1d_view,1d_ev' when the split was ingested
 --                                         for that ad-day, NULL when it was not (legacy days
 --                                         before the backfill, or a failed windows fetch)
 --                   purchases_7d_click, revenue_7d_click
 --                   purchases_1d_view,  revenue_1d_view
 --                   purchases_1d_ev,    revenue_1d_ev
+--                   purchases_7dc_1dv,  revenue_7dc_1dv   standard basis = 7d_click + 1d_view
 --                 NULL purchases with attribution_windows set means no purchase action that
 --                 day, the same convention as the legacy `purchases`.
---   4. VIEW       mart.mart_creative_perf: the same 7 columns appended after `currency`.
---   5. PROCEDURE  mart.sp_refresh_rpt_ad_launch: 10 columns appended to mart.rpt_ad_launch
---                 (after is_new_adset, so 41 columns):
+--   4. VIEW       mart.mart_creative_perf: the same 9 columns appended after `currency`.
+--   5. PROCEDURE  mart.sp_refresh_rpt_ad_launch: 13 columns appended to mart.rpt_ad_launch
+--                 (after is_new_adset, so 44 columns):
 --                   attribution_split_days      delivery days (impressions > 0) with the split
 --                   attribution_split_complete  split_days = active_days. Only then is a
 --                                               lifetime 7-day click figure complete.
@@ -55,18 +64,22 @@
 --                                               365 days as prior_roas; NULL unless every
 --                                               delivery day of the window has the split
 --                   prior_split_coverage        share of that 365-day spend with the split
+--                   purchases_7dc_1dv, revenue_7dc_1dv, prior_roas_7dc_1dv
+--                                               the same on the standard basis (7d_click + 1d_view)
 --                 Existing 31 columns, ASSERTs, swap and scheduler unchanged.
 --   Legacy columns (purchases, revenue, purchase_value, prior_roas ...) keep the ad set setting
---   semantics ("as reported in Ads Manager"). Nothing switches automatically: the dashboard
---   (ME3) moves the winner test to purchases_7d_click / revenue_7d_click / prior_roas_7d_click
---   once attribution_split_complete is TRUE for the cohort it shows.
+--   semantics ("as reported in Ads Manager"). Nothing switches automatically: if the owner
+--   decides so after the measurement, the dashboard (ME3) moves the winner test to
+--   purchases_7dc_1dv / revenue_7dc_1dv / prior_roas_7dc_1dv where attribution_split_complete.
 --
--- Reconciliation identity (used by qa/256_regression.sql section C after deploy)
---   For an ad-day of an ad set on setting S, legacy purchases = sum of the windows in S:
+-- Reconciliation identity (used by qa/256_regression.sql section C), MEASURED 2026-10-05 on the
+-- backfill: the no-window API response counts 7d_click and, when the ad set has a view window,
+-- 1d_view. It never counts 1d_ev, even for ad sets whose setting includes engaged view:
 --     7d_click                 -> purchases = 7d_click
 --     1d_view_7d_click         -> purchases = 7d_click + 1d_view
---     1d_view_7d_click_1d_ev   -> purchases = 7d_click + 1d_view + 1d_ev
---   Expected to hold within Meta's own rounding once both fetches are from the same hour.
+--     1d_view_7d_click_1d_ev   -> purchases = 7d_click + 1d_view      (1d_ev NOT included)
+--   So the standard basis (7d_click + 1d_view) differs from the legacy columns only on ad sets
+--   set to 7d_click only, where it adds their 1-day view purchases.
 --
 -- Based on (live text, read 2026-10-05 from INFORMATION_SCHEMA):
 --   live/mart.mart_meta_ad_perf.sql, live/mart.mart_creative_perf.sql (both equal to live),
@@ -80,7 +93,7 @@
 -- Deploy order (stage 2, approval required). Full plan in runbooks/32_meta_attribution.md.
 --   1. Statements 1 and 2 (raw table, stg view). Harmless alone.
 --   2. Statements 3 and 4 (mart views). Columns appear, all NULL.
---   3. Statement 5 (procedure) and the CALL. rpt_ad_launch gets 41 columns, split columns NULL.
+--   3. Statement 5 (procedure) and the CALL. rpt_ad_launch gets 44 columns.
 --   4. n8n: import infra/n8n/wf_meta_ads_to_bigquery.json over the live workflow (adds the
 --      windows branch). From the next hourly run the last 35 days get the split.
 --   5. Backfill older days with the backfill workflow (runbook), then
@@ -136,7 +149,7 @@ SELECT * EXCEPT(rn) FROM (
 ) WHERE rn = 1;
 
 
--- 3. mart.mart_meta_ad_perf (live text + LEFT JOIN + 7 columns at the end) ---------------
+-- 3. mart.mart_meta_ad_perf (live text + LEFT JOIN + 9 columns at the end) ---------------
 CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_meta_ad_perf` AS
 SELECT
   i.client_id,
@@ -174,7 +187,11 @@ SELECT
   CAST(w.purchases_1d_view AS INT64)  AS purchases_1d_view,
   w.purchase_value_1d_view            AS revenue_1d_view,
   CAST(w.purchases_1d_ev AS INT64)    AS purchases_1d_ev,
-  w.purchase_value_1d_ev              AS revenue_1d_ev
+  w.purchase_value_1d_ev              AS revenue_1d_ev,
+  -- Standard decision basis (owner, D3 as amended 2026-10-05): 7-day click + 1-day view.
+  -- 1d_ev is stored above but is not part of the standard basis.
+  CAST(w.purchases_7d_click + w.purchases_1d_view AS INT64) AS purchases_7dc_1dv,
+  w.purchase_value_7d_click + w.purchase_value_1d_view      AS revenue_7dc_1dv
 FROM `oneeighty-warehouse.stg.stg_meta_ad_insights` i
 JOIN `oneeighty-warehouse.ref.clients` c USING (client_id)
 LEFT JOIN `oneeighty-warehouse.stg.stg_meta_ad_attribution_windows` w
@@ -182,7 +199,7 @@ LEFT JOIN `oneeighty-warehouse.stg.stg_meta_ad_attribution_windows` w
 WHERE i.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH);
 
 
--- 4. mart.mart_creative_perf (live text + LEFT JOIN + 7 columns after currency) -----------
+-- 4. mart.mart_creative_perf (live text + LEFT JOIN + 9 columns after currency) -----------
 CREATE OR REPLACE VIEW `oneeighty-warehouse.mart.mart_creative_perf` AS
 SELECT
   i.client_id,
@@ -260,7 +277,10 @@ SELECT
   CAST(w.purchases_1d_view AS INT64)    AS purchases_1d_view,
   w.purchase_value_1d_view              AS revenue_1d_view,
   CAST(w.purchases_1d_ev AS INT64)      AS purchases_1d_ev,
-  w.purchase_value_1d_ev                AS revenue_1d_ev
+  w.purchase_value_1d_ev                AS revenue_1d_ev,
+  -- Standard decision basis: 7-day click + 1-day view (1d_ev excluded).
+  CAST(w.purchases_7d_click + w.purchases_1d_view AS INT64) AS purchases_7dc_1dv,
+  w.purchase_value_7d_click + w.purchase_value_1d_view      AS revenue_7dc_1dv
 FROM `oneeighty-warehouse.stg.stg_meta_ad_insights` i
 JOIN `oneeighty-warehouse.ref.clients` c
   USING (client_id)
@@ -305,7 +325,8 @@ BEGIN
            attribution_windows,
            purchases_7d_click, revenue_7d_click,
            purchases_1d_view, revenue_1d_view,
-           purchases_1d_ev, revenue_1d_ev
+           purchases_1d_ev, revenue_1d_ev,
+           purchases_7dc_1dv, revenue_7dc_1dv
     FROM `oneeighty-warehouse.mart.mart_meta_ad_perf`
     WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH) AND date < CURRENT_DATE()
   ),
@@ -321,6 +342,9 @@ BEGIN
       -- carries the split, so a half-backfilled year cannot pose as the anchor.
       IF(COUNTIF(d.impressions > 0 AND d.attribution_windows IS NULL) = 0,
          SAFE_DIVIDE(SUM(d.revenue_7d_click), SUM(d.spend)), NULL) AS prior_roas_7d_click,
+      -- 256: the standard basis anchor (7-day click + 1-day view), same coverage rule.
+      IF(COUNTIF(d.impressions > 0 AND d.attribution_windows IS NULL) = 0,
+         SAFE_DIVIDE(SUM(d.revenue_7dc_1dv), SUM(d.spend)), NULL) AS prior_roas_7dc_1dv,
       SAFE_DIVIDE(SUM(IF(d.attribution_windows IS NOT NULL, d.spend, 0)), SUM(d.spend)) AS prior_split_coverage
     FROM d JOIN hist h USING (client_id)
     WHERE d.date > DATE_SUB(h.through, INTERVAL 365 DAY)
@@ -347,7 +371,9 @@ BEGIN
       IFNULL(SUM(purchases_1d_view), 0) AS purchases_1d_view,
       IFNULL(SUM(revenue_1d_view), 0) AS revenue_1d_view,
       IFNULL(SUM(purchases_1d_ev), 0) AS purchases_1d_ev,
-      IFNULL(SUM(revenue_1d_ev), 0) AS revenue_1d_ev
+      IFNULL(SUM(revenue_1d_ev), 0) AS revenue_1d_ev,
+      IFNULL(SUM(purchases_7dc_1dv), 0) AS purchases_7dc_1dv,
+      IFNULL(SUM(revenue_7dc_1dv), 0) AS revenue_7dc_1dv
     FROM d
     GROUP BY client_id, ad_id
     HAVING first_date IS NOT NULL
@@ -396,7 +422,11 @@ BEGIN
     IF(l.split_days = l.active_days, l.purchases_1d_ev, NULL)    AS purchases_1d_ev,
     IF(l.split_days = l.active_days, l.revenue_1d_ev, NULL)      AS revenue_1d_ev,
     p.prior_roas_7d_click,
-    p.prior_split_coverage
+    p.prior_split_coverage,
+    -- 256: standard decision basis, 7-day click + 1-day view (1d_ev excluded).
+    IF(l.split_days = l.active_days, l.purchases_7dc_1dv, NULL)  AS purchases_7dc_1dv,
+    IF(l.split_days = l.active_days, l.revenue_7dc_1dv, NULL)    AS revenue_7dc_1dv,
+    p.prior_roas_7dc_1dv
   FROM life2 l
   JOIN hist h USING (client_id)
   LEFT JOIN prior p USING (client_id)
@@ -425,10 +455,10 @@ BEGIN
   -- 3. Swap. One statement: readers see the old table or the new one, never a mix.
   CREATE OR REPLACE TABLE `oneeighty-warehouse.mart.rpt_ad_launch`
   COPY `oneeighty-warehouse.mart.rpt_ad_launch__next`
-  OPTIONS (description = 'One row per Meta ad: first delivery date, lifetime totals to the latest loaded day, pre-existing and relaunch flags, video flag and share, ad set launch context, 12 month client ROAS prior, lifetime purchases per attribution window (7d_click, 1d_view, 1d_ev; NULL until the split covers every delivery day). Built from mart.mart_meta_ad_perf by mart.sp_refresh_rpt_ad_launch (daily). Base for the creative hit rate. Migrations 254, 255 and 256.');
+  OPTIONS (description = 'One row per Meta ad: first delivery date, lifetime totals to the latest loaded day, pre-existing and relaunch flags, video flag and share, ad set launch context, 12 month client ROAS prior, lifetime purchases per attribution window (7d_click, 1d_view, 1d_ev) and on the standard basis 7d_click + 1d_view (NULL until the split covers every delivery day). Built from mart.mart_meta_ad_perf by mart.sp_refresh_rpt_ad_launch (daily). Base for the creative hit rate. Migrations 254, 255 and 256.');
 
   DROP TABLE IF EXISTS `oneeighty-warehouse.mart.rpt_ad_launch__next`;
 END;
 
--- 6. First CALL (rebuilds rpt_ad_launch with 41 columns) ---------------------------------
+-- 6. First CALL (rebuilds rpt_ad_launch with 44 columns) ---------------------------------
 -- CALL `oneeighty-warehouse.mart.sp_refresh_rpt_ad_launch`();

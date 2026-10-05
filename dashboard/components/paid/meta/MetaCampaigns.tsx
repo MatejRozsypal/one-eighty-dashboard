@@ -15,8 +15,8 @@
 import { AppLink } from "@/components/ui/AppLink";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/DataTable";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
-import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
-import { isLowVolume, relativeChange, sumOf, unlessLowVolume } from "@/lib/paid/math";
+import { deltaSortKey, formatMoney, formatNumber, formatPercent, formatRatio, type DeltaInput } from "@/lib/format";
+import { isLowVolume, sumOf, unlessLowVolume } from "@/lib/paid/math";
 import { creativeHref } from "@/lib/paid/links";
 import type { ViewParams } from "@/lib/params";
 import type { FunnelStage } from "@/lib/paid/types";
@@ -41,15 +41,15 @@ const GRID: Record<`${ColumnSet}-${"plain" | "compare"}`, string> = {
   "outcome-plain":
     "grid grid-cols-[2.2fr_0.9fr_0.9fr_0.9fr_0.7fr_0.7fr_0.7fr_0.7fr] items-center gap-2",
   "outcome-compare":
-    "grid grid-cols-[2.2fr_0.9fr_0.9fr_0.8fr_0.9fr_0.7fr_0.8fr_0.7fr_0.7fr_0.7fr] items-center gap-2",
+    "grid grid-cols-[2.2fr_0.9fr_0.9fr_1.1fr_0.9fr_0.7fr_0.8fr_0.7fr_0.7fr_0.7fr] items-center gap-2",
   "funnel-plain":
     "grid grid-cols-[2.2fr_0.9fr_0.9fr_0.7fr_0.7fr_0.7fr_0.7fr_0.7fr_0.7fr] items-center gap-2",
   "funnel-compare":
-    "grid grid-cols-[2.2fr_0.9fr_0.9fr_0.8fr_0.7fr_0.7fr_0.7fr_0.7fr_0.7fr_0.7fr] items-center gap-2",
+    "grid grid-cols-[2.2fr_0.9fr_0.9fr_1.1fr_0.7fr_0.7fr_0.7fr_0.7fr_0.7fr_0.7fr] items-center gap-2",
   "delivery-plain":
     "grid grid-cols-[2.2fr_0.9fr_0.9fr_0.9fr_0.7fr_0.7fr_0.8fr_0.7fr] items-center gap-2",
   "delivery-compare":
-    "grid grid-cols-[2.2fr_0.9fr_0.9fr_0.8fr_0.9fr_0.7fr_0.7fr_0.8fr_0.7fr] items-center gap-2",
+    "grid grid-cols-[2.2fr_0.9fr_0.9fr_1.1fr_0.9fr_0.7fr_0.7fr_0.8fr_0.7fr] items-center gap-2",
 };
 
 export function MetaCampaigns({
@@ -162,9 +162,15 @@ export function MetaCampaigns({
     const sort: DataTableRow["sort"] = [c.name, STAGE_LABEL[c.funnelStage], cur.spend];
 
     if (hasComparison) {
-      const d = relativeChange(cur.spend, c.previous?.spend ?? null);
-      cells.push(DeltaCell({ delta: d, goodWhen: "neutral" }));
-      sort.push(d);
+      const d: DeltaInput = {
+        current: cur.spend,
+        previous: c.previous?.spend ?? null,
+        kind: "money",
+        currency,
+        compact: true,
+      };
+      cells.push(DeltaCell({ change: d, goodWhen: "neutral" }));
+      sort.push(deltaSortKey(d));
     }
 
     if (cols === "outcome") {
@@ -173,9 +179,12 @@ export function MetaCampaigns({
       cells.push(<LowVolumeFig low={low}>{formatRatio(r.roas)}</LowVolumeFig>);
       sort.push(unlessLowVolume(r.roas, low));
       if (hasComparison) {
-        const d = low ? null : relativeChange(r.roas, pr?.roas ?? null);
-        cells.push(DeltaCell({ delta: d }));
-        sort.push(d);
+        // A low volume row has no ROAS to compare: n/a, sorted last in both modes.
+        const d: DeltaInput | null = low
+          ? null
+          : { current: r.roas, previous: pr?.roas ?? null, kind: "ratio", currency };
+        cells.push(DeltaCell({ change: d }));
+        sort.push(d ? deltaSortKey(d) : null);
       }
       cells.push(<Fig>{formatNumber(cur.purchases)}</Fig>);
       sort.push(cur.purchases);
@@ -258,7 +267,7 @@ export function MetaCampaigns({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <div className="min-w-[960px]">
+        <div className={hasComparison ? "min-w-[1040px]" : "min-w-[960px]"}>
           <DataTable
             columns={columns}
             rows={rows}

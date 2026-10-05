@@ -12,8 +12,8 @@
  * Server component, hand-rolled SVG (no chart library, no client JS).
  */
 
-import { formatMoney, formatPercent, formatRatio } from "@/lib/format";
-import { bucketGrain, pointChange, relativeChange } from "@/lib/paid/math";
+import { formatMoney, formatPercent, formatRatio, type DeltaKind } from "@/lib/format";
+import { bucketGrain } from "@/lib/paid/math";
 import type { DateRange } from "@/lib/period";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 import {
@@ -25,7 +25,6 @@ import {
   type MetaRow,
   type MetaSums,
 } from "@/components/paid/meta/aggregate";
-import { PpChip } from "@/components/paid/meta/cells";
 
 const W = 240;
 const H = 56;
@@ -37,25 +36,25 @@ interface Metric {
   pick: (r: MetaRates) => number | null;
   format: (v: number | null) => string;
   goodWhen: GoodWhen;
-  /** Rates change in percentage points, the rest in percent. */
-  pp?: boolean;
+  /** What the metric is: rates change in percentage points in both modes. */
+  kind: DeltaKind;
 }
 
 function metrics(currency: string): Metric[] {
   const unit = (v: number | null) => formatMoney(v, currency, { unit: true });
   return [
-    { key: "roas", label: "ROAS", pick: (r) => r.roas, format: (v) => formatRatio(v), goodWhen: "up" },
-    { key: "cpa", label: "CPA", pick: (r) => r.cpa, format: unit, goodWhen: "down" },
-    { key: "cpm", label: "CPM", pick: (r) => r.cpm, format: unit, goodWhen: "down" },
+    { key: "roas", label: "ROAS", pick: (r) => r.roas, format: (v) => formatRatio(v), goodWhen: "up", kind: "ratio" },
+    { key: "cpa", label: "CPA", pick: (r) => r.cpa, format: unit, goodWhen: "down", kind: "money" },
+    { key: "cpm", label: "CPM", pick: (r) => r.cpm, format: unit, goodWhen: "down", kind: "money" },
     {
       key: "ctr",
       label: "Link CTR",
       pick: (r) => r.linkCtr,
       format: (v) => formatPercent(v, { decimals: 2 }),
       goodWhen: "up",
-      pp: true,
+      kind: "rate",
     },
-    { key: "atc", label: "Cost / ATC", pick: (r) => r.costPerAtc, format: unit, goodWhen: "down" },
+    { key: "atc", label: "Cost / ATC", pick: (r) => r.costPerAtc, format: unit, goodWhen: "down", kind: "money" },
   ];
 }
 
@@ -82,12 +81,14 @@ function TrendCard({
   ghost,
   total,
   previousTotal,
+  currency,
 }: {
   metric: Metric;
   current: Array<number | null>;
   ghost: Array<number | null> | null;
   total: number | null;
   previousTotal: number | null | undefined;
+  currency: string;
 }) {
   const drawn = [...current, ...(ghost ?? [])].filter((v): v is number => v !== null);
   const min = drawn.length ? Math.min(...drawn) : 0;
@@ -110,12 +111,12 @@ function TrendCard({
         >
           {metric.format(total)}
         </span>
-        {hasCompare &&
-          (metric.pp ? (
-            <PpChip delta={pointChange(total, previousTotal ?? null)} goodWhen={metric.goodWhen} />
-          ) : (
-            <DeltaChip delta={relativeChange(total, previousTotal ?? null)} goodWhen={metric.goodWhen} />
-          ))}
+        {hasCompare && (
+          <DeltaChip
+            change={{ current: total, previous: previousTotal, kind: metric.kind, currency }}
+            goodWhen={metric.goodWhen}
+          />
+        )}
       </span>
       <svg
         viewBox={`0 0 ${W} ${H}`}
@@ -181,6 +182,7 @@ export function MetaTrend({
           ghost={prev ? alignTo(prev.map((b) => m.pick(ratesOf(b.sums))), cur.length) : null}
           total={m.pick(totalRates)}
           previousTotal={prevTotal ? m.pick(prevTotal) : undefined}
+          currency={currency}
         />
       ))}
     </div>

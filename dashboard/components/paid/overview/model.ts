@@ -109,12 +109,6 @@ export function rowsIn(rows: readonly PaidDay[], range: DateRange): PaidDay[] {
   return rows.filter((r) => r.date >= range.from && r.date <= range.to);
 }
 
-/** Relative change as a fraction, or undefined when comparison is off. */
-export function deltaOf(current: N, previous: N, comparing: boolean): N | undefined {
-  if (!comparing) return undefined;
-  return relativeChange(current, previous);
-}
-
 /** A per-day series for a sparkline, in date order. Null days are gaps. */
 export function dailySeries(rows: readonly PaidDay[], pick: (day: PaidDay) => N): N[] {
   return [...rows].sort((a, b) => a.date.localeCompare(b.date)).map(pick);

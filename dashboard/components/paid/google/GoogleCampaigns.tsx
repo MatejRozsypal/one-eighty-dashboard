@@ -10,9 +10,17 @@
 import { AppLink } from "@/components/ui/AppLink";
 import type { ReactNode } from "react";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/DataTable";
-import { DeltaChip } from "@/components/ui/Delta";
+import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 import { SegmentedControl, type Segment } from "@/components/controls/SegmentedControl";
-import { NO_VALUE, formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
+import {
+  NO_VALUE,
+  deltaSortKey,
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatRatio,
+  type DeltaInput,
+} from "@/lib/format";
 import {
   absTopImpressionShare,
   isLowVolume,
@@ -20,7 +28,6 @@ import {
   lostRankShare,
   ratio,
   ratioOfSums,
-  relativeChange,
   searchImpressionShare,
   sumOf,
   topImpressionShare,
@@ -42,26 +49,30 @@ export type ClassFilter = BrandClass | "all";
 const GRID: Record<CampaignCols, { plain: string; compare: string }> = {
   outcome: {
     plain: "grid grid-cols-[minmax(0,2.4fr)_repeat(10,minmax(0,1fr))] items-center gap-2",
-    compare: "grid grid-cols-[minmax(0,2.4fr)_repeat(12,minmax(0,1fr))] items-center gap-2",
+    compare:
+      "grid grid-cols-[minmax(0,2.4fr)_repeat(3,minmax(0,1fr))_minmax(0,1.3fr)_repeat(8,minmax(0,1fr))] items-center gap-2",
   },
   auction: {
     plain: "grid grid-cols-[minmax(0,2.4fr)_repeat(9,minmax(0,1fr))] items-center gap-2",
-    compare: "grid grid-cols-[minmax(0,2.4fr)_repeat(10,minmax(0,1fr))] items-center gap-2",
+    compare:
+      "grid grid-cols-[minmax(0,2.4fr)_repeat(3,minmax(0,1fr))_minmax(0,1.3fr)_repeat(6,minmax(0,1fr))] items-center gap-2",
   },
   budget: {
     plain: "grid grid-cols-[minmax(0,2.4fr)_repeat(7,minmax(0,1fr))] items-center gap-2",
-    compare: "grid grid-cols-[minmax(0,2.4fr)_repeat(8,minmax(0,1fr))] items-center gap-2",
+    compare:
+      "grid grid-cols-[minmax(0,2.4fr)_repeat(3,minmax(0,1fr))_minmax(0,1.3fr)_repeat(4,minmax(0,1fr))] items-center gap-2",
   },
 };
 
 const MIN_WIDTH: Record<CampaignCols, { plain: string; compare: string }> = {
-  outcome: { plain: "min-w-[1100px]", compare: "min-w-[1280px]" },
-  auction: { plain: "min-w-[1000px]", compare: "min-w-[1100px]" },
-  budget: { plain: "min-w-[900px]", compare: "min-w-[1000px]" },
+  outcome: { plain: "min-w-[1100px]", compare: "min-w-[1320px]" },
+  auction: { plain: "min-w-[1000px]", compare: "min-w-[1140px]" },
+  budget: { plain: "min-w-[900px]", compare: "min-w-[1040px]" },
 };
 
-function deltaCell(delta: number | null, goodWhen: "up" | "down" | "neutral"): ReactNode {
-  return delta === null ? NO_VALUE : <DeltaChip delta={delta} goodWhen={goodWhen} />;
+/** A change cell in the mode the delta toggle shows; n/a when there is nothing to compare. */
+function deltaCell(change: DeltaInput | null, goodWhen: GoodWhen): ReactNode {
+  return <DeltaChip change={change} goodWhen={goodWhen} fallback={NO_VALUE} />;
 }
 
 export function GoogleCampaigns({
@@ -198,7 +209,7 @@ export function GoogleCampaigns({
       </span>,
       <SpendCell key="spend" text={money(m.spend)} />,
     ];
-    const sort: Array<number | string | null> = [
+    const sort: DataTableRow["sort"] = [
       c.campaignName,
       channelLabel(c.channelType),
       CLASS_LABEL[c.brandClass],
@@ -206,13 +217,22 @@ export function GoogleCampaigns({
     ];
 
     if (compare) {
-      const d = relativeChange(m.spend, prev?.spend ?? null);
+      const d: DeltaInput = {
+        current: m.spend,
+        previous: prev?.spend ?? null,
+        kind: "money",
+        currency,
+        compact: true,
+      };
       cells.push(deltaCell(d, "neutral"));
-      sort.push(d);
+      sort.push(deltaSortKey(d));
     }
 
     if (cols === "outcome") {
-      const dRoas = low ? null : relativeChange(r.roas, rp.roas);
+      // A low volume row has no ROAS to compare: n/a, sorted last in both modes.
+      const dRoas: DeltaInput | null = low
+        ? null
+        : { current: r.roas, previous: rp.roas, kind: "ratio", currency };
       cells.push(
         <NumCell key="value" text={money(m.value)} />,
         <RatioCell key="roas" text={formatRatio(r.roas)} low={low} />
@@ -220,7 +240,7 @@ export function GoogleCampaigns({
       sort.push(m.value, unlessLowVolume(r.roas, low));
       if (compare) {
         cells.push(deltaCell(dRoas, "up"));
-        sort.push(dRoas);
+        sort.push(dRoas ? deltaSortKey(dRoas) : null);
       }
       cells.push(
         <NumCell key="conv" text={formatNumber(m.conversions, { decimals: 1 })} />,

@@ -3,12 +3,19 @@
  *
  * Row 1 is the outcome (spend to CPA). Row 2 is the soft metrics that explain
  * it. Every figure is a ratio of sums over the period's rows; the change chip
- * compares against the comparison period, in percent for money, counts and
- * ratios and in percentage points for rates.
+ * compares against the comparison period and follows the delta toggle (percent
+ * or absolute for money, counts and ratios, percentage points for rates).
  */
 
-import { formatMoney, formatNumber, formatPercent, formatRatio, NO_VALUE } from "@/lib/format";
-import { relativeChange, pointChange } from "@/lib/paid/math";
+import {
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatRatio,
+  NO_VALUE,
+  type DeltaInput,
+  type DeltaKind,
+} from "@/lib/format";
 import { KpiTile } from "@/components/dashboard/KpiTile";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
@@ -21,17 +28,18 @@ import {
   type MetaSums,
   type VideoSums,
 } from "@/components/paid/meta/aggregate";
-import { PpChip, Section } from "@/components/paid/meta/cells";
+import { Section } from "@/components/paid/meta/cells";
 
 interface SoftTile {
   label: string;
   value: string;
   metricKey?: string;
-  /** Rates show a point change, everything else a relative one. */
-  chip: { kind: "rel"; delta: number | null; goodWhen: GoodWhen } | { kind: "pp"; delta: number | null; goodWhen: GoodWhen };
+  /** Both values and the kind; null when the comparison is off. Rates show points. */
+  change: DeltaInput | null;
+  goodWhen: GoodWhen;
 }
 
-function SoftKpi({ label, value, metricKey, chip }: SoftTile) {
+function SoftKpi({ label, value, metricKey, change, goodWhen }: SoftTile) {
   const definition = metricKey ? METRIC_DEFINITIONS[metricKey] : undefined;
   const missing = value === NO_VALUE;
   return (
@@ -47,11 +55,7 @@ function SoftKpi({ label, value, metricKey, chip }: SoftTile) {
       >
         {value}
       </span>
-      {chip.kind === "rel" ? (
-        <DeltaChip delta={chip.delta} goodWhen={chip.goodWhen} />
-      ) : (
-        <PpChip delta={chip.delta} goodWhen={chip.goodWhen} />
-      )}
+      <DeltaChip change={change} goodWhen={goodWhen} />
     </div>
   );
 }
@@ -73,10 +77,11 @@ export function MetaKpis({
 }) {
   const c = ratesOf(current);
   const p = previous ? ratesOf(previous) : null;
-  const rel = (cur: number | null, prev: number | null | undefined) =>
-    p ? relativeChange(cur, prev ?? null) : null;
-  const pp = (cur: number | null, prev: number | null | undefined) =>
-    p ? pointChange(cur, prev ?? null) : null;
+  const chg = (
+    cur: number | null,
+    prev: number | null | undefined,
+    kind: DeltaKind
+  ): DeltaInput | null => (p ? { current: cur, previous: prev ?? null, kind, currency } : null);
 
   const money = (v: number | null) => formatMoney(v, currency);
   const unit = (v: number | null) => formatMoney(v, currency, { unit: true });
@@ -85,43 +90,51 @@ export function MetaKpis({
   const prevHook = previousVideo ? hookRate(previousVideo) : null;
 
   const soft: SoftTile[] = [
-    { label: "CPM", value: unit(c.cpm), chip: { kind: "rel", delta: rel(c.cpm, p?.cpm), goodWhen: "down" } },
+    { label: "CPM", value: unit(c.cpm), change: chg(c.cpm, p?.cpm, "money"), goodWhen: "down" },
     {
       label: "Link CTR",
       value: formatPercent(c.linkCtr, { decimals: 2 }),
       metricKey: "Link CTR",
-      chip: { kind: "pp", delta: pp(c.linkCtr, p?.linkCtr), goodWhen: "up" },
+      change: chg(c.linkCtr, p?.linkCtr, "rate"),
+      goodWhen: "up",
     },
-    { label: "CPC (link)", value: unit(c.cpc), chip: { kind: "rel", delta: rel(c.cpc, p?.cpc), goodWhen: "down" } },
+    { label: "CPC (link)", value: unit(c.cpc), change: chg(c.cpc, p?.cpc, "money"), goodWhen: "down" },
     {
       label: "Cost / LPV",
       value: unit(c.costPerLpv),
       metricKey: "Cost / LPV",
-      chip: { kind: "rel", delta: rel(c.costPerLpv, p?.costPerLpv), goodWhen: "down" },
+      change: chg(c.costPerLpv, p?.costPerLpv, "money"),
+      goodWhen: "down",
     },
     {
       label: "Cost / ATC",
       value: unit(c.costPerAtc),
       metricKey: "Cost / ATC",
-      chip: { kind: "rel", delta: rel(c.costPerAtc, p?.costPerAtc), goodWhen: "down" },
+      change: chg(c.costPerAtc, p?.costPerAtc, "money"),
+      goodWhen: "down",
     },
     {
       label: "ATC to purchase",
       value: formatPercent(c.atcToPurchase, { decimals: 1 }),
       metricKey: "ATC to purchase",
-      chip: { kind: "pp", delta: pp(c.atcToPurchase, p?.atcToPurchase), goodWhen: "up" },
+      change: chg(c.atcToPurchase, p?.atcToPurchase, "rate"),
+      goodWhen: "up",
     },
     {
       label: "Frequency",
       value: formatNumber(c.frequency, { decimals: 2 }),
       metricKey: "Avg daily frequency",
-      chip: { kind: "rel", delta: rel(c.frequency, p?.frequency), goodWhen: "neutral" },
+      change: chg(c.frequency, p?.frequency, "ratio"),
+      goodWhen: "neutral",
     },
     {
       label: "Hook rate",
       value: formatPercent(hook, { decimals: 1 }),
       metricKey: "Hook rate",
-      chip: { kind: "pp", delta: previousVideo ? pointChange(hook, prevHook) : null, goodWhen: "up" },
+      change: previousVideo
+        ? { current: hook, previous: prevHook, kind: "rate", currency }
+        : null,
+      goodWhen: "up",
     },
   ];
 
@@ -131,28 +144,28 @@ export function MetaKpis({
         <KpiTile
           label="Spend"
           value={money(current.spend)}
-          delta={rel(current.spend, previous?.spend)}
+          change={chg(current.spend, previous?.spend, "money")}
           goodWhen="neutral"
         />
         <KpiTile
           label="Purchase value"
           value={money(current.revenue)}
-          delta={rel(current.revenue, previous?.revenue)}
+          change={chg(current.revenue, previous?.revenue, "money")}
         />
         <KpiTile
           label="ROAS"
           value={formatRatio(c.roas)}
-          delta={rel(c.roas, p?.roas)}
+          change={chg(c.roas, p?.roas, "ratio")}
         />
         <KpiTile
           label="Purchases"
           value={formatNumber(current.purchases)}
-          delta={rel(current.purchases, previous?.purchases)}
+          change={chg(current.purchases, previous?.purchases, "count")}
         />
         <KpiTile
           label="CPA"
           value={unit(c.cpa)}
-          delta={rel(c.cpa, p?.cpa)}
+          change={chg(c.cpa, p?.cpa, "money")}
           goodWhen="down"
         />
       </div>

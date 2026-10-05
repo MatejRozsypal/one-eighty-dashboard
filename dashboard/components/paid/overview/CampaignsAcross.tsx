@@ -11,15 +11,22 @@
 import { AppLink } from "@/components/ui/AppLink";
 import { DataTable, type DataTableRow } from "@/components/ui/DataTable";
 import { DeltaChip } from "@/components/ui/Delta";
-import { Value } from "@/components/ui/EmptyState";
-import { NO_VALUE, formatMoney, formatNumber, formatRatio } from "@/lib/format";
-import { isLowVolume, ratio, relativeChange, roasOf, unlessLowVolume } from "@/lib/paid/math";
+import { NoValue, Value } from "@/components/ui/EmptyState";
+import {
+  NO_VALUE,
+  deltaSortKey,
+  formatMoney,
+  formatNumber,
+  formatRatio,
+  type DeltaInput,
+} from "@/lib/format";
+import { isLowVolume, ratio, roasOf, unlessLowVolume } from "@/lib/paid/math";
 import { campaignType, type CampaignAgg } from "@/components/paid/overview/model";
 
 const GRID_PLAIN =
   "grid grid-cols-[minmax(220px,2.2fr)_minmax(120px,1.2fr)_repeat(5,minmax(84px,1fr))] items-center gap-2";
 const GRID_COMPARE =
-  "grid grid-cols-[minmax(220px,2.2fr)_minmax(120px,1.2fr)_repeat(7,minmax(84px,1fr))] items-center gap-2";
+  "grid grid-cols-[minmax(220px,2.2fr)_minmax(120px,1.2fr)_repeat(2,minmax(84px,1fr))_minmax(104px,1.2fr)_repeat(4,minmax(84px,1fr))] items-center gap-2";
 
 const NUM = "font-mono text-[12.5px] tabular";
 
@@ -58,8 +65,18 @@ export function CampaignsAcross({
     const roas = roasOf(c.value, c.spend, c.purchases);
     const cpa = ratio(c.spend, c.purchases);
     const low = isLowVolume({ spend: c.spend, purchases: c.purchases }, totalSpend);
-    const dSpend = relativeChange(c.spend, c.prevSpend);
-    const dRoas = relativeChange(roas, ratio(c.prevValue, c.prevSpend));
+    // Both values and the kind: the chips and the sort follow the delta toggle.
+    const dSpend: DeltaInput = {
+      current: c.spend,
+      previous: c.prevSpend,
+      kind: "money",
+      currency,
+      compact: true,
+    };
+    // A low volume row has no ROAS to compare: n/a, sorted last in both modes.
+    const dRoas: DeltaInput | null = low
+      ? null
+      : { current: roas, previous: ratio(c.prevValue, c.prevSpend), kind: "ratio", currency };
     const type = campaignType(c);
     const muted = low ? "text-content-muted" : "text-content-strong";
 
@@ -88,22 +105,22 @@ export function CampaignsAcross({
       </AppLink>,
       <span key="t" className="block truncate text-[12.5px] text-content-body"><Value>{type ?? NO_VALUE}</Value></span>,
       <span key="s" className={`${NUM} font-semibold text-content-strong`}><Value>{formatMoney(c.spend, currency)}</Value></span>,
-      ...(comparing ? [<DeltaChip key="ds" delta={dSpend} goodWhen="neutral" />] : []),
+      ...(comparing ? [<DeltaChip key="ds" change={dSpend} goodWhen="neutral" fallback={<NoValue />} />] : []),
       <span key="v" className={`${NUM} text-content-strong`}><Value>{formatMoney(c.value, currency)}</Value></span>,
       <span key="r" className={`${NUM} ${muted}`}>{lowDot}<Value>{formatRatio(roas)}</Value></span>,
-      ...(comparing ? [<DeltaChip key="dr" delta={low ? null : dRoas} goodWhen="up" />] : []),
+      ...(comparing ? [<DeltaChip key="dr" change={dRoas} goodWhen="up" fallback={<NoValue />} />] : []),
       <span key="c" className={`${NUM} ${muted}`}><Value>{formatMoney(cpa, currency, { unit: true })}</Value></span>,
       <span key="p" className={`${NUM} text-content-strong`}><Value>{formatNumber(c.purchases)}</Value></span>,
     ];
 
-    const sort: Array<number | string | null> = [
+    const sort: DataTableRow["sort"] = [
       c.name ?? c.id,
       type,
       c.spend,
-      ...(comparing ? [dSpend] : []),
+      ...(comparing ? [deltaSortKey(dSpend)] : []),
       c.value,
       unlessLowVolume(roas, low),
-      ...(comparing ? [low ? null : dRoas] : []),
+      ...(comparing ? [dRoas ? deltaSortKey(dRoas) : null] : []),
       unlessLowVolume(cpa, low),
       c.purchases,
     ];

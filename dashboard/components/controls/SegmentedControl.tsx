@@ -22,6 +22,8 @@ export interface Segment {
   disabled?: boolean;
   /** Why it's disabled. Shown as a title tooltip. */
   disabledReason?: string;
+  /** Hover text for an enabled segment whose label is terse ("%", "123"). */
+  title?: string;
 }
 
 export function SegmentedControl({
@@ -63,10 +65,39 @@ export function SegmentedControl({
   }
 
   return (
+    <SegmentPills
+      segments={segments}
+      shown={shown}
+      onSelect={select}
+      ariaLabel={ariaLabel}
+      pending={isPending}
+    />
+  );
+}
+
+/**
+ * The pills alone: no URL, no navigation. `SegmentedControl` drives them from
+ * a search param; the delta toggle drives them from its own context.
+ */
+export function SegmentPills({
+  segments,
+  shown,
+  onSelect,
+  ariaLabel,
+  pending = false,
+}: {
+  segments: Segment[];
+  shown: string;
+  onSelect: (value: string) => void;
+  ariaLabel: string;
+  /** Pulse the selected segment while its change is in flight. */
+  pending?: boolean;
+}) {
+  return (
     <div
       role="group"
       aria-label={ariaLabel}
-      aria-busy={isPending}
+      aria-busy={pending}
       className="flex gap-0.5 rounded-pill bg-gray-100 p-[3px]"
     >
       {segments.map((seg) => {
@@ -91,11 +122,15 @@ export function SegmentedControl({
           <button
             key={seg.value}
             type="button"
-            onClick={() => select(seg.value)}
+            onClick={() => {
+              if (seg.value !== shown) onSelect(seg.value);
+            }}
             aria-pressed={isActive}
+            title={seg.title}
+            aria-label={seg.title}
             className={`whitespace-nowrap rounded-pill px-2.5 py-1.5 font-mono text-[11px] transition-colors duration-fast ${
               isActive
-                ? `bg-paper text-content-strong shadow-sm ${isPending ? "oe-pulse" : ""}`
+                ? `bg-paper text-content-strong shadow-sm ${pending ? "oe-pulse" : ""}`
                 : "text-content-muted hover:text-content-body"
             }`}
           >

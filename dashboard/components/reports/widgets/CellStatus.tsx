@@ -10,7 +10,8 @@
  *   Hover (and keyboard focus, and tap) lists the left-out clients and the
  *   caveats that apply to this client and metric.
  * - `CellDelta`: the change chip, relative or in pp, coloured by whether the
- *   movement is good for this metric.
+ *   movement is good for this metric. With the global delta toggle on "123"
+ *   it shows the difference in the metric's unit instead (display only).
  * - `HoverCard`: the dark card every hover in the widgets uses. Rendered in a
  *   portal with fixed coordinates, so it is neither clipped by a widget frame
  *   nor displaced by the grid's CSS transforms.
@@ -25,11 +26,12 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DeltaChip } from "@/components/ui/Delta";
+import { useDeltaMode } from "@/components/ui/DeltaMode";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { NoValue } from "@/components/ui/EmptyState";
-import type { GoodWhen } from "@/lib/reports/registry/types";
+import type { FormatSpec, GoodWhen } from "@/lib/reports/registry/types";
 import type { MetricCell } from "@/lib/reports/types";
-import { statusDetail, statusLabel, formatDeltaMagnitude } from "./format";
+import { deltaKindOf, statusDetail, statusLabel, formatDeltaMagnitude } from "./format";
 import { coverageBadge } from "./types";
 import { HATCH_STROKE } from "./chartTheme";
 
@@ -238,8 +240,44 @@ export function NotesMark({ lines }: { lines: readonly string[] }) {
  * Change versus the comparison period. Relative deltas reuse DeltaChip; "pp"
  * deltas (percent metrics) are drawn the same way with the unit in pp. The
  * arrow follows the movement, the colour follows whether it is good.
+ *
+ * Absolute mode (the "% | 123" toggle) needs both totals and the format: then
+ * the chip shows `total - compareTotal` in the metric's unit (money in the
+ * widget's currency, compact when the metric is). Percent metrics stay in pp.
+ * Without those props it stays relative, as before.
  */
-export function CellDelta({ delta, kind, goodWhen }: { delta: number | null; kind: "relative" | "pp"; goodWhen: GoodWhen }) {
+export function CellDelta({
+  delta,
+  kind,
+  goodWhen,
+  total,
+  compareTotal,
+  format,
+  currency,
+}: {
+  delta: number | null;
+  kind: "relative" | "pp";
+  goodWhen: GoodWhen;
+  total?: number | null;
+  compareTotal?: number | null;
+  format?: FormatSpec;
+  currency?: string;
+}) {
+  const mode = useDeltaMode();
+  if (mode === "abs" && format !== undefined && total != null && compareTotal != null) {
+    return (
+      <DeltaChip
+        change={{
+          current: total,
+          previous: compareTotal,
+          kind: deltaKindOf(format.style),
+          currency,
+          compact: format.compact,
+        }}
+        goodWhen={goodWhen}
+      />
+    );
+  }
   if (delta === null) return null;
   if (kind === "relative") return <DeltaChip delta={delta} goodWhen={goodWhen} />;
   const flat = Math.abs(delta) < 0.0005;

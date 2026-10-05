@@ -21,6 +21,7 @@
  */
 
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { getSession } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -33,6 +34,8 @@ import {
   NavigationPendingProvider,
   PendingRegion,
 } from "@/components/shell/NavigationPending";
+import { DeltaModeProvider } from "@/components/ui/DeltaMode";
+import { DELTA_COOKIE, resolveDeltaMode } from "@/lib/params";
 
 export default async function AppLayout({
   children,
@@ -105,12 +108,17 @@ export default async function AppLayout({
   const isAdmin = session.user.role === "admin";
   const isInternal = isAdmin || session.user.role === "agency";
 
+  // Percent or absolute deltas: the user's cookie default. Layouts get no
+  // searchParams, so the provider reads `?delta=` itself on the client.
+  const deltaDefault = resolveDeltaMode(undefined, cookies().get(DELTA_COOKIE)?.value);
+
   return (
     // The page background is light everywhere. The black at the top is painted
     // by MobileTopBar itself, which is sticky and covers the status-bar inset,
     // making the whole shell black instead left a black band under the content
     // on any page shorter than the viewport, and under Safari's bottom bar.
     <NavigationPendingProvider>
+    <DeltaModeProvider initial={deltaDefault}>
     <HistoryProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
       <ProductRail role={session.user.role} clients={clients} />
@@ -163,6 +171,7 @@ export default async function AppLayout({
 
     </div>
     </HistoryProvider>
+    </DeltaModeProvider>
     </NavigationPendingProvider>
   );
 }

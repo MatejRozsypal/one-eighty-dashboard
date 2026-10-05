@@ -23,6 +23,7 @@
     "check:reports-canvas": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-canvas.ts",
     "check:reports-pages": "tsx --tsconfig scripts/tsconfig.json scripts/check-reports-pages.ts",
     "check:loading": "tsx --tsconfig scripts/tsconfig.json scripts/check-loading-pulse.ts",
+    "check:delta": "tsx --tsconfig scripts/tsconfig.json scripts/check-delta.ts",
     "check:clickup": "tsx --tsconfig scripts/tsconfig.json scripts/probe-clickup.ts"
   },
   "dependencies": {

@@ -31,6 +31,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { DateRangeControl } from "@/components/controls/DateRangeControl";
+import { DeltaModeToggle } from "@/components/controls/DeltaModeToggle";
 import type { Segment } from "@/components/controls/SegmentedControl";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import { comparisonRange, presetRange, type DateRange, type PresetKey } from "@/lib/period";
@@ -139,6 +140,8 @@ export function ReportFilterBar({ filters, defaults, clients, onSaveDefault }: R
             { value: "none", label: "None" },
           ]}
         />
+        {/* Display only: the same global mode as every page, no refetch. */}
+        {filters.compare !== "none" && <DeltaModeToggle />}
       </div>
 
       <div className="flex items-center gap-2">

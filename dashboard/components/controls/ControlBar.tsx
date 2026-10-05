@@ -7,8 +7,9 @@
  * ── Opt-in controls ─────────────────────────────────────────────────────────
  * `compare` and `currency` default to false. A control that changes nothing on
  * the page is worse than no control, so a page turns one on only when its
- * queries read it (Compare: Snapshot, Growth, Products, Unit economics,
- * Creative; Currency: Snapshot).
+ * queries read it (Compare: Snapshot, Products, Unit economics, Paid,
+ * Creative; Currency: Snapshot, Paid). Beside Compare sits the "% | 123" delta
+ * toggle, hidden when Compare is None.
  *
  * It is deliberately not an overflow-scroll container: the date picker's
  * popover is absolutely positioned inside this element, and any `overflow`
@@ -17,6 +18,7 @@
 
 import { DateRangeControl } from "@/components/controls/DateRangeControl";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
+import { DeltaModeToggle } from "@/components/controls/DeltaModeToggle";
 import type { ComparisonMode, DateRange, PresetKey } from "@/lib/period";
 import type { ConversionCoverage } from "@/lib/currency";
 import { ROLLUP_CURRENCY } from "@/lib/currency";
@@ -102,6 +104,8 @@ export function ControlBar({
                 { value: "none", label: "None" },
               ]}
             />
+            {/* Percent or absolute change. Nothing to show with Compare off. */}
+            {comparisonMode !== "none" && <DeltaModeToggle />}
             {comparison && (
               <span className="hidden font-mono text-[11.5px] tabular text-content-muted xl:inline">
                 vs {fmtShort(comparison.from)} to {fmtShort(comparison.to)}

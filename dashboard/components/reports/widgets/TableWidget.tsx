@@ -61,8 +61,16 @@ function valueNode(args: {
       </span>
       <NotesMark lines={cell.lowVolume && notes.length ? [...notes, "Low volume"] : notes} />
       {showDelta && (
-        <span className="inline-block w-[68px] text-left">
-          <CellDelta delta={cell.delta} kind={cell.deltaKind} goodWhen={metric.goodWhen} />
+        <span className="inline-block min-w-[68px] text-left">
+          <CellDelta
+            delta={cell.delta}
+            kind={cell.deltaKind}
+            goodWhen={metric.goodWhen}
+            total={value}
+            compareTotal={cell.compareTotal}
+            format={metric.format}
+            currency={currency}
+          />
         </span>
       )}
     </span>

@@ -51,7 +51,7 @@ check("HR4: the picker has a Creative group of hit rate, winners and ads launche
 check("HR4: Creative sits after Meta in the picker order", METRIC_GROUP_ORDER.indexOf("creative") === METRIC_GROUP_ORDER.indexOf("meta") + 1);
 check("HR4: hook rate and hold rate stay in Meta", page.pickerMetrics.find((m) => m.id === "meta_hook_rate")?.group === "meta" && page.pickerMetrics.find((m) => m.id === "meta_hold_rate")?.group === "meta");
 check("HR4: every picker group has a label", /GROUP_LABEL[\s\S]*creative: "Creative"/.test(readFileSync(join(__dirname, "..", "components/reports/pickers/MetricPicker.tsx"), "utf8")));
-check("HR4: the reference reaches the widget metrics (hit rate only)", page.widgetMetrics.hit_rate?.reference?.value === 0.05 && Object.values(page.widgetMetrics).filter((m) => m?.reference).length === 1);
+check("ME3 C10: no widget metric carries a fixed reference", Object.values(page.widgetMetrics).filter((m) => m?.reference).length === 0);
 check("roas finds MER (RS8 request)", findMetricId("roas") === "mer" && METRICS.mer.aliases?.includes("roas") === true);
 
 // ---------------------------------------------------------------------------

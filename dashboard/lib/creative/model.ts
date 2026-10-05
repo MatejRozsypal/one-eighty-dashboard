@@ -331,24 +331,45 @@ export function read(
  * The four buckets on the Creatives scorecard.
  *
  * `winner` requires Read confidence, not just a high number. That is the whole
- * point: the pilot client's measured net-new hit rate is 1.5%, one winner from 67 ads,
- * against Nathan's ~5% reference, and that single figure is the argument for
- * the 80/20 production split, for hook variants over new bodies, and for
- * cutting the active persona set. It only means anything if "winner" is a
- * defensible category rather than whatever happened to sort first.
+ * point: a hit rate only means anything if "winner" is a defensible category
+ * rather than whatever happened to sort first.
+ *
+ * ── One winner test for every surface ──────────────────────────────────────
+ * The Creative tile and trend, the scorecard, the grid, Concepts, Production,
+ * the Paid tile and Reports all decide "winner" here: purchases >= the client's
+ * read threshold, shrunk ROAS >= target, AND at least `WINNER_MIN_AGE_DAYS`
+ * since first delivery. The shrinkage anchor is the client's stored trailing
+ * 365-day ROAS (`mart.rpt_ad_launch.prior_roas`) on every surface, so the bar
+ * does not move with the date picker.
  */
 export type Outcome = "winner" | "carrier" | "loser" | "open";
 
+/**
+ * Days since first delivery before an ad can be called a winner. A promo
+ * launch with 17 purchases at day 12 read as a winner and was not one the
+ * team would call (audit change C9), so a young ad that clears the bar stays
+ * `open` until it is this old. The one place it is applied is `classify`.
+ */
+export const WINNER_MIN_AGE_DAYS = 14;
+
+/**
+ * `ageDays` is days since the ad's first delivery. Null means the age is
+ * unknown (no launch table), and then no age rule is applied: an unknown age
+ * is not evidence of a young ad.
+ */
 export function classify(
   c: Components,
   accountMeanRoas: number,
-  t: CreativeThresholds
+  t: CreativeThresholds,
+  ageDays: number | null = null
 ): Outcome {
   const raw = div(c.revenue, c.spend);
   if (raw === null) return "open";
   const roas = shrink(raw, c.purchases, accountMeanRoas, t.readPurchases);
 
-  if (c.purchases >= t.readPurchases && roas >= t.targetRoas) return "winner";
+  if (c.purchases >= t.readPurchases && roas >= t.targetRoas) {
+    return ageDays !== null && ageDays < WINNER_MIN_AGE_DAYS ? "open" : "winner";
+  }
   if (c.purchases >= t.readPurchases && roas >= t.killRoas) return "carrier";
   // A loser has to have been given a fair run: past the 3x CPA kill gate, and
   // with enough purchases to be more than an unlucky week.
@@ -368,17 +389,26 @@ export interface WinnerEconomics {
   losers: number;
   open: number;
   decided: number;
-  /** winners / ads launched. Nathan's reference is about 5%. */
+  /**
+   * Winners over the ads with delivery in the window. Not the launch-cohort
+   * hit rate (`lib/creative/hitRate.ts`); no screen shows this one.
+   */
   hitRate: number | null;
 }
 
+/**
+ * Scorecard counts over the ads with delivery in the window. `ageOf` gives an
+ * ad's days since first delivery (null when unknown) so the same age rule as
+ * the hit rate applies.
+ */
 export function winnerEconomics(
   ads: AdRow[],
   accountMeanRoas: number,
-  t: CreativeThresholds
+  t: CreativeThresholds,
+  ageOf: (adId: string) => number | null = () => null
 ): WinnerEconomics {
   const counts: Record<Outcome, number> = { winner: 0, carrier: 0, loser: 0, open: 0 };
-  for (const ad of ads) counts[classify(ad.components, accountMeanRoas, t)] += 1;
+  for (const ad of ads) counts[classify(ad.components, accountMeanRoas, t, ageOf(ad.adId))] += 1;
   return {
     winners: counts.winner,
     carriers: counts.carrier,
@@ -396,16 +426,24 @@ export function winnerEconomics(
 /**
  * The account-level figures every row is judged against.
  *
- * `meanRoas` is the shrinkage target, and it is computed from the SUM of
- * revenue over the SUM of spend, not the mean of per-ad ROAS, which would let
- * a 300 Kč freak at 17x drag the anchor that every other row is pulled toward.
- * The learnings file has that exact ad in it.
+ * Both ROAS figures are SUM of revenue over SUM of spend, never the mean of
+ * per-ad ROAS, which would let a 300 Kč freak at 17x drag the anchor that every
+ * other row is pulled toward. The learnings file has that exact ad in it.
+ * `meanRoas` is the window's blended ROAS (what the Blended ROAS tile shows);
+ * `anchorRoas` is what rows are shrunk toward.
  */
 export interface AccountContext {
   spend: number;
   revenue: number;
   purchases: number;
+  /** Blended ROAS of the ads in the window. A display figure, not the shrinkage anchor. */
   meanRoas: number;
+  /**
+   * The shrinkage anchor: the client's trailing 365-day ROAS from the launch
+   * table, the same number the hit rate uses, so no screen's winner bar moves
+   * with the date picker. Falls back to `meanRoas` when the table has none.
+   */
+  anchorRoas: number;
   cpa: number | null;
   ads: number;
 }
@@ -417,6 +455,7 @@ export function accountContext(ads: AdRow[], fallbackRoas: number): AccountConte
     revenue: c.revenue,
     purchases: c.purchases,
     meanRoas: c.spend > 0 ? c.revenue / c.spend : fallbackRoas,
+    anchorRoas: c.spend > 0 ? c.revenue / c.spend : fallbackRoas,
     cpa: div(c.spend, c.purchases),
     ads: ads.length,
   };

@@ -449,7 +449,7 @@ async function main(): Promise<void> {
     const hr = real.hit_rate as WidgetMetric;
     const winners = real.winners as WidgetMetric;
     const launched = real.ads_launched as WidgetMetric;
-    check("HR4: pageData passes the reference to hit rate only", hr.reference?.value === 0.05 && hr.reference.label === "Reference ~5%" && winners.reference === undefined && launched.reference === undefined && real.mer?.reference === undefined);
+    check("ME3 C10: no registry metric carries a fixed reference, hit rate included", hr.reference === undefined && winners.reference === undefined && launched.reference === undefined && real.mer?.reference === undefined);
     const cell = (extra: Partial<MetricCell>): MetricCell => ({ status: "ok", total: 0.068, compareTotal: 0.045, delta: 0.023, deltaKind: "pp", ...extra });
     const resultOf = (cells: Partial<Record<MetricId, MetricCell>>): WidgetResult => ({
       ...weeklyTotal,

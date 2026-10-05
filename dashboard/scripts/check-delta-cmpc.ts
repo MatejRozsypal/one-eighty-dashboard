@@ -176,8 +176,8 @@ async function main() {
   check("creative: four delivery tiles use change", ["Spend", "Blended ROAS", "CPA", "Purchases"].every((l) => new RegExp(`label: "${l}"[\\s\\S]*?change:`).test(creative)));
   check("creative: kinds money, ratio, money, count", /kind: "money" as const, currency \}/.test(creative) && /kind: "ratio" as const/.test(creative) && /kind: "count" as const/.test(creative));
   check("creative: legacy delta() no longer used", !/\bdelta\(/.test(creative) && !/from "@\/lib\/period"/.test(creative));
-  check("creative: Hit rate tile has a rate change from rateChange()", /label: "Hit rate"[\s\S]*?change: prevHit && hit \? rateChange\(hit\.rate, prevHit\.rate, prevHit\.launched\) : null/.test(creative));
-  check("creative: comparison hit rate needs thresholds and a comparison", /launched && comparison && thresholds/.test(creative));
+  check("creative: Hit rate tile has a rate change from rateChange()", /label: "Hit rate"[\s\S]*?change:\s*prevHit && hit && !deltaWithheld\(hit, prevHit\)\s*\?\s*rateChange\(hit\.rate, prevHit\.rate, prevHit\.launched\)\s*:\s*null/.test(creative));
+  check("creative: comparison hit rate needs thresholds and a comparison (and is withheld while the cohort matures)", /launched && comparison && hitThresholds/.test(creative));
   check("creative: launches read reaches back to the comparison start", /comparison\.from < ctx\.params\.range\.from/.test(creative) && /getLaunches\(client\.clientId, launchRange\)/.test(creative));
   check("creative: winners, carriers, losers carry no change", !/label: "(Winners|Carriers|Losers)"[\s\S]{0,200}?change:/.test(creative));
   check("creative: hit rate trend still reads the page range", /launchMonths\(launched\.rows, thresholds, launched\.through, ctx\.params\.range, format\)/.test(creative));

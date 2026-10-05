@@ -123,7 +123,7 @@ export default async function BreakdownPage({
           | string
           | null
           | undefined) ?? null;
-    const r = read(c, account.meanRoas, account.spend, display);
+    const r = read(c, account.anchorRoas, account.spend, display);
     return {
       key: g.key,
       label: g.label,

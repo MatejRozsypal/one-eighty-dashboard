@@ -121,7 +121,7 @@ export default async function ConceptsPage({
 
   const cards: ConceptCardData[] = groups.map((g) => {
     const components = sum(g.ads);
-    const r = read(components, account.meanRoas, account.spend, display);
+    const r = read(components, account.anchorRoas, account.spend, display);
     const first = g.ads[0];
     const adsets = [...new Set(g.ads.map((a) => a.adsetName ?? NO_VALUE))];
     // The verdict is taken against the OLDEST ad set the concept runs in: the
@@ -229,7 +229,7 @@ export default async function ConceptsPage({
     const v = toAdsetView(
       set,
       data.ads.filter((a) => a.adsetId === set.adsetId).length,
-      account.meanRoas,
+      account.anchorRoas,
       account.spend,
       display
     );

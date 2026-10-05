@@ -67,6 +67,11 @@ export function CreativeThresholds({
   action,
 }: {
   clientId: string;
+  /**
+   * The Meta ad account's currency, not the shop's: every amount in this form
+   * is compared with Meta spend. For a client whose shop sells in EUR and whose
+   * ad account bills in CZK, a CPA typed here is CZK.
+   */
   currency: string;
   settings: StoredCreativeSettings;
   action: (formData: FormData) => Promise<void>;
@@ -88,7 +93,8 @@ export function CreativeThresholds({
           <Field name="killRoas" label="Kill ROAS" value={settings.killRoas}
                  hint="Below this, every sale loses money." />
           <Field name="targetRoas" label="Target ROAS" value={settings.targetRoas} />
-          <Field name="targetCpa" label={`Target CPA (${currency})`} value={settings.targetCpa} />
+          <Field name="targetCpa" label={`Target CPA (${currency})`} value={settings.targetCpa}
+                 hint="In the Meta ad account currency. Gates spend; the hit rate does not use it." />
           <Field name="breakEvenRoas" label="Break-even ROAS" value={settings.breakEvenRoas}
                  hint="1 / margin. Often below the kill line, because Meta over-reports." />
           <Field name="grossMarginPct" label="Gross margin %"

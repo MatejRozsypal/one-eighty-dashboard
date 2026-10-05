@@ -8,11 +8,17 @@
  *
  * ── The scorecard's second row is the argument ─────────────────────────────
  * Spend, ROAS, CPA and purchases are the ordinary four. Winners, carriers,
- * losers and hit rate are the four that judge everything else, a 1.5% net-new
- * hit rate against a ~5% reference is the entire case for spending 80% of
+ * losers and hit rate are the four that judge everything else: a net-new hit
+ * rate far below the client's own 12-month rate is the case for spending 80% of
  * production on iterations of proven winners rather than on new ideas, and for
  * cutting the active persona set. It belongs on the first screen, not buried in
  * a report.
+ *
+ * ── One winner test ────────────────────────────────────────────────────────
+ * Every count and colour on this page comes from the same `classify()` as the
+ * hit rate: the client's read threshold, shrunk ROAS against target with the
+ * stored 365-day anchor, and 14 days of age. The scorecard counts ads WITH
+ * DELIVERY in the window; the hit rate counts ads FIRST DELIVERED in it.
  */
 
 import type { Metadata } from "next";
@@ -27,10 +33,15 @@ import { getLaunches } from "@/lib/queries/creativeLaunch";
 import {
   FORMAT_FILTERS,
   conceptSplit,
+  deltaWithheld,
   hitRate,
   inRange,
+  launchContext,
   launchMonths,
+  packHitRate,
+  referenceRate,
   tileText,
+  updatedLabel,
   type FormatFilter,
 } from "@/lib/creative/hitRate";
 import { toQueueProposal, type QueueRow } from "@/lib/creative/view";
@@ -42,8 +53,8 @@ import {
 } from "@/components/creative/primitives";
 import { NoData, NotConnected } from "@/components/ui/EmptyState";
 import { Notice } from "@/components/ui/Notice";
-import { buildAdViews, loadCreative } from "@/lib/creative/page";
-import { winnerEconomics } from "@/lib/creative/model";
+import { ageOf, buildAdViews, loadCreative } from "@/lib/creative/page";
+import { WINNER_MIN_AGE_DAYS, winnerEconomics } from "@/lib/creative/model";
 import { conceptLabel } from "@/lib/creative/display";
 import { CONFIRM_THRESHOLD, propose } from "@/lib/creative/matching";
 import { formatNumber, NO_VALUE } from "@/lib/format";
@@ -104,7 +115,7 @@ export default async function CreativesPage({
     return <CreativeNotConnected title="Creatives" source={loaded.source} />;
   }
   const { ctx } = loaded;
-  const { client, currency, data, thresholds, display, account } = ctx;
+  const { client, currency, data, thresholds, hitThresholds, display, account } = ctx;
 
   // Rendered against `display`, which equals `thresholds` when they are set and
   // is a judgement-free stand-in when they are not. The wall of creative is the
@@ -129,22 +140,34 @@ export default async function CreativesPage({
   const formatParam = one(searchParams.hrfmt);
   const format: FormatFilter = FORMAT_FILTERS.find((f) => f === formatParam) ?? "all";
   const launched = launches && launches.state === "ready" ? launches : null;
-  const hit = launched ? hitRate(inRange(launched.rows, ctx.params.range), thresholds) : null;
-  const hitText = tileText(hit, thresholds);
+  // The hit rate needs a target ROAS and a read threshold, not a Target CPA
+  // (`hitThresholds`), so a client without a CPA still gets one.
+  const hit = launched ? hitRate(inRange(launched.rows, ctx.params.range), hitThresholds) : null;
+  // The reference is the client's own hit rate over its trailing 365 days of
+  // launches. There is no fixed benchmark.
+  const reference = launched ? referenceRate(launched.rows, hitThresholds, launched.through) : null;
+  const hitText = tileText(hit, hitThresholds, reference);
   // The comparison period's hit rate, read from the same launch table. A
   // period with no launches has no rate (zero launches is not a 0% hit rate),
-  // so the tile then carries no change at all.
+  // so the tile then carries no change at all. While the current cohort is
+  // still maturing and the comparison is settled, the older cohort simply had
+  // more time to win: no change either (Reports withholds on the same rule).
   const prevHit =
-    launched && comparison && thresholds
-      ? hitRate(inRange(launched.rows, comparison), thresholds)
+    launched && comparison && hitThresholds
+      ? hitRate(inRange(launched.rows, comparison), hitThresholds)
       : null;
   const trendState: HitRateTrendState = !launched
     ? "not-ready"
-    : thresholds
+    : hitThresholds
       ? "ready"
       : "no-thresholds";
   const rangeRows = launched ? inRange(launched.rows, ctx.params.range) : [];
-  const split = launched ? conceptSplit(rangeRows, thresholds) : null;
+  const split = launched ? conceptSplit(rangeRows, hitThresholds) : null;
+  // New ad set vs added to an existing one, and the pack-level rate. Both read
+  // as not ready until the launch table carries the ad set columns.
+  const context = launched ? launchContext(rangeRows, hitThresholds) : null;
+  const packs = launched ? packHitRate(rangeRows, hitThresholds, ctx.params.range) : null;
+  const updated = updatedLabel(launched?.refreshedAt ?? null);
 
   // ── A filter linked in from Breakdown or Concepts ───────────────────────
   // `?focus=<AdView field>&is=<raw value>`. The display text is taken from the
@@ -162,7 +185,9 @@ export default async function CreativesPage({
             displayFor(views, focusField, focusValue) ?? focusValue,
         }
       : null;
-  const w = thresholds ? winnerEconomics(data.ads, account.meanRoas, thresholds) : null;
+  const w = thresholds
+    ? winnerEconomics(data.ads, account.anchorRoas, thresholds, (id) => ageOf(ctx, id))
+    : null;
 
   // ── Against the comparison period ───────────────────────────────────────
   // Only these four. They are account-level sums with enough events behind them
@@ -217,10 +242,10 @@ export default async function CreativesPage({
     // anything, so without them they read as absent rather than as zero, a
     // "0 winners" on an account with no target set is a claim, and a false one.
     {
-      label: "Winners",
+      label: "Winners with delivery in period",
       value: w ? String(w.winners) : NO_VALUE,
       sub: w ? `${w.decided} decided` : undefined,
-      info: "Ads with delivery in the period at or above target ROAS, with enough purchases to read.",
+      info: `Ads with delivery in the period at or above target ROAS, with enough purchases to read and ${WINNER_MIN_AGE_DAYS}+ days since first delivery.`,
     },
     {
       label: "Carriers",
@@ -241,7 +266,10 @@ export default async function CreativesPage({
       info: hitText.info,
       // Percentage points in both modes, and only when the comparison period
       // launched something.
-      change: prevHit && hit ? rateChange(hit.rate, prevHit.rate, prevHit.launched) : null,
+      change:
+        prevHit && hit && !deltaWithheld(hit, prevHit)
+          ? rateChange(hit.rate, prevHit.rate, prevHit.launched)
+          : null,
       goodWhen: "up" as const,
     },
   ];
@@ -258,6 +286,7 @@ export default async function CreativesPage({
           <CreativeBar
             unmapped={0}
             through={data.through}
+            updated={updated}
             currency={currency}
             href="#unmapped"
           />
@@ -287,6 +316,9 @@ export default async function CreativesPage({
                 FORMAT_FILTERS.map((f) => [f, formatHref(searchParams, f)])
               ) as Record<FormatFilter, string>}
               concepts={split ? split.rows : null}
+              reference={reference}
+              context={context}
+              packs={packs}
             />
 
             <SectionHead title="Every creative" />

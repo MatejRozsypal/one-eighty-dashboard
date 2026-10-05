@@ -385,8 +385,13 @@ export function diagnose(
   // A static reports no video metrics at all. Drawing an empty hook-rate gauge
   // for it would imply the data is missing rather than nonexistent, which sends
   // someone looking for an ingestion bug that is not there.
+  // A missing Target CPA reaches here as 0 (the display thresholds). Spend is
+  // always >= 1.5 x 0, so without this guard every zero-purchase ad would read
+  // "Body problem" on the strength of a threshold that is not there (C4).
+  const hasCpa = t.targetCpa > 0;
+
   if (!hasVideoMetrics(format)) {
-    if (c.purchases === 0 && c.spend >= 1.5 * t.targetCpa) {
+    if (hasCpa && c.purchases === 0 && c.spend >= 1.5 * t.targetCpa) {
       return {
         code: "body-problem",
         label: "Body problem",
@@ -406,7 +411,7 @@ export function diagnose(
     return {
       code: "hook-problem",
       label: "Hook problem",
-      say: `Hook rate ${pct(d.hookRate)}, under the ${pct(t.hookRateFloor)} floor. Brief new hooks.`,
+      say: `Hook rate ${pct(d.hookRate)}, under the ${pct(t.hookRateFloor)} ${floorWords(t)}. Brief new hooks.`,
       iterationType: 1,
     };
   }
@@ -420,7 +425,7 @@ export function diagnose(
     };
   }
 
-  if (c.purchases === 0 && c.spend >= 1.5 * t.targetCpa) {
+  if (hasCpa && c.purchases === 0 && c.spend >= 1.5 * t.targetCpa) {
     return {
       code: "body-problem",
       label: "Body problem",
@@ -435,6 +440,15 @@ export function diagnose(
     say: "Attention fine. Nothing to fix.",
     iterationType: null,
   };
+}
+
+/**
+ * "floor" for the stored Settings value, "floor (your p25 of video ads)" for the
+ * relative one. Hook and hold floors are diagnostic: they say where to look,
+ * never what to do with money.
+ */
+function floorWords(t: { floorBasis?: "relative" | "fallback" }): string {
+  return t.floorBasis === "relative" ? "floor (your p25 of video ads)" : "floor";
 }
 
 function pct(v: number | null): string {

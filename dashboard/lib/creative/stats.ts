@@ -63,6 +63,13 @@ export interface CreativeThresholds {
 
   hookRateFloor: number;
   holdRateFloor: number;
+  /**
+   * Where the two floors above came from: `relative` is the client's own p25
+   * of genuine video ads (`lib/creative/floors.ts`), `fallback` the stored
+   * Settings values. Absent when nobody asked (checks, Reports). Diagnostic
+   * only, a floor never decides a money verdict.
+   */
+  floorBasis?: "relative" | "fallback";
   frequencyWarn: number;
   frequencyAct: number;
 

@@ -35,7 +35,9 @@ import { NoData, NoValue, NotConnected } from "@/components/ui/EmptyState";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Notice } from "@/components/ui/Notice";
 import { isNoValue, NO_VALUE } from "@/lib/format";
-import { loadCreative, type CreativeContext } from "@/lib/creative/page";
+import { ageOf, loadCreative, type CreativeContext } from "@/lib/creative/page";
+import { getLaunches } from "@/lib/queries/creativeLaunch";
+import { HIT_RATE_REFERENCE_LABEL, formatRate, hitRate, inRange, referenceRate } from "@/lib/creative/hitRate";
 import { getCreatorTerms, getProductionRates } from "@/lib/creative/store";
 import { adCost, contributionMargin, type CreatorTerms, type ProductionRate } from "@/lib/creative/cost";
 import { classify, groupBy, sum } from "@/lib/creative/model";
@@ -67,9 +69,12 @@ export default async function ProductionPage({
     );
   }
 
-  const [rates, terms] = await Promise.all([
+  const [rates, terms, launches] = await Promise.all([
     getProductionRates(client.clientId),
     getCreatorTerms(client.clientId),
+    // The launch cohort behind the "Net-new hit rate" tile: the same table and
+    // the same hitRate() as the Creative tile.
+    getLaunches(client.clientId, ctx.params.range),
   ]);
   const rateList: ProductionRate[] = rates.map((r) => ({
     productionMethod: r.productionMethod,
@@ -116,7 +121,7 @@ export default async function ProductionPage({
       net: cm !== null && priced.length ? cm - production : null,
       ret: cm !== null && production > 0 ? cm / production : null,
       winners: judged
-        ? g.ads.filter((a) => classify(a.components, account.meanRoas, thresholds) === "winner").length
+        ? g.ads.filter((a) => classify(a.components, account.anchorRoas, thresholds, ageOf(ctx, a.adId)) === "winner").length
         : 0,
       confidence: confidenceOf(components.purchases, display),
     };
@@ -134,12 +139,19 @@ export default async function ProductionPage({
       : data.ads.filter(
           (a) => (a.tags.hookCode ?? "h1") === "h1" && (a.tags.bodyCode ?? "b1") === "b1"
         );
-  const netNewWinners = judged
-    ? netNew.filter((a) => classify(a.components, account.meanRoas, thresholds) === "winner").length
-    : 0;
+  // The net-new hit rate is hitRate() on the launch cohort (ads first
+  // delivered in the window, relaunches excluded), restricted to the ads this
+  // screen calls net-new. Same function, same anchor, same age rule as the
+  // Creative tile. The reference is the client's own trailing 12-month rate.
+  const launched = launches.state === "ready" ? launches : null;
+  const netNewIds = new Set(netNew.map((a) => a.adId));
+  const netNewHit = launched
+    ? hitRate(inRange(launched.rows, ctx.params.range).filter((r) => netNewIds.has(r.adId)), ctx.hitThresholds)
+    : null;
+  const ownRate = launched ? referenceRate(launched.rows, ctx.hitThresholds, launched.through) : null;
   const burned = judged
     ? data.ads
-        .filter((a) => classify(a.components, account.meanRoas, thresholds) !== "winner")
+        .filter((a) => classify(a.components, account.anchorRoas, thresholds, ageOf(ctx, a.adId)) !== "winner")
         .reduce((a, b) => a + b.components.spend, 0)
     : 0;
 
@@ -229,21 +241,23 @@ export default async function ProductionPage({
         <SectionHead title="Cost per winner" />
         {/*
           This is the argument for the 80/20 split in one row of tiles. A
-          net-new hit rate far below the ~5% reference is not an argument for
-          better briefs; it is an argument for making fewer new ideas and more
-          iterations of the one that already works.
+          a net-new hit rate far below the client's own 12-month rate is not an
+          argument for better briefs; it is an argument for making fewer new
+          ideas and more iterations of the one that already works.
         */}
         <Scorecard
           tiles={[
             {
               label: "Net-new hit rate",
-              value: netNew.length ? pct(netNewWinners / netNew.length) : NO_VALUE,
-              info: `${netNewWinners} winners from ${netNew.length} first-hook ads.`,
+              value: netNewHit && netNewHit.rate !== null ? (formatRate(netNewHit.rate) ?? NO_VALUE) : NO_VALUE,
+              info: netNewHit
+                ? `${netNewHit.winners ?? 0} of ${netNewHit.launched} net-new ads first delivered in the window, relaunches excluded.${ownRate === null ? "" : ` ${HIT_RATE_REFERENCE_LABEL}: ${formatRate(ownRate)}.`}`
+                : "Launch data is not ready.",
             },
             {
               label: "Ads per winner",
               value: totalWinners > 0 ? String(Math.round(data.ads.length / totalWinners)) : NO_VALUE,
-              info: "Reference: about 20 at a 5% hit rate.",
+              info: "Ads with delivery in the window per winner.",
             },
             {
               label: "Production per winner",

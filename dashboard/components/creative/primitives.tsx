@@ -321,12 +321,15 @@ export function SpendBar({
   tone,
 }: {
   fraction: number;
-  tone: "accent" | "negative" | "neutral" | "muted";
+  /** `winner` is the green of a read winner; `promising` a lighter tone for one that clears the target without being a winner yet. `accent` is the same green as `winner`. */
+  tone: "accent" | "winner" | "promising" | "negative" | "neutral" | "muted";
 }) {
   const fill =
-    tone === "accent"
+    tone === "accent" || tone === "winner"
       ? "bg-accent"
-      : tone === "negative"
+      : tone === "promising"
+        ? "bg-accent/45"
+        : tone === "negative"
         ? "bg-negative"
         : tone === "neutral"
           ? "bg-content-muted"

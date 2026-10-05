@@ -354,6 +354,26 @@ export function toThresholds(s: StoredCreativeSettings): CreativeThresholds | nu
   };
 }
 
+/**
+ * Thresholds for the hit rate and winners: the target ROAS and the read
+ * threshold are all a winner needs (`classify` never looks at the kill line or
+ * the CPA for a winner), so a client without a Target CPA, or without a kill
+ * line, still gets a hit rate (audit change C4). Null only when there is no
+ * target. The kill line and CPA come through as 0 when missing: nothing on the
+ * winner path reads them.
+ *
+ * Verdicts, the loser class and every spend gate keep `toThresholds`, which
+ * still requires the three money lines.
+ */
+export function toHitRateThresholds(s: StoredCreativeSettings): CreativeThresholds | null {
+  if (s.targetRoas === null) return null;
+  return {
+    ...toDisplayThresholds(s),
+    killRoas: s.killRoas ?? 0,
+    targetRoas: s.targetRoas,
+  };
+}
+
 export async function saveCreativeSettings(
   clientId: string,
   input: Partial<Omit<StoredCreativeSettings, "clientId" | "updatedAt" | "updatedBy">>,

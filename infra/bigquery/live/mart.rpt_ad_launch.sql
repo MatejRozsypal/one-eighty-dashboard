@@ -27,9 +27,12 @@ CREATE TABLE `oneeighty-warehouse.mart.rpt_ad_launch`
   format_tag STRING,
   production_type STRING,
   prior_roas NUMERIC,
-  refreshed_at TIMESTAMP
+  refreshed_at TIMESTAMP,
+  video_start_share FLOAT64,
+  adset_first_date DATE,
+  is_new_adset BOOL
 )
 CLUSTER BY client_id
 OPTIONS(
-  description="One row per Meta ad: first delivery date, lifetime totals to the latest loaded day, pre-existing and relaunch flags, 12 month client ROAS prior. Built from mart.mart_meta_ad_perf by mart.sp_refresh_rpt_ad_launch (daily). Base for the creative hit rate. Migration 254."
+  description="One row per Meta ad: first delivery date, lifetime totals to the latest loaded day, pre-existing and relaunch flags, video flag and share, ad set launch context, 12 month client ROAS prior. Built from mart.mart_meta_ad_perf by mart.sp_refresh_rpt_ad_launch (daily). Base for the creative hit rate. Migrations 254 and 255."
 );

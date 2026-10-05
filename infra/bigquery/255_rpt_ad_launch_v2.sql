@@ -1,3 +1,64 @@
+-- =============================================================================
+-- 255_rpt_ad_launch_v2.sql
+-- mart.rpt_ad_launch v2: fixed is_video and three new columns (video_start_share,
+-- adset_first_date, is_new_adset). Package ME1 of the Meta engine audit follow-up
+-- (03_audit.md changes C1 and C7, owner decisions 2026-10-05).
+--
+-- Problem
+--   C1. is_video was `video_plays > 0` over the lifetime. A banner that got a few video plays
+--       (carousel cards, auto-played previews) was counted as video, so the hook rate of the
+--       "average video" was dragged down and the Video / Static split was wrong.
+--   C7. The hit rate by launch context (ad launched with a new ad set vs added to an existing
+--       one) and the pack-level hit rate (ad sets with at least one winner / ad sets launched)
+--       need the first delivery day of the ad set.
+--
+-- Change (additive columns, one semantic fix; the table is rebuilt by the same procedure)
+--   is_video          TRUE when video_plays / impressions >= 0.30 over the ad lifetime, OR when
+--                     mart.mart_creative_asset has a non-empty video_id for the ad. Both parts
+--                     are needed: the share catches ads whose asset row is missing (Ethia has 0
+--                     rows in mart_creative_asset, see audit C8), the asset catches video ads
+--                     with a low start share. Replaces `video_plays > 0`.
+--   video_start_share FLOAT64, video_plays / impressions (video starts as in the lifetime
+--                     column video_plays = sum of video_play_actions), NULL when impressions = 0.
+--   adset_first_date  DATE, earliest first_date among the ads of the same (client_id, adset_id).
+--                     adset_id is the ad's latest ad set, as in the existing column.
+--   is_new_adset      BOOL, first_date <= adset_first_date + 2 days: the ad started delivering
+--                     within 2 days of its ad set, so it launched with the pack. FALSE means the
+--                     ad was added to an ad set that had been running longer. Never NULL
+--                     (adset_id is present on all 459 ads today).
+--   Unchanged: all 28 existing columns, their order, types and semantics apart from is_video.
+--   The 3 new columns are appended after refreshed_at, so the table has 31 columns.
+--   The procedure keeps its name, schedule, ASSERTs and swap; only the SELECT changed
+--   (a life2 CTE with the window MIN for adset_first_date, has_video_asset in the asset CTE).
+--
+-- Based on the deployed migration 254 (live/mart.sp_refresh_rpt_ad_launch.sql, procedure body md5
+-- equal to the live ROUTINES.ddl, checked 2026-10-05) and on mart.mart_meta_ad_perf and
+-- mart.mart_creative_asset read 2026-10-05. Neither view is changed.
+--
+-- Affected clients: all four rebuild; only is_video changes among existing columns (60 ads
+-- of 459 go from video to non-video, none the other way: Dobias 4, Ethia 17, Manami 35,
+-- Venev 4).
+--
+-- Regression (qa/255_regression.sql, run in mart_qa with prefix me1_, then on prod):
+--   all other columns identical to the old logic rebuilt on the same source in the same hour,
+--   EXCEPT DISTINCT both directions 0 and 0 on 459 rows. A comparison against the table
+--   deployed that morning shows 16 ads and prior_roas differing in the 5th to 7th digit: Meta
+--   restated 2026-10-04 spend by cents between the two builds, not a logic change.
+--   Launch context (not pre-existing, not relaunch, first_date > 2025-10-01), audit 2.6:
+--   Dobias 31 new / 4 existing, Ethia 64 / 92, Manami 65 / 55, Venev 9 / 0. Pack level (ad sets
+--   launched in the same window): Dobias 15, Ethia 14, Manami 31 (equals audit 3.4).
+--
+-- Cost and timing: unchanged, about 300 MB and 12 to 14 s per CALL.
+-- Scheduler: unchanged, the owner's scheduled query keeps calling the procedure by name; the
+-- next scheduled run uses the new body.
+--
+-- Deploy order (owner approved the prod deploy of this migration after the mart_qa regression)
+--   1. Statement 1 (procedure) and statement 2 (CALL, rebuilds the table with 31 columns).
+--   2. Run the checks of qa/255_regression.sql against prod names.
+-- Rollback: re-run 254_rpt_ad_launch.sql statement 1 (old procedure body) and the CALL.
+-- =============================================================================
+
+-- 1. Procedure (identical to live/mart.sp_refresh_rpt_ad_launch.sql)
 CREATE OR REPLACE PROCEDURE `oneeighty-warehouse.mart.sp_refresh_rpt_ad_launch`()
 OPTIONS (description = 'Rebuilds mart.rpt_ad_launch (one row per Meta ad: first delivery date, lifetime totals, pre-existing and relaunch flags, video flag, ad set launch context, 12 month prior ROAS) from mart.mart_meta_ad_perf. Builds mart.rpt_ad_launch__next, checks it (rows > 0, >= 90 % of the current table, unique client_id and ad_id, latest day not older than 2 days), then swaps it in with CREATE OR REPLACE TABLE ... COPY. Any failure leaves the current table untouched. Migrations 254 and 255. Run daily by a BigQuery scheduled query.')
 BEGIN
@@ -120,3 +181,6 @@ BEGIN
 
   DROP TABLE IF EXISTS `oneeighty-warehouse.mart.rpt_ad_launch__next`;
 END;
+
+-- 2. Rebuild now (creates the 31 column table). About 14 s, about 300 MB.
+CALL `oneeighty-warehouse.mart.sp_refresh_rpt_ad_launch`();

@@ -26,6 +26,8 @@ Every new migration (228 and up) must cite the `live/` file it changes in its he
 | `scheduled_queries.md` | 1 | list of scheduled queries and DTS transfer configs |
 | `mart.rpt_kpis_daily.sql` | 1 | `INFORMATION_SCHEMA.TABLES.ddl` of the one base table in `mart` (migration 253, **pending deploy**: written from the `mart_qa` candidate with the name mapped back, md5 of the file without its trailing newline `c8c7144fed6bdbb678f02043b0e92e67`) |
 | `mart.sp_refresh_rpt_kpis.sql` | 1 | the procedure that rebuilds `mart.rpt_kpis_daily` (migration 253, **pending deploy**), verbatim as sent in 253; after the deploy compare with `INFORMATION_SCHEMA.ROUTINES.ddl` |
+| `mart.rpt_ad_launch.sql` | 1 | `INFORMATION_SCHEMA.TABLES.ddl` of `mart.rpt_ad_launch` (migrations 254 and 255, **deployed 2026-10-05**, 31 columns, md5 of the file without its trailing newline `e9c4f508574e04396d1826f062066db5` equals the live ddl) |
+| `mart.sp_refresh_rpt_ad_launch.sql` | 1 | the procedure that rebuilds `mart.rpt_ad_launch` (migration 255, **deployed 2026-10-05**; md5 of the body from `BEGIN` to `END;` `65a043b8969cfe1af39e3bfa13ae12df` equals the live `ROUTINES.routine_definition` plus `;`) |
 
 Not covered: stored procedures and functions, except `mart.sp_refresh_rpt_kpis` (253) (others: `ops.sp_load_ga4_sessions`, `ops.sp_load_ga4_sessions_for` live in `../243_ga4_sessions.sql`; `ref.sp_rebuild_creative_tags`, `ref.creative_name_key`), `raw`, `raw_google_ads`, `raw_meta_*`, `analytics_*`, `mart_qa` and other datasets, and view definitions
 that reference views from those datasets are exported as they are.

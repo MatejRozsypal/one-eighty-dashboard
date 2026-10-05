@@ -12,7 +12,7 @@
 
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
-import { parseViewParams, type SearchParams } from "@/lib/params";
+import { parseViewParams, viewQuery, type SearchParams } from "@/lib/params";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
@@ -42,6 +42,10 @@ import {
   type ColumnSet,
 } from "@/components/paid/meta/MetaCampaigns";
 import { CampaignDetail } from "@/components/paid/meta/CampaignDetail";
+import { HitRateTile } from "@/components/paid/meta/HitRateTile";
+import { getLaunches } from "@/lib/queries/creativeLaunch";
+import { getCreativeSettings, toThresholds } from "@/lib/creative/store";
+import { hitRate, inRange, tileText } from "@/lib/creative/hitRate";
 import { AudienceBreakdown } from "@/components/paid/meta/AudienceBreakdown";
 import { pick } from "@/components/paid/meta/links";
 
@@ -82,13 +86,17 @@ export default async function PaidMetaPage({
   const campaignParam = pick(searchParams, "campaign");
   const adsetParam = pick(searchParams, "adset");
 
-  const [rows, videoRows, adsets, ads] = await Promise.all([
+  const [rows, videoRows, adsets, ads, launches, creativeSettings] = await Promise.all([
     getMetaCampaignDaily(client.clientId, period),
     getMetaVideoRates(client.clientId, period),
     campaignParam ? getMetaAdsets(client.clientId, params.range, campaignParam) : [],
     campaignParam
       ? getMetaAds(client.clientId, params.range, campaignParam, adsetParam)
       : [],
+    // The Creative hit rate: same table, same thresholds, same function as the
+    // Creatives screen, so the two agree for the same range.
+    getLaunches(client.clientId, params.range),
+    getCreativeSettings(client.clientId),
   ]);
 
   const campaigns = campaignRows(rows, hasComparison);
@@ -104,6 +112,14 @@ export default async function PaidMetaPage({
       </>
     );
   }
+
+  const thresholds = toThresholds(creativeSettings);
+  const launched = launches.state === "ready" ? launches : null;
+  const hit = launched ? hitRate(inRange(launched.rows, params.range), thresholds) : null;
+  const hitText = tileText(hit, thresholds);
+  // On this tile a missing threshold says so in the sub line, as the way out.
+  const hitTile =
+    hit && thresholds === null ? { ...hitText, sub: "Set thresholds" } : hitText;
 
   const current = sumRows(inPeriod(rows, "current"));
   const previous = hasComparison ? sumRows(inPeriod(rows, "comparison")) : null;
@@ -147,6 +163,12 @@ export default async function PaidMetaPage({
           video={video}
           previousVideo={previousVideo}
           currency={currency}
+        />
+
+        <HitRateTile
+          text={hitTile}
+          href={`/creative?${viewQuery(params)}`}
+          needsThresholds={hit !== null && thresholds === null}
         />
 
         <MetaFunnel sums={current} currency={currency} />

@@ -51,6 +51,7 @@ export function buildPageMetrics(): PageMetrics {
       goodWhen: m.goodWhen,
       benchmarkable: m.benchmarkable,
       caveats: m.caveats,
+      ...(m.reference ? { reference: m.reference } : {}),
     };
   }
   const caveatTexts: Partial<Record<CaveatId, string>> = {};

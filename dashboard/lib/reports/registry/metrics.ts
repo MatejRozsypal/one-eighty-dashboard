@@ -83,6 +83,7 @@ interface Opts {
   phase?: 1 | 2;
   deprecated?: boolean;
   reference?: MetricReference;
+  showCounts?: { noun: string };
 }
 
 type Spec =
@@ -162,6 +163,9 @@ function defineMetrics(specs: Record<RegistryMetricId, Spec>): MetricRegistry {
       for (const g of def.grains) if (!(mart.grains as readonly Grain[]).includes(g)) throw new Error(`Reports registry: ${id} grain ${g} not in mart ${mart.id}`);
     }
     if (def.minVolume) getComponent(def.minVolume.c);
+    if (def.showCounts && (def.kind !== "ratio" || def.numerator.length !== 1 || def.denominator.length !== 1 || def.numerator[0].sign !== 1 || def.denominator[0].sign !== 1)) {
+      throw new Error(`Reports registry: ${id} showCounts needs a ratio of two single positive terms`);
+    }
     // Native sums exclude rows in another currency, display sums convert them: either way the marker belongs on every money-based metric.
     const caveats = usesMoney(def) ? [...(def.caveats ?? []), "foreign_currency_rows" as const] : def.caveats;
     const meta: CompiledMetricMeta = {
@@ -492,22 +496,23 @@ export const METRICS: MetricRegistry = defineMetrics({
   // mart classified per ad in evaluate.ts against the client's own Settings
   // thresholds, with the same launchStatus() as the Creative tile. Combined
   // = sum of winners / sum of launched, each client judged by its own bar.
-  hit_rate: ratio("Hit rate", "meta", [t("ad_launch.winners")], [t("ad_launch.launched")], {
+  hit_rate: ratio("Hit rate", "creative", [t("ad_launch.winners")], [t("ad_launch.launched")], {
     ...PCT_UP,
     description: "Winners among Meta ads first delivered in the period, relaunches excluded. Winner: the client's purchase and ROAS bar, lifetime to date.",
     benchmarkable: false,
     caveats: ["cohort_maturing", "lifetime_to_date"],
     aliases: ["creative hit rate", "winner rate"],
     reference: { value: HIT_RATE_REFERENCE, label: "Reference ~5%" },
+    showCounts: { noun: "ads" },
   }),
-  winners: sum("Winners", "meta", [t("ad_launch.winners")], {
+  winners: sum("Winners", "creative", [t("ad_launch.winners")], {
     ...COUNT_UP,
     description: "Meta ads first delivered in the period that clear the client's winner bar, lifetime to date.",
     benchmarkable: false,
     caveats: ["cohort_maturing", "lifetime_to_date"],
     aliases: ["winning ads", "creative winners"],
   }),
-  ads_launched: sum("Ads launched", "meta", [t("ad_launch.launched")], {
+  ads_launched: sum("Ads launched", "creative", [t("ad_launch.launched")], {
     ...COUNT_UP,
     goodWhen: "neutral",
     description: "Meta ads first delivered in the period. Relaunches of an asset that already ran and ads running before the history starts are left out.",

@@ -88,6 +88,7 @@ export function RankedWidget({ result, metrics, caveatTexts, view, pending = fal
               <CellDelta
                 delta={cell.delta}
                 kind={cell.deltaKind}
+                suppressed={cell.deltaSuppressed}
                 goodWhen={metric.goodWhen}
                 total={cell.total}
                 compareTotal={cell.compareTotal}

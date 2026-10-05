@@ -267,6 +267,17 @@ export interface MetricCell {
   /** "pp" for percent units, "relative" for everything else. */
   deltaKind: "relative" | "pp";
   /**
+   * True when the delta was withheld on purpose (a maturing cohort against a
+   * settled one), so no view may rebuild it from the two totals ("123" mode).
+   */
+  deltaSuppressed?: boolean;
+  /**
+   * Metrics with `showCounts` (hit rate): the summed numerator and
+   * denominator of the current total, over the clients summed in it. The KPI
+   * tile shows "W of n noun" under the value.
+   */
+  counts?: { part: number; whole: number; noun: string };
+  /**
    * Aligned with WidgetResult.buckets. Absent for grain "total" and for
    * not_connected cells (no line at all). Other non-ok cells keep the values
    * of unaffected buckets (fx_missing nulls only the months without a rate),

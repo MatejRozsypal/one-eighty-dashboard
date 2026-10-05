@@ -243,7 +243,8 @@ export function NotesMark({ lines }: { lines: readonly string[] }) {
  *
  * Absolute mode (the "% | 123" toggle) needs both totals and the format: then
  * the chip shows `total - compareTotal` in the metric's unit (money in the
- * widget's currency, compact when the metric is). Percent metrics stay in pp.
+ * widget's currency, compact when the metric is). Percent metrics stay in pp,
+ * counts (winners, ads launched) show the difference of the counts.
  * Without those props it stays relative, as before.
  */
 export function CellDelta({
@@ -254,6 +255,7 @@ export function CellDelta({
   compareTotal,
   format,
   currency,
+  suppressed,
 }: {
   delta: number | null;
   kind: "relative" | "pp";
@@ -262,8 +264,11 @@ export function CellDelta({
   compareTotal?: number | null;
   format?: FormatSpec;
   currency?: string;
+  /** The evaluator withheld the change on purpose (`cell.deltaSuppressed`): neither mode may rebuild it. */
+  suppressed?: boolean;
 }) {
   const mode = useDeltaMode();
+  if (suppressed) return null;
   if (mode === "abs" && format !== undefined && total != null && compareTotal != null) {
     return (
       <DeltaChip

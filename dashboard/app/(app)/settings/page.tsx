@@ -265,7 +265,7 @@ export default async function SettingsPage({
     if (creative.targetCpa === null) missing.push("CPA");
     if (missing.length === 3) return "No thresholds set";
     if (missing.length > 0) return `Missing ${missing.join(", ")}`;
-    return `Kill ${creative.killRoas!.toFixed(2)} · target ${creative.targetRoas!.toFixed(2)} · CPA ${creative.targetCpa} ${selected.currency}`;
+    return `Kill ${creative.killRoas!.toFixed(2)} · target ${creative.targetRoas!.toFixed(2)} · CPA ${creative.targetCpa} ${selected.metaCurrency ?? selected.currency}`;
   })();
 
   const monthsWithGoals = new Set(goals.map((g) => g.month)).size;
@@ -376,7 +376,7 @@ export default async function SettingsPage({
         >
           <CreativeThresholds
             clientId={selected.clientId}
-            currency={selected.currency}
+            currency={selected.metaCurrency ?? selected.currency}
             settings={creative}
             action={saveCreativeSettingsAction}
           />

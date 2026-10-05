@@ -316,6 +316,114 @@
         480
       ],
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{ $('Decode secrets').first().json.api_version }}/{{ $('Decode secrets').first().json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "level",
+              "value": "ad"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ $('Decode secrets').first().json.time_range }}"
+            },
+            {
+              "name": "fields",
+              "value": "ad_id,adset_id,campaign_id,actions,action_values"
+            },
+            {
+              "name": "action_attribution_windows",
+              "value": "[\"7d_click\",\"1d_view\",\"1d_ev\"]"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Decode secrets').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging ? $response.body.paging.next : undefined }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequestsPerPage": 100
+            }
+          }
+        }
+      },
+      "id": "d0000000-0000-0000-0000-000000000040",
+      "name": "Fetch ad attribution windows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        480
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "ME2 (migration 256). Runs once per plan chunk. A failure here never blocks the legacy ad insert above, it only leaves the split of these days to the next hourly run."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ME2 (migration 256): purchases per attribution window, one row per ad-day.\n// Requested with action_attribution_windows=[\"7d_click\",\"1d_view\",\"1d_ev\"], so every\n// actions[] / action_values[] entry carries one key per window next to `value`.\n// The legacy columns of raw_meta_ad_insights (purchases, purchase_value) are NOT taken\n// from this request: they stay on each ad set's own attribution setting.\nconst ctx = $('Decode secrets').first().json;\nconst WINDOWS = '7d_click,1d_view,1d_ev';\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n// Same action type preference as the legacy columns: omni_purchase, else purchase.\nconst entry = arr => {\n  if (!Array.isArray(arr)) return null;\n  return arr.find(a => a.action_type === 'omni_purchase')\n      ?? arr.find(a => a.action_type === 'purchase')\n      ?? null;\n};\n// Entry present but window key absent: 0 for that window. No entry: NULL (no purchase action).\nconst win = (e, w) => (e === null ? null : (e[w] === undefined ? 0 : num(e[w])));\n\nconst all = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.data)) {\n    for (const r of j.data) all.push(r);\n  } else if (j.ad_id) {\n    all.push(j);\n  }\n}\n\nreturn all.map(r => {\n  const a = entry(r.actions);\n  const v = entry(r.action_values);\n  return { json: {\n    client_id: ctx.client_id,\n    ingested_at: INGESTED_AT,\n    ingest_source: ctx.mode === 'backfill_me2' ? 'backfill_me2' : 'cron',\n    ad_account_id: ctx.ad_account_id,\n    campaign_id: String(r.campaign_id ?? ''),\n    adset_id:    String(r.adset_id    ?? ''),\n    ad_id:       String(r.ad_id),\n    date_start: r.date_start,\n    date_stop:  r.date_stop,\n    attribution_windows: WINDOWS,\n    purchases_7d_click:           win(a, '7d_click'),\n    purchase_value_7d_click:      win(v, '7d_click'),\n    purchases_1d_view:            win(a, '1d_view'),\n    purchase_value_1d_view:       win(v, '1d_view'),\n    purchases_1d_ev:              win(a, '1d_ev'),\n    purchase_value_1d_ev:         win(v, '1d_ev'),\n    purchases_windows_value:      a === null ? null : num(a.value),\n    purchase_value_windows_value: v === null ? null : num(v.value),\n    actions:       JSON.stringify(r.actions ?? []),\n    action_values: JSON.stringify(r.action_values ?? [])\n  }};\n});\n"
+      },
+      "id": "d0000000-0000-0000-0000-000000000041",
+      "name": "Transform ad attribution windows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        480
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_meta_ad_attribution_windows",
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "id": "d0000000-0000-0000-0000-000000000042",
+      "name": "BQ: insert ad attribution windows",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1400,
+        480
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     }
   ],
   "pinData": {},
@@ -454,6 +562,39 @@
       ]
     },
     "BQ: insert ad insights": {
+      "main": [
+        [
+          {
+            "node": "Fetch ad attribution windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch ad attribution windows": {
+      "main": [
+        [
+          {
+            "node": "Transform ad attribution windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform ad attribution windows": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert ad attribution windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert ad attribution windows": {
       "main": [
         [
           {

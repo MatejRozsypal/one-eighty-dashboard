@@ -13,7 +13,7 @@
 
 import { NO_VALUE, formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
 import type { FormatSpec, QueryGrain } from "@/lib/reports/registry/types";
-import { CELL_STATUS_LABEL, type MetricCell } from "@/lib/reports/types";
+import { CELL_STATUS_LABEL, type MetricCell, type WidgetResult } from "@/lib/reports/types";
 
 function missing(value: number | null | undefined): value is null | undefined {
   return value === null || value === undefined || !Number.isFinite(value);
@@ -149,4 +149,44 @@ export function safeUrl(url: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A rollup over one client is labelled "All clients" by the evaluator
+ * (lib/reports/evaluate.ts), which reads wrong for a report on one client
+ * (QA N-03): the tooltip said "All clients CZK 1.0M" for a Dobias-only report.
+ * When a combined series covers exactly one selected client, its label is that
+ * client's name. "Selected" is `coverage.of` on the series' cells (the clients
+ * the rollup was asked for, including any left out as gaps); a rollup over
+ * several clients keeps "All clients". Returns the same object when nothing
+ * changes.
+ */
+export function nameSingleClientRollups(result: WidgetResult, clients: ReadonlyArray<{ id: string; name: string }>): WidgetResult {
+  let changed = false;
+  const series = result.series.map((s) => {
+    if (s.kind !== "combined") return s;
+    const cells = Object.values(s.cells).filter((c): c is MetricCell => c !== undefined);
+    const of = Math.max(0, ...cells.map((c) => c.coverage?.of ?? 0));
+    let id: string | undefined;
+    let name: string | undefined;
+    if (of === 1) {
+      id = s.clientIds?.[0];
+      name = clients.find((c) => c.id === id)?.name;
+      if (name === undefined) {
+        const left = cells.flatMap((c) => c.excluded ?? [])[0];
+        if (left) {
+          id = left.id;
+          name = left.name;
+        }
+      }
+    } else if (of === 0 && s.clientIds?.length === 1) {
+      // No coverage numbers (older result shape): the one client included is the one asked for.
+      id = s.clientIds[0];
+      name = clients.find((c) => c.id === id)?.name;
+    }
+    if (name === undefined || name === s.label) return s;
+    changed = true;
+    return { ...s, label: name };
+  });
+  return changed ? { ...result, series } : result;
 }

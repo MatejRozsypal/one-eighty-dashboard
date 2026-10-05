@@ -139,11 +139,12 @@ export function ReportClient(props: ReportClientProps) {
   // shows the new state). Anything that moves the user, or reloads what they are
   // looking at, goes through the shared navigation so the page pulses at once.
   const router = useRouter();
-  const { navigate, refresh: refreshPage } = useNavigation();
+  const { navigate, refresh: refreshPage, isPending: navPending, pendingHref } = useNavigation();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const toasts = useToasts();
   const pushToast = toasts.push;
+  const dismissToast = toasts.dismiss;
   const desktop = useDesktop();
 
   // ---- identity and server copy -------------------------------------------
@@ -199,6 +200,24 @@ export function ReportClient(props: ReportClientProps) {
   const effective = useMemo(() => withOverrides(savedFilters, overrides), [savedFilters, overrides]);
   const effectiveRef = useRef(effective);
   effectiveRef.current = effective;
+
+  // The figures on screen stop being current the moment a filter is clicked,
+  // not when the new query starts (QA N-05): `effective` only changes once the
+  // router commits the new URL, and that waits on the server render of this
+  // page, which took anywhere from 0.2 to 16 s under load. While a navigation
+  // to this same report with different filters is in flight, every widget is
+  // dimmed as stale.
+  const filtersChanging = useMemo(() => {
+    if (!navPending || !pendingHref) return false;
+    try {
+      const target = new URL(pendingHref, "http://report.local");
+      if (target.pathname !== pathname) return false;
+      const next = withOverrides(savedFilters, parseFilterParams(target.search).overrides);
+      return !filtersEqual(next, effective);
+    } catch {
+      return false;
+    }
+  }, [navPending, pendingHref, pathname, savedFilters, effective]);
 
   // =========================================================================
   // Queue
@@ -485,6 +504,17 @@ export function ReportClient(props: ReportClientProps) {
   );
   const { data, retry } = useWidgetData({ reportId, filters: effective, widgets: dataWidgets, refreshNonce });
 
+  // The Industry switch is on and every widget has settled without a single
+  // benchmark row (the table can be empty): say so once, instead of a switch
+  // that visibly does nothing (QA N-04).
+  const noBenchmarks = useMemo(() => {
+    if (!effective.benchmark) return false;
+    const states = dataWidgets.filter((w) => w.config !== null).map((w) => data[w.id]);
+    if (states.length === 0) return false;
+    if (states.some((st) => !st || st.loading || st.error || !st.result)) return false;
+    return states.every((st) => (st.result?.benchmarks.length ?? 0) === 0);
+  }, [dataWidgets, data, effective.benchmark]);
+
   const clientsLabel = useCallback((sel: ReportFilters["clients"]) => clientSelectionLabel(clients, sel), [clients]);
 
   const renderWidget = (w: CanvasWidget, ctx: RenderContext): WidgetRender => {
@@ -504,7 +534,8 @@ export function ReportClient(props: ReportClientProps) {
           widgetMetrics={widgetMetrics}
           caveatTexts={caveatTexts}
           canEdit={ctx.editing}
-          refreshing={refreshing}
+          refreshing={refreshing || filtersChanging}
+          clients={clients}
           onRetry={() => retry(w.id)}
           onRemove={() => handle.current?.remove(w.id)}
           onReset={() => resetWidget(w.id)}
@@ -565,14 +596,25 @@ export function ReportClient(props: ReportClientProps) {
     } else router.refresh();
   }, [directory, pinned, reportId, router]);
 
+  const duplicating = useRef(false);
   const duplicate = useCallback(async () => {
-    // A copy carries what is saved, so flush pending edits first.
-    flushConfigs();
-    await handle.current?.flush();
-    const res = await duplicateReport(reportId);
-    if (!res.ok) return pushToast({ text: "Could not save", tone: "error" });
-    navigate(`/reports/${res.id}?edit=1`);
-  }, [flushConfigs, navigate, reportId, pushToast]);
+    // One copy per click: the call takes seconds on a cold server and a second
+    // click (Cmd+D included) must not make another.
+    if (duplicating.current) return;
+    duplicating.current = true;
+    const notice = pushToast({ text: "Duplicating", ttl: 0 });
+    try {
+      // A copy carries what is saved, so flush pending edits first.
+      flushConfigs();
+      await handle.current?.flush();
+      const res = await duplicateReport(reportId).catch(() => null);
+      if (!res || !res.ok) return pushToast({ text: "Could not save", tone: "error" });
+      navigate(`/reports/${res.id}?edit=1`);
+    } finally {
+      dismissToast(notice);
+      duplicating.current = false;
+    }
+  }, [flushConfigs, navigate, reportId, pushToast, dismissToast]);
 
   const remove = useCallback(async () => {
     const res = await deleteReport(reportId);
@@ -766,6 +808,11 @@ export function ReportClient(props: ReportClientProps) {
 
       <div className={`z-20 border-b border-hairline bg-paper px-5 py-2 transition-[padding] duration-base lg:sticky lg:top-[var(--header-h)] lg:px-8 ${drawerOpen ? "lg:pr-[392px]" : ""}`}>
         <FilterRegion filters={effective} defaults={savedFilters} clients={clients} onSaveDefault={canEdit ? saveDefault : undefined} />
+        {noBenchmarks && (
+          <p role="status" className="m-0 pt-1.5 text-[12px] text-content-muted">
+            No benchmarks yet
+          </p>
+        )}
       </div>
 
       <main className={`min-w-0 px-5 pb-14 pt-5 transition-[padding] duration-base lg:px-8 ${drawerOpen ? "lg:pr-[392px]" : ""}`}>

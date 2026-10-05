@@ -31,8 +31,10 @@ import { assignSeriesStyles, seriesColor } from "@/components/reports/widgets/ch
 import {
   formatDeltaMagnitude,
   formatMetricValue,
+  nameSingleClientRollups,
   statusLabel,
 } from "@/components/reports/widgets/format";
+import { retriesFor, retryClass, retryDelay, RETRY_DELAYS_MS } from "@/components/reports/useWidgetData";
 import type { CaveatTexts, ChartWidgetProps, WidgetMetric, WidgetProps } from "@/components/reports/widgets/types";
 
 let passed = 0;
@@ -409,6 +411,54 @@ async function main(): Promise<void> {
     }
   } catch (err) {
     failures.push(`index: THREW ${(err as Error).message}`);
+  }
+
+  // N-03: a rollup over one client carries the client's name, not "All clients".
+  {
+    const combined = FIXTURE_RESULTS.combinedTotalBenchmarks;
+    const names = [{ id: "alpha", name: "Alpha Shop" }, { id: "charlie", name: "Charlie" }];
+    check("two-client rollup keeps All clients", nameSingleClientRollups(combined, names) === combined);
+    const one: WidgetResult = {
+      ...combined,
+      series: combined.series.map((s) => ({
+        ...s,
+        clientIds: ["alpha"],
+        cells: Object.fromEntries(Object.entries(s.cells).map(([k, c]) => [k, { ...(c as MetricCell), coverage: { included: 1, of: 1 } }])),
+      })),
+    };
+    check("one-client rollup is labelled with the client", nameSingleClientRollups(one, names).series[0].label === "Alpha Shop");
+    check("the input result is not mutated", one.series[0].label === "All clients");
+    check("an unnamed client leaves the label alone", nameSingleClientRollups(one, []) === one);
+    const left: WidgetResult = {
+      ...one,
+      series: one.series.map((s) => ({
+        ...s,
+        clientIds: [],
+        cells: Object.fromEntries(Object.entries(s.cells).map(([k, c]) => [k, { ...(c as MetricCell), excluded: [{ id: "alpha", name: "Alpha Shop", reason: "Missing days" }] }])),
+      })),
+    };
+    check("a one-client rollup whose client was left out still names it", nameSingleClientRollups(left, []).series[0].label === "Alpha Shop");
+    check("client series are untouched", nameSingleClientRollups(weekly, names) === weekly);
+  }
+
+  // N-02: which failures are retried, how often, and how long they wait.
+  {
+    check("network error is transient", retryClass({ status: 0, error: { code: "network" } }) === "transient");
+    check("platform 503 with no code is transient", retryClass({ status: 503, error: { code: "warehouse_error" } }) === "transient");
+    check("platform 502 is transient", retryClass({ status: 502, error: { code: "warehouse_error" } }) === "transient");
+    check("429 is transient", retryClass({ status: 429, error: { code: "warehouse_error" } }) === "transient");
+    check("our warehouse_error 500 is retried once", retryClass({ status: 500, error: { code: "warehouse_error" } }) === "once");
+    check("a 404 is retried once", retryClass({ status: 404, error: { code: "not_found" } }) === "once");
+    check("a timeout is not retried", retryClass({ status: 504, error: { code: "timeout" } }) === "never");
+    check("a platform 504 is not retried", retryClass({ status: 504, error: { code: "warehouse_error" } }) === "never");
+    check("invalid is not retried", retryClass({ status: 400, error: { code: "invalid" } }) === "never");
+    check("too_large is not retried", retryClass({ status: 413, error: { code: "too_large" } }) === "never");
+    check("over_budget is not retried", retryClass({ status: 422, error: { code: "over_budget" } }) === "never");
+    check("retries per class", retriesFor("transient") === 2 && retriesFor("once") === 1 && retriesFor("never") === 0);
+    check("delays grow", RETRY_DELAYS_MS[0] < RETRY_DELAYS_MS[1]);
+    check("delay has no jitter at random 0", retryDelay(0, () => 0) === RETRY_DELAYS_MS[0]);
+    check("delay adds at most 30 percent", retryDelay(1, () => 0.999) <= Math.round(RETRY_DELAYS_MS[1] * 1.3));
+    check("delay never goes past the schedule", retryDelay(9, () => 0) === RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]);
   }
 
   if (failures.length > 0) {

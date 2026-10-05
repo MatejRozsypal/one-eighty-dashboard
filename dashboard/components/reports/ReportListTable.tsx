@@ -58,6 +58,20 @@ function PinIcon({ filled }: { filled: boolean }) {
   );
 }
 
+/** One random value per click, for the server's idempotency check. */
+function newClickToken(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    // Insecure context or an old browser: random enough for a per-click token.
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  }
+}
+
+function Spinner() {
+  return <span aria-hidden="true" className="h-3 w-3 flex-none animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />;
+}
+
 export interface ReportListTableProps {
   mine: readonly ReportListItem[];
   team: readonly ReportListItem[];
@@ -73,11 +87,34 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
   // pulses from the click). `router.refresh()` below is a quiet resync after an
   // optimistic edit: the row already shows the new state.
   const router = useRouter();
-  const { navigate } = useNavigation();
+  const { navigate, isPending } = useNavigation();
   const toasts = useToasts();
   const [tab, setTab] = useState<Tab>("mine");
   const [query, setQuery] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
+
+  // One create or duplicate at a time (QA N-01). `busyRef` is the guard (it is
+  // set in the click handler itself, before React re-renders, so a fast second
+  // click cannot get past it); `busy` is the same fact for rendering. The new
+  // report takes several seconds on a cold server and the click gave no sign
+  // of life: the clicked entry now shows "Creating..." and everything else in
+  // the menu is disabled until the report opens or the call fails.
+  const [busy, setBusy] = useState<{ key: string; phase: "creating" | "opening" } | null>(null);
+  const busyRef = useRef(false);
+  const sawPending = useRef(false);
+  useEffect(() => {
+    if (busy?.phase !== "opening") {
+      sawPending.current = false;
+      return;
+    }
+    // The navigation to the new report is in flight; if it ends without this
+    // page unmounting (a failed navigation), give the buttons back.
+    if (isPending) sawPending.current = true;
+    else if (sawPending.current) {
+      busyRef.current = false;
+      setBusy(null);
+    }
+  }, [busy, isPending]);
 
   // Optimistic copies on top of the server lists.
   const [lists, setLists] = useState({ mine, team });
@@ -144,16 +181,40 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
   }
 
   async function create(key: TemplateKey | undefined, name: string) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy({ key: key ?? "blank", phase: "creating" });
+    // One token per click: if the request is repeated (a retry, a second
+    // lambda) the server hands back the report the first one created.
+    const clientToken = newClickToken();
     // A server action can reject (network, platform error) instead of returning
     // a failure: say so, never let the click vanish.
-    const result = await createReport({ name, templateKey: key }).catch(() => null);
-    if (!result || !result.ok) return fail();
+    const result = await createReport({ name, templateKey: key, clientToken }).catch(() => null);
+    if (!result || !result.ok) {
+      busyRef.current = false;
+      setBusy(null);
+      return fail();
+    }
+    setBusy({ key: key ?? "blank", phase: "opening" });
     open(result.id, true);
+    // The list and the left panel learn about the new report from the next
+    // render of the layout; the action no longer forces it (see actions.ts).
+    router.refresh();
   }
 
   async function duplicate(r: ReportListItem) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy({ key: `dup:${r.id}`, phase: "creating" });
+    const notice = toasts.push({ text: "Duplicating", ttl: 0 });
     const result = await duplicateReport(r.id).catch(() => null);
-    if (!result || !result.ok) return fail();
+    toasts.dismiss(notice);
+    if (!result || !result.ok) {
+      busyRef.current = false;
+      setBusy(null);
+      return fail();
+    }
+    setBusy({ key: `dup:${r.id}`, phase: "opening" });
     open(result.id, true);
   }
 
@@ -204,7 +265,7 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
     const p = r.permissions;
     const entries: MenuEntry[] = [
       { kind: "item", id: "open", label: "Open", onSelect: () => open(r.id) },
-      { kind: "item", id: "duplicate", label: "Duplicate", onSelect: () => void duplicate(r) },
+      { kind: "item", id: "duplicate", label: "Duplicate", disabled: busy !== null, onSelect: () => void duplicate(r) },
       { kind: "item", id: "rename", label: "Rename", disabled: !p.canEdit, hint: p.canEdit ? undefined : "Read only", onSelect: () => setRenaming(r.id) },
       { kind: "item", id: "pin", label: r.pinned ? "Unpin" : "Pin", onSelect: () => void togglePin(r) },
     ];
@@ -254,27 +315,45 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
             label="New report"
             align="right"
             defaultOpen={openNew}
+            disabled={busy !== null}
+            locked={busy !== null}
             panelClassName="w-[220px] p-1.5"
-            buttonClassName="inline-flex items-center gap-2 rounded-control bg-ink-900 px-3.5 py-2 text-[13px] font-medium text-content-inverse transition-colors duration-fast hover:bg-ink-700 disabled:opacity-60"
-            button={<span>New report</span>}
+            buttonClassName="inline-flex items-center gap-2 rounded-control bg-ink-900 px-3.5 py-2 text-[13px] font-medium text-content-inverse transition-colors duration-fast hover:bg-ink-700 disabled:cursor-wait disabled:opacity-60"
+            button={
+              <>
+                {busy !== null && <Spinner />}
+                <span>{busy !== null ? (busy.phase === "opening" ? "Opening" : "Creating") : "New report"}</span>
+              </>
+            }
           >
-            {(close) => (
-              <div role="menu" aria-label="Start from" className="flex flex-col">
-                {templates.map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      close(false);
-                      void create(t.key === "blank" ? undefined : t.key, t.key === "blank" ? "Untitled report" : t.name);
-                    }}
-                    className="flex items-center justify-between gap-3 rounded-sm px-2.5 py-2 text-left text-[13px] text-content-body transition-colors duration-fast hover:bg-gray-100"
-                  >
-                    <span>{t.name}</span>
-                    {t.widgets.length > 0 && <span className="text-[11.5px] text-content-muted">{t.widgets.length}</span>}
-                  </button>
-                ))}
+            {() => (
+              <div role="menu" aria-label="Start from" aria-busy={busy !== null} className="flex flex-col">
+                {templates.map((t) => {
+                  const mine = busy?.key === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      role="menuitem"
+                      disabled={busy !== null}
+                      aria-disabled={busy !== null}
+                      onClick={() => void create(t.key === "blank" ? undefined : t.key, t.key === "blank" ? "Untitled report" : t.name)}
+                      className={`flex items-center justify-between gap-3 rounded-sm px-2.5 py-2 text-left text-[13px] transition-colors duration-fast ${
+                        mine ? "bg-gray-100 text-content-strong" : "text-content-body hover:bg-gray-100"
+                      } ${busy !== null && !mine ? "opacity-50" : ""} disabled:cursor-wait`}
+                    >
+                      <span>{t.name}</span>
+                      {mine ? (
+                        <span className="inline-flex items-center gap-1.5 text-[11.5px] text-content-muted">
+                          <Spinner />
+                          {busy?.phase === "opening" ? "Opening" : "Creating"}
+                        </span>
+                      ) : (
+                        t.widgets.length > 0 && <span className="text-[11.5px] text-content-muted">{t.widgets.length}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </Popover>
@@ -293,10 +372,13 @@ export function ReportListTable({ mine, team, templates, openNew = false, delete
                   <span className="text-[12.5px] text-content-muted">{widgetCountLabel(t.widgets.length)}</span>
                   <button
                     type="button"
+                    disabled={busy !== null}
+                    aria-busy={busy?.key === t.key}
                     onClick={() => void create(t.key === "blank" ? undefined : t.key, t.key === "blank" ? "Untitled report" : t.name)}
-                    className="rounded-control border border-hairline-strong px-3 py-1.5 text-[12.5px] text-content-body transition-colors duration-fast hover:bg-gray-50"
+                    className="inline-flex items-center gap-1.5 rounded-control border border-hairline-strong px-3 py-1.5 text-[12.5px] text-content-body transition-colors duration-fast hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
                   >
-                    Use template
+                    {busy?.key === t.key && <Spinner />}
+                    {busy?.key === t.key ? (busy.phase === "opening" ? "Opening" : "Creating") : "Use template"}
                   </button>
                 </li>
               ))}

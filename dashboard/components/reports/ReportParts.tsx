@@ -13,6 +13,7 @@ import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "rea
 import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { WidgetBody } from "@/components/reports/widgets";
+import { nameSingleClientRollups } from "@/components/reports/widgets/format";
 import type { CaveatTexts, WidgetMetric } from "@/components/reports/widgets";
 import { WidgetConfigPanel } from "@/components/reports/pickers/WidgetConfigPanel";
 import type { PickerMetric } from "@/components/reports/pickers/MetricPicker";
@@ -38,12 +39,14 @@ export interface WidgetCellProps {
   canEdit: boolean;
   /** Refresh was pressed and the new numbers are not requested yet: pulse now. */
   refreshing?: boolean;
+  /** Names for a rollup that covers one client (QA N-03). Optional: without it the evaluator's label stands. */
+  clients?: ReadonlyArray<{ id: string; name: string }>;
   onRetry(): void;
   onRemove(): void;
   onReset(): void;
 }
 
-export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit, refreshing = false, onRetry, onRemove, onReset }: WidgetCellProps) {
+export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit, refreshing = false, clients, onRetry, onRemove, onReset }: WidgetCellProps) {
   if (!config) {
     return (
       <div role="status" className="flex h-full flex-col items-start justify-center gap-2 text-[13px] text-content-muted">
@@ -62,7 +65,9 @@ export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit,
     );
   }
 
-  const result = state?.result ?? null;
+  // Returns the same object unless a label changes, so memoised widgets below keep their identity.
+  const rawResult = state?.result ?? null;
+  const result = rawResult && clients ? nameSingleClientRollups(rawResult, clients) : rawResult;
   const loading = (state?.loading ?? true) || refreshing;
   const error = state?.error ?? null;
 

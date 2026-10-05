@@ -62,8 +62,13 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by      TEXT NOT NULL,
-  deleted_at      TIMESTAMPTZ
+  deleted_at      TIMESTAMPTZ,
+  create_token    TEXT
 );
+-- Tables created before the idempotency token existed get the column here.
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS create_token TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS reports_create_token_idx
+  ON reports (owner_email, create_token) WHERE create_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS reports_owner_idx
   ON reports (owner_email, updated_at DESC) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS reports_team_idx
@@ -96,11 +101,47 @@ CREATE TABLE IF NOT EXISTS report_user_state (
 
 const globalForReports = globalThis as unknown as { oeReportsReady?: Promise<boolean> };
 
+/**
+ * One cheap, lock-free read that is true when every table, index and the
+ * idempotency column already exist. CREATE INDEX IF NOT EXISTS and ALTER TABLE
+ * take table locks even when they change nothing, and every cold lambda used
+ * to run them: a burst of cold instances (seven widget queries on the first
+ * open of a report) then queued behind each other and behind any open write
+ * transaction. The DDL below now only runs on a database that lacks something.
+ * `to_regclass` returns NULL for a missing relation instead of raising.
+ */
+export const SCHEMA_PROBE = `
+SELECT (
+  to_regclass('reports') IS NOT NULL
+  AND to_regclass('report_widgets') IS NOT NULL
+  AND to_regclass('report_user_state') IS NOT NULL
+  AND to_regclass('reports_owner_idx') IS NOT NULL
+  AND to_regclass('reports_team_idx') IS NOT NULL
+  AND to_regclass('report_widgets_report_idx') IS NOT NULL
+  AND to_regclass('reports_create_token_idx') IS NOT NULL
+  AND EXISTS (
+    SELECT 1 FROM pg_attribute
+     WHERE attrelid = to_regclass('reports') AND attname = 'create_token' AND NOT attisdropped
+  )
+) AS ready
+`;
+
+async function schemaReady(): Promise<boolean> {
+  try {
+    const rows = await sql<{ ready: boolean }>(SCHEMA_PROBE);
+    return rows[0]?.ready === true;
+  } catch {
+    // The probe is an optimisation: when it cannot answer, the DDL decides.
+    return false;
+  }
+}
+
 /** Resolves false when the user store is not configured or the DDL failed. Failures are not cached. */
 function ensureTable(): Promise<boolean> {
   if (!userStoreConfigured()) return Promise.resolve(false);
   if (!globalForReports.oeReportsReady) {
-    globalForReports.oeReportsReady = sql(DDL)
+    globalForReports.oeReportsReady = schemaReady()
+      .then((ready) => (ready ? undefined : sql(DDL).then(() => undefined)))
       .then(() => true)
       .catch((error: unknown) => {
         const code = (error as { code?: string })?.code;
@@ -198,6 +239,8 @@ export function reportPermissions(report: PermissionSubject, email: string): Rep
 // ---------------------------------------------------------------------------
 
 export const ReportId = z.string().uuid();
+/** One per click, made in the browser (crypto.randomUUID or similar): URL-safe, bounded. */
+export const ClientToken = z.string().min(8).max(64).regex(/^[A-Za-z0-9_-]+$/, "Invalid token");
 export const ExpectedVersion = z.number().int().min(1).max(2_147_483_647);
 
 /** Position and size of a new widget, the report_widgets CHECK constraints. */
@@ -325,7 +368,14 @@ function errorMessage(error: z.ZodError): string {
 
 type Need = "edit" | "owner";
 
-export function createReportStore(deps: StoreDeps): ReportStore {
+/** What the store offers beyond the ReportStore contract (lib/reports/contracts.ts is not this package's file). */
+export interface ReportStoreExtras {
+  createReport(input: { name: string; templateKey?: TemplateKey; filters?: ReportFiltersT; clientToken?: string }): Promise<StoreResult<{ id: string }>>;
+  /** Cheap visibility check for the widget query route. False for missing, deleted or private to someone else. */
+  canViewReport(id: string): Promise<boolean>;
+}
+
+export function createReportStore(deps: StoreDeps): ReportStore & ReportStoreExtras {
   const { db } = deps;
 
   async function actor(): Promise<string> {
@@ -448,6 +498,21 @@ export function createReportStore(deps: StoreDeps): ReportStore {
     });
   }
 
+  /**
+   * Visibility only: one statement, no widgets, no per-user state. The query
+   * route asks this on every widget request, so it must stay cheap (getReport
+   * is three statements and ships every widget config).
+   */
+  async function canViewReport(id: string): Promise<boolean> {
+    const email = await actor();
+    if (!isUuid(id)) return false;
+    if (!(await ready())) return false;
+    const res = await db.query(`/* reports.visible */ SELECT r.owner_email, r.visibility FROM reports r WHERE r.id = $1 AND r.deleted_at IS NULL`, [id]);
+    const row = res.rows[0];
+    if (!row) return false;
+    return canView({ ownerEmail: String(row.owner_email), visibility: Visibility.catch("private").parse(row.visibility) }, email);
+  }
+
   async function getReport(id: string) {
     const email = await actor();
     if (!(await ready())) return null;
@@ -473,36 +538,59 @@ export function createReportStore(deps: StoreDeps): ReportStore {
 
   // -- create, duplicate ---------------------------------------------------
 
-  async function createReport(input: { name: string; templateKey?: TemplateKey; filters?: ReportFiltersT }) {
+  /**
+   * ONE statement, one round trip: the report and all its widgets are inserted
+   * by a single data-modifying CTE, which Postgres runs atomically (no BEGIN,
+   * no pooled-connection checkout, no per-widget round trip: a 13 widget
+   * template used to cost 16 sequential round trips inside a transaction).
+   *
+   * `clientToken` makes the call idempotent per click: a second submit with the
+   * same token (a double click, a retry after a lost response, another lambda)
+   * conflicts on the partial unique index (owner, token), inserts nothing and
+   * returns the report the first submit created.
+   */
+  async function createReport(input: { name: string; templateKey?: TemplateKey; filters?: ReportFiltersT; clientToken?: string }) {
     const email = await actor();
     await mustBeReady();
     const name = ReportName.safeParse(input.name);
     if (!name.success) return fail("invalid", errorMessage(name.error));
     const template = getTemplate(input.templateKey ?? "blank");
     if (!template) return fail("invalid", "Unknown template");
+    let token: string | null = null;
+    if (input.clientToken !== undefined) {
+      const t = ClientToken.safeParse(input.clientToken);
+      if (!t.success) return fail("invalid", errorMessage(t.error));
+      token = t.data;
+    }
     let filters = structuredClone(template.filters);
     if (input.filters !== undefined) {
       const parsed = ReportFilters.safeParse(input.filters);
       if (!parsed.success) return fail("invalid", errorMessage(parsed.error));
       filters = parsed.data;
     }
-    return runTx<{ id: string }>(async (tx) => {
-      const ins = await tx.query(
-        `/* reports.create */ INSERT INTO reports (name, owner_email, visibility, filters, template_key, updated_by)
-         VALUES ($1, $2, 'private', $3::jsonb, $4, $2) RETURNING id, version`,
-        [name.data, email, JSON.stringify(filters), template.key],
-      );
-      const created = ins.rows[0];
-      if (!created) throw new Error("Report insert returned no row.");
-      for (const w of template.widgets) {
-        await tx.query(
-          `/* reports.create.widget */ INSERT INTO report_widgets (report_id, type, config, x, y, w, h)
-           VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)`,
-          [created.id, w.type, JSON.stringify(w.config), w.x, w.y, w.w, w.h],
-        );
-      }
-      return { ok: true, version: Number(created.version), id: String(created.id) };
-    });
+    const widgets = template.widgets.map((w) => ({ type: w.type, config: w.config, x: w.x, y: w.y, w: w.w, h: w.h }));
+    const ins = await db.query(
+      `/* reports.create */ WITH r AS (
+         INSERT INTO reports (name, owner_email, visibility, filters, template_key, updated_by, create_token)
+         VALUES ($1, $2, 'private', $3::jsonb, $4, $2, $6::text)
+         ON CONFLICT (owner_email, create_token) WHERE create_token IS NOT NULL DO NOTHING
+         RETURNING id, version
+       ), w AS (
+         INSERT INTO report_widgets (report_id, type, config, x, y, w, h)
+         SELECT r.id, x.type, x.config, x.x, x.y, x.w, x.h
+           FROM r CROSS JOIN jsonb_to_recordset($5::jsonb) AS x(type text, config jsonb, x int, y int, w int, h int)
+       )
+       SELECT id, version FROM r`,
+      [name.data, email, JSON.stringify(filters), template.key, JSON.stringify(widgets), token],
+    );
+    let created = ins.rows[0];
+    if (!created && token !== null) {
+      // The same click already created it.
+      const again = await db.query(`/* reports.create.existing */ SELECT id, version FROM reports WHERE owner_email = $1 AND create_token = $2`, [email, token]);
+      created = again.rows[0];
+    }
+    if (!created) throw new Error("Report insert returned no row.");
+    return { ok: true as const, version: Number(created.version), id: String(created.id) };
   }
 
   async function duplicateReport(id: string) {
@@ -726,6 +814,7 @@ export function createReportStore(deps: StoreDeps): ReportStore {
     reportPermissions,
     listReports,
     getReport,
+    canViewReport,
     createReport,
     renameReport,
     duplicateReport,
@@ -759,6 +848,7 @@ const store = createReportStore(realDeps);
 export const {
   listReports,
   getReport,
+  canViewReport,
   createReport,
   renameReport,
   duplicateReport,

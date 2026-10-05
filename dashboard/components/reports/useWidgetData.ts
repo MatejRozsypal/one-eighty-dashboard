@@ -26,6 +26,9 @@
  *   - Display-only edits (title, sort, limit, stacked, type changes that keep
  *     the query) do not change the request key, so they never refetch.
  *
+ * Transient failures (a network error, a platform 5xx) are retried quietly
+ * with backoff before the widget shows an error: see `post`.
+ *
  * A KPI is fetched at week grain when the range fits (see `fetchGrain`), so the
  * tile gets its sparkline from the same call; a 413 retries once at the
  * configured grain.
@@ -150,7 +153,67 @@ const ERROR_COPY: Record<string, { message: string; retryable: boolean }> = {
   conflict: { message: "Could not load", retryable: true },
 };
 
-async function post(body: ReportQueryRequest, signal: AbortSignal): Promise<FetchOutcome> {
+/**
+ * Automatic retries (QA N-02). The first open of a report fires up to six
+ * queries at once, each landing on its own cold lambda; some come back as a
+ * platform error (503/502/504 with no JSON body, or no response at all) that
+ * the runtime logs never see, and the widget used to show "Could not load"
+ * for a failure the next attempt would have survived. Transient failures are
+ * retried here, quietly, with backoff and jitter, while the widget keeps
+ * showing its skeleton (or its dimmed old figure):
+ *
+ *   - network error (no response), 408, 425, 429 and 5xx with no known code:
+ *     up to 2 retries, after about 0.7 s and 2 s;
+ *   - our own warehouse_error (500): one retry;
+ *   - a 404 once (a session lookup that failed under load answers 404);
+ *   - never for a timeout (the 20 s job limit or a 504: the same query would
+ *     spend the same time again), invalid, too_large, over_budget.
+ *
+ * The backoff happens outside the concurrency gate, so a waiting widget does
+ * not hold a slot a queued widget could use, and it is abortable.
+ */
+export const RETRY_DELAYS_MS: readonly number[] = [700, 2000];
+
+export type RetryClass = "transient" | "once" | "never";
+
+/** How a failed outcome may be retried. Pure, exported for check:reports-widgets. */
+export function retryClass(outcome: { status: number; error: Pick<WidgetError, "code"> }): RetryClass {
+  const { status, error } = outcome;
+  if (error.code === "network" || status === 0) return "transient";
+  if (error.code === "invalid" || error.code === "too_large" || error.code === "over_budget" || error.code === "timeout") return "never";
+  if (error.code === "warehouse_error") return status === 500 ? "once" : status === 504 ? "never" : "transient";
+  if (status === 404) return "once";
+  if (status === 408 || status === 425 || status === 429 || status >= 500) return "transient";
+  return "never";
+}
+
+/** Retries allowed for a class, given the delay schedule. */
+export function retriesFor(kind: RetryClass, delays: readonly number[] = RETRY_DELAYS_MS): number {
+  return kind === "transient" ? delays.length : kind === "once" ? 1 : 0;
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(new DOMException("Aborted", "AbortError"));
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** The delay before retry number `attempt` (0 based): the schedule entry plus up to 30 percent jitter. */
+export function retryDelay(attempt: number, random: () => number = Math.random, delays: readonly number[] = RETRY_DELAYS_MS): number {
+  const base = delays[Math.min(attempt, delays.length - 1)] ?? 0;
+  return Math.round(base * (1 + 0.3 * random()));
+}
+
+async function postOnce(body: ReportQueryRequest, signal: AbortSignal): Promise<FetchOutcome> {
   await acquire(signal);
   try {
     const response = await fetch("/api/reports/query", {
@@ -181,6 +244,19 @@ async function post(body: ReportQueryRequest, signal: AbortSignal): Promise<Fetc
   } finally {
     release();
   }
+}
+
+async function post(body: ReportQueryRequest, signal: AbortSignal): Promise<FetchOutcome> {
+  let outcome = await postOnce(body, signal);
+  let used = 0;
+  while (!outcome.ok) {
+    const allowed = retriesFor(retryClass(outcome));
+    if (used >= allowed) break;
+    await sleep(retryDelay(used), signal);
+    used += 1;
+    outcome = await postOnce(body, signal);
+  }
+  return outcome;
 }
 
 // ---------------------------------------------------------------------------

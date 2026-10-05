@@ -30,7 +30,7 @@ import type { ActionResult, NewWidget, TemplateKey } from "@/lib/reports/contrac
 import { TEMPLATE_KEYS } from "@/lib/reports/contracts";
 import { CACHE_TAGS, REFRESH_RATE_LIMIT_MS } from "@/lib/reports/limits";
 import * as store from "@/lib/reports/store";
-import { ExpectedVersion, LayoutItems, NewWidgetInput, ReportId } from "@/lib/reports/store";
+import { ClientToken, ExpectedVersion, LayoutItems, NewWidgetInput, ReportId } from "@/lib/reports/store";
 import { ReportFilters, ReportName, Visibility, WidgetConfig, type LayoutItem } from "@/lib/reports/types";
 
 type Failure = Extract<ActionResult, { ok: false }>;
@@ -68,13 +68,23 @@ function listChanged<T extends object>(result: ActionResult<T>): ActionResult<T>
 const CreateInput = z.object({
   name: ReportName,
   templateKey: z.enum(TEMPLATE_KEYS).optional(),
+  clientToken: ClientToken.optional(),
 });
 
-export async function createReport(input: { name: string; templateKey?: TemplateKey }): Promise<ActionResult<{ id: string }>> {
+/**
+ * `clientToken` is one random value per click. Repeating the call with the same
+ * token returns the report the first call created instead of making another.
+ *
+ * It does not revalidate "/reports": that would re-render the list page and the
+ * layout (four list queries) inside this action's response, before the caller
+ * even learns the new id. The caller opens the new report right away, and the
+ * list refreshes from there (`router.refresh()` after the navigation).
+ */
+export async function createReport(input: { name: string; templateKey?: TemplateKey; clientToken?: string }): Promise<ActionResult<{ id: string }>> {
   await assertReportsAccess();
   const p = parse(CreateInput, input);
   if (!p.ok) return p.failure;
-  return listChanged(await attempt(() => store.createReport({ name: p.data.name, templateKey: p.data.templateKey })));
+  return attempt(() => store.createReport({ name: p.data.name, templateKey: p.data.templateKey, clientToken: p.data.clientToken }));
 }
 
 export async function renameReport(id: string, name: string): Promise<ActionResult> {

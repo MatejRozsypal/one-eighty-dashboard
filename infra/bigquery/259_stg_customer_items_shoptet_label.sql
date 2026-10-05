@@ -1,3 +1,22 @@
+-- =============================================================================
+-- 259_stg_customer_items_shoptet_label.sql
+-- Purpose: stable Shoptet product label in stg.stg_customer_order_items so that a
+--   renamed product is one row in the Repurchase tables (mart_customer_product_steps,
+--   mart_first_product_repeat, mart_product_journey group by product_name).
+--   Manami SKU 153 (the sample set) has had 4 names and showed up as 4 rows
+--   (325, 466, 57 and 126 customers at audit time), a fake decline between names.
+-- Change: Shoptet branch only. product_key = COALESCE(NULLIF(item_code, ''), item_name).
+--   product_name = latest item_name per (client_id, base item code) by order date
+--   (a shoptet_labels CTE, like woo_labels), falling back to item_name. item_name is
+--   unchanged. Shopify and WooCommerce branches are untouched.
+-- Based on: infra/bigquery/live/stg.stg_customer_order_items.sql (live 2026-10-05,
+--   md5 of the definition a7693fd71783a2005f96c271acd37ee4).
+-- Affected clients: manami (the only Shoptet client). Others: 0 diff rows.
+-- Regression: qa/259_regression.sql (design 2.5, WR2). Results recorded there.
+-- Deploy order: 259 first, then 260. Rollback: previous live text in
+--   scratchpad/rollback (stg.stg_customer_order_items.pre259.sql).
+-- Design ref: retention design 2.3 (renumbered from 257).
+-- =============================================================================
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_customer_order_items` AS
 WITH woo_lines AS (
   SELECT

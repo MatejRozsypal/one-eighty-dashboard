@@ -15,9 +15,9 @@ import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, comparisonLabel, type SearchParams } from "@/lib/params";
-import { delta } from "@/lib/period";
 import { getUnitEconomics, type SegmentEconomics } from "@/lib/queries/unitEconomics";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
+import type { DeltaKind } from "@/lib/format";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
@@ -37,6 +37,10 @@ type Row =
       value: (s: SegmentEconomics) => number | null;
       format: (v: number | null) => string;
       goodWhen: GoodWhen;
+      /** What the figure is: decides the absolute change ("+CZK 12", "+3 orders") and that rates read in points. */
+      delta: DeltaKind;
+      /** Decimals of the absolute change, where the default (count 0) is too coarse. */
+      deltaDecimals?: number;
       /** Shown in place of both values when the row cannot be measured. */
       unmeasured?: string;
     };
@@ -105,6 +109,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "AUR",
+      delta: "money",
       info: "Average unit retail: gross retail / units, before discounts.",
       value: (s) => s.aur,
       format: unitMoney,
@@ -113,6 +118,8 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "UPT",
+      delta: "count",
+      deltaDecimals: 2,
       info: "Units per transaction.",
       value: (s) => s.upt,
       format: (v) => (v === null ? formatNumber(null) : v.toFixed(2)),
@@ -121,6 +128,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "Gross per order",
+      delta: "money",
       info: "Gross retail per order, before discounts.",
       value: (s) => s.grossRetailPerOrder,
       format: money,
@@ -129,6 +137,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "True AOV",
+      delta: "money",
       info: "Net sales / orders, ex-shipping and ex-tax.",
       value: (s) => s.trueAov,
       format: money,
@@ -137,6 +146,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "Orders",
+      delta: "count",
       info: "Only orders whose customer is classified as new or returning, so the total can sit under the Orders page.",
       value: (s) => s.orders,
       format: formatNumber,
@@ -147,6 +157,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "Discount rate",
+      delta: "rate",
       value: (s) => s.discountRate,
       format: pct,
       goodWhen: "down",
@@ -155,6 +166,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "Return rate",
+      delta: "rate",
       value: () => null,
       format: pct,
       goodWhen: "down",
@@ -165,6 +177,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "COGS %",
+      delta: "rate",
       value: (s) => s.cogsPct,
       format: pct,
       goodWhen: "down",
@@ -173,6 +186,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "Gross profit %",
+      delta: "rate",
       value: (s) => s.grossProfitPct,
       format: pct,
       goodWhen: "up",
@@ -181,6 +195,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "Contribution margin %",
+      delta: "rate",
       info: "All paid spend is applied to first-time customers, so returning customers' CM equals gross profit.",
       value: (s) => s.contributionMarginPct,
       format: pct,
@@ -190,6 +205,7 @@ export default async function UnitEconomicsPage({
     {
       kind: "row",
       label: "Paid spend applied",
+      delta: "money",
       value: (s) => s.paidSpend,
       format: money,
       goodWhen: "neutral",
@@ -238,10 +254,15 @@ export default async function UnitEconomicsPage({
 
               const cell = (seg: "first" | "returning") => {
                 const now = row.value(data[seg]);
-                const change =
-                  previous
-                    ? delta(now, row.value(previous[seg]))
-                    : null;
+                const change = previous
+                  ? {
+                      current: now,
+                      previous: row.value(previous[seg]),
+                      kind: row.delta,
+                      currency: row.delta === "money" ? client.currency : undefined,
+                      decimals: row.deltaDecimals,
+                    }
+                  : null;
                 return (
                   <span className="flex flex-col items-end gap-0.5">
                     <span className="whitespace-nowrap font-mono text-[14px] tabular text-content-strong">
@@ -249,12 +270,17 @@ export default async function UnitEconomicsPage({
                     </span>
                     {change !== null && (
                       <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                        <DeltaChip delta={change} goodWhen={row.goodWhen} />
-                        {compareLabel && (
-                          <span className="font-mono text-[10.5px] text-content-muted">
-                            {compareLabel}
-                          </span>
-                        )}
+                        <DeltaChip
+                          change={change}
+                          goodWhen={row.goodWhen}
+                          after={
+                            compareLabel ? (
+                              <span className="font-mono text-[10.5px] text-content-muted">
+                                {compareLabel}
+                              </span>
+                            ) : undefined
+                          }
+                        />
                       </span>
                     )}
                   </span>

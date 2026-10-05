@@ -49,6 +49,8 @@ export interface YearRow {
   cappedRevenue: number | null;
   /** Same window a year earlier, so the row can state its own YoY. */
   cappedYoY: number | null;
+  /** That earlier year's revenue over the same window: the baseline of `cappedYoY`, for the absolute change. */
+  cappedPrevious: number | null;
 }
 
 export interface Projection {
@@ -179,6 +181,7 @@ export async function getYearOverYear(
       isCurrent,
       isComplete,
       cappedRevenue: capped,
+      cappedPrevious: priorCapped,
       cappedYoY:
         capped !== null && priorCapped !== null && priorCapped !== 0
           ? (capped - priorCapped) / priorCapped

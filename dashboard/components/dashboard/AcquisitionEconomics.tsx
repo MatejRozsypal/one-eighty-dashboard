@@ -18,7 +18,7 @@ import { Eyebrow } from "@/components/ui/Eyebrow";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/currency";
 import { NO_VALUE } from "@/lib/format";
 import { safeDiv } from "@/lib/coerce";
-import { metric, type PnlSnapshot } from "@/lib/queries/pnl";
+import { metricChange, type PnlSnapshot } from "@/lib/queries/pnl";
 
 export function AcquisitionEconomics({
   snapshot,
@@ -52,7 +52,7 @@ export function AcquisitionEconomics({
         <MetricCard
           label="MER"
           value={formatRatio(t.mer)}
-          delta={hasComparison ? metric(snapshot, (x) => x.mer).delta : undefined}
+          change={hasComparison ? metricChange(snapshot, (x) => x.mer, "ratio") : undefined}
           goodWhen="up"
           comparisonLabel={comparisonLabel}
           source="Warehouse"
@@ -61,7 +61,7 @@ export function AcquisitionEconomics({
         <MetricCard
           label="aMER"
           value={formatRatio(t.amer)}
-          delta={hasComparison ? metric(snapshot, (x) => x.amer).delta : undefined}
+          change={hasComparison ? metricChange(snapshot, (x) => x.amer, "ratio") : undefined}
           goodWhen="up"
           comparisonLabel={comparisonLabel}
           source="Warehouse"
@@ -70,7 +70,7 @@ export function AcquisitionEconomics({
         <MetricCard
           label="CAC"
           value={formatMoney(t.cac, currency, { unit: true })}
-          delta={hasComparison ? metric(snapshot, (x) => x.cac).delta : undefined}
+          change={hasComparison ? metricChange(snapshot, (x) => x.cac, "money") : undefined}
           // Cheaper acquisition is the good news, the one card here where a
           // falling number should be green.
           goodWhen="down"
@@ -88,13 +88,17 @@ export function AcquisitionEconomics({
               ? formatPercent(t.paidSpend / t.revenue, { decimals: 1 })
               : NO_VALUE
           }
-          delta={
+          // A share is a rate: percentage points in both modes.
+          change={
             hasComparison
-              ? metric(snapshot, (x) =>
-                  !x.leadingSpendGap && x.paidSpend !== null && x.revenue
-                    ? x.paidSpend / x.revenue
-                    : null
-                ).delta
+              ? metricChange(
+                  snapshot,
+                  (x) =>
+                    !x.leadingSpendGap && x.paidSpend !== null && x.revenue
+                      ? x.paidSpend / x.revenue
+                      : null,
+                  "rate"
+                )
               : undefined
           }
           goodWhen="down"
@@ -107,7 +111,7 @@ export function AcquisitionEconomics({
           // Canonical AOV is net sales / orders: ex-shipping, ex-tax, the
           // version that reconciles against the shop platform's own dashboard.
           value={formatMoney(aov(t), currency)}
-          delta={hasComparison ? metric(snapshot, aov).delta : undefined}
+          change={hasComparison ? metricChange(snapshot, aov, "money") : undefined}
           goodWhen="up"
           comparisonLabel={comparisonLabel}
           source={shopPlatform}
@@ -152,7 +156,9 @@ function OrderMix({
       label: "New",
       count: newOrders,
       share: newShare,
-      delta: hasComparison ? metric(snapshot, (x) => x.newCustomerOrders).delta : null,
+      change: hasComparison
+        ? metricChange(snapshot, (x) => x.newCustomerOrders, "count")
+        : null,
       bar: "bg-accent",
       dot: "bg-accent",
     },
@@ -160,8 +166,8 @@ function OrderMix({
       label: "Returning",
       count: retOrders,
       share: retShare,
-      delta: hasComparison
-        ? metric(snapshot, (x) => x.returningCustomerOrders).delta
+      change: hasComparison
+        ? metricChange(snapshot, (x) => x.returningCustomerOrders, "count")
         : null,
       bar: "bg-info",
       dot: "bg-info",
@@ -211,12 +217,17 @@ function OrderMix({
                   you wanted depends on the quarter. Colouring either would
                   assert a judgement the number doesn't carry.
                 */}
-                <DeltaChip delta={s.delta} goodWhen="neutral" />
-                {s.delta !== null && comparisonLabel && (
-                  <span className="font-mono text-[11.5px] text-content-muted">
-                    {comparisonLabel}
-                  </span>
-                )}
+                <DeltaChip
+                  change={s.change}
+                  goodWhen="neutral"
+                  after={
+                    comparisonLabel ? (
+                      <span className="font-mono text-[11.5px] text-content-muted">
+                        {comparisonLabel}
+                      </span>
+                    ) : undefined
+                  }
+                />
               </span>
             )}
           </div>

@@ -13,10 +13,9 @@ import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { parseViewParams, comparisonLabel, type SearchParams } from "@/lib/params";
-import { delta } from "@/lib/period";
 import { getProducts, type ProductRow } from "@/lib/queries/products";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
-import { NO_VALUE } from "@/lib/format";
+import { NO_VALUE, type DeltaKind } from "@/lib/format";
 import { safeDiv } from "@/lib/coerce";
 import { Header } from "@/components/shell/Header";
 import { PageControls } from "@/components/controls/PageControls";
@@ -119,8 +118,17 @@ export default async function ProductsPage({
   const source = client.shopPlatform ?? "Shop";
   const noCost: MetricState = { kind: "no-data", reason: "No cost data" };
   const marginState: MetricState = now.margin === null ? noCost : { kind: "ok" };
-  const d = (pick: (t: typeof now) => number | null) =>
-    before ? delta(pick(now), pick(before)) : undefined;
+  // Current and comparison figures for the chip, which follows the % / 123
+  // toggle. Undefined holds the space when Compare is off.
+  const d = (pick: (t: typeof now) => number | null, kind: DeltaKind) =>
+    before
+      ? {
+          current: pick(now),
+          previous: pick(before),
+          kind,
+          currency: kind === "money" ? client.currency : undefined,
+        }
+      : undefined;
 
   // Margin % clusters in a narrow band. Scaling a bar 0-100% would push every
   // product to the right and show nothing; scale to the data.
@@ -146,7 +154,7 @@ export default async function ProductsPage({
           <MetricCard
             label="Products"
             value={formatNumber(now.count)}
-            delta={d((t) => t.count)}
+            change={d((t) => t.count, "count")}
             goodWhen="neutral"
             comparisonLabel={compareLabel}
             source={source}
@@ -154,14 +162,14 @@ export default async function ProductsPage({
           <MetricCard
             label="Revenue"
             value={money(now.revenue)}
-            delta={d((t) => t.revenue)}
+            change={d((t) => t.revenue, "money")}
             comparisonLabel={compareLabel}
             source={source}
           />
           <MetricCard
             label="Margin"
             value={money(now.margin)}
-            delta={d((t) => t.margin)}
+            change={d((t) => t.margin, "money")}
             comparisonLabel={compareLabel}
             source="Warehouse"
             state={marginState}
@@ -169,7 +177,8 @@ export default async function ProductsPage({
           <MetricCard
             label="Margin %"
             value={formatPercent(now.marginPct)}
-            delta={d((t) => t.marginPct)}
+            // A margin is a rate: percentage points in both modes.
+            change={d((t) => t.marginPct, "rate")}
             comparisonLabel={compareLabel}
             source="Warehouse"
             state={marginState}

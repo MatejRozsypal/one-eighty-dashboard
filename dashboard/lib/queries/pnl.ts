@@ -30,6 +30,7 @@ import {
   delta,
 } from "@/lib/period";
 import { fxSql, fxParams, type DisplayCurrency } from "@/lib/currency";
+import type { DeltaInput, DeltaKind } from "@/lib/format";
 import { isDemo } from "@/lib/demo/client";
 import { demoPnlDays } from "@/lib/demo/pnl";
 
@@ -456,6 +457,28 @@ export function metric(
 }
 
 /**
+ * A metric's current and comparison values in the shape the delta chips take
+ * (`change` on DeltaChip, MetricCard, KpiTile), so the chip follows the
+ * percent / absolute toggle. Money uses the snapshot's display currency.
+ * Null when there is no comparison loaded.
+ */
+export function metricChange(
+  snapshot: PnlSnapshot,
+  pick: (t: PnlTotals) => number | null,
+  kind: DeltaKind,
+  opts: { unit?: string; decimals?: number } = {}
+): DeltaInput | null {
+  if (!snapshot.previous) return null;
+  return {
+    current: pick(snapshot.current),
+    previous: pick(snapshot.previous),
+    kind,
+    currency: kind === "money" ? snapshot.currency : undefined,
+    ...opts,
+  };
+}
+
+/**
  * True when this period or its comparison starts before paid spend does. A
  * paid spend delta against a period that only partly had spend would be a
  * fiction, so every surface that shows one (the Paid spend tile, the margin
@@ -468,6 +491,11 @@ export function hasSpendGap(snapshot: PnlSnapshot): boolean {
 /** Paid spend change versus the comparison period; null under a leading gap. */
 export function paidSpendDelta(snapshot: PnlSnapshot): number | null {
   return hasSpendGap(snapshot) ? null : metric(snapshot, (x) => x.paidSpend).delta;
+}
+
+/** The same change as `paidSpendDelta`, for the toggle: null under the same leading-gap rule. */
+export function paidSpendChange(snapshot: PnlSnapshot): DeltaInput | null {
+  return hasSpendGap(snapshot) ? null : metricChange(snapshot, (x) => x.paidSpend, "money");
 }
 
 /** Where paid spend starts, for the one-line notice that explains a "Missing days". */

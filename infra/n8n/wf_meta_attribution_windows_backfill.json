@@ -1,0 +1,363 @@
+{
+  "name": "wf_meta_attribution_windows_backfill",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "e0000000-0000-0000-0000-000000000001",
+      "name": "Manual start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2200,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list",
+          "cachedResultName": "oneeighty-warehouse",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=oneeighty-warehouse"
+        },
+        "sqlQuery": "WITH client_min AS (\n  SELECT client_id, MIN(date_start) AS min_date\n  FROM `oneeighty-warehouse.raw.raw_meta_ad_insights`\n  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 37 MONTH)\n  GROUP BY client_id\n)\nSELECT c.client_id, c.slug, c.currency, CAST(cm.min_date AS STRING) AS min_date\nFROM `oneeighty-warehouse.ref.clients` c\nJOIN client_min cm ON cm.client_id = c.client_id\nWHERE c.status = 'active' AND c.has_meta = TRUE",
+        "options": {}
+      },
+      "id": "e0000000-0000-0000-0000-000000000002",
+      "name": "Read clients + min_date",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        -1960,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ME2 backfill of purchases per attribution window (migration 256). MANUAL RUN ONLY.\n// Emits 12-day chunks from each client's first ad-insights day to yesterday. Idempotent:\n// raw is append-only and stg.stg_meta_ad_attribution_windows keeps the latest ingest,\n// so a re-run (for example after a failed chunk) only adds rows.\nconst CLIENTS    = [];   // empty = every active Meta client; e.g. ['dobias','ethia','manami','venev']\nconst CHUNK_DAYS = 12;   // the size the live workflow uses\nconst ymd = d => d.toISOString().slice(0, 10);\nconst yesterday = new Date();\nyesterday.setUTCDate(yesterday.getUTCDate() - 1);\n\nreturn $input.all().flatMap(item => {\n  const c = item.json;\n  if (CLIENTS.length && !CLIENTS.includes(c.client_id)) return [];\n  if (!c.min_date) return [];\n  const start = new Date(c.min_date + 'T00:00:00Z');\n  const out = [];\n  for (let until = new Date(yesterday); until >= start; until.setUTCDate(until.getUTCDate() - CHUNK_DAYS)) {\n    const since = new Date(until);\n    since.setUTCDate(since.getUTCDate() - (CHUNK_DAYS - 1));\n    const s = since < start ? start : since;\n    out.push({ json: {\n      client_id: c.client_id,\n      slug: c.slug,\n      currency: c.currency,\n      mode: 'backfill_me2',\n      chunk_label: `me2_${ymd(s)}_${ymd(until)}`,\n      time_range: `{\"since\":\"${ymd(s)}\",\"until\":\"${ymd(until)}\"}`\n    }});\n  }\n  return out;\n});\n"
+      },
+      "id": "e0000000-0000-0000-0000-000000000003",
+      "name": "Plan execution",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1720,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "e0000000-0000-0000-0000-000000000004",
+      "name": "Loop over plan",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1480,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/meta-{{ $json.slug }}-access-token/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "id": "e0000000-0000-0000-0000-000000000005",
+      "name": "Get access_token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1240,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/meta-{{ $('Loop over plan').item.json.slug }}-ad-account-id/versions/latest:access",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "id": "e0000000-0000-0000-0000-000000000006",
+      "name": "Get ad_account_id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1000,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const decode = b64 => Buffer.from(b64, 'base64').toString('utf8').trim();\nconst accessToken = decode($('Get access_token').first().json.payload.data);\nconst adAccountId = decode($('Get ad_account_id').first().json.payload.data);\nconst item = $('Loop over plan').item.json;\n\nreturn [{ json: {\n  client_id: item.client_id,\n  slug: item.slug,\n  currency: item.currency,\n  mode: item.mode,\n  chunk_label: item.chunk_label,\n  time_range: item.time_range,\n  access_token: accessToken,\n  ad_account_id: adAccountId,\n  api_version: 'v22.0'\n}}];\n"
+      },
+      "id": "e0000000-0000-0000-0000-000000000007",
+      "name": "Decode secrets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{ $('Decode secrets').first().json.api_version }}/{{ $('Decode secrets').first().json.ad_account_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "level",
+              "value": "ad"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ $('Decode secrets').first().json.time_range }}"
+            },
+            {
+              "name": "fields",
+              "value": "ad_id,adset_id,campaign_id,actions,action_values"
+            },
+            {
+              "name": "action_attribution_windows",
+              "value": "[\"7d_click\",\"1d_view\",\"1d_ev\"]"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Decode secrets').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging ? $response.body.paging.next : undefined }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequestsPerPage": 100
+            }
+          }
+        }
+      },
+      "id": "e0000000-0000-0000-0000-000000000008",
+      "name": "Fetch ad attribution windows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -520,
+        480
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "ME2 (migration 256). Runs once per plan chunk. A failure here never blocks the legacy ad insert above, it only leaves the split of these days to the next hourly run."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ME2 (migration 256): purchases per attribution window, one row per ad-day.\n// Requested with action_attribution_windows=[\"7d_click\",\"1d_view\",\"1d_ev\"], so every\n// actions[] / action_values[] entry carries one key per window next to `value`.\n// The legacy columns of raw_meta_ad_insights (purchases, purchase_value) are NOT taken\n// from this request: they stay on each ad set's own attribution setting.\nconst ctx = $('Decode secrets').first().json;\nconst WINDOWS = '7d_click,1d_view,1d_ev';\nconst INGESTED_AT = new Date().toISOString();\nconst num = v => (v === null || v === undefined || v === '' ? null : Number(v));\n// Same action type preference as the legacy columns: omni_purchase, else purchase.\nconst entry = arr => {\n  if (!Array.isArray(arr)) return null;\n  return arr.find(a => a.action_type === 'omni_purchase')\n      ?? arr.find(a => a.action_type === 'purchase')\n      ?? null;\n};\n// Entry present but window key absent: 0 for that window. No entry: NULL (no purchase action).\nconst win = (e, w) => (e === null ? null : (e[w] === undefined ? 0 : num(e[w])));\n\nconst all = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.data)) {\n    for (const r of j.data) all.push(r);\n  } else if (j.ad_id) {\n    all.push(j);\n  }\n}\n\nreturn all.map(r => {\n  const a = entry(r.actions);\n  const v = entry(r.action_values);\n  return { json: {\n    client_id: ctx.client_id,\n    ingested_at: INGESTED_AT,\n    ingest_source: ctx.mode === 'backfill_me2' ? 'backfill_me2' : 'cron',\n    ad_account_id: ctx.ad_account_id,\n    campaign_id: String(r.campaign_id ?? ''),\n    adset_id:    String(r.adset_id    ?? ''),\n    ad_id:       String(r.ad_id),\n    date_start: r.date_start,\n    date_stop:  r.date_stop,\n    attribution_windows: WINDOWS,\n    purchases_7d_click:           win(a, '7d_click'),\n    purchase_value_7d_click:      win(v, '7d_click'),\n    purchases_1d_view:            win(a, '1d_view'),\n    purchase_value_1d_view:       win(v, '1d_view'),\n    purchases_1d_ev:              win(a, '1d_ev'),\n    purchase_value_1d_ev:         win(v, '1d_ev'),\n    purchases_windows_value:      a === null ? null : num(a.value),\n    purchase_value_windows_value: v === null ? null : num(v.value),\n    actions:       JSON.stringify(r.actions ?? []),\n    action_values: JSON.stringify(r.action_values ?? [])\n  }};\n});\n"
+      },
+      "id": "e0000000-0000-0000-0000-000000000009",
+      "name": "Transform ad attribution windows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        480
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_meta_ad_attribution_windows",
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "id": "e0000000-0000-0000-0000-000000000010",
+      "name": "BQ: insert ad attribution windows",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        -40,
+        480
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "id": "e0000000-0000-0000-0000-000000000020",
+      "name": "Pause 3 s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        480
+      ],
+      "webhookId": "e0000000-0000-0000-0000-0000000000aa"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual start": {
+      "main": [
+        [
+          {
+            "node": "Read clients + min_date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read clients + min_date": {
+      "main": [
+        [
+          {
+            "node": "Plan execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan execution": {
+      "main": [
+        [
+          {
+            "node": "Loop over plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop over plan": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get access_token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get access_token": {
+      "main": [
+        [
+          {
+            "node": "Get ad_account_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get ad_account_id": {
+      "main": [
+        [
+          {
+            "node": "Decode secrets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode secrets": {
+      "main": [
+        [
+          {
+            "node": "Fetch ad attribution windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch ad attribution windows": {
+      "main": [
+        [
+          {
+            "node": "Transform ad attribution windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform ad attribution windows": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert ad attribution windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert ad attribution windows": {
+      "main": [
+        [
+          {
+            "node": "Pause 3 s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pause 3 s": {
+      "main": [
+        [
+          {
+            "node": "Loop over plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": []
+}

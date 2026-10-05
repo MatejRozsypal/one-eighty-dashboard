@@ -43,7 +43,7 @@ import { resolveWidget } from "@/lib/reports/resolve";
 import { compileWidget } from "@/lib/reports/compile";
 import { runCached } from "@/lib/reports/run";
 import { evaluateWidget } from "@/lib/reports/evaluate";
-import { getReport } from "@/lib/reports/store";
+import { canViewReport } from "@/lib/reports/store";
 import { getComponent } from "@/lib/reports/registry/components";
 import type { ComponentId, ReportClient } from "@/lib/reports/registry/types";
 import { listClientSettings } from "@/lib/users/settings";
@@ -53,7 +53,6 @@ import {
   type EvaluateWidget,
   type GetBenchmarks,
   type GetReportClients,
-  type ReportStore,
   type ResolveWidget,
   type RunCached,
 } from "@/lib/reports/contracts";
@@ -77,7 +76,8 @@ const compileFn: CompileWidget = compileWidget;
 const runFn: RunCached = runCached;
 const benchmarksFn: GetBenchmarks = getBenchmarks;
 const evaluateFn: EvaluateWidget = evaluateWidget;
-const getReportFn: ReportStore["getReport"] = getReport;
+/** Visibility only (one statement): getReport also reads every widget config and the user state, per widget request. */
+const canViewFn: (id: string) => Promise<boolean> = canViewReport;
 
 /** A request body is a few hundred bytes; anything far larger is not a widget query. */
 const MAX_BODY_BYTES = 32 * 1024;
@@ -193,10 +193,7 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     // 3. A named report must be visible to this user (owner, or not private).
-    if (body.reportId) {
-      const report = await getReportFn(body.reportId);
-      if (!report || !report.permissions.canView) return notFound();
-    }
+    if (body.reportId && !(await canViewFn(body.reportId))) return notFound();
 
     // 4. Resolve against the active registry. Unknown client ids are dropped here.
     const clients = await clientsFn();

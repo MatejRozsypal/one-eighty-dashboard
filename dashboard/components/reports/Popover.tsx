@@ -38,13 +38,15 @@ export interface PopoverProps {
   disabled?: boolean;
   /** Start open (a deep link such as `?new=1`). */
   defaultOpen?: boolean;
+  /** Stays open: an outside press and Esc do nothing (a menu entry is running and shows its own progress). */
+  locked?: boolean;
   /** Called after the panel opens or closes. */
   onOpenChange?: (open: boolean) => void;
   /** Panel content; call `close()` to dismiss from inside. */
   children: (close: (returnFocus?: boolean) => void) => ReactNode;
 }
 
-export function Popover({ label, button, buttonClassName, align = "left", panelClassName, disabled, defaultOpen = false, onOpenChange, children }: PopoverProps) {
+export function Popover({ label, button, buttonClassName, align = "left", panelClassName, disabled, defaultOpen = false, locked = false, onOpenChange, children }: PopoverProps) {
   const [open, setOpen] = useState(defaultOpen);
   const wrapRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -67,13 +69,13 @@ export function Popover({ label, button, buttonClassName, align = "left", panelC
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || locked) return;
     const onDown = (e: MouseEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) set(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [open, set]);
+  }, [open, locked, set]);
 
   return (
     <div ref={wrapRef} className="relative inline-block">
@@ -99,7 +101,7 @@ export function Popover({ label, button, buttonClassName, align = "left", panelC
             if (e.key === "Escape") {
               e.preventDefault();
               e.stopPropagation();
-              close(true);
+              if (!locked) close(true);
             }
           }}
           className={cx(

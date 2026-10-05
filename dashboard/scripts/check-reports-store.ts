@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { MAX_WIDGETS_PER_REPORT, WIDGET_SIZE, GRID } from "@/lib/reports/limits";
 import { METRIC_IDS } from "@/lib/reports/registry/ids";
 import { TEMPLATE_KEYS, type NewWidget } from "@/lib/reports/contracts";
-import { createReportStore, canEdit, canView, isOwner, reportPermissions, clientsDetail, type Queryable, type StoreDeps } from "@/lib/reports/store";
+import { createReportStore, SCHEMA_PROBE, canEdit, canView, isOwner, reportPermissions, clientsDetail, type Queryable, type StoreDeps } from "@/lib/reports/store";
 import { TEMPLATES, getTemplate } from "@/lib/reports/templates";
 import { DEFAULT_REPORT_FILTERS, WidgetConfig } from "@/lib/reports/types";
 
@@ -35,7 +35,7 @@ const eq = (name: string, actual: unknown, expected: unknown) => check(name, JSO
 // In-memory fake of the query function
 // ---------------------------------------------------------------------------
 
-interface R { id: string; name: string; owner_email: string; visibility: string; filters: string; schema_version: number; version: number; template_key: string | null; created_at: Date; updated_at: Date; updated_by: string; deleted_at: Date | null }
+interface R { create_token?: string | null; id: string; name: string; owner_email: string; visibility: string; filters: string; schema_version: number; version: number; template_key: string | null; created_at: Date; updated_at: Date; updated_by: string; deleted_at: Date | null }
 interface W { id: string; report_id: string; type: string; config: string; x: number; y: number; w: number; h: number; created_at: Date; updated_at: Date }
 interface S { user_email: string; report_id: string; pinned: boolean; pin_position: number; last_opened_at: Date | null }
 interface State { reports: R[]; widgets: W[]; states: S[]; seq: number; clock: number }
@@ -88,9 +88,23 @@ class FakeDb implements Queryable {
       return rows(r && !r.deleted_at ? [r] : []);
     }
     if (tag === "reports.create") {
-      const r: R = { id: this.id(), name: String(p[0]), owner_email: String(p[1]), visibility: "private", filters: String(p[2]), schema_version: 1, version: 1, template_key: p[3] as string, created_at: this.tick(), updated_at: this.tick(), updated_by: String(p[1]), deleted_at: null };
+      // One statement: the report plus its widgets (p[4], a JSON array), unless the token already exists.
+      const token = p[5] === null || p[5] === undefined ? null : String(p[5]);
+      if (token !== null && s.reports.some((r) => r.owner_email === p[1] && r.create_token === token)) return rows([]);
+      const r: R = { id: this.id(), name: String(p[0]), owner_email: String(p[1]), visibility: "private", filters: String(p[2]), schema_version: 1, version: 1, template_key: p[3] as string, created_at: this.tick(), updated_at: this.tick(), updated_by: String(p[1]), deleted_at: null, create_token: token };
       s.reports.push(r);
+      for (const w of JSON.parse(String(p[4])) as Array<{ type: string; config: unknown; x: number; y: number; w: number; h: number }>) {
+        s.widgets.push({ id: this.id(), report_id: r.id, type: w.type, config: JSON.stringify(w.config), x: w.x, y: w.y, w: w.w, h: w.h, created_at: this.tick(), updated_at: this.tick() });
+      }
       return rows([{ id: r.id, version: 1 }]);
+    }
+    if (tag === "reports.create.existing") {
+      const r = s.reports.find((x) => x.owner_email === p[0] && x.create_token === p[1]);
+      return rows(r ? [{ id: r.id, version: r.version }] : []);
+    }
+    if (tag === "reports.visible") {
+      const r = rep(p[0]);
+      return rows(r && !r.deleted_at ? [{ owner_email: r.owner_email, visibility: r.visibility }] : []);
     }
     if (tag === "reports.create.widget" || tag === "reports.widgets.insert") {
       if (!rep(p[0])) throw new Error("fk violation");
@@ -302,6 +316,57 @@ async function main() {
   eq("overlong name is invalid", (await A.createReport({ name: "x".repeat(121) })).ok, false);
   eq("unknown template is invalid", (await A.createReport({ name: "x", templateKey: "nope" as never })).ok, false);
 
+  const H2 = harness();
+  const A2 = H2.as(owner);
+  const B2 = H2.as(other);
+  // One statement, however many widgets (the old path cost one round trip each).
+  {
+    const before = H2.db.log.length;
+    await A2.createReport({ name: "One statement", templateKey: "portfolio_overview" });
+    const used = H2.db.log.slice(before).filter((t) => t === "reports.create" || t === "reports.create.widget");
+    eq("create is a single statement", used, ["reports.create"]);
+  }
+
+  // Idempotent per click token (QA N-01).
+  {
+    const t1 = await A2.createReport({ name: "Token", templateKey: "portfolio_overview", clientToken: "click-token-0001" });
+    const t2 = await A2.createReport({ name: "Token", templateKey: "portfolio_overview", clientToken: "click-token-0001" });
+    check("same token returns the same report", t1.ok && t2.ok && t1.id === t2.id, [t1, t2]);
+    eq("same token creates one row", H2.db.state.reports.filter((r) => r.create_token === "click-token-0001").length, 1);
+    eq("same token copies the widgets once", H2.db.state.widgets.filter((w) => w.report_id === (t1.ok ? t1.id : "")).length, TEMPLATES.portfolio_overview.widgets.length);
+    const t3 = await A2.createReport({ name: "Token", templateKey: "portfolio_overview", clientToken: "click-token-0002" });
+    check("a new token makes a new report", t1.ok && t3.ok && t1.id !== t3.id);
+    const t4 = await B2.createReport({ name: "Token", clientToken: "click-token-0001" });
+    check("tokens are per owner", t1.ok && t4.ok && t1.id !== t4.id);
+    const noToken1 = await A2.createReport({ name: "Plain" });
+    const noToken2 = await A2.createReport({ name: "Plain" });
+    check("without a token every call creates", noToken1.ok && noToken2.ok && noToken1.id !== noToken2.id);
+    eq("a short token is invalid", (await A2.createReport({ name: "x", clientToken: "short" })).ok, false);
+    eq("a token with spaces is invalid", (await A2.createReport({ name: "x", clientToken: "has space in it" })).ok, false);
+    eq("a 65 character token is invalid", (await A2.createReport({ name: "x", clientToken: "a".repeat(65) })).ok, false);
+  }
+
+  // The widget query route's visibility check.
+  {
+    const mine = await A2.createReport({ name: "Visible?" });
+    const mineId = mine.ok ? mine.id : "";
+    eq("owner can view", await A2.canViewReport(mineId), true);
+    eq("private report is not visible to others", await B2.canViewReport(mineId), false);
+    await A2.setVisibility(mineId, "team_view");
+    eq("team_view report is visible to others", await B2.canViewReport(mineId), true);
+    eq("unknown id is not visible", await A2.canViewReport(uuid(98765)), false);
+    eq("bad uuid is not visible", await A2.canViewReport("nope"), false);
+    await A2.deleteReport(mineId);
+    eq("deleted report is not visible", await A2.canViewReport(mineId), false);
+    const before = H2.db.log.length;
+    await A2.canViewReport(uuid(1));
+    eq("visibility check is one statement", H2.db.log.slice(before), ["reports.visible"]);
+    const none = harness().as(null);
+    let threw = false;
+    try { await none.canViewReport(uuid(1)); } catch { threw = true; }
+    check("canViewReport needs access", threw);
+  }
+
   check("private report invisible to others (get)", (await B.getReport(id)) === null);
   eq("private report absent from team list", (await B.listReports("team")).length, 0);
   eq("bad uuid reads as null", await A.getReport("not-a-uuid"), null);
@@ -508,6 +573,16 @@ async function main() {
     check(`${name} starts with assertReportsAccess()`, /assertReportsAccess\(\)/.test(firstLine), firstLine);
   }
   check("actions file starts with 'use server'", src.startsWith('"use server";'));
+  check("createReport action does not revalidate the list (the caller refreshes after opening)", !/export async function createReport[\s\S]*?\n}\n/.exec(src)?.[0].includes("listChanged"));
+
+  // The DDL is skipped when a lock-free probe says the schema is complete.
+  const storeSrc = readFileSync(join(process.cwd(), "lib/reports/store.ts"), "utf8");
+  check("ensureTable probes before running DDL", /schemaReady\(\)\s*\.then\(\(ready\) => \(ready \? undefined : sql\(DDL\)/.test(storeSrc));
+  for (const rel of ["reports", "report_widgets", "report_user_state", "reports_owner_idx", "reports_team_idx", "report_widgets_report_idx", "reports_create_token_idx"]) {
+    check(`probe covers ${rel}`, SCHEMA_PROBE.includes(`to_regclass('${rel}')`));
+  }
+  check("probe covers the create_token column", SCHEMA_PROBE.includes("attname = 'create_token'"));
+  check("probe takes no table lock (no DDL, no FOR UPDATE)", !/\b(CREATE|ALTER|LOCK|FOR UPDATE)\b/i.test(SCHEMA_PROBE));
   check("actions import the gate from @/lib/authz", /import \{ assertReportsAccess \} from "@\/lib\/authz";/.test(src));
   check("actions file has no non-async exports", !/export (const|let|function|class|type|interface)\b/.test(src.replace(/export async function/g, "")));
   for (const file of ["lib/reports/store.ts", "lib/reports/templates.ts", "app/(app)/reports/actions.ts", "scripts/check-reports-store.ts"]) {

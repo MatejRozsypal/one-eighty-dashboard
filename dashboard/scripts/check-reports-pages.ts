@@ -211,6 +211,27 @@ for (const file of FILES) {
   check(`${file}: no static chart widget import`, !/from\s+["'][^"']*\/(Line|Bar|Scatter)Widget["']/.test(text));
 }
 
+// Round 3 (N-01, N-04, N-05): pending states and guards that cannot be exercised without a browser.
+{
+  const list = read("components/reports/ReportListTable.tsx");
+  check("create: guard is set synchronously in the click handler", /async function create[\s\S]*?if \(busyRef\.current\) return;\s*busyRef\.current = true;/.test(list));
+  check("create: sends a per-click token", /clientToken/.test(list) && /newClickToken\(\)/.test(list));
+  check("create: clicked template shows Creating", /Creating/.test(list) && /Opening/.test(list));
+  check("create: other templates are disabled while busy", /disabled=\{busy !== null\}/.test(list));
+  check("create: menu stays open while busy", /locked=\{busy !== null\}/.test(list));
+  check("create: menu no longer closes on click", !/close\(false\);\s*void create/.test(list));
+  check("create: list refreshes after the report opens", /open\(result\.id, true\);[\s\S]*?router\.refresh\(\)/.test(list));
+  const client = read("components/reports/ReportClient.tsx");
+  check("filters: widgets dim while a navigation with different filters is pending", /filtersChanging/.test(client) && /refreshing=\{refreshing \|\| filtersChanging\}/.test(client));
+  check("filters: the pending target is read from pendingHref", /pendingHref/.test(client) && /parseFilterParams\(target\.search\)/.test(client));
+  check("benchmarks: one muted line when the switch is on and nothing matched", /No benchmarks yet/.test(client) && /effective\.benchmark/.test(client));
+  check("duplicate: second click is ignored", /duplicating\.current/.test(client));
+  const parts = read("components/reports/ReportParts.tsx");
+  check("series: single-client rollups are named", /nameSingleClientRollups/.test(parts));
+  const route = read("app/api/reports/query/route.ts");
+  check("route: widget requests use the cheap visibility check", /canViewReport/.test(route) && !/import \{[^}]*\bgetReport\b[^}]*\} from "@\/lib\/reports\/store"/.test(route));
+}
+
 if (failures.length > 0) {
   console.error(`check-reports-pages: ${failures.length} failed, ${passed} passed`);
   for (const f of failures) console.error(`  FAIL ${f}`);

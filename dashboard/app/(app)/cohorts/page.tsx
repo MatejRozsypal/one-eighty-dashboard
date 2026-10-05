@@ -17,7 +17,8 @@ import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { PageControls } from "@/components/controls/PageControls";
 import { RangeNote } from "@/components/ui/PageNotes";
-import { getCohorts } from "@/lib/queries/cohorts";
+import { getCohorts, weightedY1 } from "@/lib/queries/cohorts";
+import { getRepeat365 } from "@/lib/queries/lifetime";
 import {
   getCohortGrid,
   metricSpec,
@@ -45,14 +46,6 @@ function monthLabel(iso: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
-}
-
-/** Mean of the values that exist. Null when none do, never 0. */
-function meanOf(values: Array<number | null>): number | null {
-  const present = values.filter((v): v is number => v !== null);
-  return present.length === 0
-    ? null
-    : present.reduce((a, b) => a + b, 0) / present.length;
 }
 
 export default async function CohortsPage({
@@ -87,12 +80,13 @@ export default async function CohortsPage({
         ? searchParams.market
         : [];
 
-  // 13 rows by default, this month plus the previous twelve. The warehouse
-  // holds 36, and at that length the grid is 37 columns wide as well, which is
-  // a wall rather than a chart. The longer views stay one click away.
+  // 12 rows by default: the current month is still filling, so it is left out
+  // and the 12 full months before it are shown. The warehouse holds 60, and at
+  // that length the grid is a wall rather than a chart. The longer views stay
+  // one click away.
   const RANGES = [
-    { value: "12", label: "13 months" },
-    { value: "24", label: "25 months" },
+    { value: "12", label: "12 months" },
+    { value: "24", label: "24 months" },
     { value: "0", label: "All" },
   ];
   const rangeParam = RANGES.some((r) => r.value === searchParams.cohortMonths)
@@ -100,13 +94,15 @@ export default async function CohortsPage({
     : "12";
   const monthsBack = Number(rangeParam);
 
-  const [cohorts, grid] = await Promise.all([
+  const [cohorts, repeat365, grid] = await Promise.all([
     getCohorts(client.clientId, client.currency, 24),
+    getRepeat365(client.clientId),
     getCohortGrid(client.clientId, client.currency, {
       metric,
       markets: selectedMarkets,
-      // Offsets tracks the window: a 13-month view has nothing beyond month 12.
-      maxOffset: monthsBack === 0 ? 24 : monthsBack,
+      // Offsets tracks the window: the oldest cohort of a 12-month view has
+      // 12 full months behind it, which is offsets 0 to 11.
+      maxOffset: monthsBack === 0 ? 24 : monthsBack - 1,
       monthsBack,
     }),
   ]);
@@ -145,7 +141,7 @@ export default async function CohortsPage({
             <div className="flex flex-col gap-[5px]">
               <Eyebrow>
                 Cohort grid
-                <InfoTip text={`${spec.blurb} Columns are months since the first order. Blank means not yet reached. Cohorts group by first-order month over the full data window, not the date range.`} />
+                <InfoTip text={`${spec.blurb} Columns are months since the first order. Blank means not yet reached. Cohorts group by first-order month over all data, not the date range. The current month is left out.`} />
               </Eyebrow>
             </div>
 
@@ -210,19 +206,24 @@ export default async function CohortsPage({
               },
               {
                 label: "Y1 LTV",
-                value: money(meanOf(mature.map((c) => c.y1Ltv))),
-                info: "Mean across mature cohorts.",
+                value: money(weightedY1(mature, (c) => c.y1Ltv)),
+                info: "Per customer over the first 365 days, weighted by customers across mature cohorts.",
                 accent: true,
               },
               {
                 label: "Y1 LTGP",
-                value: money(meanOf(mature.map((c) => c.y1Ltgp))),
-                info: "Gross profit per customer, mean across mature cohorts.",
+                value: money(weightedY1(mature, (c) => c.y1Ltgp)),
+                info: "Gross profit per customer over the first 365 days, weighted by customers across mature cohorts.",
               },
               {
-                label: "Repeat rate, mature cohorts",
-                value: formatPercent(meanOf(mature.map((c) => c.repeatRate))),
-                info: "Mature cohorts only.",
+                label: "Repeat rate, 365 days",
+                value: formatPercent(repeat365?.rate ?? null),
+                sub: repeat365
+                  ? `${formatNumber(repeat365.repeaters)} of ${formatNumber(repeat365.matured)}${
+                      repeat365.matured < 100 ? ", low n" : ""
+                    }`
+                  : undefined,
+                info: "Second order within 365 days of the first. Customers with at least 365 days of history.",
               },
             ].map((s) => (
               <div
@@ -240,6 +241,11 @@ export default async function CohortsPage({
                 >
                   <Value>{s.value}</Value>
                 </span>
+                {s.sub && (
+                  <span className="font-mono text-[11px] tabular text-content-muted">
+                    {s.sub}
+                  </span>
+                )}
               </div>
             ))}
           </section>

@@ -19,6 +19,7 @@ import type {
   CustomerRow,
   LifetimeSummary,
   Payback,
+  Repeat365,
 } from "@/lib/queries/lifetime";
 import type { GapBucket, GapStats } from "@/lib/queries/gaps";
 import {
@@ -185,7 +186,9 @@ export function demoCohortGrid(options: {
     monthsBack = 12,
   } = options;
 
-  const all = cohorts();
+  // The current month is still filling, so it is left out, as in production:
+  // a cohort that first bought this month has no whole month to show.
+  const all = cohorts().filter((c) => c.ageMonths > 0);
   const kept = monthsBack > 0 ? all.slice(-monthsBack) : all;
 
   // A market filter shrinks every cohort by that market's share of customers.
@@ -199,8 +202,9 @@ export function demoCohortGrid(options: {
     const aov = div(c.firstMonthRevenue, c.customers) ?? 61.5;
     const cells: Array<number | null> = [];
     for (let o = 0; o <= maxOffset; o++) {
-      // Null, not zero: the cohort simply has not lived this long yet.
-      cells.push(o > c.ageMonths ? null : cellValue(metric, o, c, aov));
+      // Null, not zero: the cohort simply has not lived this long yet. Offsets
+      // up to the last whole month are real, the current month is excluded.
+      cells.push(o >= c.ageMonths ? null : cellValue(metric, o, c, aov));
     }
     return { month: c.month, customers, cells };
   });
@@ -254,7 +258,22 @@ export function demoLifetimeSummary(): LifetimeSummary {
     ordersPerCustomer: div(orders, customers),
     avgAov: div(revenue, orders),
     repeatRate: 0.312,
+    repeat365: demoRepeat365(),
+    windowStart: firstDay(),
     avgDaysActive: 147,
+  };
+}
+
+/** Customers old enough to have a 365-day answer, and how many came back. */
+export function demoRepeat365(): Repeat365 {
+  const customers = sum(days(firstDay(), dataThrough()), (d) => d.newCustomerOrders);
+  const matured = Math.round(customers * 0.58);
+  const repeaters = Math.round(matured * 0.268);
+  return {
+    repeaters,
+    matured,
+    rate: div(repeaters, matured),
+    windowStart: firstDay(),
   };
 }
 

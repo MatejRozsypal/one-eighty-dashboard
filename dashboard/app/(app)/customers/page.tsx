@@ -40,6 +40,17 @@ function fmtDate(iso: string | null): string {
   });
 }
 
+/** "May 2024" from an ISO date, null when there is none. */
+function fmtMonth(iso: string | null): string | null {
+  if (!iso) return null;
+  const [y, m] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export default async function CustomersPage({
   searchParams,
 }: {
@@ -82,25 +93,51 @@ export default async function CustomersPage({
 
   const money = (v: number | null) => formatMoney(v, client.currency);
 
-  const stats: Array<{ label: string; value: string; accent?: boolean; info?: string }> = [
+  const r365 = summary.repeat365;
+  const stats: Array<{
+    label: string;
+    value: string;
+    sub?: string;
+    accent?: boolean;
+    info?: string;
+  }> = [
     { label: "Customers", value: formatNumber(summary.customers) },
     {
       label: "Orders / customer",
       value: formatNumber(summary.ordersPerCustomer, { decimals: 2 }),
-      accent: true,
     },
-    { label: "Avg AOV", value: money(summary.avgAov) },
     {
-      label: "Repeat rate, lifetime",
-      value: formatPercent(summary.repeatRate),
-      info: "Share of customers with 2 or more orders, over the 36-month window.",
+      label: "AOV",
+      value: money(summary.avgAov),
+      info: "Revenue divided by orders, all orders to date. Weighted by order, so repeat customers count once per order.",
     },
     {
       label: "Days active",
       value: formatNumber(summary.avgDaysActive),
       info: "Mean days between first and last order, repeat customers only.",
     },
+    {
+      label: "Repeat rate, 365 days",
+      value: formatPercent(r365?.rate ?? null),
+      sub: r365
+        ? `${formatNumber(r365.repeaters)} of ${formatNumber(r365.matured)}${
+            r365.matured < 100 ? ", low n" : ""
+          }`
+        : undefined,
+      accent: true,
+      info: "Second order within 365 days of the first. Customers with at least 365 days of history.",
+    },
+    {
+      label: "Repeat rate, to date",
+      value: formatPercent(summary.repeatRate),
+      info: "Customers with 2 or more orders, whatever their age. Recent customers lower it.",
+    },
   ];
+
+  const windowStart = fmtMonth(summary.windowStart);
+  const ltvTip = windowStart
+    ? `Per customer, all orders since ${windowStart}. Ignores the date range. Customers who bought before then count as new.`
+    : "Per customer, all orders in the data. Ignores the date range. Customers who bought earlier count as new.";
 
   return (
     <>
@@ -113,7 +150,7 @@ export default async function CustomersPage({
           <div className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[24px_20px] shadow-sm lg:p-[24px_28px]">
             <Eyebrow>
               LTV vs LTGP
-              <InfoTip text="Lifetime value and lifetime gross profit per customer. All figures cover a 36-month window and ignore the date range. Customers first seen before the window count as new." />
+              <InfoTip text={ltvTip} />
             </Eyebrow>
 
             <div className="flex flex-wrap items-end gap-5">
@@ -169,6 +206,11 @@ export default async function CustomersPage({
                 >
                   <Value>{s.value}</Value>
                 </span>
+                {s.sub && (
+                  <span className="font-mono text-[11px] tabular text-content-muted">
+                    {s.sub}
+                  </span>
+                )}
               </span>
             ))}
           </div>

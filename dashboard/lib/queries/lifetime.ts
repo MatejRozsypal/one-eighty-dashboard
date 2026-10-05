@@ -2,10 +2,17 @@
  * Customer lifetime economics, LTV, LTGP, orders per customer.
  *
  * Reads `mart.mart_customer_lifetime`, which aggregates every order in the
- * 36-month window down to one row per customer. That window is a real limit,
- * not a rounding detail: a customer whose first-ever order predates it looks
- * like a new customer here, which understates both repeat rate and LTV. The UI
- * states this rather than hiding it.
+ * 60-month window down to one row per customer. The window starts at the later
+ * of 60 months ago and the client's data start. It is a real limit, not a
+ * rounding detail: a customer whose first-ever order predates it looks like a
+ * new customer here, which understates both repeat rate and LTV. The UI states
+ * this rather than hiding it.
+ *
+ * Two repeat rates sit side by side on purpose. The to-date rate (customers
+ * with 2 or more orders) is lowered by recent customers who have not had time
+ * to return. The 365-day rate comes from `mart.rpt_customer_entry` and counts
+ * only customers with a full 365 days of history, so it is comparable across
+ * clients and over time.
  */
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
@@ -13,7 +20,12 @@ import { num, safeDiv, isoDate } from "@/lib/coerce";
 import { NO_VALUE } from "@/lib/format";
 import { isMissingObject } from "@/lib/queries/errors";
 import { isDemo } from "@/lib/demo/client";
-import { demoLifetimeSummary, demoPayback, demoTopCustomers } from "@/lib/demo/customers";
+import {
+  demoLifetimeSummary,
+  demoPayback,
+  demoRepeat365,
+  demoTopCustomers,
+} from "@/lib/demo/customers";
 
 export interface LifetimeSummary {
   currency: string;
@@ -24,11 +36,29 @@ export interface LifetimeSummary {
   ltgpRatio: number | null;
   ordersPerCustomer: number | null;
   avgAov: number | null;
-  /** Share of customers with ≥2 orders. */
+  /** Share of customers with ≥2 orders, whatever their age. */
   repeatRate: number | null;
+  /** Pooled 365-day repeat rate, non-early customers. Null when unavailable. */
+  repeat365: Repeat365 | null;
+  /** First day the lifetime figures cover (ISO date), for the tooltip. */
+  windowStart: string | null;
   /** Mean days between first and last order, repeat customers only. */
   avgDaysActive: number | null;
 }
+
+export interface Repeat365 {
+  /** Customers with a second order inside 365 days of the first. */
+  repeaters: number;
+  /** Customers with at least 365 days of history, early customers excluded. */
+  matured: number;
+  /** repeaters / matured, null below the minimum sample. */
+  rate: number | null;
+  /** First day the lifetime figures cover (ISO date). */
+  windowStart: string | null;
+}
+
+/** Below this many matured customers a rate is shown as n/a. */
+export const REPEAT_MIN_N = 30;
 
 export interface CustomerRow {
   email: string;
@@ -40,6 +70,42 @@ export interface CustomerRow {
   aov: number | null;
   daysActive: number | null;
   isReturning: boolean;
+}
+
+/**
+ * Pooled 365-day repeat rate: sum of r365 over sum of m365, early customers
+ * (first order inside the history guard after data start) excluded. Pooled,
+ * never an average of cohort rates. One definition for Customers and Cohorts.
+ *
+ * Null when the table is not there yet or the client has no rows.
+ */
+export async function getRepeat365(clientId: string): Promise<Repeat365 | null> {
+  if (isDemo(clientId)) return demoRepeat365();
+
+  try {
+    const [row] = await query<Record<string, unknown>>(
+      `SELECT
+         SUM(IF(NOT is_early, r365, 0))  AS repeaters,
+         SUM(IF(NOT is_early, m365, 0))  AS matured,
+         GREATEST(MIN(data_start_date),
+                  DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)) AS window_start
+       FROM \`${PROJECT_ID}.mart.rpt_customer_entry\`
+       WHERE client_id = @clientId`,
+      { clientId }
+    );
+    const matured = num(row?.matured);
+    if (matured === null) return null;
+    const repeaters = num(row?.repeaters) ?? 0;
+    return {
+      repeaters,
+      matured,
+      rate: matured >= REPEAT_MIN_N ? safeDiv(repeaters, matured) : null,
+      windowStart: isoDate(row?.window_start as never),
+    };
+  } catch (error) {
+    if (!isMissingObject(error)) throw error;
+    return null;
+  }
 }
 
 /** Null when the client has no customer rows, so the page never shows a 0. */
@@ -56,23 +122,30 @@ export async function getLifetimeSummary(
   // BigQuery inline the view and reject the query with "Aggregations of
   // aggregations are not allowed". Selecting the columns in a subquery first
   // creates the block boundary that keeps the two levels apart.
-  const [row] = await query<Record<string, unknown>>(
-    `SELECT
-       COUNT(*)                                     AS customers,
-       AVG(lifetime_revenue)                        AS ltv,
-       AVG(lifetime_gross_profit)                   AS ltgp,
-       AVG(total_orders)                            AS orders_per_customer,
-       AVG(aov)                                     AS avg_aov,
-       SAFE_DIVIDE(COUNTIF(is_returning), COUNT(*)) AS repeat_rate,
-       AVG(IF(is_returning, days_active, NULL))     AS avg_days_active
-     FROM (
-       SELECT lifetime_revenue, lifetime_gross_profit, total_orders,
-              aov, is_returning, days_active
-       FROM \`${PROJECT_ID}.mart.mart_customer_lifetime\`
-       WHERE client_id = @clientId AND currency = @currency
-     )`,
-    { clientId, currency }
-  );
+  //
+  // AOV is order-weighted: total revenue over total orders. The mart's own
+  // per-customer `aov` column would weight a one-order customer the same as a
+  // five-order one, so it is not used here.
+  const [[row], repeat365] = await Promise.all([
+    query<Record<string, unknown>>(
+      `SELECT
+         COUNT(*)                                     AS customers,
+         AVG(lifetime_revenue)                        AS ltv,
+         AVG(lifetime_gross_profit)                   AS ltgp,
+         AVG(total_orders)                            AS orders_per_customer,
+         SAFE_DIVIDE(SUM(lifetime_revenue), SUM(total_orders)) AS avg_aov,
+         SAFE_DIVIDE(COUNTIF(is_returning), COUNT(*)) AS repeat_rate,
+         AVG(IF(is_returning, days_active, NULL))     AS avg_days_active
+       FROM (
+         SELECT lifetime_revenue, lifetime_gross_profit, total_orders,
+                is_returning, days_active
+         FROM \`${PROJECT_ID}.mart.mart_customer_lifetime\`
+         WHERE client_id = @clientId AND currency = @currency
+       )`,
+      { clientId, currency }
+    ),
+    getRepeat365(clientId),
+  ]);
 
   // COUNT(*) is 0, not NULL, over an empty set.
   const customers = num(row?.customers);
@@ -90,6 +163,8 @@ export async function getLifetimeSummary(
     ordersPerCustomer: num(row?.orders_per_customer),
     avgAov: num(row?.avg_aov),
     repeatRate: num(row?.repeat_rate),
+    repeat365,
+    windowStart: repeat365?.windowStart ?? null,
     avgDaysActive: num(row?.avg_days_active),
   };
 }

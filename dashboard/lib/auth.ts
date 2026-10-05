@@ -59,75 +59,121 @@ function isAllowedDomain(email: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Lookup coalescing
+// Lookup coalescing and short reuse
 // ---------------------------------------------------------------------------
 //
 // next-auth runs the `jwt` callback below on EVERY `getServerSession` call,
 // not only at sign-in, so every call is one Postgres round trip. A page render
 // made two or three (layout, `resolveClient`, a section layout) and a Reports
-// open makes one per widget request, all on the small pool an instance shares
-// between every request it is serving. Under a burst those lookups queued for
-// the pool behind each other (QA N-06).
+// widget request six to eight (route gate, run, store, clients, benchmarks),
+// all on the small pool an instance shares between every request it serves.
+// Under a burst those lookups queued for the pool (QA N-06).
 //
-// Concurrent lookups for the same email now share one query. Nothing is kept
-// once it settles: the next request asks Postgres again, so a revoked account,
-// a new client assignment or a just-changed temporary password still take
-// effect on the very next request, exactly as before. Per-request dedupe of the
-// whole session read is `getSession()` below.
+//   1. Concurrent lookups for the same email share one query (in flight).
+//   2. A settled answer is reused for ACCESS_TTL_MS across requests. A revoked
+//      account, a changed role or client assignment, or a newly issued
+//      temporary password therefore takes effect within that window instead
+//      of on the very next request (owner limit: at most 30 s).
+//   3. Never reused: a failed lookup (an outage is not remembered as a
+//      refusal), and an answer with `mustChangePassword: true`, so the account
+//      that has just replaced its temporary password is let through on its
+//      next request rather than bounced back to the change page.
+// Per-request dedupe of the whole session read is `getSession()` below; route
+// handlers and server actions have no render scope, so they rely on 1 and 2.
+
+export const ACCESS_TTL_MS = 15_000;
+const ACCESS_CACHE_MAX = 1_000;
+
+interface Lookup {
+  access: SessionAccess | null;
+  /** False for a lookup that failed and returned the fail-closed null. */
+  reusable: boolean;
+}
 
 const globalForAccess = globalThis as unknown as {
-  oeAccessInFlight?: Map<string, Promise<SessionAccess | null>>;
+  oeAccessInFlight?: Map<string, Promise<Lookup>>;
+  oeAccessSettled?: Map<string, { at: number; access: SessionAccess | null }>;
 };
 
 /**
  * Resolve what an email may do. Single source of truth for both providers.
  * Returns null when the account may not sign in at all.
  */
-export function resolveAccess(email: string): Promise<SessionAccess | null> {
+export async function resolveAccess(email: string): Promise<SessionAccess | null> {
   const lower = email.toLowerCase();
-  const inFlight = (globalForAccess.oeAccessInFlight ??= new Map());
-  const running = inFlight.get(lower);
-  if (running) return running;
+  const settled = (globalForAccess.oeAccessSettled ??= new Map());
+  const hit = settled.get(lower);
+  if (hit && Date.now() - hit.at < ACCESS_TTL_MS) return hit.access;
 
-  const lookup = uncachedResolveAccess(lower).finally(() => {
-    if (inFlight.get(lower) === lookup) inFlight.delete(lower);
-  });
-  inFlight.set(lower, lookup);
-  return lookup;
+  const inFlight = (globalForAccess.oeAccessInFlight ??= new Map());
+  let lookup = inFlight.get(lower);
+  if (!lookup) {
+    const started = Date.now();
+    const created: Promise<Lookup> = uncachedResolveAccess(lower)
+      .then((result) => {
+        if (result.reusable && !result.access?.mustChangePassword) {
+          if (settled.size >= ACCESS_CACHE_MAX) settled.clear();
+          // Stamped with the start, so the window never exceeds the TTL
+          // measured from when Postgres was asked.
+          settled.set(lower, { at: started, access: result.access });
+        } else {
+          settled.delete(lower);
+        }
+        return result;
+      })
+      .finally(() => {
+        if (inFlight.get(lower) === created) inFlight.delete(lower);
+      });
+    inFlight.set(lower, created);
+    lookup = created;
+  }
+  return (await lookup).access;
 }
 
-async function uncachedResolveAccess(lower: string): Promise<SessionAccess | null> {
+/** Drop reused answers (one account, or all). For tests and account changes. */
+export function forgetAccess(email?: string): void {
+  if (email === undefined) globalForAccess.oeAccessSettled?.clear();
+  else globalForAccess.oeAccessSettled?.delete(email.toLowerCase());
+}
+
+async function uncachedResolveAccess(lower: string): Promise<Lookup> {
   if (!userStoreConfigured()) {
-    return isAllowedDomain(lower)
-      ? { role: "admin", clientId: null, mustChangePassword: false }
-      : null;
+    return {
+      access: isAllowedDomain(lower)
+        ? { role: "admin", clientId: null, mustChangePassword: false }
+        : null,
+      reusable: true,
+    };
   }
 
   try {
     const user = await findUserByEmail(lower);
 
     if (user) {
-      if (!user.isActive) return null;
+      if (!user.isActive) return { access: null, reusable: true };
       return {
-        role: user.role,
-        clientId: user.clientId,
-        mustChangePassword: user.mustChangePassword,
+        access: {
+          role: user.role,
+          clientId: user.clientId,
+          mustChangePassword: user.mustChangePassword,
+        },
+        reusable: true,
       };
     }
 
     // Recovery: an allowed-domain account claims admin when there is none.
     if (isAllowedDomain(lower) && (await claimAdminIfNoneExists(lower))) {
       console.warn(`[auth] ${lower} claimed admin, no active admin existed`);
-      return { role: "admin", clientId: null, mustChangePassword: false };
+      return { access: { role: "admin", clientId: null, mustChangePassword: false }, reusable: true };
     }
 
-    return null;
+    return { access: null, reusable: true };
   } catch (error) {
     // A database that is configured but unreachable must not silently downgrade
     // to "everyone from the domain is an admin", that would turn an outage
     // into an authorisation bypass. Refuse instead, loudly.
     console.error("[auth] user store unreachable, refusing sign-in", error);
-    return null;
+    return { access: null, reusable: false };
   }
 }
 

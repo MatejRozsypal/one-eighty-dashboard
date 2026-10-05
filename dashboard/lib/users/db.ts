@@ -138,12 +138,40 @@ CREATE TABLE IF NOT EXISTS client_settings (
 
 `;
 
+/**
+ * Lock-free check that everything SCHEMA creates already exists.
+ *
+ * CREATE TABLE / CREATE INDEX IF NOT EXISTS take locks even when they change
+ * nothing, and every cold instance ran them before its first query, including
+ * the session lookup that gates every page. A burst of cold instances then
+ * queued behind each other and behind any open write. Now the DDL only runs on
+ * a database that lacks something. `to_regclass` returns NULL for a missing
+ * relation instead of raising. Same pattern as the Reports store.
+ */
+export const SCHEMA_PROBE = `
+SELECT (
+  to_regclass('app_users') IS NOT NULL
+  AND to_regclass('app_users_email_key') IS NOT NULL
+  AND to_regclass('client_settings') IS NOT NULL
+) AS ready
+`;
+
+async function schemaPresent(): Promise<boolean> {
+  try {
+    const result = await pool().query<{ ready: boolean }>(SCHEMA_PROBE);
+    return result.rows[0]?.ready === true;
+  } catch {
+    // The probe is an optimisation: when it cannot answer, the DDL decides.
+    return false;
+  }
+}
+
 const globalForSchema = globalThis as unknown as { oeSchemaReady?: Promise<void> };
 
 function ensureSchema(): Promise<void> {
   if (!globalForSchema.oeSchemaReady) {
-    globalForSchema.oeSchemaReady = pool()
-      .query(SCHEMA)
+    globalForSchema.oeSchemaReady = schemaPresent()
+      .then((present) => (present ? undefined : pool().query(SCHEMA)))
       .then(() => undefined)
       .catch((error: unknown) => {
         // Two lambdas can reach CREATE TABLE IF NOT EXISTS at the same moment

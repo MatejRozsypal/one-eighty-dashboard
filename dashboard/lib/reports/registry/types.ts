@@ -19,9 +19,9 @@ export type { MetricId, Phase2MetricId, RegistryMetricId } from "./ids";
  * Part of every cache key. Bump it whenever a formula, a component column or
  * an evaluation rule changes, so no cached result outlives its definition.
  */
-export const SEMANTIC_VERSION = 7;
+export const SEMANTIC_VERSION = 8;
 
-export type MartId = "kpis" | "meta_campaign" | "meta_ad" | "email_campaign" | "ad_launch";
+export type MartId = "kpis" | "meta_campaign" | "meta_ad" | "email_campaign" | "ad_launch" | "customer_entry";
 export type Grain = "day" | "week" | "month";
 export type QueryGrain = Grain | "total";
 export type Unit = "money" | "count" | "ratio" | "percent";
@@ -152,6 +152,13 @@ export interface MartDef {
    * Thresholds never reach SQL or the cache key.
    */
   entity?: EntityDef;
+  /**
+   * Row filter on BOOL columns: rows where any `excludeTrue` column is TRUE are
+   * left out of every sum (`AND t.<col> IS NOT TRUE` in the CTE, asserted with
+   * the date predicate). The customer entry mart leaves out early customers,
+   * whose first order may predate the data start (retention design 1.7).
+   */
+  rowFilter?: { excludeTrue: readonly string[] };
 }
 
 /** Classifiers of entity marts, implemented in evaluate.ts. */
@@ -239,6 +246,11 @@ export interface ComponentDef {
    *   period is maturing and the comparison is not.
    */
   classified?: { needsThresholds: boolean; lowerBound: boolean };
+  /**
+   * The column is BOOL: summed as COUNTIF(column), the number of rows where it
+   * is TRUE. Counts only (no money, nullMeans "zero", no filter or guard).
+   */
+  bool?: true;
 }
 
 /** Identifier rule for marts, tables and columns. Enforced when the registry loads. */
@@ -281,7 +293,11 @@ export type CaveatId =
   /** Hit rate (HR3): set by the evaluator when a launch in the current period is still open (under 60 days old). */
   | "cohort_maturing"
   /** Hit rate (HR3): winners are judged on lifetime-to-date totals, not on the period alone. */
-  | "lifetime_to_date";
+  | "lifetime_to_date"
+  /** Cohort retention (WR5): set by the evaluator when the summed denominator is 30 to 99 customers. */
+  | "low_n"
+  /** Cohort retention (WR5): set by the evaluator when the period has customers who have not yet had the metric's horizon. */
+  | "cohort_partial";
 
 export interface CaveatDef {
   /** Hover text. Short, no em dash. */
@@ -323,6 +339,30 @@ export interface MetricBase {
    * positive term. `noun` is what the denominator counts.
    */
   showCounts?: { noun: string };
+  /**
+   * Cohort retention metrics (customer entry mart, WR5): rules the evaluator
+   * applies to the summed counts of every cell (client, bucket, total,
+   * rollup), in this order:
+   * 1. needsClasses and no product classes for the client (sum of
+   *    `classes_configured` is 0): not_measured "Products not classified";
+   *    rollups leave the client out with a coverage note.
+   * 2. Denominator 0 while the population is above 0: not_measured "Not mature yet".
+   * 3. Denominator below minN: not_measured "Too few customers".
+   * 4. Denominator below lowN: data-driven caveat `low_n`.
+   * 5. Population above the denominator: data-driven caveat `cohort_partial`.
+   * Rules 2 to 5 apply to the pooled counts of a rollup, never to one member,
+   * so small clients are pooled instead of dropped. Ratio metrics only, with
+   * a single positive denominator term in the population's mart.
+   */
+  cohort?: MetricCohort;
+}
+
+export interface MetricCohort {
+  /** Customers the rate is about (all entrants, discovery entrants, customers with a 2nd order). */
+  population: ComponentId;
+  minN: number;
+  lowN: number;
+  needsClasses?: true;
 }
 
 export interface MetricReference {

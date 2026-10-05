@@ -400,7 +400,8 @@ Ecomail-only subscriber counts. One row per (list, snapshot_date).
 The Reports product (`/reports`) does not read pre-computed metrics. It reads a **metric registry**
 in the dashboard code (`dashboard/lib/reports/registry/`) that defines each metric from summed
 warehouse components. This section is the warehouse-side contract of that registry. Status
-2026-10-05: Reports is in progress and not deployed; phase 1 reads only `mart.mart_daily_kpis`.
+2026-10-05: Reports is in progress and not deployed; phase 1 reads `mart.mart_daily_kpis`, the Meta
+campaign and ad marts, `mart.rpt_ad_launch` and `mart.rpt_customer_entry`.
 Once `registry/metrics.ts` is merged it is the source of truth for the formulas, and this section
 must be kept in step with it.
 
@@ -505,6 +506,10 @@ Components are `mart_daily_kpis` columns, summed. Metrics:
 | | `meta_frequency` | `impressions / reach` summed over campaign days: average daily frequency, below true period frequency. |
 | Creative hit rate (launch cohorts, `mart.rpt_ad_launch`) | `hit_rate` | `winners / launched`, pooled. Launched = Meta ads whose first delivery falls in the bucket, pre-existing ads and relaunches left out. Winner = lifetime-to-date purchases >= the client's `readPurchases` and shrunk ROAS >= its `targetRoas` (Settings), shrinkage toward the stored trailing-year Meta ROAS. Not benchmarkable; reference line ~5 %. Amendment 25. |
 | | `winners`, `ads_launched` | Sums of the per-ad winner and launch counts. A client without thresholds is `not_measured` "No thresholds" for hit rate and winners, never 0; ads launched needs no thresholds. |
+| Cohort retention (acquisition cohorts, `mart.rpt_customer_entry`) | `repeat_rate_90`, `repeat_rate_180`, `repeat_rate_365` | `r_H / m_H`, pooled: customers whose first order falls in the period (non-early), 2nd order within H days, among those mature for H. Amendment 26. |
+| | `third_order_rate_180` | `r23_180 / m23_180`: 3rd order within 180 days of the 2nd, among customers whose 2nd order is 180 days old. |
+| | `discovery_upgrade_90`, `discovery_upgrade_180` | `du_H / dm_H`: discovery set entrants who buy a full-size product within H days, among those mature for H. Needs `ref.product_classes` rows for the client, else "Products not classified". |
+| | `discovery_entry_share` | `is_discovery / n_customer`: share of entrants whose first order is a discovery set. Needs product classes. |
 | Google | `google_spend` | Sum. |
 | | `google_roas` | `google_revenue / google_spend`. |
 | | `google_ctr` | `google_clicks / google_impressions`. |
@@ -533,6 +538,8 @@ Computed per client from registry fields, never from a hardcoded client id:
 | New vs returning within history window | Everything built from new or returning orders (36-month window, see Known data gaps). |
 | Order share, not cohort repeat rate | `returning_order_share`. |
 | Foreign currency rows | A foreign-currency row was converted with the monthly rate. |
+| Fewer than 100 customers | Cohort retention: the rate rests on 30 to 99 mature customers. |
+| Recent customers not yet counted | Cohort retention: the period has customers who have not had the horizon yet (they are in the population but not in the denominator). |
 
 The former "Woo fee lines not netted" caveat no longer applies since migration 228 (fee-line
 discounts are netted); its id stays reserved because ids are append-only.
@@ -544,7 +551,7 @@ discounts are netted); its id stays reserved because ids are append-only.
 | ok | A value. | The number. |
 | not_connected | The client has no source for the metric (for example RawBark has no Meta). | Not connected |
 | fx_missing | A needed `ref.fx_rates` month is missing. | No FX |
-| not_measured | Revenue exists but no cost data: summed `cogs` is NULL on positive revenue (RawBark, since migration 228). Applies to `cogs`, `cm1_pct`, `cm3`, `cm3_pct`. | No cost data |
+| not_measured | Revenue exists but no cost data: summed `cogs` is NULL on positive revenue (RawBark, since migration 228). Applies to `cogs`, `cm1_pct`, `cm3`, `cm3_pct`. Also hit rate without thresholds and the cohort retention rules (amendment 26). | No cost data, No thresholds, Products not classified, Not mature yet, Too few customers |
 | no_data | Connected, but no rows in the range, or a gap component is NULL on some day of the bucket (reason "Missing days"). | No data |
 
 The no-value glyph in the UI is `n/a`. A NULL is never shown as 0.
@@ -600,6 +607,14 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ---
 
 ## Changelog (most recent first)
+
+### 2026-10-05 (amendment 26): Cohort retention in Reports (WR5)
+
+Frontend semantic layer only; the table is WR1's `mart.rpt_customer_entry` (migration 258, live). `SEMANTIC_VERSION` 7 to 8.
+1. **New metrics** (Retention group, not benchmarkable, deltas in pp): `repeat_rate_90`, `repeat_rate_180`, `repeat_rate_365`, `third_order_rate_180`, `discovery_upgrade_90`, `discovery_upgrade_180`, `discovery_entry_share`. The KPI tile shows "k of n customers".
+2. **Cohort semantics.** The period selects customers by their first order date; a bucket is the acquisition cohort. Every rate is a sum of per-customer 0/1 verdicts over the customers mature for the horizon (customer-level maturity, retention design 1.5), pooled over buckets and clients (sum over sum). Early customers (first order inside the client's history guard, Manami 180 days) are left out in SQL (`AND t.is_early IS NOT TRUE`). Comparisons compare earlier cohorts.
+3. **Display rules.** No product classes: "Products not classified" (Dobias, RawBark, Venev, Ethia until seeded; rollups leave them out with coverage). Customers but none mature: "Not mature yet". Under 30 mature customers: "Too few customers". 30 to 99: "Fewer than 100 customers" caveat. Customers not yet mature in the period: "Recent customers not yet counted" caveat. The n rules run on pooled counts, so a combined cell pools small clients.
+4. **Live (cut-off 2026-10-01):** Manami Jan to Jun 2026 `discovery_upgrade_90` = 56 of 488 = 11.5 % (WR1 production-mode U_90), previous period Jul to Dec 2025 8.0 %, +3.5 pp; combined with Dobias 11.5 %, coverage 1 of 2, "Dobias: Products not classified". Manami 2025 `repeat_rate_365` 16.1 % (88 of 545) with "Recent customers not yet counted" (Oct to Dec 2025 not yet mature). Query: 6 MB processed (10 MB billed minimum).
 
 ### 2026-10-05 (amendment 25): Creative hit rate in Reports (HR3)
 

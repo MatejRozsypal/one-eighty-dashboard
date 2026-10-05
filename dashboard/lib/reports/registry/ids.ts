@@ -17,7 +17,9 @@
  * Queryable metrics: the 30 phase-1 metrics read from `mart_daily_kpis`, then
  * the Meta soft metrics read from `mart_meta_campaign_perf` and
  * `mart_meta_ad_perf` (added 2026-10-04, semantic version 5), then the
- * creative hit rate read from `mart.rpt_ad_launch` (2026-10-05, version 7).
+ * creative hit rate read from `mart.rpt_ad_launch` (2026-10-05, version 7),
+ * then the cohort retention rates read from `mart.rpt_customer_entry`
+ * (2026-10-05, version 8).
  * The only ids a widget query accepts.
  */
 export const METRIC_IDS = [
@@ -75,6 +77,14 @@ export const METRIC_IDS = [
   "hit_rate",
   "winners",
   "ads_launched",
+  // Cohort retention (customer entry, mart.rpt_customer_entry), added 2026-10-05, semantic version 8.
+  "repeat_rate_90",
+  "repeat_rate_180",
+  "repeat_rate_365",
+  "third_order_rate_180",
+  "discovery_upgrade_90",
+  "discovery_upgrade_180",
+  "discovery_entry_share",
 ] as const;
 
 /** Phase 2, reserved: defined in the registry, not yet queryable. */

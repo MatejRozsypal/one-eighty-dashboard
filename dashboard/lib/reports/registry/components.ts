@@ -56,7 +56,26 @@ export const MARTS = {
     phase: 1,
     entity: { key: "ad_id", classifier: "creative_hit", exclude: ["is_preexisting", "is_relaunch"] },
   },
+  // Customer entry (WR1, migration 258): one row per client and customer, bucketed by the first order date (the
+  // acquisition cohort). Every per-customer verdict is already a 0/1 column, so this is a plain sum mart. Early
+  // customers (first order inside the client's history guard) are left out of every sum (retention design 1.7).
+  // Day grain is allowed although the design names week and month: neither resolve nor the builder checks a
+  // metric's grains, so a day widget would otherwise fail in the compiler. Daily cohorts are mostly under 30
+  // customers, so their points read "Too few customers".
+  customer_entry: {
+    id: "customer_entry",
+    table: "mart.rpt_customer_entry",
+    dateColumn: "first_order_date",
+    currencyColumn: null,
+    grains: ["day", "week", "month"],
+    phase: 1,
+    selectAll: true,
+    rowFilter: { excludeTrue: ["is_early"] },
+  },
 } as const satisfies MartRegistry;
+
+/** Customer entry component whose sum is 0 when the client has no product classes (`ref.product_classes`). */
+export const CLASSES_COMPONENT: ComponentId = "customer_entry.classes_configured";
 
 // nullMeans (see ComponentDef): shop columns are NULL on a day without orders
 // (zero); ad spend columns are NULL when no ad rows exist for the day (gap,
@@ -110,6 +129,11 @@ function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>
     if (entity && (spec.onlyWhenPositive !== undefined || spec.missingWhenNull !== undefined || spec.zeroIsMissingWhen !== undefined || spec.perClientRate !== undefined)) {
       throw new Error(`Reports registry: ${id} entity mart components take no filter, guard or rate`);
     }
+    if (spec.bool === true) {
+      if (spec.money || spec.nullMeans !== "zero" || columnOverride !== undefined || spec.onlyWhenPositive !== undefined || spec.missingWhenNull !== undefined || spec.zeroIsMissingWhen !== undefined || spec.perClientRate !== undefined || spec.classified !== undefined) {
+        throw new Error(`Reports registry: ${id} BOOL components are counts with nullMeans "zero" and no column, filter, guard or rate`);
+      }
+    }
     if (spec.filterScope !== undefined) {
       if (spec.onlyWhenPositive === undefined) throw new Error(`Reports registry: ${id} filterScope needs onlyWhenPositive`);
       if (!IDENTIFIER_RE.test(spec.filterScope.key)) throw new Error(`Reports registry: ${id} filterScope key is not an identifier`);
@@ -144,7 +168,9 @@ function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>
   }
   for (const m of Object.values(MARTS)) {
     const entity = (m as { entity?: { key: string; exclude: readonly string[] } }).entity;
-    for (const ident of [...m.table.split("."), m.dateColumn, ...(m.currencyColumn ? [m.currencyColumn] : []), ...(entity ? [entity.key, ...entity.exclude] : [])]) {
+    const rowFilter = (m as { rowFilter?: { excludeTrue: readonly string[] } }).rowFilter;
+    if (rowFilter && rowFilter.excludeTrue.length === 0) throw new Error(`Reports registry: mart ${m.id} has an empty row filter`);
+    for (const ident of [...m.table.split("."), m.dateColumn, ...(m.currencyColumn ? [m.currencyColumn] : []), ...(entity ? [entity.key, ...entity.exclude] : []), ...(rowFilter?.excludeTrue ?? [])]) {
       if (!IDENTIFIER_RE.test(ident)) throw new Error(`Reports registry: mart ${m.id} has an invalid identifier`);
     }
   }
@@ -223,6 +249,27 @@ export const COMPONENTS = defineComponents({
   "ad_launch.winners": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: true, lowerBound: true } },
   /** 1 per ad that is not a winner and under 60 days old: it may still qualify. */
   "ad_launch.open": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: true, lowerBound: false } },
+  // Customer entry (cohort retention). Every column is a per-customer 0/1 flag (INT64), summed over the customers
+  // whose first order falls in the bucket; classes_configured is BOOL (COUNTIF). m = mature for the horizon,
+  // r = 2nd order within it, dm/du = discovery entrant mature / upgraded to full size within it,
+  // m23_180/r23_180 = 2nd order mature for 180 days / 3rd order within 180 days of the 2nd.
+  "customer_entry.n_customer": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.is_discovery": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.has_second": { money: false, requires: "shop", nullMeans: "zero" },
+  /** Customers of clients with rows in ref.product_classes. 0 over a client's rows: products not classified. */
+  "customer_entry.classes_configured": { money: false, requires: "shop", nullMeans: "zero", bool: true },
+  "customer_entry.m90": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.r90": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.m180": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.r180": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.m365": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.r365": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.m23_180": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.r23_180": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.dm90": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.du90": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.dm180": { money: false, requires: "shop", nullMeans: "zero" },
+  "customer_entry.du180": { money: false, requires: "shop", nullMeans: "zero" },
   // phase 2
   "email_campaign.sent": { money: false, requires: "email", nullMeans: "zero" },
   "email_campaign.delivered": { money: false, requires: "email", nullMeans: "zero" },

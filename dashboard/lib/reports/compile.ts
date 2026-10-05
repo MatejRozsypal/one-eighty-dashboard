@@ -61,6 +61,11 @@
  *   (client_id, period, bucket, entity_key): an entity row never meets a
  *   row of another mart, so no sum is duplicated. Widgets without an entity
  *   mart compile to exactly the SQL they did before.
+ * - Row filters (`rowFilter`, the customer entry mart): every CTE of the mart,
+ *   scope pre-CTEs included, carries `AND t.<col> IS NOT TRUE` for each
+ *   `excludeTrue` column (early customers), and assertDatePredicates requires
+ *   it next to the date predicate. BOOL components (`bool`) are summed as
+ *   COUNTIF(<column>), the rows where the flag is TRUE.
  *
  * The registry is injected: createCompiler({ marts, components }).
  * `compileWidget` at the bottom of this file is bound to registry/components.ts.
@@ -185,12 +190,18 @@ export function scopeCteName(mart: MartId, filterColumn: string, key: string): s
   return ident(`${mart}__scope_${ident(filterColumn, "Filter column")}_${ident(key, "Scope key")}`, "Scope CTE");
 }
 
+/** The predicates of a mart's row filter, one per excluded BOOL column. */
+export function rowFilterPredicates(mart: Pick<MartDef, "rowFilter">): string[] {
+  return (mart.rowFilter?.excludeTrue ?? []).map((x) => `AND t.${ident(x, "Row filter column")} IS NOT TRUE`);
+}
+
 /**
  * Throws unless every mart CTE in `sql`, and every scope pre-CTE of that mart
- * (`<mart>__scope_*`), contains the mart's date predicate.
+ * (`<mart>__scope_*`), contains the mart's date predicate and, for a mart with
+ * a row filter, each of its predicates.
  * Exported so check:reports can prove that a tampered query is rejected.
  */
-export function assertDatePredicates(sql: string, marts: ReadonlyArray<Pick<MartDef, "id" | "dateColumn">>): void {
+export function assertDatePredicates(sql: string, marts: ReadonlyArray<Pick<MartDef, "id" | "dateColumn" | "rowFilter">>): void {
   for (const mart of marts) {
     const head = `\n${mart.id} AS (\n`;
     if (sql.indexOf(head) < 0) fail(`Mart CTE ${mart.id} not found`);
@@ -203,6 +214,7 @@ export function assertDatePredicates(sql: string, marts: ReadonlyArray<Pick<Mart
       if (end < 0) fail(`CTE ${name} is not closed`);
       const body = sql.slice(start + h.length, end);
       if (!body.includes(datePredicate(mart))) fail(`CTE ${name} lacks its date predicate on ${mart.dateColumn}`);
+      for (const p of rowFilterPredicates(mart)) if (!body.includes(p)) fail(`CTE ${name} lacks its row filter (${p})`);
     }
   }
 }
@@ -290,6 +302,7 @@ function scopeCte(scope: Scope, mart: MartDef, hasComparison: boolean, projectId
     `  WHERE t.client_id IN UNNEST(@clientIds)`,
     `    AND ${datePredicate(mart)}`,
     hasComparison ? `    AND ${date} BETWEEN p.from_date AND p.to_date` : `    AND ${date} BETWEEN @curFrom AND @curTo`,
+    ...rowFilterPredicates(mart).map((x) => `    ${x}`),
     `  GROUP BY 1, 2, 3`,
     `)`,
   ].join("\n");
@@ -359,7 +372,12 @@ function martCte(
       isNull = `${rowFilter} AND ${isNull}`;
       col = `IF(${rowFilter}, ${col}, NULL)`;
     }
-    if (c.money) {
+    if (c.bool === true) {
+      // BOOL flag: the number of rows where it is TRUE.
+      if (c.money || rowFilter !== null || c.missingWhenNull !== undefined || c.zeroIsMissingWhen !== undefined) fail(`BOOL component ${c.id} takes no money, filter or guard`);
+      select.push(`COUNTIF(${col}) AS ${alias}`);
+      select.push(`COUNTIF(${isNull}) AS ${alias}__nulls`);
+    } else if (c.money) {
       if (!ccyCol) fail(`Money component ${c.id} on mart ${mart.id} without a currency column`);
       select.push(`SUM(IF(${ccyCol} = c.currency, ${col}, NULL)) AS ${alias}__nat`);
       select.push(`SUM(${col} * src.to_czk / dst.to_czk) AS ${alias}__disp`);
@@ -387,6 +405,7 @@ function martCte(
     `WHERE t.client_id IN UNNEST(@clientIds)`,
     `  AND ${datePredicate(mart)}`,
     hasComparison ? `  AND ${date} BETWEEN p.from_date AND p.to_date` : `  AND ${date} BETWEEN @curFrom AND @curTo`,
+    ...rowFilterPredicates(mart).map((x) => `  ${x}`),
   ];
 
   return [
@@ -433,6 +452,7 @@ function entityCte(plan: MartPlan, grain: QueryGrain, hasComparison: boolean, pr
     `  AND ${datePredicate(mart)}`,
     hasComparison ? `  AND ${date} BETWEEN p.from_date AND p.to_date` : `  AND ${date} BETWEEN @curFrom AND @curTo`,
     ...entity.exclude.map((x) => `  AND t.${ident(x, "Exclude column")} IS NOT TRUE`),
+    ...rowFilterPredicates(mart).map((x) => `  ${x}`),
   ];
   return [
     `${mart.id} AS (`,

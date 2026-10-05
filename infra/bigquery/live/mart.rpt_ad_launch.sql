@@ -30,9 +30,22 @@ CREATE TABLE `oneeighty-warehouse.mart.rpt_ad_launch`
   refreshed_at TIMESTAMP,
   video_start_share FLOAT64,
   adset_first_date DATE,
-  is_new_adset BOOL
+  is_new_adset BOOL,
+  attribution_split_days INT64,
+  attribution_split_complete BOOL,
+  purchases_7d_click INT64,
+  revenue_7d_click NUMERIC,
+  purchases_1d_view INT64,
+  revenue_1d_view NUMERIC,
+  purchases_1d_ev INT64,
+  revenue_1d_ev NUMERIC,
+  prior_roas_7d_click NUMERIC,
+  prior_split_coverage NUMERIC,
+  purchases_7dc_1dv INT64,
+  revenue_7dc_1dv NUMERIC,
+  prior_roas_7dc_1dv NUMERIC
 )
 CLUSTER BY client_id
 OPTIONS(
-  description="One row per Meta ad: first delivery date, lifetime totals to the latest loaded day, pre-existing and relaunch flags, video flag and share, ad set launch context, 12 month client ROAS prior. Built from mart.mart_meta_ad_perf by mart.sp_refresh_rpt_ad_launch (daily). Base for the creative hit rate. Migrations 254 and 255."
+  description="One row per Meta ad: first delivery date, lifetime totals to the latest loaded day, pre-existing and relaunch flags, video flag and share, ad set launch context, 12 month client ROAS prior, lifetime purchases per attribution window (7d_click, 1d_view, 1d_ev) and on the standard basis 7d_click + 1d_view (NULL until the split covers every delivery day). Built from mart.mart_meta_ad_perf by mart.sp_refresh_rpt_ad_launch (daily). Base for the creative hit rate. Migrations 254, 255 and 256."
 );

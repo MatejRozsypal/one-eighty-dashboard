@@ -49,6 +49,7 @@
     },
     {
       "parameters": {
+        "batchSize": 1,
         "options": {}
       },
       "id": "e0000000-0000-0000-0000-000000000004",
@@ -215,17 +216,19 @@
     },
     {
       "parameters": {
-        "amount": 3
+        "resume": "timeInterval",
+        "amount": 2,
+        "unit": "seconds"
       },
       "id": "e0000000-0000-0000-0000-000000000020",
-      "name": "Pause 3 s",
+      "name": "Pause 2 s",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
         200,
         480
       ],
-      "webhookId": "e0000000-0000-0000-0000-0000000000aa"
+      "executeOnce": true
     }
   ],
   "pinData": {},
@@ -334,14 +337,14 @@
       "main": [
         [
           {
-            "node": "Pause 3 s",
+            "node": "Pause 2 s",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Pause 3 s": {
+    "Pause 2 s": {
       "main": [
         [
           {
@@ -359,5 +362,6 @@
     "binaryMode": "separate",
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "tags": []
+  "tags": [],
+  "_note": "Deployed 2026-10-05 as n8n workflow ByGJ1fZkgEAj0EPm (inactive, manual trigger, credentials BQ Service Account). Runs: execution 24948 (CLIENTS=['venev']) and 24951 (CLIENTS=['dobias','ethia','manami']). Set CLIENTS in Plan execution before a re-run."
 }

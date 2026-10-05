@@ -65,7 +65,20 @@ SELECT
   SAFE_DIVIDE(i.spend, i.purchases)         AS cost_per_purchase_per_day,
   SAFE_DIVIDE(i.purchase_value, i.spend)    AS roas_per_day,
 
-  c.meta_currency                       AS currency
+  c.meta_currency                       AS currency,
+
+  -- additive (256, ME2). Summable. Purchases per attribution window; purchases / revenue
+  -- above stay on each ad set's own setting. attribution_windows NULL = split not ingested.
+  w.attribution_windows,
+  CAST(w.purchases_7d_click AS INT64)   AS purchases_7d_click,
+  w.purchase_value_7d_click             AS revenue_7d_click,
+  CAST(w.purchases_1d_view AS INT64)    AS purchases_1d_view,
+  w.purchase_value_1d_view              AS revenue_1d_view,
+  CAST(w.purchases_1d_ev AS INT64)      AS purchases_1d_ev,
+  w.purchase_value_1d_ev                AS revenue_1d_ev,
+  -- Standard decision basis: 7-day click + 1-day view (1d_ev excluded).
+  CAST(w.purchases_7d_click + w.purchases_1d_view AS INT64) AS purchases_7dc_1dv,
+  w.purchase_value_7d_click + w.purchase_value_1d_view      AS revenue_7dc_1dv
 FROM `oneeighty-warehouse.stg.stg_meta_ad_insights` i
 JOIN `oneeighty-warehouse.ref.clients` c
   USING (client_id)
@@ -77,4 +90,6 @@ LEFT JOIN `oneeighty-warehouse.ref.personas` p
   ON p.client_id = t.client_id AND p.persona_id = t.persona_id
 LEFT JOIN `oneeighty-warehouse.ref.creators` cr
   ON cr.client_id = t.client_id AND cr.creator_id = t.creator_id
+LEFT JOIN `oneeighty-warehouse.stg.stg_meta_ad_attribution_windows` w
+  ON w.client_id = i.client_id AND w.ad_id = i.ad_id AND w.date_start = i.date_start
 WHERE i.date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH);

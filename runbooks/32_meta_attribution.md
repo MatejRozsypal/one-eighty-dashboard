@@ -1,6 +1,6 @@
 # 32. Meta attribution windows (7-day click and 1-day view per row)
 
-Package ME2, owner decision D3 (2026-10-05): store both `7d_click` and `1d_view` per row, decide on 7-day click, the dashboard label states the window it shows.
+Package ME2, owner decision D3 as amended 2026-10-05: store `7d_click`, `1d_view` and `1d_ev` per row. The **standard decision basis is 7d_click + 1d_view** (the agency runs mostly 7-day click + 1-day view ad sets); 1d_ev is stored but excluded. The dashboard label states the window it shows. Status: deployed 2026-10-05 (section 8); the dashboard has not been switched.
 
 Files: `infra/bigquery/256_meta_attribution_windows.sql`, `infra/bigquery/qa/256_regression.sql`, `infra/n8n/wf_meta_ads_to_bigquery.json` (windows branch), `infra/n8n/wf_meta_attribution_windows_backfill.json`.
 
@@ -20,9 +20,10 @@ Add `action_attribution_windows=["7d_click","1d_view","1d_ev"]` to an ad-level i
 {"action_type": "omni_purchase", "value": "3", "7d_click": "2", "1d_view": "1"}
 ```
 
-- `7d_click`, `1d_view` and `1d_ev` are separate windows. The ad set's legacy figure equals the sum of the windows in its setting, so the legacy columns can be reconciled (check C of `qa/256_regression.sql`).
+- `7d_click`, `1d_view` and `1d_ev` are disjoint windows (Meta's `value` is their sum).
+- Measured on the backfill (every ad-day, 0 mismatches on mapped ad sets): the legacy no-window figure is `7d_click`, plus `1d_view` when the ad set has a view window. **1d_ev is never in the legacy figure**, even for ad sets set to `1d_view_7d_click_1d_ev`. So the standard basis 7d_click + 1d_view equals the legacy figure on every ad set with a view window and differs only on ad sets set to 7d_click only, where it adds their view-through purchases (check C of `qa/256_regression.sql`).
 - A window key can be missing on an entry. The transform stores 0 then. A missing purchase entry stores NULL, as the legacy `purchases` does.
-- `1d_ev` is requested in addition to the two D3 windows so that reconciliation is exact for ad sets with engaged view.
+- `1d_ev` is requested in addition to the two standard windows so the engaged-view share is known.
 - 7-day and 28-day view windows were removed by Meta on 2026-01-12. `7d_click`, `1d_view` and `1d_ev` remain.
 - The Meta Ads MCP cannot request windows: `ads_get_ad_entities` rejects `action_attribution_windows` as a breakdown, and no field carries a single window. Only the Graph API call can do it, which is why the exact view share is measured by the backfill (step 2 below) and not in stage 1.
 
@@ -45,12 +46,12 @@ Why a separate table and request:
 |---|---|
 | `raw.raw_meta_ad_attribution_windows` | new table. Append-only, partitioned by `date_start`, `require_partition_filter`. |
 | `stg.stg_meta_ad_attribution_windows` | new view: latest ingest per client, ad and day. |
-| `mart.mart_meta_ad_perf` | adds 7 columns at the end: `attribution_windows`, `purchases_7d_click`, `revenue_7d_click`, `purchases_1d_view`, `revenue_1d_view`, `purchases_1d_ev`, `revenue_1d_ev`. |
-| `mart.mart_creative_perf` | adds the same 7 columns after `currency`. |
-| `mart.rpt_ad_launch` (procedure) | adds 10 columns after `is_new_adset`: `attribution_split_days`, `attribution_split_complete`, the six lifetime window sums, `prior_roas_7d_click` and `prior_split_coverage`. |
+| `mart.mart_meta_ad_perf` | adds 9 columns at the end: `attribution_windows`, `purchases_7d_click`, `revenue_7d_click`, `purchases_1d_view`, `revenue_1d_view`, `purchases_1d_ev`, `revenue_1d_ev`, and the standard basis `purchases_7dc_1dv`, `revenue_7dc_1dv`. |
+| `mart.mart_creative_perf` | adds the same 9 columns after `currency`. |
+| `mart.rpt_ad_launch` (procedure) | adds 13 columns after `is_new_adset` (44 in total): `attribution_split_days`, `attribution_split_complete`, the six lifetime window sums, `prior_roas_7d_click`, `prior_split_coverage`, and the standard basis `purchases_7dc_1dv`, `revenue_7dc_1dv`, `prior_roas_7dc_1dv`. |
 
 - Existing columns keep the ad set setting semantics, and no value changes. Regression results: 0/0 on 12,631 rows (both views) and on 459 rows (rpt).
-- Lifetime window sums are NULL unless every delivery day of the ad has the split. `prior_roas_7d_click` is NULL unless every delivery day of the trailing 365 days has it. A half-backfilled history therefore never reads as "7-day click".
+- Lifetime window sums are NULL unless every delivery day of the ad has the split. `prior_roas_7d_click` and `prior_roas_7dc_1dv` are NULL unless every delivery day of the trailing 365 days has it. A half-backfilled history therefore never reads as a window figure.
 
 ## 4. Stage 2 deploy plan (needs orchestrator and owner approval)
 
@@ -137,3 +138,57 @@ Steps 1 to 4 can ship without step 5 (the split is then frozen at the backfill d
 | `me2_raw_meta_ad_attribution_windows`, `me2_stg_meta_ad_attribution_windows`, `me2_mart_meta_ad_perf`, `me2_mart_creative_perf`, `me2_sp_refresh_rpt_ad_launch`, `me2_rpt_ad_launch` | regression candidates |
 | `me2base_sp_refresh_rpt_ad_launch`, `me2base_rpt_ad_launch` | regression baseline |
 | `me2_probe_attribution_windows` | empty; same schema as the raw table, for a probe run into `mart_qa` if n8n can write there |
+
+## 8. Stage 2 deploy log (2026-10-05, owner approved: deploy and measure, no dashboard switch)
+
+| UTC | Step | Result |
+|---|---|---|
+| ~11:13 | 256 statements 1 and 2 | `raw.raw_meta_ad_attribution_windows`, `stg.stg_meta_ad_attribution_windows` |
+| 11:14 | backfill workflow `ByGJ1fZkgEAj0EPm` created (inactive), execution 24948 (venev, 4 chunks) | 420 ad-days, 0 gaps, legacy reconciles exactly |
+| 11:15 to 11:27 | execution 24951 (dobias, ethia, manami, about 107 chunks) | 12,634 ad-days in total, 0 delivery days without the split, no Graph errors |
+| 11:28 | measurement on `mart_qa.me2_*` candidates reading the prod stg view | section 9 |
+| ~11:31 | 256 statements 3 and 4 (mart views) | live MD5 = file; 12,631 rows, unique keys |
+| ~11:32 | 256 statement 5 and CALL | 44 columns, 459 rows; existing 31 columns 0/0 vs the 255 logic rebuilt the same minute; 459 of 459 ads split-complete, `prior_split_coverage` = 1 for all four clients |
+| 11:33 | live workflow `AnfdTVrS83ioPsd3`: 3 nodes added, `BQ: insert ad insights -> Fetch ad attribution windows -> Transform -> BQ insert -> Loop over plan`, published as version `6fbc5931-703e-44d0-b999-dcfd4349420a` | existing nodes and requests unchanged (checked in the version diff); rollback = restore `2b8fb345-b8ec-4aa1-83bf-b45ffe1b8ae9`, file backup `infra/n8n/backup_live_meta_ads_20261005_pre_me2.json` |
+
+Backfill depth: from each client's first day in `raw.raw_meta_ad_insights` (dobias 2026-04-20, ethia 2025-02-20,
+manami 2025-05-07, venev 2026-08-18). That covers the whole warehouse history and the full 365-day prior window for
+every client. Earlier days have no legacy rows to join (the Insights API keeps 37 months, so a deeper backfill is
+possible but would first need the legacy ad insights for those days).
+
+Cadence: the windows branch runs hourly with the legacy request (one light extra call per 12-day chunk, 12 calls a run
+for 4 clients). The backfill made about 110 such calls in 13 minutes without throttling, so no lower cadence was needed.
+
+## 9. Measurement (2026-10-05, all history to 2026-10-04)
+
+Share of purchases (and value) by window, of 7d_click + 1d_view + 1d_ev:
+
+| client | since | 7d_click | 1d_view | 1d_ev | ROAS mixed (today) | ROAS 7dc+1dv | ROAS 7d_click |
+|---|---|---|---|---|---|---|---|
+| dobias | 2026-04-20 | 36.7 % (32.7 %) | 51.1 % (55.3 %) | 12.2 % (12.0 %) | 2.84 | 2.98 | 1.11 |
+| ethia | 2025-02-20 | 77.1 % (74.3 %) | 17.0 % (19.3 %) | 5.9 % (6.3 %) | 2.17 | 2.18 | 1.73 |
+| manami | 2025-05-07 | 79.5 % (77.3 %) | 14.0 % (16.5 %) | 6.6 % (6.2 %) | 2.13 | 2.18 | 1.79 |
+| venev | 2026-08-18 | 100 % | 0 % | 0 % | 0.11 | 0.11 | 0.11 |
+
+Last 90 days: dobias 38 / 48 / 14 %, ethia 45 / 38 / 17 %, manami 77 / 14 / 9 % (purchases, 7d_click / 1d_view / 1d_ev).
+
+Dashboard winners (purchases >= N and shrunk ROAS >= target, N = shrinkage weight):
+
+| client | (i) mixed, stored prior | (ii) 7dc+1dv, stored prior | (ii) 7dc+1dv, prior on same basis | for reference: 7d_click only, own prior |
+|---|---|---|---|---|
+| dobias (3.00 / 25) | 9 | 9 | 9 (prior 2.98 vs 2.84) | 0 (prior 1.11) |
+| ethia (2.50 / 10) | 8 | 8 | 8 (prior 2.30 vs 2.28) | 1 (prior 1.77) |
+| manami (2.25 / 15) | 15 | 15 | 15 (prior 2.09 vs 2.03) | 10 (prior 1.71) |
+| venev (2.10 / 10) | 0 | 0 | 0 | 0 |
+
+No ad changes status between (i) and (ii) under either prior. The standard basis differs from today's numbers only on
+ads that ran in 7d_click-only ad sets (22 of 459 ads gain view-through purchases: dobias 5, ethia 5, manami 12);
+none of them crosses a threshold. A 7-day-click-only basis would have cut winners from 32 to 11.
+
+## 10. Live verification (2026-10-05 11:35 UTC)
+
+One production run of the published workflow was triggered manually (same as an hourly run). All 4 clients × 3 chunks
+wrote legacy and window rows in lockstep (dobias 1,574 / 1,574, ethia 169 / 169, manami 782 / 782, venev 339 / 339,
+days 2026-08-30 to 2026-10-04). Check C over the last 35 days: 0 mismatch days for every client; legacy purchases and
+value equal 7d_click (+ 1d_view on view ad sets) to the unit. Successful production executions are not kept by this
+n8n instance, so failures surface through the error workflow `lslDsvbP8jLKEgw0` and check C2 (coverage).

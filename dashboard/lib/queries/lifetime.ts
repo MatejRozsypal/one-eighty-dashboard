@@ -49,7 +49,7 @@ export interface LifetimeSummary {
 export interface Repeat365 {
   /** Customers with a second order inside 365 days of the first. */
   repeaters: number;
-  /** Customers with at least 365 days of history, early customers excluded. */
+  /** Customers with at least 365 days of history, excluding early customers. */
   matured: number;
   /** repeaters / matured, null below the minimum sample. */
   rate: number | null;

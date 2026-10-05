@@ -107,7 +107,9 @@ const LIVE_META_CAMPAIGN_COLUMNS = ["date", "currency", "spend", "impressions", 
 const LIVE_META_AD_COLUMNS = ["date", "currency", "ad_id", "spend", "impressions", "video_play_actions", "video_views", "video_thruplays"];
 const LIVE_EMAIL_CAMPAIGN_COLUMNS = ["send_date", "currency", "sent", "delivered", "unique_opens", "unique_clicks", "revenue"];
 /** Live columns used from mart.rpt_ad_launch (HR1, migration 254), INFORMATION_SCHEMA.COLUMNS, 2026-10-05. */
-const LIVE_AD_LAUNCH_COLUMNS = ["client_id", "ad_id", "first_date", "spend", "revenue", "purchases", "age_days", "is_preexisting", "is_relaunch", "prior_roas"];
+const LIVE_AD_LAUNCH_COLUMNS = ["client_id", "ad_id", "first_date", "spend", "revenue", "purchases", "age_days", "is_preexisting", "is_relaunch", "prior_roas",
+  // ME5: the 7-day click + 1-day view columns the winner inputs read (migration 256, live 2026-10-05).
+  "purchases_7dc_1dv", "revenue_7dc_1dv", "prior_roas_7dc_1dv"];
 /** Live columns of mart.rpt_customer_entry (WR1, migration 258), INFORMATION_SCHEMA.COLUMNS, 2026-10-05 (54 columns). */
 const LIVE_CUSTOMER_ENTRY_COLUMNS = [
   "client_id", "customer_id", "cohort_month", "first_order_date", "classes_configured", "entry_class", "entry_class_first_order",

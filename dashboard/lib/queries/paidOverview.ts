@@ -12,6 +12,13 @@
  * together (`getCampaignsAcross`) and the campaign table and the spend mix are
  * both derived from that result.
  *
+ * Meta purchases and purchase value are on the standard basis, 7-day click +
+ * 1-day view (ME5). Neither `mart_daily_kpis` nor `mart_meta_campaign_perf` has
+ * basis columns, so both reads overlay the ad mart's basis summed to the day or
+ * to the campaign and day (`lib/queries/metaBasis.ts`), converted with the same
+ * monthly rate the marts use, and keep the stored figure where no ad rows exist.
+ * Spend and every Google figure are untouched.
+ *
  * Currency: the daily mart is already in the client's currency. The toggle
  * converts with the month's rate inside SQL (`fxSql`), before summing, and the
  * campaign marts' `*_client_ccy` columns go through the same wrapper.
@@ -25,6 +32,7 @@ import { isDemo } from "@/lib/demo/client";
 import { demoCampaigns, demoPaidDays } from "@/lib/demo/paidOverview";
 import { scanBounds, type DateRange, type ResolvedPeriod } from "@/lib/period";
 import type { CampaignAgg, Ga4Totals, PaidDay } from "@/components/paid/overview/model";
+import { metaBasisSql } from "@/lib/queries/metaBasis";
 
 export interface PaidDaily {
   /** One row per day over the scan window, display currency, native-currency days only in native mode. */
@@ -54,7 +62,10 @@ export async function getPaidDaily(
   const m = fx.wrap;
 
   const rows = await query<Record<string, unknown>>(
-    `SELECT
+    `WITH mb AS (
+       ${metaBasisSql(PROJECT_ID, { byCampaign: false, ccy: "client", dateClause: "date BETWEEN @scanFrom AND @scanTo" })}
+     )
+     SELECT
        k.date,
        k.currency,
        ${m("k.revenue")}               AS revenue,
@@ -64,14 +75,21 @@ export async function getPaidDaily(
        ${m("k.paid_spend")}            AS paid_spend,
        ${m("k.meta_spend")}            AS meta_spend,
        ${m("k.google_spend")}          AS google_spend,
-       ${m("k.meta_revenue")}          AS meta_revenue,
+       -- Basis overlay: only on a row that already carries Meta figures, so another
+       -- currency's row of the same day never picks them up. Spend or impressions count
+       -- as carrying them: a day with delivery and no stored conversions can still hold
+       -- view-through purchases on the basis.
+       IF(k.meta_spend IS NULL AND k.meta_impressions IS NULL AND k.meta_revenue IS NULL AND k.meta_purchases IS NULL,
+          NULL, ${m("COALESCE(mb.revenue, k.meta_revenue)")}) AS meta_revenue,
        ${m("k.google_revenue")}        AS google_revenue,
-       k.meta_purchases,
+       IF(k.meta_spend IS NULL AND k.meta_impressions IS NULL AND k.meta_revenue IS NULL AND k.meta_purchases IS NULL,
+          NULL, COALESCE(mb.purchases, k.meta_purchases)) AS meta_purchases,
        k.google_purchases,
        -- Delivery exists but the spend could not be converted (no FX rate).
        (${m("k.meta_spend")} IS NULL AND k.meta_impressions IS NOT NULL)     AS meta_gap,
        (${m("k.google_spend")} IS NULL AND k.google_impressions IS NOT NULL) AS google_gap
      FROM \`${PROJECT_ID}.mart.mart_daily_kpis\` k
+     LEFT JOIN mb ON mb.date = k.date
      ${fx.join}
      WHERE k.client_id = @clientId
        AND k.date BETWEEN @scanFrom AND @scanTo
@@ -174,15 +192,18 @@ export async function getCampaignsAcross(
 
   const parts: string[] = [];
   if (platforms.meta) {
+    // Value and purchases from the basis overlay (client currency, `mb`), the
+    // mart's own figure where the campaign day has no ad rows.
     parts.push(`
-      SELECT 'meta' AS platform, campaign_id, campaign_name,
-             funnel_stage AS kind, CAST(NULL AS STRING) AS brand_class,
-             date, client_currency AS currency,
-             CAST(spend_client_ccy AS FLOAT64) AS spend,
-             CAST(revenue_client_ccy AS FLOAT64) AS value,
-             CAST(purchases AS FLOAT64) AS purchases
-      FROM \`${PROJECT_ID}.mart.mart_meta_campaign_perf\`
-      WHERE client_id = @clientId AND date BETWEEN @scanFrom AND @scanTo`);
+      SELECT 'meta' AS platform, c.campaign_id, c.campaign_name,
+             c.funnel_stage AS kind, CAST(NULL AS STRING) AS brand_class,
+             c.date, c.client_currency AS currency,
+             CAST(c.spend_client_ccy AS FLOAT64) AS spend,
+             CAST(IF(mb.campaign_id IS NULL, c.revenue_client_ccy, mb.revenue) AS FLOAT64) AS value,
+             CAST(COALESCE(mb.purchases, c.purchases) AS FLOAT64) AS purchases
+      FROM \`${PROJECT_ID}.mart.mart_meta_campaign_perf\` c
+      LEFT JOIN mb ON mb.date = c.date AND mb.campaign_id = c.campaign_id
+      WHERE c.client_id = @clientId AND c.date BETWEEN @scanFrom AND @scanTo`);
   }
   if (platforms.google) {
     parts.push(`
@@ -208,7 +229,10 @@ export async function getCampaignsAcross(
   const countIn = (col: string, range: string) => `SUM(IF(${range}, s.${col}, NULL))`;
 
   const rows = await query<Record<string, unknown>>(
-    `WITH s AS (${parts.join("\n      UNION ALL\n")}
+    `WITH ${platforms.meta ? `mb AS (
+       ${metaBasisSql(PROJECT_ID, { byCampaign: true, ccy: "client", dateClause: "date BETWEEN @scanFrom AND @scanTo" })}
+     ),
+     ` : ""}s AS (${parts.join("\n      UNION ALL\n")}
      )
      SELECT
        s.platform, s.campaign_id,

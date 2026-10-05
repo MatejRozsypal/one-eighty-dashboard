@@ -15,6 +15,15 @@ import "server-only";
  * A shorter range is still one click away, and every interval on screen widens
  * when it is chosen: which is the honest depiction of what was given up.
  *
+ * ── Purchases and revenue: 7-day click + 1-day view ─────────────────────────
+ * ME5. The ad grid and the account totals sum `purchases_7dc_1dv` and
+ * `revenue_7dc_1dv` of `mart_creative_perf` (`lib/creative/attribution.ts`
+ * says what the label is and how a day without a split falls back). The ad set
+ * read below stays on `mart_creative_adset_perf`, which has no basis columns
+ * and no rows for any client today. The placement and age x gender breakdowns
+ * read marts without basis columns and carry purchases only as a slice count
+ * the UI gates.
+ *
  * ── What is missing is said, not shown as zero ─────────────────────────────
  * None of these views exist in the warehouse yet. Every query is wrapped so a
  * missing object renders an honest "not ingested yet" state, but only a
@@ -36,6 +45,7 @@ import {
   type MonthlySpend,
   type Tags,
 } from "@/lib/creative/model";
+import { basisPurchasesSql, basisRevenueSql } from "@/lib/creative/attribution";
 import { FLOOR_MIN_IMPRESSIONS, FLOOR_WINDOW_DAYS, GENUINE_VIDEO_START_SHARE, type VideoAdRates } from "@/lib/creative/floors";
 import type { Candidate } from "@/lib/creative/matching";
 import type { DateRange } from "@/lib/period";
@@ -192,7 +202,7 @@ export async function getCreativeAds(
            ANY_VALUE(match_confidence) AS match_confidence,
            -- Summable components only. Every rate is recomputed in TypeScript
            -- after aggregation; nothing pre-divided crosses this boundary.
-           SUM(spend) AS spend, SUM(revenue) AS revenue, SUM(purchases) AS purchases,
+           SUM(spend) AS spend, SUM(${basisRevenueSql()}) AS revenue, SUM(${basisPurchasesSql()}) AS purchases,
            SUM(impressions) AS impressions, SUM(clicks) AS clicks, SUM(reach) AS reach,
            SUM(add_to_cart) AS add_to_cart, SUM(initiate_checkout) AS initiate_checkout,
            SUM(landing_page_views) AS landing_page_views, SUM(link_clicks) AS link_clicks,
@@ -786,7 +796,7 @@ export async function getCreativeTotals(
   try {
     const rows = await query<Record<string, unknown>>(
       `SELECT
-         SUM(spend) AS spend, SUM(revenue) AS revenue, SUM(purchases) AS purchases,
+         SUM(spend) AS spend, SUM(${basisRevenueSql()}) AS revenue, SUM(${basisPurchasesSql()}) AS purchases,
          SUM(impressions) AS impressions, SUM(clicks) AS clicks, SUM(reach) AS reach,
          SUM(add_to_cart) AS add_to_cart, SUM(initiate_checkout) AS initiate_checkout,
          SUM(landing_page_views) AS landing_page_views, SUM(link_clicks) AS link_clicks,

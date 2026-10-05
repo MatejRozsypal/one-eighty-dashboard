@@ -67,7 +67,7 @@ export function MobileTopBar({
   // switchers agree without any shared state.
   const activeClient = selectedClient(clients, searchParams.get("client"));
 
-  const { isPending, navigate } = useNavigation();
+  const { isPending, navigate, baseQuery } = useNavigation();
   const [optimisticClient, setOptimisticClient] = useState<Client | null>(null);
   useEffect(() => {
     if (!isPending) setOptimisticClient(null);
@@ -86,7 +86,8 @@ export function MobileTopBar({
     setMenu(null);
     if (client.clientId === shownClient?.clientId) return;
     setOptimisticClient(client);
-    const next = new URLSearchParams(qs);
+    // Merged onto the URL a still-loading change is heading to (see AccountMenu).
+    const next = new URLSearchParams(baseQuery(pathname, qs));
     next.set("client", client.clientId);
     // A "client" navigation hides the page body until the new client's
     // figures commit, so the new name above never labels the old numbers.

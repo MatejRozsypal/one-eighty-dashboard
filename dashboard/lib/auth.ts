@@ -32,7 +32,8 @@
  * couldn't reach user management either.
  */
 
-import type { NextAuthOptions } from "next-auth";
+import * as React from "react";
+import { getServerSession, type NextAuthOptions, type Session } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { userStoreConfigured } from "@/lib/users/db";
@@ -57,13 +58,45 @@ function isAllowedDomain(email: string): boolean {
   return ALLOWED_DOMAINS.includes(email.split("@")[1] ?? "");
 }
 
+// ---------------------------------------------------------------------------
+// Lookup coalescing
+// ---------------------------------------------------------------------------
+//
+// next-auth runs the `jwt` callback below on EVERY `getServerSession` call,
+// not only at sign-in, so every call is one Postgres round trip. A page render
+// made two or three (layout, `resolveClient`, a section layout) and a Reports
+// open makes one per widget request, all on the small pool an instance shares
+// between every request it is serving. Under a burst those lookups queued for
+// the pool behind each other (QA N-06).
+//
+// Concurrent lookups for the same email now share one query. Nothing is kept
+// once it settles: the next request asks Postgres again, so a revoked account,
+// a new client assignment or a just-changed temporary password still take
+// effect on the very next request, exactly as before. Per-request dedupe of the
+// whole session read is `getSession()` below.
+
+const globalForAccess = globalThis as unknown as {
+  oeAccessInFlight?: Map<string, Promise<SessionAccess | null>>;
+};
+
 /**
  * Resolve what an email may do. Single source of truth for both providers.
  * Returns null when the account may not sign in at all.
  */
-export async function resolveAccess(email: string): Promise<SessionAccess | null> {
+export function resolveAccess(email: string): Promise<SessionAccess | null> {
   const lower = email.toLowerCase();
+  const inFlight = (globalForAccess.oeAccessInFlight ??= new Map());
+  const running = inFlight.get(lower);
+  if (running) return running;
 
+  const lookup = uncachedResolveAccess(lower).finally(() => {
+    if (inFlight.get(lower) === lookup) inFlight.delete(lower);
+  });
+  inFlight.set(lower, lookup);
+  return lookup;
+}
+
+async function uncachedResolveAccess(lower: string): Promise<SessionAccess | null> {
   if (!userStoreConfigured()) {
     return isAllowedDomain(lower)
       ? { role: "admin", clientId: null, mustChangePassword: false }
@@ -173,3 +206,29 @@ export const authOptions: NextAuthOptions = {
 
   session: { strategy: "jwt" },
 };
+
+// ---------------------------------------------------------------------------
+// Per-request session
+// ---------------------------------------------------------------------------
+
+/**
+ * React's per-request memo where the runtime provides it (server components
+ * inside Next), a plain call elsewhere (scripts, which load the stable React
+ * build that has no `cache`). Outside a render, for example in a route handler
+ * or a server action, React's `cache` itself calls straight through.
+ */
+const perRequest: <F extends (...args: never[]) => unknown>(fn: F) => F =
+  (React as unknown as { cache?: <F>(fn: F) => F }).cache ?? ((fn) => fn);
+
+/**
+ * The signed-in session, read once per server render.
+ *
+ * `getServerSession` decodes the JWT and runs the `jwt` callback, which reads
+ * Postgres, every time it is called. The app layout, a section layout and
+ * `resolveClient` each need the session for the same request; through this
+ * they share one read. Use it instead of `getServerSession(authOptions)` in
+ * server components and the helpers they call.
+ */
+export const getSession: () => Promise<Session | null> = perRequest(() =>
+  getServerSession(authOptions),
+);

@@ -87,6 +87,33 @@ export function scrollFor(
   return undefined;
 }
 
+/**
+ * The query string a control should patch, as a string without the "?".
+ *
+ * `useSearchParams()` is a snapshot of the last *committed* URL. A second
+ * control change made while the first is still loading would start from that
+ * snapshot and silently drop the first change (QA C-05, the same race QF2
+ * fixed inside Reports). So while a navigation is in flight, controls build on
+ * the URL that navigation is heading to, provided it is the same page; a
+ * navigation to another path does not carry this page's state. Pure, so the
+ * loading check can pin it.
+ */
+export function baseQueryFor(
+  latestHref: string | null,
+  pathname: string,
+  committed: string,
+): string {
+  if (latestHref === null) return committed;
+  let target: URL;
+  try {
+    target = new URL(latestHref, "http://n");
+  } catch {
+    return committed;
+  }
+  if (target.pathname !== pathname) return committed;
+  return target.search.startsWith("?") ? target.search.slice(1) : target.search;
+}
+
 interface NavigationState {
   /** True from the click until the server's new output is committed. */
   isPending: boolean;
@@ -100,6 +127,13 @@ interface NavigationState {
   navigate: (href: string, options?: NavigateOptions) => void;
   /** Re-render the current route from the server inside the shared transition. */
   refresh: () => void;
+  /**
+   * The query string (no "?") a control on `pathname` should merge its change
+   * onto: the newest requested URL while one is in flight, else `committed`
+   * (pass `useSearchParams().toString()`). Read at click time, never cached in
+   * render, so two clicks in the same tick still see each other.
+   */
+  baseQuery: (pathname: string, committed: string) => string;
 }
 
 const NavigationContext = createContext<NavigationState>({
@@ -115,6 +149,7 @@ const NavigationContext = createContext<NavigationState>({
   refresh: () => {
     if (typeof window !== "undefined") window.location.reload();
   },
+  baseQuery: (_pathname, committed) => committed,
 });
 
 export function useNavigation(): NavigationState {
@@ -130,11 +165,16 @@ export function NavigationPendingProvider({
   const [isPending, startTransition] = useTransition();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [kind, setKind] = useState<PendingKind>("view");
+  // The newest href handed to `navigate`, written synchronously so a second
+  // click in the same tick already sees the first. Dropped when the transition
+  // commits, after which `useSearchParams()` is current again.
+  const latestHref = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isPending) {
       setPendingHref(null);
       setKind("view");
+      latestHref.current = null;
     }
   }, [isPending]);
 
@@ -151,6 +191,7 @@ export function NavigationPendingProvider({
           : scrollFor(href, options?.scroll, window.location);
       // Set in the same batch as the transition starts, so the first frame
       // that shows the pending state already shows the right kind of it.
+      latestHref.current = href;
       setPendingHref(href);
       setKind(options?.kind ?? "view");
       startTransition(() => {
@@ -162,11 +203,17 @@ export function NavigationPendingProvider({
   );
 
   const refresh = useCallback(() => {
+    latestHref.current = null;
     setKind("view");
     startTransition(() => {
       router.refresh();
     });
   }, [router]);
+
+  const baseQuery = useCallback(
+    (pathname: string, committed: string) => baseQueryFor(latestHref.current, pathname, committed),
+    [],
+  );
 
   // Derived from `isPending` rather than cleared in the effect above, so the
   // render that commits the new page is also the one that drops the kind: the
@@ -175,8 +222,8 @@ export function NavigationPendingProvider({
   const pendingKind = isPending ? kind : null;
 
   const value = useMemo(
-    () => ({ isPending, pendingHref, pendingKind, managed: true, navigate, refresh }),
-    [isPending, pendingHref, pendingKind, navigate, refresh],
+    () => ({ isPending, pendingHref, pendingKind, managed: true, navigate, refresh, baseQuery }),
+    [isPending, pendingHref, pendingKind, navigate, refresh, baseQuery],
   );
 
   return (

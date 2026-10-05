@@ -15,9 +15,10 @@
  * page, which surfaces drift rather than silently working around it.
  */
 
-import { getServerSession } from "next-auth";
+import * as React from "react";
+import { unstable_cache } from "next/cache";
 import { query, PROJECT_ID } from "@/lib/bigquery";
-import { authOptions } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { isoDate } from "@/lib/coerce";
 import { DEMO_CLIENT, DEMO_CLIENT_ID, isDemo } from "@/lib/demo/client";
 import { dataThrough as demoDataThrough } from "@/lib/demo/business";
@@ -147,14 +148,12 @@ export async function getClientsIncludingInactive(): Promise<
   return rows.map((r) => ({ ...toClient(r), status: r.status }));
 }
 
-/**
- * Every active client, ordered for the switcher.
- *
- * Tiny table, queried on nearly every request. A client's currency or platform
- * changes roughly never, so a stale minute on this is harmless where a stale
- * minute on revenue would not be.
- */
-export async function getClients(): Promise<Client[]> {
+/** Seconds a fetched registry is reused across requests. */
+export const CLIENTS_TTL_SECONDS = 60;
+/** Cache tag, for `revalidateTag` should anything ever write the registry. */
+export const CLIENTS_CACHE_TAG = "ref-clients";
+
+async function fetchActiveClients(): Promise<Client[]> {
   const rows = await query<ClientRow>(
     `SELECT client_id, name, currency, timezone, country,
             shop_platform, email_platform, status,
@@ -166,6 +165,51 @@ export async function getClients(): Promise<Client[]> {
      WHERE status = 'active'
      ORDER BY name`
   );
+  return rows.map(toClient);
+}
+
+/** Across requests: Next's data cache, one BigQuery read per TTL per region. */
+const cachedActiveClients = unstable_cache(fetchActiveClients, ["ref-clients-active-v1"], {
+  revalidate: CLIENTS_TTL_SECONDS,
+  tags: [CLIENTS_CACHE_TAG],
+});
+
+/**
+ * Outside Next (the check scripts) there is no data cache and
+ * `unstable_cache` throws an invariant. Only that error falls back to a direct
+ * read; a BigQuery failure still propagates.
+ */
+async function activeClients(): Promise<Client[]> {
+  try {
+    return await cachedActiveClients();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("incrementalCache missing")) {
+      return fetchActiveClients();
+    }
+    throw error;
+  }
+}
+
+/** Within one render: the app layout and the page share the same promise. */
+const perRequest: <F extends (...args: never[]) => unknown>(fn: F) => F =
+  (React as unknown as { cache?: <F>(fn: F) => F }).cache ?? ((fn) => fn);
+const activeClientsForRequest = perRequest(activeClients);
+
+/**
+ * Every active client, ordered for the switcher.
+ *
+ * Tiny table, queried on nearly every request: the app layout and the page
+ * each ask for it, in parallel, on every navigation. It used to be two
+ * BigQuery jobs per navigation (QA N-06). Now the layout and page share one
+ * promise per render, and the rows are reused across requests for
+ * CLIENTS_TTL_SECONDS. A client's currency or platform changes roughly never,
+ * so a stale minute on this is harmless where a stale minute on revenue would
+ * not be. A new client therefore appears in the switcher within a minute of
+ * its `ref.clients` row being set active.
+ */
+export async function getClients(): Promise<Client[]> {
+  // A copy, so a caller that mutates the array cannot touch the shared one.
+  const real = [...(await activeClientsForRequest())];
 
   // Appended, never stored, the demo has no registry row precisely so that no
   // warehouse query, n8n loop or freshness check has to know it exists. It is
@@ -175,7 +219,6 @@ export async function getClients(): Promise<Client[]> {
   // alive during an outage. Swallowing it would render a healthy-looking
   // dashboard containing one fictional brand, which is a worse failure than an
   // error page: the reader cannot tell that everything real is missing.
-  const real = rows.map(toClient);
   return DEMO_ENABLED ? [...real, DEMO_CLIENT] : real;
 }
 
@@ -204,7 +247,8 @@ export async function resolveClient(
   // from the server-verified session, not from anything the browser controls,
   // means a `client`-role account gets its own client regardless of what the URL
   // asks for. Change `?client=` to a different id and this still returns theirs.
-  const session = await getServerSession(authOptions);
+  // The same session read as the layout's (`getSession` is per request).
+  const session = await getSession();
   const role = session?.user?.role ?? null;
   const email = session?.user?.email ?? "unknown";
 

@@ -21,8 +21,7 @@
  */
 
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { ProductRail } from "@/components/shell/ProductRail";
@@ -42,7 +41,9 @@ export default async function AppLayout({
 }) {
   // Checked before anything touches BigQuery, an unauthenticated request must
   // never reach a warehouse query, not even one that would return nothing.
-  const session = await getServerSession(authOptions);
+  // Shared with `resolveClient` and any section layout in this render: one
+  // session read (and one Postgres lookup) per request, not one per caller.
+  const session = await getSession();
   if (!session?.user?.email) {
     redirect("/auth/signin");
   }

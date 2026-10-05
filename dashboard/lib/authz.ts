@@ -16,8 +16,7 @@ import "server-only";
  */
 
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import type { Role } from "@/lib/users/store";
 import { recordAccess } from "@/lib/users/accessLog";
 import { REPORTS_ROLES } from "@/lib/reports/contracts";
@@ -35,9 +34,12 @@ export interface Access {
   mustChangePassword: boolean;
 }
 
-/** The signed-in account's access, or null if there is no usable session. */
+/**
+ * The signed-in account's access, or null if there is no usable session.
+ * The session read is shared with the rest of the render (`getSession`).
+ */
 export async function currentAccess(): Promise<Access | null> {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   const email = session?.user?.email;
   const role = session?.user?.role ?? null;
   if (!email || !role) return null;

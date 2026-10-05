@@ -15,6 +15,17 @@ let _client: BigQuery | null = null;
 function getClient(): BigQuery {
   if (_client) return _client;
 
+  // Short query optimized mode (jobs.query with JOB_CREATION_OPTIONAL): for a
+  // small, fast query BigQuery may answer without creating a job, which saves
+  // the job bookkeeping round trips. It only applies to `query()` (the fast
+  // jobs.query path); `queryJob()` always creates a job because it needs the
+  // job's statistics. The library reads this switch from the environment when
+  // the client is constructed, so it is set here, before that. Opt out with
+  // BQ_JOB_CREATION_OPTIONAL=0.
+  if (process.env.QUERY_PREVIEW_ENABLED === undefined && process.env.BQ_JOB_CREATION_OPTIONAL !== "0") {
+    process.env.QUERY_PREVIEW_ENABLED = "TRUE";
+  }
+
   const projectId = process.env.GCP_PROJECT_ID;
   const keyBase64 = process.env.GCP_SERVICE_ACCOUNT_KEY_BASE64;
 
@@ -47,6 +58,25 @@ function getClient(): BigQuery {
 }
 
 /**
+ * How long one page query may keep a render waiting. jobs.query long-polls up
+ * to this (BigQuery itself returns after about 200 s at most), then the call
+ * fails with "The query did not complete before 60000ms" and the page shows its
+ * error state. Without it a render waited for a queued job until the platform
+ * killed the function at 300 s (QA N-06). The job itself is not cancelled.
+ */
+export const PAGE_QUERY_WAIT_MS = 60_000;
+
+/**
+ * The first warehouse table a query reads, as a job label value, so
+ * INFORMATION_SCHEMA.JOBS can attribute page cost per source
+ * (`labels.src = 'mart_daily_kpis'`). Lowercase, at most 63 characters.
+ */
+export function sourceLabel(sql: string): string {
+  const m = /\.(?:mart|ref|ops|stg|raw|mart_qa)\.([A-Za-z0-9_]+)`/.exec(sql);
+  return m ? m[1].toLowerCase().slice(0, 63) : "other";
+}
+
+/**
  * Run a parameterized query. ALWAYS use this, never string-interpolate user input.
  *
  * @example
@@ -75,7 +105,17 @@ export async function query<T = Record<string, unknown>>(
   }
 
   const bq = getClient();
-  const [rows] = await bq.query({ query: sql, params, location: "EU" });
+  const [rows] = await bq.query(
+    {
+      query: sql,
+      params,
+      location: "EU",
+      // Job labels (also recorded for short queries) so page cost can be read
+      // back from INFORMATION_SCHEMA.JOBS by source table.
+      labels: { app: "dashboard", feature: "page", src: sourceLabel(sql) },
+    },
+    { timeoutMs: PAGE_QUERY_WAIT_MS }
+  );
   return rows as T[];
 }
 

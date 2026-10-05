@@ -21,6 +21,9 @@ import { Pool } from "pg";
 
 const globalForPool = globalThis as unknown as { oeUserPool?: Pool };
 
+/** Connections per instance. Overridable for a database with a tighter limit. */
+const PG_POOL_MAX = Math.max(1, Number(process.env.PG_POOL_MAX ?? "") || 5);
+
 export function pool(): Pool {
   if (!globalForPool.oeUserPool) {
     const connectionString =
@@ -43,8 +46,32 @@ export function pool(): Pool {
       ssl: connectionString.includes("localhost")
         ? undefined
         : { rejectUnauthorized: false },
-      max: 3,
+      // Sizing for Vercel Fluid compute, where ONE instance serves many
+      // requests at once and they all share this pool. Each page render needs
+      // a session lookup, an access-log insert and often a settings read, and
+      // a Reports open adds one gate check per widget request; at 3 those
+      // queued behind each other under a burst (QA N-06). Check the database's
+      // connection limit against 5 x the instance count; PG_POOL_MAX lowers it.
+      max: PG_POOL_MAX,
       idleTimeoutMillis: 10_000,
+      // Fail instead of hanging. Without these a request waited for a free or
+      // dead connection with no limit, until the platform killed the function
+      // at 300 s. Every caller already handles a thrown query (auth refuses,
+      // the access log skips, pages show their error state).
+      connectionTimeoutMillis: 10_000,
+      query_timeout: 15_000,
+      statement_timeout: 15_000,
+      // Detects a connection the pooler or a NAT silently dropped, so it is
+      // replaced rather than handed to the next request.
+      keepAlive: true,
+    });
+
+    // An idle connection the server or pooler closes emits "error" on the
+    // pool. With no listener Node treats that as an unhandled error event and
+    // the whole instance goes down, with every request it was serving. The
+    // pool already discards the broken client; log it and carry on.
+    globalForPool.oeUserPool.on("error", (error) => {
+      console.error("[db] idle Postgres connection failed", error.message);
     });
   }
 

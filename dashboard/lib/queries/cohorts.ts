@@ -40,6 +40,31 @@ export interface CohortRow {
   isMature: boolean;
 }
 
+/**
+ * Customer-weighted mean of a Y1 column over cohorts.
+ *
+ * Each cohort's Y1 figure is an average over its Y1-complete customers, so the
+ * cohort's weight is that count, not the cohort size: customers who joined in
+ * the last days of a "mature" month have no Y1 figure and must not dilute it.
+ * A plain mean of cohort means would let a 26-customer cohort pull as hard as
+ * a 150-customer one. Null when no cohort has a value, never 0.
+ */
+export function weightedY1(
+  rows: CohortRow[],
+  pick: (row: CohortRow) => number | null
+): number | null {
+  let total = 0;
+  let weight = 0;
+  for (const row of rows) {
+    const v = pick(row);
+    const w = row.y1CompleteCustomers;
+    if (v === null || !w) continue;
+    total += v * w;
+    weight += w;
+  }
+  return weight === 0 ? null : total / weight;
+}
+
 export async function getCohorts(
   clientId: string,
   currency: string,

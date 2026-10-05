@@ -13,6 +13,14 @@
  * one fetch, not a re-query, and the market list always reflects *all* markets
  * so a filter can never hide the option to undo itself.
  *
+ * ── Only whole months count ─────────────────────────────────────────────────
+ * The current calendar month is still filling, so its cell would understate
+ * every cohort's right-most column. Offsets that land in the current month are
+ * left out of the query, and a cohort that first bought this month has no cell
+ * at all. Every earlier offset of an older cohort is a real value: when nobody
+ * ordered that month it is 0 (or n/a for per-order metrics), never blank, so
+ * the cohort stays in the "all cohorts" denominator.
+ *
  * ── The denominator is the whole cohort, not the survivors ──────────────────
  * Revenue per customer divides by everyone who ever joined the cohort, not by
  * whoever was still active that month. Dividing by survivors makes a cohort
@@ -137,6 +145,20 @@ function add(target: Cell, r: Record<string, unknown>): void {
   if (gp !== null) target.grossProfit = (target.grossProfit ?? 0) + gp;
 }
 
+/**
+ * Value of an elapsed month in which nobody from the cohort ordered. Per-customer
+ * metrics are 0. Per-order metrics have no orders to divide by, so they are n/a.
+ */
+function blankValue(metric: CohortMetric): number | null {
+  return metric === "aov" || metric === "ordersPerCustomer" ? null : 0;
+}
+
+/** Whole months from `fromIso` (a first-of-month date) to the month of `now`. */
+function monthsUntil(fromIso: string, now: Date): number {
+  const [y, m] = fromIso.split("-").map(Number);
+  return (now.getUTCFullYear() - y) * 12 + (now.getUTCMonth() + 1 - m);
+}
+
 function valueOf(
   metric: CohortMetric,
   cell: Cell,
@@ -187,7 +209,8 @@ export async function getCohortGrid(
      FROM \`${PROJECT_ID}.mart.mart_customer_cohort_grid\`
      WHERE client_id = @clientId AND currency = @currency
        AND month_offset <= @maxOffset
-       AND is_elapsed
+       AND DATE_ADD(cohort_month, INTERVAL month_offset MONTH)
+             < DATE_TRUNC(CURRENT_DATE(), MONTH)
        AND (@monthsBack = 0 OR cohort_month >= DATE_TRUNC(
              DATE_SUB(CURRENT_DATE(), INTERVAL @monthsBack MONTH), MONTH))
      ORDER BY cohort_month, month_offset`,
@@ -234,13 +257,16 @@ export async function getCohortGrid(
   }
 
   const spec = metricSpec(metric);
+  const now = new Date();
+  // Last whole offset of a cohort: the month before the current one.
+  const lastElapsedOf = (month: string): number => monthsUntil(month, now) - 1;
 
   const cohortRows: CohortRow[] = [...grid.keys()]
     .sort((a, b) => a.localeCompare(b))
     .map((month) => {
       const size = cohortSize.get(month) ?? 0;
       const row = grid.get(month)!;
-      const lastElapsed = Math.max(...row.keys());
+      const lastElapsed = lastElapsedOf(month);
 
       // Cumulative metrics keep a running sum, but a cell with no value stays
       // null rather than showing the sum of nothing as a 0.
@@ -253,8 +279,8 @@ export async function getCohortGrid(
           cells.push(null);
           continue;
         }
-        const cell = row.get(offset) ?? empty();
-        const v = valueOf(metric, cell, size);
+        const cell = row.get(offset);
+        const v = cell ? valueOf(metric, cell, size) : blankValue(metric);
         if (spec.cumulative) {
           if (v !== null) running = (running ?? 0) + v;
           cells.push(running);
@@ -270,17 +296,18 @@ export async function getCohortGrid(
   let runningAll: number | null = null;
   const allCohorts: Array<number | null> = [];
   for (let offset = 0; offset <= maxOffset; offset++) {
-    const cell = totals.get(offset);
-    if (!cell) {
+    // Weighted by the cohorts that have lived through this offset, using every
+    // cohort would divide by customers who cannot possibly have appeared. A
+    // cohort counts once the month is over, whether or not anyone ordered in it.
+    const eligible = cohortRows
+      .filter((r) => lastElapsedOf(r.month) >= offset)
+      .reduce((sum, r) => sum + r.customers, 0);
+    if (eligible === 0) {
       allCohorts.push(null);
       continue;
     }
-    // Weighted by the cohorts that have actually reached this offset, using
-    // every cohort would divide by customers who cannot possibly have appeared.
-    const eligible = cohortRows
-      .filter((r) => r.cells[offset] !== null)
-      .reduce((sum, r) => sum + r.customers, 0);
-    const v = valueOf(metric, cell, eligible);
+    const cell = totals.get(offset);
+    const v = cell ? valueOf(metric, cell, eligible) : blankValue(metric);
     if (spec.cumulative) {
       if (v !== null) runningAll = (runningAll ?? 0) + v;
       allCohorts.push(runningAll);

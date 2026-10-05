@@ -19,7 +19,7 @@ export type { MetricId, Phase2MetricId, RegistryMetricId } from "./ids";
  * Part of every cache key. Bump it whenever a formula, a component column or
  * an evaluation rule changes, so no cached result outlives its definition.
  */
-export const SEMANTIC_VERSION = 8;
+export const SEMANTIC_VERSION = 9;
 
 export type MartId = "kpis" | "meta_campaign" | "meta_ad" | "email_campaign" | "ad_launch" | "customer_entry";
 export type Grain = "day" | "week" | "month";

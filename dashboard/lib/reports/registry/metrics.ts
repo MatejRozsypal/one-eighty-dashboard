@@ -351,7 +351,7 @@ export const METRICS: MetricRegistry = defineMetrics({
   }),
   meta_roas: ratio("Meta ROAS", "meta", [t("kpis.meta_revenue")], [t("kpis.meta_spend")], {
     ...X_UP,
-    description: "Meta-attributed revenue per unit of Meta spend.",
+    description: "Meta-attributed revenue per unit of Meta spend, on each ad set's own attribution setting (the Paid tabs use 7-day click + 1-day view).",
     benchmarkable: true,
     caveats: ["platform_attributed"],
     minVolume: { c: "kpis.meta_spend", shareOfMax: 0.02 },
@@ -372,7 +372,7 @@ export const METRICS: MetricRegistry = defineMetrics({
   }),
   meta_cpa: ratio("Meta CPA", "meta", [t("kpis.meta_spend")], [t("kpis.meta_purchases")], {
     ...COST,
-    description: "Spend per Meta-attributed purchase.",
+    description: "Spend per Meta-attributed purchase, on each ad set's own attribution setting (the Paid tabs use 7-day click + 1-day view).",
     benchmarkable: true,
     caveats: ["platform_attributed"],
   }),
@@ -460,7 +460,7 @@ export const METRICS: MetricRegistry = defineMetrics({
   }),
   meta_atc_to_purchase: ratio("ATC to purchase", "meta", [mc("purchases")], [mc("add_to_cart")], {
     ...PCT_UP,
-    description: "Meta-attributed purchases per add to cart. Both counts are platform-reported.",
+    description: "Meta-attributed purchases per add to cart. Both counts are platform-reported; purchases are on each ad set's own attribution setting.",
     benchmarkable: true,
     caveats: ["platform_attributed"],
     aliases: ["add to cart to purchase"],
@@ -507,7 +507,7 @@ export const METRICS: MetricRegistry = defineMetrics({
     unit: "percent",
     format: F.pct2,
     goodWhen: "up",
-    description: "Meta-attributed purchases per link click.",
+    description: "Meta-attributed purchases per link click, on each ad set's own attribution setting.",
     benchmarkable: true,
     caveats: ["platform_attributed"],
     aliases: ["conversion rate", "meta cvr"],
@@ -519,7 +519,7 @@ export const METRICS: MetricRegistry = defineMetrics({
   // = sum of winners / sum of launched, each client judged by its own bar.
   hit_rate: ratio("Hit rate", "creative", [t("ad_launch.winners")], [t("ad_launch.launched")], {
     ...PCT_UP,
-    description: "Winners among Meta ads first delivered in the period, relaunches excluded. Winner: the client's purchase and ROAS bar, lifetime to date, at least 14 days after first delivery.",
+    description: "Winners among Meta ads first delivered in the period, relaunches excluded. Winner: the client's purchase and ROAS bar on 7-day click + 1-day view, lifetime to date, at least 14 days after first delivery.",
     benchmarkable: false,
     caveats: ["cohort_maturing", "lifetime_to_date"],
     aliases: ["creative hit rate", "winner rate"],
@@ -527,7 +527,7 @@ export const METRICS: MetricRegistry = defineMetrics({
   }),
   winners: sum("Winners", "creative", [t("ad_launch.winners")], {
     ...COUNT_UP,
-    description: "Meta ads first delivered in the period that clear the client's winner bar, lifetime to date, at least 14 days after first delivery.",
+    description: "Meta ads first delivered in the period that clear the client's winner bar on 7-day click + 1-day view, lifetime to date, at least 14 days after first delivery.",
     benchmarkable: false,
     caveats: ["cohort_maturing", "lifetime_to_date"],
     aliases: ["winning ads", "creative winners"],

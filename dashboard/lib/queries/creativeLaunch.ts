@@ -21,6 +21,9 @@ import "server-only";
  * returns the client's `through` and row count, even when no ad matches, which
  * is how "not built for this client" is told apart from "no launches".
  *
+ * Purchases, revenue and the prior are the 7-day click + 1-day view columns of
+ * the table (ME5); `launchFrom` maps them onto the row the winner test reads.
+ *
  * Thresholds are not read here and never reach SQL: the caller evaluates the
  * rows with `lib/creative/hitRate.ts`.
  */
@@ -67,14 +70,18 @@ export function launchFrom(r: Record<string, unknown>): LaunchRow {
     firstDate: String(isoDate(r.first_date as never)),
     ageDays: n0(r.age_days),
     spend: n0(r.spend),
-    revenue: n0(r.revenue),
-    purchases: n0(r.purchases),
+    // 7-day click + 1-day view (ME5), the winner test's basis. A table without
+    // the columns (older release, test stubs) reads its stored columns. A table
+    // WITH them and a NULL (split incomplete for the ad) reads 0 and no prior,
+    // so the ad is never a winner: the same rule the Reports compiler applies.
+    revenue: n0("revenue_7dc_1dv" in r ? r.revenue_7dc_1dv : r.revenue),
+    purchases: n0("purchases_7dc_1dv" in r ? r.purchases_7dc_1dv : r.purchases),
     isVideo: r.is_video === true,
     isRelaunch: r.is_relaunch === true,
     isPreexisting: r.is_preexisting === true,
     conceptId: str(r.concept_id),
     conceptName: str(r.concept_name),
-    priorRoas: num(r.prior_roas),
+    priorRoas: num("prior_roas_7dc_1dv" in r ? r.prior_roas_7dc_1dv : r.prior_roas),
     adsetId: "adset_id" in r ? str(r.adset_id) : undefined,
     adsetFirstDate:
       "adset_first_date" in r
@@ -167,7 +174,7 @@ export interface LaunchAnchor {
 }
 
 export const ANCHOR_SQL = `
-  SELECT ad_id, age_days, prior_roas, through,
+  SELECT ad_id, age_days, prior_roas_7dc_1dv AS prior_roas, through,
          FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', refreshed_at) AS refreshed_at
   FROM \`${PROJECT_ID}.mart.rpt_ad_launch\`
   WHERE client_id = @clientId`;

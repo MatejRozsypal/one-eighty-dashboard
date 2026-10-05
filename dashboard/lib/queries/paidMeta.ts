@@ -12,6 +12,13 @@ import "server-only";
  * Money is in the AD ACCOUNT currency (`client.metaCurrency`), never the
  * client's trading currency.
  *
+ * ── Purchases and purchase value: 7-day click + 1-day view ──────────────────
+ * ME5. The campaign mart has no basis columns, so the campaign rows take
+ * `revenue` and `purchases` from the ad mart summed to the campaign and day
+ * (`lib/queries/metaBasis.ts`), falling back to the campaign mart's own figure
+ * on a campaign day without ad rows. The ad and ad set reads use the ad mart's
+ * basis columns directly. Spend, reach and every other column are unchanged.
+ *
  * ── Rates ───────────────────────────────────────────────────────────────────
  * Only summable components are read. The mart's `*_per_day` columns are not
  * selected anywhere: an average of daily ratios is the wrong answer.
@@ -35,6 +42,8 @@ import { isDemo } from "@/lib/demo/client";
 import type { DateRange, ResolvedPeriod } from "@/lib/period";
 import type { FunnelStage } from "@/lib/paid/types";
 import type { MetaRow, PeriodTag, VideoSums } from "@/components/paid/meta/aggregate";
+import { basisPurchasesSql, basisRevenueSql } from "@/lib/creative/attribution";
+import { metaBasisSql } from "@/lib/queries/metaBasis";
 import { demoMetaAds, demoMetaAdsets, demoMetaRows, demoMetaVideo } from "@/lib/demo/paidMeta";
 
 const STAGES: readonly string[] = ["prospecting", "retargeting", "retention", "unclassified"];
@@ -58,14 +67,22 @@ export async function getMetaCampaignDaily(
 ): Promise<MetaRow[]> {
   if (isDemo(clientId)) return demoMetaRows(period);
 
+  const dates = "date BETWEEN @from AND @to OR date BETWEEN @cFrom AND @cTo";
   const rows = await query<Record<string, unknown>>(
-    `SELECT date, campaign_id, campaign_name, funnel_stage, market,
-            spend, revenue, purchases, impressions, reach,
-            add_to_cart, initiate_checkout, landing_page_views, link_clicks,
-            view_content, add_payment_info
-     FROM \`${PROJECT_ID}.mart.mart_meta_campaign_perf\`
-     WHERE client_id = @clientId
-       AND (date BETWEEN @from AND @to OR date BETWEEN @cFrom AND @cTo)`,
+    `WITH b AS (
+       ${metaBasisSql(PROJECT_ID, { byCampaign: true, ccy: "meta", dateClause: dates })}
+     )
+     SELECT c.date, c.campaign_id, c.campaign_name, c.funnel_stage, c.market,
+            c.spend,
+            COALESCE(b.revenue, c.revenue)     AS revenue,
+            COALESCE(b.purchases, c.purchases) AS purchases,
+            c.impressions, c.reach,
+            c.add_to_cart, c.initiate_checkout, c.landing_page_views, c.link_clicks,
+            c.view_content, c.add_payment_info
+     FROM \`${PROJECT_ID}.mart.mart_meta_campaign_perf\` c
+     LEFT JOIN b ON b.date = c.date AND b.campaign_id = c.campaign_id
+     WHERE c.client_id = @clientId
+       AND (c.date BETWEEN @from AND @to OR c.date BETWEEN @cFrom AND @cTo)`,
     { clientId, ...rangeParams(period) }
   );
 
@@ -190,11 +207,22 @@ const ADSET_SUMS = `SUM(spend) AS spend, SUM(revenue) AS revenue, SUM(purchases)
        SUM(impressions) AS impressions, SUM(link_clicks) AS link_clicks,
        SUM(add_to_cart) AS add_to_cart`;
 
+/** The same sums over the ad mart, purchases and revenue on the 7-day click + 1-day view basis (ME5). */
+const ADSET_SUMS_BASIS = `SUM(spend) AS spend, SUM(${basisRevenueSql()}) AS revenue,
+       SUM(${basisPurchasesSql()}) AS purchases,
+       SUM(impressions) AS impressions, SUM(link_clicks) AS link_clicks,
+       SUM(add_to_cart) AS add_to_cart`;
+
 /**
  * Ad sets of a campaign. Reads the ad set mart; while that carries no rows for
  * the client (the ad set insights call is not ingested) the ads roll up by
  * `adset_id` instead, named from the creative asset mart (`adset_name` per ad
  * set, latest snapshot). An ad set the asset mart has no name for keeps its ID.
+ *
+ * Basis (ME5): the rollup is on 7-day click + 1-day view. The ad set mart has
+ * no basis columns and is empty for every client today; if it is ever filled
+ * its purchases and revenue are on each ad set's own setting, so it must get
+ * the basis columns before this path reads it for money.
  */
 export async function getMetaAdsets(
   clientId: string,
@@ -221,7 +249,7 @@ export async function getMetaAdsets(
 
   const rolled = await query<Record<string, unknown>>(
     `WITH r AS (
-       SELECT adset_id, ${ADSET_SUMS}
+       SELECT adset_id, ${ADSET_SUMS_BASIS}
        FROM \`${PROJECT_ID}.mart.mart_meta_ad_perf\`
        WHERE client_id = @clientId AND date BETWEEN @from AND @to
          AND campaign_id = @campaignId AND adset_id IS NOT NULL
@@ -323,7 +351,8 @@ export async function getMetaAds(
     `SELECT ad_id,
             ARRAY_AGG(ad_name IGNORE NULLS ORDER BY date DESC LIMIT 1)[SAFE_OFFSET(0)] AS ad_name,
             ARRAY_AGG(adset_id IGNORE NULLS ORDER BY date DESC LIMIT 1)[SAFE_OFFSET(0)] AS adset_id,
-            SUM(spend) AS spend, SUM(revenue) AS revenue, SUM(purchases) AS purchases,
+            SUM(spend) AS spend, SUM(${basisRevenueSql()}) AS revenue,
+            SUM(${basisPurchasesSql()}) AS purchases,
             SUM(impressions) AS impressions, SUM(link_clicks) AS link_clicks,
             SUM(outbound_clicks) AS outbound_clicks,
             SUM(video_views) AS video_plays, SUM(video_play_actions) AS video_starts,

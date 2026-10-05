@@ -462,7 +462,7 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
 
 // ── ME3 C2: one attribution label, and it is not the old literal ────────────
 {
-  ok("the label says what is true", ATTRIBUTION_LABEL === "Meta default attribution (per ad set)");
+  ok("the label says what is true", ATTRIBUTION_LABEL === "7-day click + 1-day view");
   const { readFileSync, readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
   const { join } = require("node:path") as typeof import("node:path");
   const walk = (dir: string): string[] => readdirSync(dir).flatMap((f: string) => { const p = join(dir, f); return statSync(p).isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(f) ? [p] : []; });
@@ -472,6 +472,49 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   const bar = renderToStaticMarkup(createElement(require("@/components/creative/CreativeBar").CreativeBar, { unmapped: 0, through: "2026-10-04", updated: "Updated 10:10", currency: "CZK", href: "#u" }));
   ok("the bar prints the label from the constant, the date and 'Updated 10:10'", bar.includes(ATTRIBUTION_LABEL) && bar.includes("through 2026-10-04") && bar.includes("Updated 10:10"));
   ok("the bar without a build time shows no 'Updated'", !renderToStaticMarkup(createElement(require("@/components/creative/CreativeBar").CreativeBar, { unmapped: 0, through: "2026-10-04", currency: "CZK", href: "#u" })).includes("Updated"));
+}
+
+// ── ME5: the decision basis is 7-day click + 1-day view everywhere ──────────
+{
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const { join } = require("node:path") as typeof import("node:path");
+  const src = (f: string) => readFileSync(join(__dirname, "..", f), "utf8");
+  const { basisPurchasesSql, basisRevenueSql } = require("@/lib/creative/attribution") as typeof import("@/lib/creative/attribution");
+  const { metaBasisSql } = require("@/lib/queries/metaBasis") as typeof import("@/lib/queries/metaBasis");
+
+  ok("basis SQL falls back to the stored figure when the split is missing", basisPurchasesSql() === "COALESCE(purchases_7dc_1dv, purchases)" && basisRevenueSql("a") === "COALESCE(a.revenue_7dc_1dv, a.revenue)");
+  const q1 = metaBasisSql("p", { byCampaign: true, ccy: "meta", dateClause: "date BETWEEN @from AND @to" });
+  ok("campaign basis (Meta currency): ad mart summed per campaign and day, no fx", q1.includes("GROUP BY a.date, a.campaign_id") && q1.includes("mart_meta_ad_perf") && q1.includes("a.date BETWEEN @from AND @to") && !q1.includes("fx_rates"));
+  const q2 = metaBasisSql("p", { byCampaign: false, ccy: "client", dateClause: "date BETWEEN @scanFrom AND @scanTo" });
+  ok("day basis (client currency): same monthly rate as the marts, identity when equal", q2.includes("IF(cl.meta_currency = cl.currency, NUMERIC '1', mfx.rate)") && q2.includes("mfx.month_start   = DATE_TRUNC(a.date, MONTH)") && q2.includes("GROUP BY a.date") && !q2.includes("campaign_id"));
+
+  // launchFrom: the winner test reads the basis columns, not the stored ones.
+  const base = { ad_id: "1", ad_name: "A", first_date: { value: "2026-07-01" }, age_days: 60, spend: "1000", is_video: true, is_relaunch: false, is_preexisting: false };
+  const withBasis = launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0", revenue_7dc_1dv: "2700", purchases_7dc_1dv: 18, prior_roas_7dc_1dv: "2.1" });
+  ok("launchFrom: purchases, revenue and prior come from the 7dc_1dv columns", withBasis.purchases === 18 && withBasis.revenue === 2700 && withBasis.priorRoas === 2.1);
+  const legacyOnly = launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0" });
+  ok("launchFrom: a table without the columns reads the stored ones", legacyOnly.purchases === 16 && legacyOnly.revenue === 2600 && legacyOnly.priorRoas === 2.0);
+  const incomplete = launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0", revenue_7dc_1dv: null, purchases_7dc_1dv: null, prior_roas_7dc_1dv: null });
+  ok("launchFrom: a NULL basis (split incomplete) is never a winner, as in the Reports compiler", incomplete.purchases === 0 && incomplete.priorRoas === null && launchStatus(incomplete, T) !== "winner");
+  const flip = launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0", revenue_7dc_1dv: "1500", purchases_7dc_1dv: 12, prior_roas_7dc_1dv: "2.0" });
+  ok("the stored columns no longer decide: a winner on them that fails on the basis is not one", launchStatus(launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0" }), T) === "winner" && launchStatus(flip, T) !== "winner");
+
+  ok("anchor reads the basis prior", /prior_roas_7dc_1dv AS prior_roas/.test(ANCHOR_SQL));
+  const creativeSrc = src("lib/queries/creative.ts");
+  ok("Creative grid and account totals sum the basis columns", (creativeSrc.match(/SUM\(\$\{basisRevenueSql\(\)\}\) AS revenue, SUM\(\$\{basisPurchasesSql\(\)\}\) AS purchases/g) ?? []).length === 2);
+  const metaSrc = src("lib/queries/paidMeta.ts");
+  ok("Paid Meta: campaign rows overlay the ad mart basis; ads and the ad set rollup read the basis", metaSrc.includes("metaBasisSql(PROJECT_ID, { byCampaign: true, ccy: \"meta\"") && metaSrc.includes("COALESCE(b.revenue, c.revenue)") && metaSrc.includes("COALESCE(b.purchases, c.purchases)") && metaSrc.includes("SELECT adset_id, ${ADSET_SUMS_BASIS}") && /SUM\(\$\{basisRevenueSql\(\)\}\) AS revenue,\s+SUM\(\$\{basisPurchasesSql\(\)\}\) AS purchases,\s+SUM\(impressions\) AS impressions, SUM\(link_clicks\) AS link_clicks,\s+SUM\(outbound_clicks\)/.test(metaSrc));
+  const ovSrc = src("lib/queries/paidOverview.ts");
+  ok("Paid Overview: Meta row and campaigns overlay the basis, only on rows that already carry Meta figures", ovSrc.includes("COALESCE(mb.revenue, k.meta_revenue)") && ovSrc.includes("COALESCE(mb.purchases, k.meta_purchases)") && (ovSrc.match(/IF\(k\.meta_spend IS NULL AND k\.meta_impressions IS NULL AND k\.meta_revenue IS NULL AND k\.meta_purchases IS NULL,/g) ?? []).length === 2 && ovSrc.includes("IF(mb.campaign_id IS NULL, c.revenue_client_ccy, mb.revenue)") && ovSrc.includes("COALESCE(mb.purchases, c.purchases)"));
+  ok("only the (empty) ad set mart read keeps stored purchase sums in creative.ts", (creativeSrc.match(/SUM\(revenue\) AS revenue, SUM\(purchases\) AS purchases/g) ?? []).length === 1);
+  const regSrc = src("lib/reports/registry/components.ts");
+  ok("Reports: the launch inputs read the basis columns", /"ad_launch\.purchases":[^\n]*column: "purchases_7dc_1dv"/.test(regSrc) && /"ad_launch\.revenue":[^\n]*column: "revenue_7dc_1dv"/.test(regSrc) && /"ad_launch\.prior_roas":[^\n]*column: "prior_roas_7dc_1dv"/.test(regSrc));
+  const { SEMANTIC_VERSION } = require("@/lib/reports/registry/types") as typeof import("@/lib/reports/registry/types");
+  ok("semantic version bumped for the basis change (cache keys)", SEMANTIC_VERSION >= 9, String(SEMANTIC_VERSION));
+  const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((f: string) => { const q = join(dir, f); return statSync(q).isDirectory() ? walk(q) : /\.(ts|tsx)$/.test(f) ? [q] : []; });
+  const old = [...walk(join(__dirname, "..", "components")), ...walk(join(__dirname, "..", "app")), ...walk(join(__dirname, "..", "lib"))].filter((f) => readFileSync(f, "utf8").includes("Meta default attribution (per ad set)"));
+  ok("the old per-ad-set label is printed nowhere", old.length === 0, old.join(", "));
 }
 
 // ── Queries: shape of the anchor read ────────────────────────────────────────

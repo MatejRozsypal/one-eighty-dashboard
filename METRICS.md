@@ -159,8 +159,8 @@ When cost placeholders get populated, CM1/CM2/CM3 update automatically. No formu
 | Column | Type | Formula | Notes |
 |---|---|---|---|
 | `meta_spend` | $ | `SUM(spend)` from stg_meta_campaign_insights | Dobias Dec'25 – Mar'26 missing (known gap). NULL = missing, except 0 on a day registered in `ref.ad_spend_zero_days` (235; Venev before 2025-12-04). |
-| `meta_revenue` | $ | `SUM(purchase_value)` | Meta's view of attributed purchase revenue. |
-| `meta_purchases` | count | `SUM(purchases)` | |
+| `meta_revenue` | $ | `SUM(purchase_value)` | Meta's view of attributed purchase revenue, on each ad set's own attribution setting (no basis columns yet; Paid > Overview overlays 7-day click + 1-day view from `mart_meta_ad_perf`, see amendment 27). |
+| `meta_purchases` | count | `SUM(purchases)` | Same basis note as `meta_revenue`. |
 | `meta_impressions` | count | `SUM(impressions)` | |
 | `meta_clicks` | count | `SUM(clicks)` | |
 | `meta_reach` | count | `SUM(reach)` | |
@@ -504,7 +504,7 @@ Components are `mart_daily_kpis` columns, summed. Metrics:
 | | `meta_hook_rate` | `video_play_actions / impressions` of ad days with video plays, `mart_meta_ad_perf` ("hit rate" in the owner's request). |
 | | `meta_hold_rate` | `video_thruplays / impressions` of ad days with video plays. |
 | | `meta_frequency` | `impressions / reach` summed over campaign days: average daily frequency, below true period frequency. |
-| Creative hit rate (launch cohorts, `mart.rpt_ad_launch`) | `hit_rate` | `winners / launched`, pooled. Launched = Meta ads whose first delivery falls in the bucket, pre-existing ads and relaunches left out. Winner = lifetime-to-date purchases >= the client's `readPurchases` and shrunk ROAS >= its `targetRoas` (Settings), shrinkage toward the stored trailing-year Meta ROAS. Not benchmarkable; reference line ~5 %. Amendment 25. |
+| Creative hit rate (launch cohorts, `mart.rpt_ad_launch`) | `hit_rate` | `winners / launched`, pooled. Launched = Meta ads whose first delivery falls in the bucket, pre-existing ads and relaunches left out. Winner = lifetime-to-date purchases >= the client's `readPurchases` and shrunk ROAS >= its `targetRoas` (Settings), shrinkage toward the stored trailing-year Meta ROAS. Purchases, revenue and the prior ROAS are the 7-day click + 1-day view columns (`purchases_7dc_1dv`, `revenue_7dc_1dv`, `prior_roas_7dc_1dv`, amendment 27). Not benchmarkable. Amendment 25. |
 | | `winners`, `ads_launched` | Sums of the per-ad winner and launch counts. A client without thresholds is `not_measured` "No thresholds" for hit rate and winners, never 0; ads launched needs no thresholds. |
 | Cohort retention (acquisition cohorts, `mart.rpt_customer_entry`) | `repeat_rate_90`, `repeat_rate_180`, `repeat_rate_365` | `r_H / m_H`, pooled: customers whose first order falls in the period (non-early), 2nd order within H days, among those mature for H. Amendment 26. |
 | | `third_order_rate_180` | `r23_180 / m23_180`: 3rd order within 180 days of the 2nd, among customers whose 2nd order is 180 days old. |
@@ -607,6 +607,15 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ---
 
 ## Changelog (most recent first)
+
+### 2026-10-05 (amendment 27): Meta purchases and revenue on 7-day click + 1-day view (ME5)
+
+Frontend only, no warehouse object changed. `SEMANTIC_VERSION` 8 to 9. Owner decision 2026-10-05, on the columns ME2 deployed (migration 256).
+1. **Basis.** Every Meta purchase and purchase value the dashboard decides on is `purchases_7dc_1dv` / `revenue_7dc_1dv` = 7d_click + 1d_view per ad and day (`mart_meta_ad_perf`, `mart_creative_perf`, `mart.rpt_ad_launch`). Engaged-view (`1d_ev`) is stored but not part of the basis. Label constant `ATTRIBUTION_LABEL` = "7-day click + 1-day view". Before: each ad set's own setting. The two differ only for ads in ad sets set to 7-day click only (22 of 459 ads), which gain their view-through purchases. A day without a stored split falls back to the stored figure (`COALESCE`; live: no such day has purchases).
+2. **Switched.** Creative (grid, scorecard, verdicts, account totals), hit rate and winner test (Creative tile, Paid tile, Reports `hit_rate`, `winners`: inputs `purchases_7dc_1dv`, `revenue_7dc_1dv`, `prior_roas_7dc_1dv`, prior on the same basis), Paid > Meta (campaign rows, ad sets, ads), Paid > Overview (Meta row and campaign table).
+3. **Campaign and day reads without basis columns.** `mart_meta_campaign_perf` and `mart_daily_kpis` carry only the stored figure. Paid > Meta and Paid > Overview take purchases and value from the ad mart summed to the campaign and day, converted with the month's rate exactly as the marts do (`lib/queries/metaBasis.ts`), and keep the stored figure on a campaign day without ad rows. Ad mart equals campaign mart on every campaign day that has ad rows (Dobias, Ethia, Manami: 0 mismatching days; Venev has no ad rows before 2026-08-18).
+4. **Not switched (follow-up: basis columns on `mart_meta_campaign_perf` and `mart_daily_kpis`).** Snapshot and MER inputs (`meta_revenue`, `meta_purchases`), Reports `meta_roas`, `meta_cpa`, `meta_atc_to_purchase`, `meta_conversion_rate`, Paid > GA4 platform value, `lib/queries/paid.ts`, the placement and age x gender breakdowns, `mart_creative_adset_perf` (empty). Their descriptions say "own attribution setting" until then.
+5. **Live (all history, ROAS):** Dobias 2.98, Ethia 2.18, Manami 2.18 (stored: 2.84, 2.17, 2.13). Winners unchanged: Dobias 9, Ethia 8, Manami 15 (scorecard basis); 12-month hit rate Dobias 6 of 35, Ethia 7 of 156, Manami 8 of 120.
 
 ### 2026-10-05 (amendment 26): Cohort retention in Reports (WR5)
 

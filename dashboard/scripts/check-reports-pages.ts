@@ -18,6 +18,7 @@ import { ownerInitials, relativeTime, reportHref, widgetCountLabel } from "@/com
 import { buildPageMetrics } from "@/lib/reports/pageData";
 import { defaultWidgetConfig, fetchGrain, overrideChip } from "@/lib/reports/widgetHelpers";
 import { isMetricId } from "@/lib/reports/registry/ids";
+import { METRIC_GROUP_ORDER } from "@/lib/reports/registry/types";
 import { findMetricId, METRICS } from "@/lib/reports/registry/metrics";
 import { DEFAULT_REPORT_FILTERS, WIDGET_TYPES, WidgetConfig, type ReportFilters } from "@/lib/reports/types";
 import { MAX_SPAN } from "@/lib/reports/limits";
@@ -41,11 +42,16 @@ const filters: ReportFilters = DEFAULT_REPORT_FILTERS;
 // ---------------------------------------------------------------------------
 
 const page = buildPageMetrics();
-check("every picker metric is a queryable id (44)", page.pickerMetrics.length === 44 && page.pickerMetrics.every((m) => isMetricId(m.id)), page.pickerMetrics.length);
+check("every picker metric is a queryable id (47)", page.pickerMetrics.length === 47 && page.pickerMetrics.every((m) => isMetricId(m.id)), page.pickerMetrics.length);
 check("widget metrics cover every picker metric", page.pickerMetrics.every((m) => page.widgetMetrics[m.id]?.label === m.label));
 check("picker metrics carry the full requirement", page.pickerMetrics.every((m) => m.requires !== undefined));
 check("caveat texts cover every caveat id", Object.keys(page.caveatTexts).length >= 9 && Object.values(page.caveatTexts).every((t) => typeof t === "string" && t.length > 0));
-check("the whole page payload is JSON serialisable", JSON.stringify(page).length > 100 && JSON.parse(JSON.stringify(page)).pickerMetrics.length === 44);
+check("the whole page payload is JSON serialisable", JSON.stringify(page).length > 100 && JSON.parse(JSON.stringify(page)).pickerMetrics.length === 47);
+check("HR4: the picker has a Creative group of hit rate, winners and ads launched", JSON.stringify(page.pickerMetrics.filter((m) => m.group === "creative").map((m) => m.id).sort()) === JSON.stringify(["ads_launched", "hit_rate", "winners"]));
+check("HR4: Creative sits after Meta in the picker order", METRIC_GROUP_ORDER.indexOf("creative") === METRIC_GROUP_ORDER.indexOf("meta") + 1);
+check("HR4: hook rate and hold rate stay in Meta", page.pickerMetrics.find((m) => m.id === "meta_hook_rate")?.group === "meta" && page.pickerMetrics.find((m) => m.id === "meta_hold_rate")?.group === "meta");
+check("HR4: every picker group has a label", /GROUP_LABEL[\s\S]*creative: "Creative"/.test(readFileSync(join(__dirname, "..", "components/reports/pickers/MetricPicker.tsx"), "utf8")));
+check("HR4: the reference reaches the widget metrics (hit rate only)", page.widgetMetrics.hit_rate?.reference?.value === 0.05 && Object.values(page.widgetMetrics).filter((m) => m?.reference).length === 1);
 check("roas finds MER (RS8 request)", findMetricId("roas") === "mer" && METRICS.mer.aliases?.includes("roas") === true);
 
 // ---------------------------------------------------------------------------

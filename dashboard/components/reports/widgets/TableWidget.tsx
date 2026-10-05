@@ -65,6 +65,7 @@ function valueNode(args: {
           <CellDelta
             delta={cell.delta}
             kind={cell.deltaKind}
+            suppressed={cell.deltaSuppressed}
             goodWhen={metric.goodWhen}
             total={value}
             compareTotal={cell.compareTotal}

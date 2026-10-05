@@ -15,7 +15,7 @@ import type { BenchmarkMatch, MetricCell, ResultSeries, WidgetResult, WidgetView
 import { humanize } from "./format";
 
 /** The registry fields a widget needs. */
-export type WidgetMetric = Pick<MetricBase, "label" | "unit" | "format" | "goodWhen" | "benchmarkable" | "caveats"> & {
+export type WidgetMetric = Pick<MetricBase, "label" | "unit" | "format" | "goodWhen" | "benchmarkable" | "caveats" | "reference"> & {
   id: MetricId;
 };
 

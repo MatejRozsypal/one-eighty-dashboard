@@ -34,6 +34,8 @@ import {
   nameSingleClientRollups,
   statusLabel,
 } from "@/components/reports/widgets/format";
+import { buildPageMetrics } from "@/lib/reports/pageData";
+import { DeltaModeStatic } from "@/components/ui/DeltaMode";
 import { retriesFor, retryClass, retryDelay, RETRY_DELAYS_MS } from "@/components/reports/useWidgetData";
 import type { CaveatTexts, ChartWidgetProps, WidgetMetric, WidgetProps } from "@/components/reports/widgets/types";
 
@@ -439,6 +441,52 @@ async function main(): Promise<void> {
     };
     check("a one-client rollup whose client was left out still names it", nameSingleClientRollups(left, []).series[0].label === "Alpha Shop");
     check("client series are untouched", nameSingleClientRollups(weekly, names) === weekly);
+  }
+
+  // HR4: hit rate glue. Real registry metrics: the "W of n" sub line, the delta in both toggle modes, the reference reaching the widget.
+  {
+    const real = buildPageMetrics().widgetMetrics;
+    const hr = real.hit_rate as WidgetMetric;
+    const winners = real.winners as WidgetMetric;
+    const launched = real.ads_launched as WidgetMetric;
+    check("HR4: pageData passes the reference to hit rate only", hr.reference?.value === 0.05 && hr.reference.label === "Reference ~5%" && winners.reference === undefined && launched.reference === undefined && real.mer?.reference === undefined);
+    const cell = (extra: Partial<MetricCell>): MetricCell => ({ status: "ok", total: 0.068, compareTotal: 0.045, delta: 0.023, deltaKind: "pp", ...extra });
+    const resultOf = (cells: Partial<Record<MetricId, MetricCell>>): WidgetResult => ({
+      ...weeklyTotal,
+      key: "hr4",
+      series: [{ ...weeklyTotal.series[0], id: "combined", label: "Combined", caveats: [], cells }],
+    });
+    const txt = (h: string) => h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+    const kpiOf = (metric: WidgetMetric, r: WidgetResult, mode?: "pct" | "abs") => {
+      const el = createElement(KpiWidget, { ...props(r, [metric], "kpi"), metricId: metric.id });
+      return txt(renderToStaticMarkup(mode ? createElement(DeltaModeStatic, { mode, children: el }) : el));
+    };
+    const inMode = (mode: "pct" | "abs", el: ReturnType<typeof createElement>) => txt(renderToStaticMarkup(createElement(DeltaModeStatic, { mode, children: el })));
+    const counts = { part: 22, whole: 322, noun: "ads" };
+    const withCounts = resultOf({ hit_rate: cell({ counts }) });
+    const html = kpiOf(hr, withCounts);
+    check("HR4: KPI sub line reads W of n", html.includes("22 of 322 ads"));
+    check("HR4: sub line only with counts", !kpiOf(hr, resultOf({ hit_rate: cell({}) })).includes(" of "));
+    // Toggle: rate kind is pp in both modes, counts follow the toggle.
+    check("HR4: hit rate delta is pp in % mode", kpiOf(hr, withCounts, "pct").includes("▲ 2.3 pp"), kpiOf(hr, withCounts, "pct"));
+    check("HR4: hit rate delta is pp in 123 mode", kpiOf(hr, withCounts, "abs").includes("▲ 2.3 pp"), kpiOf(hr, withCounts, "abs"));
+    const cnt = resultOf({ winners: cell({ total: 22, compareTotal: 12, delta: 10 / 12, deltaKind: "relative" }), ads_launched: cell({ total: 322, compareTotal: 300, delta: 22 / 300, deltaKind: "relative" }) });
+    check("HR4: winners delta is relative in % mode", kpiOf(winners, cnt, "pct").includes("▲ 83.3%"), kpiOf(winners, cnt, "pct"));
+    check("HR4: winners delta is the count difference in 123 mode", kpiOf(winners, cnt, "abs").includes("▲ 10") && !kpiOf(winners, cnt, "abs").includes("%"), kpiOf(winners, cnt, "abs"));
+    check("HR4: ads launched delta follows the toggle", kpiOf(launched, cnt, "pct").includes("▲ 7.3%") && kpiOf(launched, cnt, "abs").includes("▲ 22") && !kpiOf(launched, cnt, "abs").includes("%"), kpiOf(launched, cnt, "abs"));
+    // A delta withheld by the evaluator is gone in both modes (123 must not rebuild it from the totals).
+    const held = resultOf({ hit_rate: cell({ delta: null, deltaSuppressed: true, counts }) });
+    for (const mode of ["pct", "abs"] as const) {
+      const h = kpiOf(hr, held, mode);
+      check(`HR4: withheld delta draws nothing in a KPI, ${mode} mode`, !h.includes(" pp") && !h.includes("▲") && !h.includes("▼") && h.includes("22 of 322 ads"), h);
+      const tbl = inMode(mode, createElement(TableWidget, props(held, [hr], "table")));
+      check(`HR4: withheld delta draws nothing in a table, ${mode} mode`, !tbl.includes(" pp") && !tbl.includes("▲"), tbl);
+      const rk = inMode(mode, createElement(RankedWidget, props(held, [hr], "ranked")));
+      check(`HR4: withheld delta draws nothing in a ranked list, ${mode} mode`, !rk.includes(" pp") && !rk.includes("▲"), rk);
+    }
+    // A zero baseline keeps its absolute change in 123 mode (relative delta is null there, it is not withheld).
+    const zero = resultOf({ winners: cell({ total: 5, compareTotal: 0, delta: null, deltaKind: "relative" }) });
+    check("HR4: zero baseline still shows the count difference in 123 mode", kpiOf(winners, zero, "abs").includes("▲ 5"), kpiOf(winners, zero, "abs"));
   }
 
   // N-02: which failures are retried, how often, and how long they wait.

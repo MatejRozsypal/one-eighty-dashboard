@@ -388,6 +388,17 @@ function openOf(members: readonly Member[]): number {
   return n;
 }
 
+/** One component summed over the members' row groups (null when none has a value). */
+function sumOf(members: readonly Member[], id: ComponentId): number | null {
+  let n: number | null = null;
+  for (const m of members) {
+    const v = m.agg?.values.get(id);
+    const x = v ? (num(v.nat) ?? num(v.disp)) : null;
+    if (x !== null) n = (n ?? 0) + x;
+  }
+  return n;
+}
+
 // ---------------------------------------------------------------------------
 // Outcomes
 // ---------------------------------------------------------------------------
@@ -643,6 +654,8 @@ export const evaluateWidget: EvaluateWidget = (input) => {
       let excluded: Exclusion[] = [];
       /** Open launches in the current and comparison totals of the clients summed (maturity, HR3). */
       let maturing = { cur: 0, cmp: 0 };
+      /** Members of the current total (the clients summed in it), for the "W of n" counts. */
+      let curTotalMembers: Member[] = [];
       const collectFx = (o: Outcome) => {
         if (o.status === "fx_missing") for (const m of o.fxMonths) fxWarningMonths.add(m);
       };
@@ -651,7 +664,8 @@ export const evaluateWidget: EvaluateWidget = (input) => {
       };
 
       if (isClient) {
-        cur = outcome(metric, members(included, "cur", null), mode, display);
+        curTotalMembers = members(included, "cur", null);
+        cur = outcome(metric, curTotalMembers, mode, display);
         const cmp = cmpRange ? outcome(metric, members(included, "cmp", null), mode, display) : null;
         if (cur.status === "ok" && cmp && cmp.status === "ok") compareTotal = cmp.value;
         maturing = { cur: openOf(members(included, "cur", null)), cmp: cmpRange ? openOf(members(included, "cmp", null)) : 0 };
@@ -669,6 +683,7 @@ export const evaluateWidget: EvaluateWidget = (input) => {
         collectFx(curR);
         collectExcludedFx(curR);
         rollupCoverage = { included: curR.kept.length, of: group.clients.length };
+        curTotalMembers = members(curR.kept, "cur", null);
         if (cmpRange) {
           // Like for like: the comparison sums exactly the clients of the current total.
           const cmpR = rollupOutcome(metric, members(curR.kept, "cmp", null), display);
@@ -697,10 +712,21 @@ export const evaluateWidget: EvaluateWidget = (input) => {
 
       const ok = cur.status === "ok";
       let delta: number | null = null;
+      let deltaSuppressed = false;
       if (ok && cur.value !== null && compareTotal !== null) {
         delta = deltaKind === "pp" ? cur.value - compareTotal : relativeDelta(cur.value, compareTotal);
         // A maturing current cohort against a settled one: the older cohorts had more time to win, so no delta.
-        if (isLowerBound(metric) && maturing.cur > 0 && maturing.cmp === 0) delta = null;
+        // Flagged on the cell: the "123" view rebuilds the change from the two totals and must not.
+        if (isLowerBound(metric) && maturing.cur > 0 && maturing.cmp === 0) {
+          delta = null;
+          deltaSuppressed = true;
+        }
+      }
+      let counts: MetricCell["counts"];
+      if (ok && metric.showCounts && metric.kind === "ratio") {
+        const part = sumOf(curTotalMembers, metric.numerator[0].c);
+        const whole = sumOf(curTotalMembers, metric.denominator[0].c);
+        if (part !== null && whole !== null) counts = { part, whole, noun: metric.showCounts.noun };
       }
       const notConnected = group.clients
         .filter((c) => widget.availability[c.id]?.[id]?.ok !== true)
@@ -714,6 +740,8 @@ export const evaluateWidget: EvaluateWidget = (input) => {
         compareTotal: ok ? compareTotal : null,
         delta,
         deltaKind,
+        ...(deltaSuppressed ? { deltaSuppressed } : {}),
+        ...(counts ? { counts } : {}),
         ...(curPoints ? { points: curPoints.map((o) => o.value) } : {}),
         ...(cmpPoints ? { comparePoints: cmpPoints } : {}),
         ...(rollupCoverage ? { coverage: rollupCoverage } : {}),

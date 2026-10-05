@@ -18,6 +18,7 @@
  */
 
 import { Sparkline } from "@/components/ui/Sparkline";
+import { formatNumber } from "@/lib/format";
 import type { MetricReference } from "@/lib/reports/registry/types";
 import { BenchmarkStrip } from "./BenchmarkHover";
 import { CellDelta, NotesMark, PendingCell, StatusText } from "./CellStatus";
@@ -69,10 +70,17 @@ export function KpiWidget({ result, metrics, caveatTexts, seriesId, metricId, pe
           {ok && <NotesMark lines={cell.lowVolume ? [...notes, ...(notes.length ? ["Low volume"] : [])] : notes} />}
         </div>
 
-        {ok && (cell.delta !== null || cell.compareTotal !== null) && (
+        {ok && cell.counts && (
+          <span className="font-mono text-[12px] tabular text-content-muted">
+            {formatNumber(cell.counts.part, { decimals: 0 })} of {formatNumber(cell.counts.whole, { decimals: 0 })} {cell.counts.noun}
+          </span>
+        )}
+
+        {ok && !cell.deltaSuppressed && (cell.delta !== null || cell.compareTotal !== null) && (
           <CellDelta
             delta={cell.delta}
             kind={cell.deltaKind}
+            suppressed={cell.deltaSuppressed}
             goodWhen={metric.goodWhen}
             total={cell.total}
             compareTotal={cell.compareTotal}

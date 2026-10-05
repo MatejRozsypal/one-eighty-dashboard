@@ -687,7 +687,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     "meta_atc_to_purchase", "meta_initiate_checkout", "meta_cost_per_ic", "meta_hook_rate", "meta_hold_rate", "meta_frequency", "meta_conversion_rate",
   ];
   check("FX4: every Meta soft metric is queryable, in the meta group, requires meta", META_SOFT.every((id) => (METRIC_IDS as readonly string[]).includes(id) && METRICS[id].group === "meta" && METRICS[id].meta.requires === "meta"));
-  check("FX4: picker keeps Meta soft metrics in the Meta group", METRIC_LIST.filter((m) => m.group === "meta").length === 24);
+  check("FX4: picker keeps Meta soft metrics in the Meta group", METRIC_LIST.filter((m) => m.group === "meta").length === 21);
   const words = (t: string) => t.trim().split(/\s+/).length;
   check("FX4: descriptions at most 40 words, no dash, tenant-neutral", META_SOFT.every((id) => {
     const d = METRICS[id].description;
@@ -898,7 +898,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   const hr = METRICS.hit_rate;
   check("HR3: hit rate = winners / launched, percent, 1 decimal, up, not benchmarkable", hr.kind === "ratio" && eqJson(hr.numerator, [{ c: "ad_launch.winners", sign: 1, nullAs: "gap" }]) && eqJson(hr.denominator, [{ c: "ad_launch.launched", sign: 1, nullAs: "gap" }]) && hr.unit === "percent" && hr.format.decimals === 1 && hr.goodWhen === "up" && !hr.benchmarkable);
   check("HR3: winners and ads launched are sums of the classified counts", METRICS.winners.kind === "sum" && eqJson(METRICS.winners.terms.map((x) => x.c), ["ad_launch.winners"]) && METRICS.ads_launched.kind === "sum" && eqJson(METRICS.ads_launched.terms.map((x) => x.c), ["ad_launch.launched"]));
-  check("HR3: the three need Meta and sit in the Meta group", (["hit_rate", "winners", "ads_launched"] as const).every((id) => evalCapExpr(METRICS[id].meta.requires, { ...alpha.capabilities, meta: false }) === false && METRICS[id].group === "meta"));
+  check("HR3: the three need Meta and sit in the Creative group", (["hit_rate", "winners", "ads_launched"] as const).every((id) => evalCapExpr(METRICS[id].meta.requires, { ...alpha.capabilities, meta: false }) === false && METRICS[id].group === "creative"));
   check("HR3: reference ~5% is the Creative constant, not a benchmark", hr.reference?.value === HIT_RATE_REFERENCE && HIT_RATE_REFERENCE === 0.05 && hr.reference.label === "Reference ~5%" && METRICS.winners.reference === undefined);
   check("HR3: caveats maturing and lifetime on hit rate and winners only", eqJson(hr.caveats, ["cohort_maturing", "lifetime_to_date"]) && eqJson(METRICS.winners.caveats, ["cohort_maturing", "lifetime_to_date"]) && METRICS.ads_launched.caveats === undefined);
   check("HR3: cohort_maturing is data-driven, lifetime_to_date always applies", FIXTURE_CLIENTS.every((c) => !CAVEATS.cohort_maturing.applies(c) && CAVEATS.lifetime_to_date.applies(c)));
@@ -949,6 +949,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   ];
   const rc = evalW(widget(["hit_rate", "winners", "ads_launched"], { filters: ids, clients }), curRows);
   check("HR3: per client hit rate, winners, launched", close(cell(rc, "alpha", "hit_rate").total, 0.5) && cell(rc, "alpha", "winners").total === 2 && cell(rc, "alpha", "ads_launched").total === 4 && close(cell(rc, "delta", "hit_rate").total, 1 / 3));
+  check("HR4: hit rate carries its counts (winners of launched, ads), winners and ads launched carry none", eqJson(cell(rc, "alpha", "hit_rate").counts, { part: 2, whole: 4, noun: "ads" }) && eqJson(cell(rc, "delta", "hit_rate").counts, { part: 1, whole: 3, noun: "ads" }) && cell(rc, "alpha", "winners").counts === undefined && cell(rc, "alpha", "ads_launched").counts === undefined);
   check("HR3: n < readPurchases is never a winner, whatever the ROAS", cell(rc, "delta", "winners").total === 1);
   const nb = cell(rc, "bravo", "hit_rate");
   check("HR3: no thresholds: not_measured 'No thresholds', never 0", nb.status === "not_measured" && nb.reason === NO_THRESHOLDS && nb.total === null && cell(rc, "bravo", "winners").reason === NO_THRESHOLDS);
@@ -958,6 +959,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   const rk = evalW(widget(["hit_rate", "winners", "ads_launched"], { split: "combined", filters: ids, clients }), curRows);
   const ck = cell(rk, "combined", "hit_rate");
   check("HR3: combined = sum of winners / sum of launched (3 of 7), not a mean of rates", close(ck.total, 3 / 7) && !close(ck.total, (0.5 + 1 / 3) / 2));
+  check("HR4: combined counts sum the kept clients only (no-threshold client left out)", eqJson(ck.counts, { part: 3, whole: 7, noun: "ads" }) && ck.total !== null && close(ck.total, ck.counts!.part / ck.counts!.whole));
   check("HR3: no-threshold client left out of the combined with a coverage note", eqJson(ck.coverage, { included: 2, of: 3 }) && eqJson(ck.excluded, [{ id: "bravo", name: bravo.name, reason: NO_THRESHOLDS }]));
   check("HR3: combined winners 3 of 3 clients' bars, combined launched sums all 3 clients", cell(rk, "combined", "winners").total === 3 && cell(rk, "combined", "ads_launched").total === 9 && eqJson(cell(rk, "combined", "ads_launched").coverage, { included: 3, of: 3 }));
   check("HR3: combined carries the maturing caveat when a member is maturing", rk.series[0].caveats.includes("cohort_maturing"));
@@ -973,14 +975,17 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     const curSettled = curRows.slice(0, 2).concat(curRows[3]).map((r) => ({ ...r }));
     const rm = evalW(widget(["hit_rate", "winners", "ads_launched"], { filters: cmpIds, clients }), [...curRows.slice(0, 4), ...settledCmp]);
     check("HR3: maturing current vs settled previous: delta suppressed, previous kept", cell(rm, "alpha", "hit_rate").delta === null && close(cell(rm, "alpha", "hit_rate").compareTotal, 0.5) && cell(rm, "alpha", "winners").delta === null);
+    check("HR4: a withheld delta is flagged so the 123 view cannot rebuild it", cell(rm, "alpha", "hit_rate").deltaSuppressed === true && cell(rm, "alpha", "winners").deltaSuppressed === true && cell(rm, "alpha", "ads_launched").deltaSuppressed === undefined);
     check("HR3: ads launched keeps its delta (not a lower bound)", close(cell(rm, "alpha", "ads_launched").delta, 1));
     const rs = evalW(widget(["hit_rate"], { filters: cmpIds, clients }), [...curSettled, ...settledCmp]);
     check("HR3: settled vs settled keeps the delta (pp)", close(cell(rs, "alpha", "hit_rate").delta, 2 / 3 - 0.5));
+    check("HR4: a kept delta is not flagged, hit rate stays pp and counts stay relative", cell(rs, "alpha", "hit_rate").deltaSuppressed === undefined && cell(rs, "alpha", "hit_rate").deltaKind === "pp" && cell(rm, "alpha", "winners").deltaKind === "relative" && cell(rm, "alpha", "ads_launched").deltaKind === "relative");
     const openCmp = [...settledCmp, rowL("alpha", "cmp", TOTAL, { p: 1, spend: 100, rev: 0, age: 40 })];
     const ro = evalW(widget(["hit_rate"], { filters: cmpIds, clients }), [...curRows.slice(0, 4), ...openCmp]);
     check("HR3: both maturing keeps the delta", close(cell(ro, "alpha", "hit_rate").delta, 0.5 - 1 / 3));
     const rkc = evalW(widget(["hit_rate"], { split: "combined", filters: { ...ids, compare: "previous_period" }, clients }), [...curRows, ...settledCmp, rowL("delta", "cmp", TOTAL, { p: 30, spend: 1000, rev: 4000, age: 150 })]);
     check("HR3: combined delta suppressed too when the kept clients are maturing now and not before", cell(rkc, "combined", "hit_rate").delta === null && close(cell(rkc, "combined", "hit_rate").compareTotal, 2 / 3));
+    check("HR4: combined delta flagged too", cell(rkc, "combined", "hit_rate").deltaSuppressed === true);
   }
 
   // Buckets: launches bucketed by first delivery month; a month without launches is a gap, not 0 %.

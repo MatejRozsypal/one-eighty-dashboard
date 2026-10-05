@@ -77,6 +77,7 @@ const GROUP_LABEL: Record<MetricGroup, string> = {
   acquisition: "Acquisition",
   retention: "Retention",
   meta: "Meta",
+  creative: "Creative",
   google: "Google",
   email: "Email",
 };

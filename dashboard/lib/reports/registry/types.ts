@@ -26,7 +26,7 @@ export type Grain = "day" | "week" | "month";
 export type QueryGrain = Grain | "total";
 export type Unit = "money" | "count" | "ratio" | "percent";
 export type GoodWhen = "up" | "down" | "neutral";
-export type MetricGroup = "profitability" | "acquisition" | "retention" | "meta" | "google" | "email";
+export type MetricGroup = "profitability" | "acquisition" | "retention" | "meta" | "creative" | "google" | "email";
 
 /** Picker order of the groups. */
 export const METRIC_GROUP_ORDER: readonly MetricGroup[] = [
@@ -34,6 +34,7 @@ export const METRIC_GROUP_ORDER: readonly MetricGroup[] = [
   "acquisition",
   "retention",
   "meta",
+  "creative",
   "google",
   "email",
 ];
@@ -316,6 +317,12 @@ export interface MetricBase {
    * draw it as a dashed line. Same unit as the metric's value.
    */
   reference?: MetricReference;
+  /**
+   * Ratio metrics only: the KPI tile shows the summed numerator and
+   * denominator under the value ("22 of 322 ads"). Both must be a single
+   * positive term. `noun` is what the denominator counts.
+   */
+  showCounts?: { noun: string };
 }
 
 export interface MetricReference {

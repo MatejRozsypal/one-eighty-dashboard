@@ -2,17 +2,35 @@
   "name": "wf_meta_ads_to_bigquery",
   "nodes": [
     {
-      "parameters": { "rule": { "interval": [ { "field": "cronExpression", "expression": "15 */1 * * *" } ] } },
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 */1 * * *"
+            }
+          ]
+        }
+      },
       "id": "d0000000-0000-0000-0000-000000000001",
       "name": "Hourly :15",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-2200, 480]
+      "position": [
+        -2200,
+        480
+      ]
     },
-
     {
       "parameters": {
-        "operation": "executeQuery",
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list",
+          "cachedResultName": "oneeighty-warehouse",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=oneeighty-warehouse"
+        },
         "sqlQuery": "WITH client_max AS (\n  SELECT client_id, MAX(date_start) AS max_date\n  FROM `oneeighty-warehouse.raw.raw_meta_campaign_insights`\n  WHERE date_start >= DATE_SUB(CURRENT_DATE(), INTERVAL 24 MONTH)\n  GROUP BY client_id\n)\nSELECT\n  c.client_id,\n  c.slug,\n  c.currency,\n  CAST(cm.max_date AS STRING) AS max_date\nFROM `oneeighty-warehouse.ref.clients` c\nLEFT JOIN client_max cm ON cm.client_id = c.client_id\nWHERE c.status = 'active' AND c.has_meta = TRUE",
         "options": {}
       },
@@ -20,22 +38,37 @@
       "name": "Read clients + max_date",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [-1960, 480]
+      "position": [
+        -1960,
+        480
+      ]
     },
-
     {
       "parameters": {
-        "jsCode": "// Plan execution: for each Meta-active client, emit either:\n//   (a) 12 backfill chunks of 31-day windows covering the rolling last 12 months,\n//       if the client has NO data yet in raw_meta_campaign_insights;\n//   (b) 1 incremental item with yesterday's window, if data already exists.\n//\n// Chunks are 30-day each (Meta caps time_increment=1 requests at ~90 days but\n// active ad accounts at ad level can return enormous payloads at that window,\n// triggering 500/'service unavailable'. 30-day chunks are reliable).\n\nconst today = new Date();\nconst ymd = d => d.toISOString().slice(0, 10);\n\nreturn $input.all().flatMap(item => {\n  const c = item.json;\n  const maxDate = c.max_date;\n  const isEmpty = maxDate === null || maxDate === undefined || maxDate === '' || maxDate === 'null';\n\n  if (!isEmpty) {\n    // INCREMENTAL: pull yesterday only.\n    const y = new Date(today);\n    y.setDate(y.getDate() - 1);\n    const ymdY = ymd(y);\n    return [{\n      json: {\n        client_id: c.client_id,\n        slug: c.slug,\n        currency: c.currency,\n        mode: 'incremental',\n        chunk_label: 'yesterday',\n        time_range: `{\"since\":\"${ymdY}\",\"until\":\"${ymdY}\"}`\n      }\n    }];\n  }\n\n  // BACKFILL: 12-month rolling window, 12 chunks of 31 days each.\n  const chunks = [];\n  for (let i = 0; i < 12; i++) {\n    const until = new Date(today);\n    until.setDate(until.getDate() - (i * 31));\n    const since = new Date(until);\n    since.setDate(since.getDate() - 30);\n    chunks.push({\n      json: {\n        client_id: c.client_id,\n        slug: c.slug,\n        currency: c.currency,\n        mode: 'backfill',\n        chunk_label: `chunk_${i + 1}_of_12`,\n        time_range: `{\"since\":\"${ymd(since)}\",\"until\":\"${ymd(until)}\"}`\n      }\n    });\n  }\n  return chunks;\n});\n"
+        "jsCode": "// Plan execution: for each Meta-active client, emit fetch windows.\n//\n// ROLLING RE-FETCH (changed 2026-09-08). This branch used to pull YESTERDAY ONLY,\n// which had no catch-up: any day n8n was down was never fetched again, because the\n// next run still asked only for its own yesterday. That is how dobias ended up with\n// 8,478 of 19,016 real spend over 30 days - ~18 whole days simply missing.\n// Re-fetching a rolling window is idempotent (raw is append-only and stg keeps the\n// latest ingested_at per key), so gaps now self-heal on the next run.\nconst today = new Date();\nconst ymd = d => d.toISOString().slice(0, 10);\n\nconst LOOKBACK_DAYS = 35;   // covers Meta's attribution tail and any recent outage\nconst CHUNK_DAYS    = 12;   // keep each request well inside the reliable range\n\nreturn $input.all().flatMap(item => {\n  const c = item.json;\n  const maxDate = c.max_date;\n  const isEmpty = maxDate === null || maxDate === undefined || maxDate === '' || maxDate === 'null';\n\n  if (!isEmpty) {\n    const chunks = [];\n    for (let offset = 1; offset <= LOOKBACK_DAYS; offset += CHUNK_DAYS) {\n      const until = new Date(today);\n      until.setDate(until.getDate() - offset);\n      const since = new Date(until);\n      since.setDate(since.getDate() - (CHUNK_DAYS - 1));\n      chunks.push({\n        json: {\n          client_id: c.client_id,\n          slug: c.slug,\n          currency: c.currency,\n          mode: 'rolling',\n          chunk_label: `rolling_${ymd(since)}_${ymd(until)}`,\n          time_range: `{\"since\":\"${ymd(since)}\",\"until\":\"${ymd(until)}\"}`\n        }\n      });\n    }\n    return chunks;\n  }\n\n  // BACKFILL: 20 chunks of 31 days each (~20 months).\n  // Raised from 12 on 2026-09-21: this branch runs only once per client (while it\n  // has no Meta rows), and ethia's spend starts Feb 2025, which 12 chunks missed.\n  const chunks = [];\n  for (let i = 0; i < 20; i++) {\n    const until = new Date(today);\n    until.setDate(until.getDate() - (i * 31));\n    const since = new Date(until);\n    since.setDate(since.getDate() - 30);\n    chunks.push({\n      json: {\n        client_id: c.client_id,\n        slug: c.slug,\n        currency: c.currency,\n        mode: 'backfill',\n        chunk_label: `chunk_${i + 1}_of_20`,\n        time_range: `{\"since\":\"${ymd(since)}\",\"until\":\"${ymd(until)}\"}`\n      }\n    });\n  }\n  return chunks;\n});\n"
       },
       "id": "d0000000-0000-0000-0000-000000000003",
       "name": "Plan execution",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-1720, 480]
+      "position": [
+        -1720,
+        480
+      ]
     },
-
-    { "parameters": { "batchSize": 1, "options": {} }, "id": "d0000000-0000-0000-0000-000000000004", "name": "Loop over plan", "type": "n8n-nodes-base.splitInBatches", "typeVersion": 3, "position": [-1480, 480] },
-
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "d0000000-0000-0000-0000-000000000004",
+      "name": "Loop over plan",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1480,
+        480
+      ]
+    },
     {
       "parameters": {
         "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/meta-{{ $json.slug }}-access-token/versions/latest:access",
@@ -47,7 +80,10 @@
       "name": "Get access_token",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-1240, 480]
+      "position": [
+        -1240,
+        480
+      ]
     },
     {
       "parameters": {
@@ -60,9 +96,11 @@
       "name": "Get ad_account_id",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-1000, 480]
+      "position": [
+        -1000,
+        480
+      ]
     },
-
     {
       "parameters": {
         "jsCode": "const decode = b64 => Buffer.from(b64, 'base64').toString('utf8').trim();\nconst accessToken = decode($('Get access_token').first().json.payload.data);\nconst adAccountId = decode($('Get ad_account_id').first().json.payload.data);\nconst item = $('Loop over plan').item.json;\n\nreturn [{ json: {\n  client_id: item.client_id,\n  slug: item.slug,\n  currency: item.currency,\n  mode: item.mode,\n  chunk_label: item.chunk_label,\n  time_range: item.time_range,\n  access_token: accessToken,\n  ad_account_id: adAccountId,\n  api_version: 'v22.0'\n}}];\n"
@@ -71,30 +109,64 @@
       "name": "Decode secrets",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-760, 480]
+      "position": [
+        -760,
+        480
+      ]
     },
-
     {
       "parameters": {
         "url": "=https://graph.facebook.com/{{ $json.api_version }}/{{ $json.ad_account_id }}/insights",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "level",          "value": "campaign" },
-            { "name": "time_increment", "value": "1" },
-            { "name": "time_range",     "value": "={{ $json.time_range }}" },
-            { "name": "fields",         "value": "campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,cpc,actions,action_values,purchase_roas" },
-            { "name": "limit",          "value": "500" },
-            { "name": "access_token",   "value": "={{ $json.access_token }}" }
+            {
+              "name": "level",
+              "value": "campaign"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ $json.time_range }}"
+            },
+            {
+              "name": "fields",
+              "value": "campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,cpc,actions,action_values,purchase_roas"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            }
           ]
         },
-        "options": { "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } } }
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging ? $response.body.paging.next : undefined }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequestsPerPage": 100
+            }
+          }
+        }
       },
       "id": "d0000000-0000-0000-0000-000000000020",
       "name": "Fetch campaign insights",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-520, 480],
+      "position": [
+        -520,
+        480
+      ],
       "onError": "continueRegularOutput",
       "alwaysOutputData": true
     },
@@ -106,48 +178,97 @@
       "name": "Transform campaign insights",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-280, 480],
+      "position": [
+        -280,
+        480
+      ],
       "alwaysOutputData": true
     },
     {
       "parameters": {
+        "authentication": "serviceAccount",
         "operation": "insert",
-        "projectId": { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
-        "datasetId": { "__rl": true, "value": "raw",                 "mode": "list" },
-        "tableId":   { "__rl": true, "value": "raw_meta_campaign_insights", "mode": "list" },
-        "dataMode": "autoMapInputData",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_meta_campaign_insights",
+          "mode": "list"
+        },
         "options": {}
       },
       "id": "d0000000-0000-0000-0000-000000000022",
       "name": "BQ: insert campaign insights",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [-40, 480],
+      "position": [
+        -40,
+        480
+      ],
       "onError": "continueRegularOutput",
       "alwaysOutputData": true
     },
-
     {
       "parameters": {
         "url": "=https://graph.facebook.com/{{ $('Decode secrets').item.json.api_version }}/{{ $('Decode secrets').item.json.ad_account_id }}/insights",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "level",          "value": "ad" },
-            { "name": "time_increment", "value": "1" },
-            { "name": "time_range",     "value": "={{ $('Decode secrets').item.json.time_range }}" },
-            { "name": "fields",         "value": "ad_id,ad_name,campaign_id,adset_id,spend,impressions,reach,frequency,clicks,ctr,cpc,actions,action_values,video_play_actions,video_thruplay_watched_actions" },
-            { "name": "limit",          "value": "500" },
-            { "name": "access_token",   "value": "={{ $('Decode secrets').item.json.access_token }}" }
+            {
+              "name": "level",
+              "value": "ad"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ $('Decode secrets').item.json.time_range }}"
+            },
+            {
+              "name": "fields",
+              "value": "ad_id,ad_name,campaign_id,adset_id,spend,impressions,reach,frequency,clicks,ctr,cpc,actions,action_values,video_play_actions,video_thruplay_watched_actions"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Decode secrets').item.json.access_token }}"
+            }
           ]
         },
-        "options": { "retry": { "retry": { "maxTries": 5, "waitBetweenTries": 2000 } } }
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.paging ? $response.body.paging.next : undefined }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging || !$response.body.paging.next }}",
+              "limitPagesFetched": true,
+              "maxRequestsPerPage": 100
+            }
+          }
+        }
       },
       "id": "d0000000-0000-0000-0000-000000000030",
       "name": "Fetch ad insights",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [200, 480],
+      "position": [
+        200,
+        480
+      ],
       "onError": "continueRegularOutput",
       "alwaysOutputData": true
     },
@@ -159,43 +280,196 @@
       "name": "Transform ad insights",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 480],
+      "position": [
+        440,
+        480
+      ],
       "alwaysOutputData": true
     },
     {
       "parameters": {
+        "authentication": "serviceAccount",
         "operation": "insert",
-        "projectId": { "__rl": true, "value": "oneeighty-warehouse", "mode": "list" },
-        "datasetId": { "__rl": true, "value": "raw",                 "mode": "list" },
-        "tableId":   { "__rl": true, "value": "raw_meta_ad_insights", "mode": "list" },
-        "dataMode": "autoMapInputData",
+        "projectId": {
+          "__rl": true,
+          "value": "oneeighty-warehouse",
+          "mode": "list"
+        },
+        "datasetId": {
+          "__rl": true,
+          "value": "raw",
+          "mode": "list"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "raw_meta_ad_insights",
+          "mode": "list"
+        },
         "options": {}
       },
       "id": "d0000000-0000-0000-0000-000000000032",
       "name": "BQ: insert ad insights",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [680, 480],
+      "position": [
+        680,
+        480
+      ],
       "onError": "continueRegularOutput"
     }
   ],
   "pinData": {},
   "connections": {
-    "Hourly :15":                  { "main": [[ { "node": "Read clients + max_date", "type": "main", "index": 0 } ]] },
-    "Read clients + max_date":     { "main": [[ { "node": "Plan execution",          "type": "main", "index": 0 } ]] },
-    "Plan execution":              { "main": [[ { "node": "Loop over plan",          "type": "main", "index": 0 } ]] },
-    "Loop over plan":              { "main": [[ { "node": "Get access_token",        "type": "main", "index": 0 } ]] },
-    "Get access_token":            { "main": [[ { "node": "Get ad_account_id",       "type": "main", "index": 0 } ]] },
-    "Get ad_account_id":           { "main": [[ { "node": "Decode secrets",          "type": "main", "index": 0 } ]] },
-    "Decode secrets":              { "main": [[ { "node": "Fetch campaign insights", "type": "main", "index": 0 } ]] },
-    "Fetch campaign insights":     { "main": [[ { "node": "Transform campaign insights", "type": "main", "index": 0 } ]] },
-    "Transform campaign insights": { "main": [[ { "node": "BQ: insert campaign insights","type": "main", "index": 0 } ]] },
-    "BQ: insert campaign insights":{ "main": [[ { "node": "Fetch ad insights",       "type": "main", "index": 0 } ]] },
-    "Fetch ad insights":           { "main": [[ { "node": "Transform ad insights",   "type": "main", "index": 0 } ]] },
-    "Transform ad insights":       { "main": [[ { "node": "BQ: insert ad insights",  "type": "main", "index": 0 } ]] },
-    "BQ: insert ad insights":      { "main": [[ { "node": "Loop over plan",          "type": "main", "index": 0 } ]] }
+    "Hourly :15": {
+      "main": [
+        [
+          {
+            "node": "Read clients + max_date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read clients + max_date": {
+      "main": [
+        [
+          {
+            "node": "Plan execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan execution": {
+      "main": [
+        [
+          {
+            "node": "Loop over plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop over plan": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get access_token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get access_token": {
+      "main": [
+        [
+          {
+            "node": "Get ad_account_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get ad_account_id": {
+      "main": [
+        [
+          {
+            "node": "Decode secrets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode secrets": {
+      "main": [
+        [
+          {
+            "node": "Fetch campaign insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch campaign insights": {
+      "main": [
+        [
+          {
+            "node": "Transform campaign insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform campaign insights": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert campaign insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert campaign insights": {
+      "main": [
+        [
+          {
+            "node": "Fetch ad insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch ad insights": {
+      "main": [
+        [
+          {
+            "node": "Transform ad insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform ad insights": {
+      "main": [
+        [
+          {
+            "node": "BQ: insert ad insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BQ: insert ad insights": {
+      "main": [
+        [
+          {
+            "node": "Loop over plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
-  "settings": { "executionOrder": "v1", "callerPolicy": "workflowsFromSameOwner" },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
   "tags": []
 }

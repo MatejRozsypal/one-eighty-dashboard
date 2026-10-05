@@ -1,0 +1,96 @@
+{
+  "id": "BnRCbPqaYSO0zwIS",
+  "name": "BQ: refresh rpt_kpis_daily",
+  "nodes": [
+    {
+      "id": "2db276f9-2e78-40d8-a100-2c969466dee6",
+      "name": "Hourly at :10",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1,
+              "triggerAtMinute": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2468e19d-671d-47d3-af5a-aaaa25be1ff2",
+      "name": "BQ: CALL sp_refresh_rpt_kpis",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        540,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse",
+          "cachedResultName": "oneeighty-warehouse"
+        },
+        "sqlQuery": "CALL `oneeighty-warehouse.mart.sp_refresh_rpt_kpis`();",
+        "options": {
+          "location": "EU",
+          "timeoutMs": 180000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "18215682-54c4-47ad-96d9-05cb0b224eb4",
+      "name": "Sticky Note 3322a5bf",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "content": "## BQ: refresh rpt_kpis_daily\nRebuilds mart.rpt_kpis_daily (Reports KPI table) from the view mart.mart_daily_kpis via the procedure mart.sp_refresh_rpt_kpis (migration 253). A failed check in the procedure keeps the previous table and fails this run. Repo: infra/n8n/wf_rpt_kpis_refresh.json. Keep INACTIVE until migration 253 is deployed and the owner approves.",
+        "color": 4
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Hourly at :10": {
+      "main": [
+        [
+          {
+            "node": "BQ: CALL sp_refresh_rpt_kpis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "lslDsvbP8jLKEgw0",
+    "timezone": "Europe/Prague"
+  },
+  "tags": []
+}

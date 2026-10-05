@@ -28,8 +28,12 @@ Every new migration (228 and up) must cite the `live/` file it changes in its he
 | `mart.sp_refresh_rpt_kpis.sql` | 1 | the procedure that rebuilds `mart.rpt_kpis_daily` (migration 253, **pending deploy**), verbatim as sent in 253; after the deploy compare with `INFORMATION_SCHEMA.ROUTINES.ddl` |
 | `mart.rpt_ad_launch.sql` | 1 | `INFORMATION_SCHEMA.TABLES.ddl` of `mart.rpt_ad_launch` (migrations 254 and 255, **deployed 2026-10-05**, 31 columns, md5 of the file without its trailing newline `e9c4f508574e04396d1826f062066db5` equals the live ddl) |
 | `mart.sp_refresh_rpt_ad_launch.sql` | 1 | the procedure that rebuilds `mart.rpt_ad_launch` (migration 255, **deployed 2026-10-05**; md5 of the body from `BEGIN` to `END;` `65a043b8969cfe1af39e3bfa13ae12df` equals the live `ROUTINES.routine_definition` plus `;`) |
+| `ref.retention_settings.sql`, `ref.product_classes.sql` | 2 | `INFORMATION_SCHEMA.TABLES.ddl` (migration 257, deployed 2026-10-05, MD5 of each file without its trailing newline equals the live DDL) |
+| `mart.rpt_customer_entry.sql` | 1 | `INFORMATION_SCHEMA.TABLES.ddl` of the table built by `mart.sp_refresh_rpt_customer_entry` (migration 258, deployed 2026-10-05, MD5 checked) |
+| `mart.sp_refresh_rpt_customer_entry.sql` | 1 | the procedure verbatim as sent in 258 (`INFORMATION_SCHEMA.ROUTINES.ddl` is BigQuery's normalised form, so its MD5 differs) |
+| `mart.mart_retention_cohorts.sql`, `ops.v_unclassified_products.sql` | 2 | views of migration 258, same normalisation as the other views (MD5 checked 2026-10-05) |
 
-Not covered: stored procedures and functions, except `mart.sp_refresh_rpt_kpis` (253) (others: `ops.sp_load_ga4_sessions`, `ops.sp_load_ga4_sessions_for` live in `../243_ga4_sessions.sql`; `ref.sp_rebuild_creative_tags`, `ref.creative_name_key`), `raw`, `raw_google_ads`, `raw_meta_*`, `analytics_*`, `mart_qa` and other datasets, and view definitions
+Not covered: stored procedures and functions, except `mart.sp_refresh_rpt_kpis` (253) and `mart.sp_refresh_rpt_customer_entry` (258) (others: `ops.sp_load_ga4_sessions`, `ops.sp_load_ga4_sessions_for` live in `../243_ga4_sessions.sql`; `ref.sp_rebuild_creative_tags`, `ref.creative_name_key`), `raw`, `raw_google_ads`, `raw_meta_*`, `analytics_*`, `mart_qa` and other datasets, and view definitions
 that reference views from those datasets are exported as they are.
 
 ## Normalisation (so that a re-export produces no diff)
@@ -82,6 +86,14 @@ Notes:
   stale. Checks after the deploy: `../qa/253_regression.sql` section P. The regenerate script above exports
   views and `stg`/`ref`/`ops` tables only; export the `mart` table with
   `WHERE table_schema = "mart" AND table_type = "BASE TABLE"` and the procedure from `INFORMATION_SCHEMA.ROUTINES`.
+
+- **257 and 258** (retention): `ref.retention_settings`, `ref.product_classes`, `mart.rpt_customer_entry`,
+  `mart.sp_refresh_rpt_customer_entry`, `mart.mart_retention_cohorts`, `ops.v_unclassified_products` are deployed
+  and verified (2026-10-05, `../qa/258_rpt_customer_entry_regression.sql`). Still pending: the owner's console
+  scheduled query `rpt_refresh_hourly` with the three CALL lines at the end of `../258_rpt_customer_entry.sql`.
+  Until it exists the table is only as fresh as its last manual CALL (check `refreshed_at`). Remove this entry
+  once the schedule runs. The regenerate script above does not export `mart` tables or procedures: use
+  `WHERE table_schema = "mart" AND table_type = "BASE TABLE"` and `INFORMATION_SCHEMA.ROUTINES`.
 
 ## Known live oddities worth a ticket (not fixed here)
 

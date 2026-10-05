@@ -72,6 +72,18 @@
  *   caveat, and for metrics that are a lower bound while ads are open
  *   (winners, hit rate) the delta is suppressed when the current period is
  *   maturing and the comparison is not: older cohorts had more time.
+ * - Cohort retention (customer entry mart, WR5): rates over acquisition
+ *   cohorts, sum of 0/1 verdicts over the customers mature for the horizon.
+ *   Metrics with `cohort` rules (registry types, MetricCohort) are checked
+ *   on the summed counts of each cell: a client without product classes is
+ *   not_measured "Products not classified" (rollups leave it out with a
+ *   coverage note); a zero denominator with customers in the population is
+ *   "Not mature yet"; a denominator under minN is "Too few customers". These
+ *   two run on the pooled counts only, never on one member of a rollup, so
+ *   small clients are pooled rather than dropped. A current total resting on
+ *   fewer than lowN customers carries `low_n`, and one whose population is
+ *   above its denominator (customers who have not had the horizon yet)
+ *   carries `cohort_partial`.
  *
  * Pure: no BigQuery, no session.
  *
@@ -84,7 +96,7 @@ import { TOTAL_BUCKET, type ComponentRow, type ComponentSum, type EvaluateModule
 import { SERIES_SLOTS } from "./limits";
 import { notConnectedReason } from "./registry/capabilities";
 import { clientCaveats, orderCaveats } from "./registry/caveats";
-import { MARTS, getComponent } from "./registry/components";
+import { CLASSES_COMPONENT, MARTS, getComponent } from "./registry/components";
 import type { MetricId } from "./registry/ids";
 import { METRICS } from "./registry/metrics";
 import type { Capability, CaveatId, ComponentDef, ComponentId, MartDef, MartId, RegisteredMetric, ReportClient, Term } from "./registry/types";
@@ -400,6 +412,28 @@ function sumOf(members: readonly Member[], id: ComponentId): number | null {
 }
 
 // ---------------------------------------------------------------------------
+// Cohort retention rules (MetricBase.cohort)
+// ---------------------------------------------------------------------------
+
+/** Status words: the client has no rows in ref.product_classes, so discovery entrants cannot be told apart. */
+export const NOT_CLASSIFIED = "Products not classified";
+/** Status words: customers in the period, none of them observed for the horizon yet. */
+export const NOT_MATURE = "Not mature yet";
+/** Status words: fewer than minN customers observed for the horizon. */
+export const TOO_FEW = "Too few customers";
+
+/** Population and denominator of a cohort metric, summed over the members (0 when absent). */
+function cohortCounts(metric: RegisteredMetric, members: readonly Member[]): { population: number; denominator: number } | null {
+  if (!metric.cohort || metric.kind !== "ratio") return null;
+  return { population: sumOf(members, metric.cohort.population) ?? 0, denominator: sumOf(members, metric.denominator[0].c) ?? 0 };
+}
+
+/** A member whose client has no product classes in this row group. */
+function notClassified(metric: RegisteredMetric, m: Member): boolean {
+  return metric.cohort?.needsClasses === true && (sumOf([m], CLASSES_COMPONENT) ?? 0) === 0;
+}
+
+// ---------------------------------------------------------------------------
 // Outcomes
 // ---------------------------------------------------------------------------
 
@@ -423,7 +457,11 @@ interface Member {
   innerGuardFail: boolean;
 }
 
-function outcome(metric: RegisteredMetric, members: readonly Member[], mode: ReadMode, displayCurrency: string): Outcome {
+/**
+ * `pooled` false: the members are one client checked for a rollup, so the
+ * cohort count rules (not mature, too few) are left to the pooled cell.
+ */
+function outcome(metric: RegisteredMetric, members: readonly Member[], mode: ReadMode, displayCurrency: string, pooled = true): Outcome {
   const present = members.filter((m) => m.agg !== undefined) as Array<Member & { agg: Agg }>;
   if (present.length === 0) return NO_ROWS;
   const fxMonths = new Set<string>();
@@ -449,6 +487,13 @@ function outcome(metric: RegisteredMetric, members: readonly Member[], mode: Rea
   // Hit rate without the client's own bar: not measured, never a zero.
   if (needsThresholds(metric) && present.some((m) => !m.client.creativeThresholds)) return { value: null, status: "not_measured", fxMonths: [], reason: NO_THRESHOLDS };
   if (present.some((m) => m.innerGuardFail || guardFails(m.agg, metric))) return { value: null, status: "not_measured", fxMonths: [] };
+  // Cohort retention: discovery metrics need the client's product classes; small or immature cohorts are not a rate.
+  if (present.some((m) => notClassified(metric, m))) return { value: null, status: "not_measured", fxMonths: [], reason: NOT_CLASSIFIED };
+  const cc = pooled ? cohortCounts(metric, present) : null;
+  if (cc && metric.cohort) {
+    if (cc.denominator === 0 && cc.population > 0) return { value: null, status: "not_measured", fxMonths: [], reason: NOT_MATURE };
+    if (cc.denominator > 0 && cc.denominator < metric.cohort.minN) return { value: null, status: "not_measured", fxMonths: [], reason: TOO_FEW };
+  }
   const r = evaluateFormula(metric, (c) => summed.get(c) ?? { value: null, fx: false });
   if (r.value === null) {
     // A NULL-day gap in a component a gap term needs (any client of a rollup): no partial sum.
@@ -487,7 +532,7 @@ function rollupOutcome(metric: RegisteredMetric, members: readonly Member[], dis
   const kept: Member[] = [];
   const excluded: Exclusion[] = [];
   for (const m of members) {
-    const own = outcome(metric, [m], "display", displayCurrency);
+    const own = outcome(metric, [m], "display", displayCurrency, false);
     if (isExcluded(own)) {
       excluded.push({
         client: m.client,
@@ -721,6 +766,12 @@ export const evaluateWidget: EvaluateWidget = (input) => {
           delta = null;
           deltaSuppressed = true;
         }
+      }
+      // Cohort retention caveats, on the counts of the current total (the clients summed in it).
+      if (ok && metric.cohort) {
+        const cc = cohortCounts(metric, curTotalMembers);
+        if (cc && cc.denominator < metric.cohort.lowN) caveats.add("low_n");
+        if (cc && cc.population > cc.denominator) caveats.add("cohort_partial");
       }
       let counts: MetricCell["counts"];
       if (ok && metric.showCounts && metric.kind === "ratio") {

@@ -17,13 +17,13 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { matchBenchmarks, fxFactor, regionPreference } from "@/lib/reports/benchmarkMatch";
 import type { BenchmarkRow, ComponentRow, ComponentSum, FxRate, ResolvedWidget } from "@/lib/reports/contracts";
-import { NO_THRESHOLDS, classifyEntityRows, evaluateWidget } from "@/lib/reports/evaluate";
+import { NOT_CLASSIFIED, NOT_MATURE, NO_THRESHOLDS, TOO_FEW, classifyEntityRows, evaluateWidget } from "@/lib/reports/evaluate";
 import { hitRate, launchStatus, type LaunchRow } from "@/lib/creative/hitRate";
 import type { CreativeThresholds } from "@/lib/creative/stats";
 import { FIXTURE_CLIENTS, FIXTURE_FILTERS, FIXTURE_RESOLVED, FIXTURE_ROWS, FIXTURE_TODAY } from "@/lib/reports/fixtures";
 import { CAPABILITIES, evalCapExpr, missingCapabilities, toReportCapabilities } from "@/lib/reports/registry/capabilities";
 import { CAVEATS, clientCaveats, visibleCaveats } from "@/lib/reports/registry/caveats";
-import { COMPONENTS, MARTS } from "@/lib/reports/registry/components";
+import { CLASSES_COMPONENT, COMPONENTS, MARTS } from "@/lib/reports/registry/components";
 import { METRIC_IDS, PHASE2_METRIC_IDS, REGISTRY_METRIC_IDS, type MetricId } from "@/lib/reports/registry/ids";
 import { METRICS, METRIC_LIST, componentsFor, findMetricId } from "@/lib/reports/registry/metrics";
 import { IDENTIFIER_RE, type ComponentId, type ReportClient } from "@/lib/reports/registry/types";
@@ -108,7 +108,18 @@ const LIVE_META_AD_COLUMNS = ["date", "currency", "ad_id", "spend", "impressions
 const LIVE_EMAIL_CAMPAIGN_COLUMNS = ["send_date", "currency", "sent", "delivered", "unique_opens", "unique_clicks", "revenue"];
 /** Live columns used from mart.rpt_ad_launch (HR1, migration 254), INFORMATION_SCHEMA.COLUMNS, 2026-10-05. */
 const LIVE_AD_LAUNCH_COLUMNS = ["client_id", "ad_id", "first_date", "spend", "revenue", "purchases", "age_days", "is_preexisting", "is_relaunch", "prior_roas"];
-const LIVE = { kpis: LIVE_KPIS_COLUMNS, meta_campaign: LIVE_META_CAMPAIGN_COLUMNS, meta_ad: LIVE_META_AD_COLUMNS, email_campaign: LIVE_EMAIL_CAMPAIGN_COLUMNS, ad_launch: LIVE_AD_LAUNCH_COLUMNS } as const;
+/** Live columns of mart.rpt_customer_entry (WR1, migration 258), INFORMATION_SCHEMA.COLUMNS, 2026-10-05 (54 columns). */
+const LIVE_CUSTOMER_ENTRY_COLUMNS = [
+  "client_id", "customer_id", "cohort_month", "first_order_date", "classes_configured", "entry_class", "entry_class_first_order",
+  "has_unmatched_line", "first_order_revenue", "first_day_orders", "orders_total", "order_days_total", "second_order_date",
+  "third_order_date", "first_full_date", "second_order_any_date", "third_order_any_date", "first_full_any_date", "data_start_date",
+  "history_guard_days", "as_of_date", "cutoff_date", "is_early", "observed_days", "days_to_2nd", "days_2nd_to_3rd", "days_to_full",
+  "n_customer", "m30", "m60", "m90", "m180", "m365", "r30", "r60", "r90", "r180", "r365", "u30", "u60", "u90", "u180", "u365",
+  "is_discovery", "has_second", "m23_180", "r23_180", "dm90", "du90", "dm180", "du180", "dm365", "du365", "refreshed_at",
+];
+/** BOOL columns of mart.rpt_customer_entry (the rest of the components are INT64 0/1). */
+const LIVE_CUSTOMER_ENTRY_BOOL = ["classes_configured", "has_unmatched_line", "is_early"];
+const LIVE = { kpis: LIVE_KPIS_COLUMNS, meta_campaign: LIVE_META_CAMPAIGN_COLUMNS, meta_ad: LIVE_META_AD_COLUMNS, email_campaign: LIVE_EMAIL_CAMPAIGN_COLUMNS, ad_launch: LIVE_AD_LAUNCH_COLUMNS, customer_entry: LIVE_CUSTOMER_ENTRY_COLUMNS } as const;
 
 for (const c of Object.values(COMPONENTS)) {
   check(`component ${c.id} column is an identifier`, IDENTIFIER_RE.test(c.column));
@@ -126,9 +137,9 @@ check("excluded columns are not components", !["unique_customers", "cm1", "cm2",
 check("cogs guard is revenue", COMPONENTS["kpis.cogs"].zeroIsMissingWhen === "kpis.revenue");
 
 check("every registry id defined", REGISTRY_METRIC_IDS.every((id) => METRICS[id]?.id === id));
-check("47 queryable metrics (30 KPI view + 14 Meta soft + 3 hit rate)", METRIC_IDS.length === 47 && METRIC_IDS.every((id) => METRICS[id].phase === 1));
+check("54 queryable metrics (30 KPI view + 14 Meta soft + 3 hit rate + 7 cohort retention)", METRIC_IDS.length === 54 && METRIC_IDS.every((id) => METRICS[id].phase === 1));
 check("4 phase-2 metrics (email)", PHASE2_METRIC_IDS.length === 4 && PHASE2_METRIC_IDS.every((id) => METRICS[id].phase === 2));
-check("picker list holds the 47 queryable metrics", METRIC_LIST.length === 47);
+check("picker list holds the 54 queryable metrics", METRIC_LIST.length === 54);
 check("cm3 = revenue - cogs - fulfillment - paid (mart) - stated fulfilment and other CM1 (Snapshot parity)", METRICS.cm3.kind === "sum" && eqJson(METRICS.cm3.terms, [
   { c: "kpis.revenue", sign: 1, nullAs: "gap" },
   { c: "kpis.cogs", sign: -1, nullAs: "gap" },
@@ -143,7 +154,7 @@ check("cm1_pct = revenue - cogs - stated other CM1", METRICS.cm1_pct.kind === "r
   { c: "kpis.other_cm1_stated", sign: -1, nullAs: "zero" },
 ]));
 check("stated-rate components: orders as money, zero, one rate each", (["kpis.fulfilment_stated", "kpis.other_cm1_stated"] as const).every((id) => COMPONENTS[id].column === "orders" && COMPONENTS[id].money && COMPONENTS[id].nullMeans === "zero") && COMPONENTS["kpis.fulfilment_stated"].perClientRate === "fulfilment" && COMPONENTS["kpis.other_cm1_stated"].perClientRate === "otherCm1");
-check("only kpis selects all components (shared query)", MARTS.kpis.selectAll === true && !("selectAll" in MARTS.meta_ad) && !("selectAll" in MARTS.meta_campaign) && !("selectAll" in MARTS.email_campaign));
+check("only kpis and customer_entry select all components (shared query)", MARTS.kpis.selectAll === true && MARTS.customer_entry.selectAll === true && !("selectAll" in MARTS.meta_ad) && !("selectAll" in MARTS.meta_campaign) && !("selectAll" in MARTS.email_campaign));
 check("cm3_pct uses the same numerator", METRICS.cm3_pct.kind === "ratio" && METRICS.cm3.kind === "sum" && eqJson(METRICS.cm3_pct.numerator, METRICS.cm3.terms));
 check("meta.components sorted and unique", REGISTRY_METRIC_IDS.every((id) => {
   const c = METRICS[id].meta.components;
@@ -1023,6 +1034,155 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     const tile = hitRate(launches, t);
     const r = evalW(widget(["hit_rate", "winners", "ads_launched"], { filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" }, clients: clients.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: t } : c)) }), launches.map((l) => rowL("alpha", "cur", TOTAL, { p: l.purchases, spend: l.spend, rev: l.revenue, age: l.ageDays, prior: l.priorRoas })));
     check("HR3: Reports equals the Creative tile on the same launches (winners, launched, rate)", cell(r, "alpha", "winners").total === tile.winners && cell(r, "alpha", "ads_launched").total === tile.launched && close(cell(r, "alpha", "hit_rate").total, tile.rate ?? -1) && (tile.winners ?? 0) > 0, `${tile.winners}/${tile.launched}`);
+  }
+}
+
+// 4.17 Cohort retention (WR5): customer entry mart, cohort rules, pooled rates.
+{
+  type CE = Partial<Record<"n_customer" | "is_discovery" | "has_second" | "classes_configured" | "m90" | "r90" | "m180" | "r180" | "m365" | "r365" | "m23_180" | "r23_180" | "dm90" | "du90" | "dm180" | "du180", number>>;
+  const rowC = (clientId: string, period: "cur" | "cmp", bucket: string, v: CE): ComponentRow => {
+    const values: Partial<Record<ComponentId, ComponentSum>> = {};
+    for (const id of Object.keys(COMPONENTS).filter((k) => k.startsWith("customer_entry.")) as ComponentId[]) {
+      const n = (v as Record<string, number | undefined>)[id.slice("customer_entry.".length)] ?? 0;
+      values[id] = { nat: n, disp: n, natNulls: 0, dispNulls: 0 };
+    }
+    return { clientId, period, bucket, guards: { customer_entry: { nRows: v.n_customer ?? 1, foreignCcyRows: 0, fxMissingRows: 0, fxMissingMonths: [] } }, values };
+  };
+  const COHORT_IDS = ["repeat_rate_90", "repeat_rate_180", "repeat_rate_365", "third_order_rate_180", "discovery_upgrade_90", "discovery_upgrade_180", "discovery_entry_share"] as const;
+  const FORMULA: Record<(typeof COHORT_IDS)[number], [string, string, string]> = {
+    repeat_rate_90: ["r90", "m90", "n_customer"],
+    repeat_rate_180: ["r180", "m180", "n_customer"],
+    repeat_rate_365: ["r365", "m365", "n_customer"],
+    third_order_rate_180: ["r23_180", "m23_180", "has_second"],
+    discovery_upgrade_90: ["du90", "dm90", "is_discovery"],
+    discovery_upgrade_180: ["du180", "dm180", "is_discovery"],
+    discovery_entry_share: ["is_discovery", "n_customer", "n_customer"],
+  };
+  // Registry.
+  check("WR5: the 7 cohort ids are the last 7 queryable ids (append only)", eqJson(METRIC_IDS.slice(-7), COHORT_IDS));
+  check("WR5: formulas, populations, retention group, percent, every grain, not benchmarkable, counts in customers", COHORT_IDS.every((id) => {
+    const m = METRICS[id];
+    const [n, d, pop] = FORMULA[id];
+    return m.kind === "ratio" && eqJson(m.numerator, [{ c: `customer_entry.${n}`, sign: 1, nullAs: "gap" }]) && eqJson(m.denominator, [{ c: `customer_entry.${d}`, sign: 1, nullAs: "gap" }]) && m.cohort?.population === `customer_entry.${pop}` && m.cohort.minN === 30 && m.cohort.lowN === 100 && m.group === "retention" && m.unit === "percent" && eqJson(m.grains, ["day", "week", "month"]) && !m.benchmarkable && m.showCounts?.noun === "customers" && eqJson(m.meta.requires, "shop");
+  }));
+  check("WR5: needsClasses on the three discovery metrics only", COHORT_IDS.every((id) => (METRICS[id].cohort?.needsClasses === true) === id.startsWith("discovery")));
+  check("WR5: goodWhen up, entry share neutral", COHORT_IDS.every((id) => METRICS[id].goodWhen === (id === "discovery_entry_share" ? "neutral" : "up")));
+  check("WR5: caveats low_n and cohort_partial (entry share low_n only)", COHORT_IDS.every((id) => eqJson(METRICS[id].caveats, id === "discovery_entry_share" ? ["low_n"] : ["low_n", "cohort_partial"])));
+  check("WR5: low_n and cohort_partial are data-driven", FIXTURE_CLIENTS.every((c) => !CAVEATS.low_n.applies(c) && !CAVEATS.cohort_partial.applies(c)) && CAVEATS.low_n.short === "Fewer than 100 customers" && CAVEATS.cohort_partial.short === "Recent customers not yet counted");
+  check("WR5: customer_entry mart: rpt_customer_entry on first_order_date, every grain, selectAll, early customers filtered", MARTS.customer_entry.table === "mart.rpt_customer_entry" && MARTS.customer_entry.dateColumn === "first_order_date" && MARTS.customer_entry.currencyColumn === null && eqJson(MARTS.customer_entry.grains, ["day", "week", "month"]) && MARTS.customer_entry.selectAll === true && eqJson(MARTS.customer_entry.rowFilter.excludeTrue, ["is_early"]));
+  check("WR5: BOOL columns: classes_configured is a COUNTIF component, is_early only a row filter", COMPONENTS["customer_entry.classes_configured"].bool === true && CLASSES_COMPONENT === "customer_entry.classes_configured" && Object.values(COMPONENTS).filter((c) => c.mart === "customer_entry" && LIVE_CUSTOMER_ENTRY_BOOL.includes(c.column)).every((c) => c.bool === true) && !Object.values(COMPONENTS).some((c) => c.column === "is_early"));
+  check("WR5: customer entry components are non-money counts, nullMeans zero, require shop", Object.values(COMPONENTS).filter((c) => c.mart === "customer_entry").every((c) => !c.money && c.nullMeans === "zero" && c.requires === "shop") && Object.values(COMPONENTS).filter((c) => c.mart === "customer_entry").length === 16);
+  check("WR5: componentsFor adds the population and the classes flag", eqJson(componentsFor(["discovery_upgrade_90"]), ["customer_entry.classes_configured", "customer_entry.dm90", "customer_entry.du90", "customer_entry.is_discovery"]) && eqJson(componentsFor(["repeat_rate_90"]), ["customer_entry.m90", "customer_entry.n_customer", "customer_entry.r90"]));
+  check("WR5: findMetricId by alias", findMetricId("repeat rate") === "repeat_rate_90" && findMetricId("upgrade rate") === "discovery_upgrade_90" && findMetricId("3rd order rate") === "third_order_rate_180");
+
+  // Manami-like alpha (classified), Dobias-like bravo (no product classes), months Jan to Jun 2026.
+  const months = ["2026-01-01", "2026-02-01", "2026-03-01", "2026-04-01", "2026-05-01", "2026-06-01"];
+  // Discovery entrants per month mature for 90 days (sum 488) and upgraded within 90 days (sum 56).
+  const dm = [70, 75, 80, 85, 89, 89];
+  const du = [6, 8, 9, 10, 11, 12];
+  const alphaRows = months.map((b, i) => rowC("alpha", "cur", b, { n_customer: dm[i] + 50, is_discovery: dm[i], classes_configured: dm[i] + 50, dm90: dm[i], du90: du[i], m90: dm[i] + 50, r90: du[i] + 7 }));
+  const bravoRows = months.map((b) => rowC("bravo", "cur", b, { n_customer: 300, is_discovery: 0, classes_configured: 0, m90: 300, r90: 30 }));
+  const H1 = { period: { kind: "custom" as const, from: "2026-01-01", to: "2026-06-30" }, compare: "none" as const, clients: { mode: "list" as const, ids: ["alpha", "bravo"] } };
+  const rowsH1 = [...alphaRows, ...bravoRows];
+  {
+    const r = evalW(widget(["discovery_upgrade_90", "repeat_rate_90"], { grain: "month", split: "combined", filters: H1 }), rowsH1);
+    const c = cell(r, "combined", "discovery_upgrade_90");
+    check("WR5 acceptance: combined discovery_upgrade_90 = sum du90 / sum dm90 = 56 of 488 (11.5%)", c.status === "ok" && close(c.total, 56 / 488) && (c.total ?? 0).toFixed(3) === "0.115" && eqJson(c.counts, { part: 56, whole: 488, noun: "customers" }), c);
+    check("WR5 acceptance: combined coverage 1 of 2, bravo left out as Products not classified", eqJson(c.coverage, { included: 1, of: 2 }) && eqJson(c.excluded, [{ id: "bravo", name: "Bravo", reason: NOT_CLASSIFIED }]), c);
+    check("WR5: monthly points are each month's own du90 / dm90", eqJson(c.points?.map((v) => (v === null ? null : Number(v.toFixed(6)))), dm.map((d, i) => Number((du[i] / d).toFixed(6)))) && eqJson(c.pointCoverage, [1, 1, 1, 1, 1, 1]));
+    const rr = cell(r, "combined", "repeat_rate_90");
+    const rrK = alphaRows.reduce((a, x) => a + (x.values["customer_entry.r90"]?.nat ?? 0), 0) + 6 * 30;
+    const rrN = alphaRows.reduce((a, x) => a + (x.values["customer_entry.m90"]?.nat ?? 0), 0) + 6 * 300;
+    check("WR5: repeat rate needs no classes: both clients pooled, sum over sum", rr.status === "ok" && close(rr.total, rrK / rrN) && eqJson(rr.coverage, { included: 2, of: 2 }) && rr.excluded === undefined, rr);
+  }
+  {
+    const r = evalW(widget(["discovery_upgrade_90", "discovery_entry_share", "repeat_rate_90"], { grain: "total", split: "client", filters: H1 }), rowsH1.map((x) => ({ ...x, bucket: "1970-01-01" })));
+    const a = cell(r, "alpha", "discovery_upgrade_90");
+    const b = cell(r, "bravo", "discovery_upgrade_90");
+    check("WR5: per client, alpha 56 of 488, bravo not_measured Products not classified", a.status === "ok" && close(a.total, 56 / 488) && b.status === "not_measured" && b.reason === NOT_CLASSIFIED && b.total === null, { a, b });
+    check("WR5: discovery entry share not classified for bravo too, ok for alpha", cell(r, "bravo", "discovery_entry_share").reason === NOT_CLASSIFIED && close(cell(r, "alpha", "discovery_entry_share").total, 488 / (488 + 300)));
+    check("WR5: bravo repeat rate is ok (classes not needed)", cell(r, "bravo", "repeat_rate_90").status === "ok" && close(cell(r, "bravo", "repeat_rate_90").total, 0.1));
+    const sA = r.series.find((x) => x.id === "alpha")!;
+    check("WR5: no partial or low-n caveat when every customer is mature and n >= 100", !sA.caveats.includes("cohort_partial") && !sA.caveats.includes("low_n"), sA.caveats);
+  }
+  // Every client unclassified: the combined cell carries the shared reason.
+  {
+    const r = evalW(widget(["discovery_upgrade_90"], { split: "combined", filters: { ...H1, clients: { mode: "list", ids: ["bravo"] } } }), bravoRows.map((x) => ({ ...x, bucket: "1970-01-01" })));
+    const c = cell(r, "combined", "discovery_upgrade_90");
+    check("WR5: rollup with no classified client is not_measured Products not classified, 0 of 1", c.status === "not_measured" && c.reason === NOT_CLASSIFIED && eqJson(c.coverage, { included: 0, of: 1 }), c);
+  }
+
+  // n rules: Too few, Not mature yet, low_n, pooled small clients, partial cohorts.
+  const Q = { period: { kind: "custom" as const, from: "2025-01-01", to: "2025-03-31" }, compare: "none" as const, clients: { mode: "list" as const, ids: ["alpha", "charlie"] } };
+  const T0 = "1970-01-01";
+  {
+    const rows = [rowC("alpha", "cur", T0, { n_customer: 25, m365: 20, r365: 5 }), rowC("charlie", "cur", T0, { n_customer: 25, m365: 20, r365: 3 })];
+    const r = evalW(widget(["repeat_rate_365"], { filters: Q }), rows);
+    const a = cell(r, "alpha", "repeat_rate_365");
+    check("WR5: n < 30 is not_measured Too few customers", a.status === "not_measured" && a.reason === TOO_FEW && a.total === null && a.counts === undefined, a);
+    const rc = evalW(widget(["repeat_rate_365"], { split: "combined", filters: Q }), rows);
+    const c = cell(rc, "combined", "repeat_rate_365");
+    check("WR5: two small clients are pooled (40 >= 30), not dropped: 8 of 40, coverage 2 of 2", c.status === "ok" && close(c.total, 8 / 40) && eqJson(c.coverage, { included: 2, of: 2 }) && eqJson(c.counts, { part: 8, whole: 40, noun: "customers" }), c);
+    const sc = rc.series[0];
+    check("WR5: pooled 40 carries low_n and cohort_partial (50 customers, 40 mature)", sc.caveats.includes("low_n") && sc.caveats.includes("cohort_partial"), sc.caveats);
+    check("WR5: caveats visible on the metric's hover", eqJson(visibleCaveats(sc.caveats, METRICS.repeat_rate_365.caveats), ["low_n", "cohort_partial"]));
+  }
+  {
+    const r = evalW(widget(["repeat_rate_365"], { filters: Q }), [rowC("alpha", "cur", T0, { n_customer: 140, m365: 0, r365: 0 })]);
+    const a = cell(r, "alpha", "repeat_rate_365");
+    check("WR5: customers but none mature is not_measured Not mature yet", a.status === "not_measured" && a.reason === NOT_MATURE, a);
+    const n = evalW(widget(["repeat_rate_365"], { filters: Q }), [rowC("alpha", "cur", T0, { n_customer: 0 })]);
+    check("WR5: no customers at all is no_data, never a rate", cell(n, "alpha", "repeat_rate_365").status === "no_data");
+  }
+  {
+    const r = evalW(widget(["repeat_rate_90"], { filters: Q }), [rowC("alpha", "cur", T0, { n_customer: 60, m90: 60, r90: 6 })]);
+    const s = r.series.find((x) => x.id === "alpha")!;
+    check("WR5: 30 to 99 is a value with low_n, not partial when all are mature", cell(r, "alpha", "repeat_rate_90").status === "ok" && s.caveats.includes("low_n") && !s.caveats.includes("cohort_partial"), s.caveats);
+  }
+  // Acceptance: repeat_rate_365 over a range that includes immature months carries cohort_partial; immature buckets are n/a.
+  {
+    const P = { period: { kind: "custom" as const, from: "2025-07-01", to: "2025-12-31" }, compare: "none" as const, clients: { mode: "list" as const, ids: ["alpha"] } };
+    // Cut-off 2026-10-01: Jul to Sep 2025 mature for 365 days, Oct partly, Nov and Dec not yet.
+    const rows = [
+      rowC("alpha", "cur", "2025-07-01", { n_customer: 120, m365: 120, r365: 18 }),
+      rowC("alpha", "cur", "2025-08-01", { n_customer: 110, m365: 110, r365: 15 }),
+      rowC("alpha", "cur", "2025-09-01", { n_customer: 100, m365: 100, r365: 16 }),
+      rowC("alpha", "cur", "2025-10-01", { n_customer: 130, m365: 4, r365: 1 }),
+      rowC("alpha", "cur", "2025-11-01", { n_customer: 150, m365: 0, r365: 0 }),
+      rowC("alpha", "cur", "2025-12-01", { n_customer: 140, m365: 0, r365: 0 }),
+    ];
+    const r = evalW(widget(["repeat_rate_365", "repeat_rate_90"], { grain: "month", filters: P }), rows);
+    const c = cell(r, "alpha", "repeat_rate_365");
+    const s = r.series.find((x) => x.id === "alpha")!;
+    check("WR5 acceptance: repeat_rate_365 with immature months carries cohort_partial, total over the mature customers", c.status === "ok" && close(c.total, 50 / 334) && s.caveats.includes("cohort_partial") && eqJson(c.counts, { part: 50, whole: 334, noun: "customers" }), { c, caveats: s.caveats });
+    check("WR5: immature months are n/a, a month with 4 mature is n/a (too few), mature months keep their value", c.points?.[4] === null && c.points?.[5] === null && c.points?.[3] === null && close(c.points?.[0] ?? null, 18 / 120));
+  }
+  // Deltas are pp; a too-small comparison gives no delta.
+  {
+    const P = { period: { kind: "custom" as const, from: "2026-04-01", to: "2026-06-30" }, compare: "previous_period" as const, clients: { mode: "list" as const, ids: ["alpha"] } };
+    const w = widget(["repeat_rate_90"], { filters: P });
+    const cur = rowC("alpha", "cur", T0, { n_customer: 200, m90: 200, r90: 30 });
+    const r = evalW(w, [cur, rowC("alpha", "cmp", T0, { n_customer: 150, m90: 150, r90: 15 })]);
+    const c = cell(r, "alpha", "repeat_rate_90");
+    check("WR5: deltas are pp (15.0% vs 10.0% = +5.0 pp)", c.deltaKind === "pp" && close(c.delta, 0.05) && close(c.compareTotal, 0.1), c);
+    const r2 = evalW(w, [cur, rowC("alpha", "cmp", T0, { n_customer: 20, m90: 20, r90: 5 })]);
+    const c2 = cell(r2, "alpha", "repeat_rate_90");
+    check("WR5: comparison with too few customers: no compare total, no delta", c2.status === "ok" && c2.compareTotal === null && c2.delta === null, c2);
+    const rc = evalW(widget(["discovery_upgrade_90"], { split: "combined", filters: { ...P, clients: { mode: "list", ids: ["alpha", "bravo"] } } }), [
+      rowC("alpha", "cur", T0, { n_customer: 150, is_discovery: 120, classes_configured: 150, dm90: 120, du90: 18 }),
+      rowC("alpha", "cmp", T0, { n_customer: 150, is_discovery: 100, classes_configured: 150, dm90: 100, du90: 10 }),
+      rowC("bravo", "cur", T0, { n_customer: 300, m90: 300 }),
+      rowC("bravo", "cmp", T0, { n_customer: 300, m90: 300 }),
+    ]);
+    const cc = cell(rc, "combined", "discovery_upgrade_90");
+    check("WR5: combined delta like for like over the classified client, pp", cc.status === "ok" && close(cc.total, 0.15) && close(cc.compareTotal, 0.1) && close(cc.delta, 0.05) && cc.deltaKind === "pp" && eqJson(cc.coverage, { included: 1, of: 2 }), cc);
+  }
+  // Mixed widget: cohort rows next to kpis rows (both sum marts, joined on client, period and bucket).
+  {
+    const mixed: ComponentRow = { ...rowC("alpha", "cur", T0, { n_customer: 200, m90: 200, r90: 30 }), guards: { kpis: { nRows: 90, foreignCcyRows: 0, fxMissingRows: 0, fxMissingMonths: [] }, customer_entry: { nRows: 200, foreignCcyRows: 0, fxMissingRows: 0, fxMissingMonths: [] } } };
+    mixed.values["kpis.orders"] = { nat: 400, disp: 400, natNulls: 0, dispNulls: 0 };
+    const r = evalW(widget(["repeat_rate_90", "orders"], { filters: Q }), [mixed]);
+    check("WR5: mixed widget: orders and the cohort rate read their own components", cell(r, "alpha", "orders").total === 400 && close(cell(r, "alpha", "repeat_rate_90").total, 0.15));
   }
 }
 

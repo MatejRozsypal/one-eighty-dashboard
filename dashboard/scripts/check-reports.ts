@@ -70,7 +70,7 @@ function check(name: string, ok: boolean, detail?: string): void {
 // Ids and limits
 // ---------------------------------------------------------------------------
 
-check("47 queryable metric ids (30 KPI view + 14 Meta soft + 3 hit rate)", METRIC_IDS.length === 47, String(METRIC_IDS.length));
+check("54 queryable metric ids (30 KPI view + 14 Meta soft + 3 hit rate + 7 cohort retention)", METRIC_IDS.length === 54, String(METRIC_IDS.length));
 check("metric ids unique", new Set([...METRIC_IDS, ...PHASE2_METRIC_IDS]).size === METRIC_IDS.length + PHASE2_METRIC_IDS.length);
 check("phase 2 ids are not queryable", PHASE2_METRIC_IDS.every((id) => !isMetricId(id)));
 check("client role never gets Reports", !(REPORTS_ROLES as readonly string[]).includes("client"));
@@ -207,6 +207,7 @@ const FIXTURE_MARTS: Record<MartId, MartDef> = {
   meta_ad: { id: "meta_ad", table: "mart.mart_meta_ad_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 2 },
   email_campaign: { id: "email_campaign", table: "mart.mart_email_campaign_perf", dateColumn: "send_date", currencyColumn: "currency", grains: ["week", "month"], phase: 2 },
   ad_launch: { id: "ad_launch", table: "mart.rpt_ad_launch", dateColumn: "first_date", currencyColumn: null, grains: ["day", "week", "month"], phase: 2 },
+  customer_entry: { id: "customer_entry", table: "mart.rpt_customer_entry", dateColumn: "first_order_date", currencyColumn: null, grains: ["day", "week", "month"], phase: 2 },
 };
 
 const FIXTURE_COMPONENT_LIST: Array<[ComponentId, boolean]> = [
@@ -568,11 +569,62 @@ if (real.registry) {
     );
     check("HR3 normalise: entity row inputs as numbers", nl[0].values["ad_launch.spend"]?.nat === 1000.5 && nl[0].values["ad_launch.prior_roas"]?.nat === 2.0287 && nl[0].values["ad_launch.purchases"]?.nat === 16 && nl[0].guards.ad_launch?.nRows === 1);
   }
+  // WR5: cohort retention reads the customer entry mart (plain sum mart, early customers left out in SQL).
+  {
+    const realCompile = createCompiler(real.registry, { projectId: PROJECT });
+    const base = { clientIds: ["manami", "dobias"], grain: "month" as const, current: { from: "2026-01-01", to: "2026-06-30" }, compare: "previous_period" as const };
+    const CE_IDS = Object.keys(real.registry.components).filter((id) => id.startsWith("customer_entry.")).sort();
+    const q = realCompile(resolved({ ...base, components: ["customer_entry.du90", "customer_entry.dm90"] }));
+    const cte = q.sql.slice(q.sql.indexOf("\ncustomer_entry AS (\n"), q.sql.indexOf("\n)", q.sql.indexOf("\ncustomer_entry AS (\n")));
+    check("WR5 sql: selectAll, every customer_entry component in the SQL (16)", q.components.join() === CE_IDS.join() && CE_IDS.length === 16, q.components.join());
+    check("WR5 sql: CTE has its date predicate, period tagging and is_early IS NOT TRUE", cte.includes("AND t.first_order_date BETWEEN @scanFrom AND @scanTo") && cte.includes("AND t.first_order_date BETWEEN p.from_date AND p.to_date") && cte.includes("AND t.is_early IS NOT TRUE") && cte.includes("DATE_TRUNC(t.first_order_date, MONTH) AS bucket") && cte.includes("FROM `oneeighty-warehouse.mart.rpt_customer_entry` AS t"));
+    check("WR5 sql: BOOL classes_configured counted with COUNTIF, flags summed, is_early never a component", cte.includes("COUNTIF(t.classes_configured) AS customer_entry__classes_configured") && cte.includes("SUM(t.du90) AS customer_entry__du90") && !/SUM\(t\.(classes_configured|is_early)\)/.test(q.sql) && !CE_IDS.some((id) => real.registry!.components[id as ComponentId]?.column === "is_early"));
+    check("WR5 sql: no FX, no display currency, no money", !q.sql.includes("fx_pairs") && !("displayCurrency" in q.params) && cte.includes("0 AS customer_entry__fx_missing_rows"));
+    check("WR5 sql: params are clients and dates only, no threshold or user value in SQL", eqKeys(q.params, ["clientIds", "curFrom", "curTo", "cmpFrom", "cmpTo", "scanFrom", "scanTo"]) && !/\b(30|100)\b|manami|dobias|2026-/.test(q.sql));
+    check("WR5 sql: assertDatePredicates passes", (() => { try { assertDatePredicates(q.sql, [real.registry!.marts.customer_entry!]); return true; } catch { return false; } })());
+    check("WR5: tampered CTE without is_early is rejected", (() => {
+      try {
+        assertDatePredicates(q.sql.replace("AND t.is_early IS NOT TRUE", "AND TRUE"), [real.registry!.marts.customer_entry!]);
+        return false;
+      } catch (error) {
+        return /row filter/.test(String(error));
+      }
+    })());
+    check("WR5: tampered CTE without its date predicate is rejected", (() => {
+      try {
+        assertDatePredicates(q.sql.replace("AND t.first_order_date BETWEEN @scanFrom AND @scanTo", "AND TRUE"), [real.registry!.marts.customer_entry!]);
+        return false;
+      } catch (error) {
+        return /date predicate/.test(String(error));
+      }
+    })());
+    const r = realCompile(resolved({ ...base, components: ["customer_entry.r365", "customer_entry.m365", "customer_entry.n_customer"] }));
+    check("WR5 shared: every cohort metric compiles to one SQL and key", r.sql === q.sql && r.key === q.key);
+    const nc = realCompile(resolved({ ...base, compare: "none", components: ["customer_entry.r90"] }));
+    check("WR5 sql: without comparison the filter is still there", nc.sql.includes("AND t.is_early IS NOT TRUE") && nc.sql.includes("'cur' AS period") && nc.sql.includes("t.first_order_date BETWEEN @curFrom AND @curTo"));
+    const mixed = realCompile(resolved({ ...base, components: ["customer_entry.r90", "customer_entry.m90", "kpis.revenue"] }));
+    const kpisCte = mixed.sql.slice(mixed.sql.indexOf("\nkpis AS (\n"), mixed.sql.indexOf("\n)", mixed.sql.indexOf("\nkpis AS (\n")));
+    check("WR5 sql: mixed with kpis, joined on client, period, bucket; the filter stays in its own CTE", mixed.sql.includes("FROM customer_entry\nFULL OUTER JOIN kpis USING (client_id, period, bucket)") && !kpisCte.includes("is_early") && !mixed.sql.includes("entity_key"));
+    check("WR5 sql: mixed assertDatePredicates passes for both marts", (() => { try { assertDatePredicates(mixed.sql, [real.registry!.marts.kpis!, real.registry!.marts.customer_entry!]); return true; } catch { return false; } })());
+    const day = realCompile(resolved({ ...base, grain: "day", components: ["customer_entry.r90"] }));
+    check("WR5 sql: day grain compiles (a day widget must not fail), bucket is the first order date", day.sql.includes("t.first_order_date AS bucket") && day.sql.includes("AND t.is_early IS NOT TRUE"));
+    const plain = realCompile(resolved({ ...base, components: ["kpis.revenue"] }));
+    check("WR5 sql: widgets without the mart never mention it", !plain.sql.includes("customer_entry") && !plain.sql.includes("is_early"));
+    const nl = normaliseRows(
+      [{ client_id: "manami", period: "cur", bucket: { value: "2026-01-01" }, customer_entry__n_rows: 80, customer_entry__foreign_ccy_rows: 0, customer_entry__fx_missing_rows: 0, customer_entry__fx_missing_months: [], customer_entry__dm90: 55, customer_entry__dm90__nulls: 0, customer_entry__du90: 6, customer_entry__du90__nulls: 0, customer_entry__classes_configured: 80, customer_entry__classes_configured__nulls: 0 }],
+      q
+    );
+    check("WR5 normalise: customer entry row as counts", nl[0].values["customer_entry.dm90"]?.nat === 55 && nl[0].values["customer_entry.du90"]?.nat === 6 && nl[0].values["customer_entry.classes_configured"]?.nat === 80 && nl[0].guards.customer_entry?.nRows === 80);
+  }
   const nm = normaliseRows(
     [{ client_id: "venev", period: "cur", bucket: { value: "2026-09-07" }, kpis__n_rows: 7, kpis__foreign_ccy_rows: 0, kpis__fx_missing_rows: 0, kpis__fx_missing_months: [], meta_campaign__n_rows: null, meta_campaign__foreign_ccy_rows: null, meta_campaign__fx_missing_rows: null, meta_campaign__fx_missing_months: null, meta_campaign__spend__nat: null, meta_campaign__spend__disp: null, meta_campaign__landing_page_views: null }],
     { components: ["meta_campaign.landing_page_views", "meta_campaign.spend"], marts: ["kpis", "meta_campaign"] }
   );
   check("FX4 normalise: absent joined side gives zero guards and null sums", nm[0].guards.meta_campaign?.nRows === 0 && nm[0].values["meta_campaign.spend"]?.disp === null && nm[0].values["meta_campaign.landing_page_views"]?.nat === null && nm[0].values["meta_campaign.landing_page_views"]?.natNulls === 0);
+}
+
+function eqKeys(o: object, keys: string[]): boolean {
+  return JSON.stringify(Object.keys(o)) === JSON.stringify(keys);
 }
 
 function big2(s: string) {
@@ -840,7 +892,9 @@ async function bigQueryChecks(): Promise<void> {
         console.log(`  ${w.name.padEnd(4)} ${grain.padEnd(5)} skipped: over MAX_SPAN (resolve answers 413)`);
         continue;
       }
-      const widget = resolved({ clientIds: clients, components: phase1, grain, current: range, compare: "previous_year" });
+      // A mart without this grain is left out of that grain's dry run.
+      const comps = phase1.filter((id) => grain === "total" || (registry.marts[registry.components[id as ComponentId]!.mart]!.grains as readonly string[]).includes(grain));
+      const widget = resolved({ clientIds: clients, components: comps, grain, current: range, compare: "previous_year" });
       const q = compileWidgetWith(widget, registry, { projectId: PROJECT });
       const res = await queryJob(q.sql, { params: q.params, types: q.types, dryRun: true, maximumBytesBilled: budget });
       const bytes = res.totalBytesProcessed ?? Number.NaN;
@@ -855,7 +909,9 @@ async function bigQueryChecks(): Promise<void> {
   for (const mart of Object.values(registry.marts) as MartDef[]) {
     const needed = new Set<string>(["client_id", mart.dateColumn]);
     if (mart.currencyColumn) needed.add(mart.currencyColumn);
-    for (const c of Object.values(registry.components) as ComponentDef[]) if (c.mart === mart.id) needed.add(c.column);
+    for (const x of mart.rowFilter?.excludeTrue ?? []) needed.add(x);
+    // Classified components (hit rate) are written by the evaluator, never read from a column.
+    for (const c of Object.values(registry.components) as ComponentDef[]) if (c.mart === mart.id && c.classified === undefined) needed.add(c.column);
     byTable.set(mart.table, { mart, columns: needed });
   }
   for (const [table, { mart, columns }] of byTable) {

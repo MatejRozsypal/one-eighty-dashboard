@@ -25,6 +25,10 @@ export const CAVEATS: CaveatRegistry = {
   /** Data-driven: the evaluator adds it when a current-period launch is under 60 days old and not yet a winner. */
   cohort_maturing: { short: "Launches under 60 days old still open", applies: () => false },
   lifetime_to_date: { short: "Winners judged on lifetime to date", applies: () => true },
+  /** Data-driven (cohort retention): the evaluator adds it when a rate rests on 30 to 99 customers. */
+  low_n: { short: "Fewer than 100 customers", applies: () => false },
+  /** Data-driven (cohort retention): the evaluator adds it when the period has customers who have not yet had the horizon. */
+  cohort_partial: { short: "Recent customers not yet counted", applies: () => false },
 };
 
 /** Stable order for output lists. */
@@ -40,6 +44,8 @@ export const CAVEAT_ORDER: readonly CaveatId[] = [
   "foreign_currency_rows",
   "cohort_maturing",
   "lifetime_to_date",
+  "low_n",
+  "cohort_partial",
 ];
 
 /** Registry-driven caveats of one client, in CAVEAT_ORDER. */

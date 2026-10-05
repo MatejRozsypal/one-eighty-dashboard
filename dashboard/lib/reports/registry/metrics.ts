@@ -27,7 +27,7 @@
  */
 
 import { allOf } from "./capabilities";
-import { COMPONENTS, MARTS, getComponent } from "./components";
+import { CLASSES_COMPONENT, COMPONENTS, MARTS, getComponent } from "./components";
 import { METRIC_IDS, REGISTRY_METRIC_IDS, type MetricId, type RegistryMetricId } from "./ids";
 import {
   METRIC_GROUP_ORDER,
@@ -38,6 +38,7 @@ import {
   type FormatSpec,
   type GoodWhen,
   type Grain,
+  type MetricCohort,
   type MetricDef,
   type MetricGroup,
   type MetricReference,
@@ -83,6 +84,7 @@ interface Opts {
   deprecated?: boolean;
   reference?: MetricReference;
   showCounts?: { noun: string };
+  cohort?: MetricCohort;
 }
 
 type Spec =
@@ -105,6 +107,18 @@ const X_UP = { unit: "ratio", format: F.x, goodWhen: "up" } as const;
 const PCT_UP = { unit: "percent", format: F.pct, goodWhen: "up" } as const;
 const PCT_N = { unit: "percent", format: F.pct, goodWhen: "neutral" } as const;
 const COUNT_UP = { unit: "count", format: F.n, goodWhen: "up" } as const;
+
+/** Customer entry mart terms (cohort retention). */
+const ce = (column: string): Term => t(`customer_entry.${column}` as keyof typeof COMPONENTS);
+/** Cohort retention rates: percent, counts in customers, low-n and partial cohort caveats. */
+const COHORT = {
+  ...PCT_UP,
+  benchmarkable: false,
+  caveats: ["low_n", "cohort_partial"],
+  showCounts: { noun: "customers" },
+} as const satisfies Partial<Opts>;
+/** Design 1.11: n < 30 is n/a ("Too few customers"), 30 to 99 carries the low-n marker. */
+const COHORT_N = { minN: 30, lowN: 100 } as const;
 
 /** woo_fees_not_netted is obsolete (migration 228), so it is not listed. */
 const SHOP_CAV: CaveatId[] = ["revenue_incl_vat", "returns_not_netted"];
@@ -164,6 +178,14 @@ function defineMetrics(specs: Record<RegistryMetricId, Spec>): MetricRegistry {
     if (def.minVolume) getComponent(def.minVolume.c);
     if (def.showCounts && (def.kind !== "ratio" || def.numerator.length !== 1 || def.denominator.length !== 1 || def.numerator[0].sign !== 1 || def.denominator[0].sign !== 1)) {
       throw new Error(`Reports registry: ${id} showCounts needs a ratio of two single positive terms`);
+    }
+    if (def.cohort) {
+      const { population, minN, lowN } = def.cohort;
+      const pop = getComponent(population);
+      if (def.kind !== "ratio" || def.denominator.length !== 1 || def.denominator[0].sign !== 1) throw new Error(`Reports registry: ${id} cohort rules need a ratio with one positive denominator term`);
+      if (pop.money || pop.mart !== getComponent(def.denominator[0].c).mart) throw new Error(`Reports registry: ${id} cohort population must be a count in the denominator's mart`);
+      if (!(Number.isInteger(minN) && minN > 0 && Number.isInteger(lowN) && lowN >= minN)) throw new Error(`Reports registry: ${id} cohort thresholds need 0 < minN <= lowN`);
+      if (def.cohort.needsClasses && getComponent(CLASSES_COMPONENT).mart !== pop.mart) throw new Error(`Reports registry: ${id} needsClasses outside the customer entry mart`);
     }
     // Native sums exclude rows in another currency, display sums convert them: either way the marker belongs on every money-based metric.
     const caveats = usesMoney(def) ? [...(def.caveats ?? []), "foreign_currency_rows" as const] : def.caveats;
@@ -293,7 +315,7 @@ export const METRICS: MetricRegistry = defineMetrics({
     caveats: ["new_flag_window"],
   }),
 
-  // Retention (period based; cohort RCR and LTV come later)
+  // Retention (period based; the cohort rates are below, after the creative metrics)
   returning_orders: sum("Returning orders", "retention", [t("kpis.returning_customer_orders")], {
     ...COUNT_UP,
     description: "Orders from returning customers.",
@@ -518,6 +540,53 @@ export const METRICS: MetricRegistry = defineMetrics({
     aliases: ["launches", "new ads"],
   }),
 
+  // Cohort retention (WR5): acquisition cohorts from mart.rpt_customer_entry.
+  // The period selects customers by their first order date; each rate is a
+  // sum of per-customer 0/1 verdicts over the customers mature for the
+  // horizon, pooled across buckets and clients (sum over sum, never a mean of
+  // rates). Early customers are left out in SQL (MartDef.rowFilter). The
+  // cohort rules (MetricBase.cohort) run in evaluate.ts.
+  repeat_rate_90: ratio("Repeat rate, 90 days", "retention", [ce("r90")], [ce("m90")], {
+    ...COHORT,
+    description: "Customers first ordering in the period who order again within 90 days, among those with 90 days observed.",
+    aliases: ["repeat rate", "repeat customer rate"],
+    cohort: { population: "customer_entry.n_customer", ...COHORT_N },
+  }),
+  repeat_rate_180: ratio("Repeat rate, 180 days", "retention", [ce("r180")], [ce("m180")], {
+    ...COHORT,
+    description: "Customers first ordering in the period who order again within 180 days, among those with 180 days observed.",
+    cohort: { population: "customer_entry.n_customer", ...COHORT_N },
+  }),
+  repeat_rate_365: ratio("Repeat rate, 365 days", "retention", [ce("r365")], [ce("m365")], {
+    ...COHORT,
+    description: "Customers first ordering in the period who order again within 365 days, among those with 365 days observed.",
+    cohort: { population: "customer_entry.n_customer", ...COHORT_N },
+  }),
+  third_order_rate_180: ratio("3rd order, 180 days", "retention", [ce("r23_180")], [ce("m23_180")], {
+    ...COHORT,
+    description: "Customers first ordering in the period whose 3rd order follows the 2nd within 180 days, among those with 180 days observed after the 2nd.",
+    aliases: ["third order rate", "3rd order rate"],
+    cohort: { population: "customer_entry.has_second", ...COHORT_N },
+  }),
+  discovery_upgrade_90: ratio("Discovery to full size, 90 days", "retention", [ce("du90")], [ce("dm90")], {
+    ...COHORT,
+    description: "Discovery set entrants in the period who buy a full-size product within 90 days, among those with 90 days observed.",
+    aliases: ["upgrade rate", "discovery upgrade rate"],
+    cohort: { population: "customer_entry.is_discovery", ...COHORT_N, needsClasses: true },
+  }),
+  discovery_upgrade_180: ratio("Discovery to full size, 180 days", "retention", [ce("du180")], [ce("dm180")], {
+    ...COHORT,
+    description: "Discovery set entrants in the period who buy a full-size product within 180 days, among those with 180 days observed.",
+    cohort: { population: "customer_entry.is_discovery", ...COHORT_N, needsClasses: true },
+  }),
+  discovery_entry_share: ratio("Discovery entry share", "retention", [ce("is_discovery")], [ce("n_customer")], {
+    ...COHORT,
+    goodWhen: "neutral",
+    description: "Share of customers first ordering in the period whose first order is a discovery set.",
+    caveats: ["low_n"],
+    cohort: { population: "customer_entry.n_customer", ...COHORT_N, needsClasses: true },
+  }),
+
   // Phase 2: email campaigns (flows are cumulative snapshots)
   email_revenue: sum("Email campaign revenue", "email", [t("email_campaign.revenue")], {
     ...MONEY_UP,
@@ -577,7 +646,7 @@ export function findMetricId(text: string): MetricId | null {
   return null;
 }
 
-/** Components a widget must fetch for these metrics: formula components, COGS guards and low-volume components, sorted. */
+/** Components a widget must fetch for these metrics: formula components, COGS guards, low-volume and cohort rule components, sorted. */
 export function componentsFor(metricIds: readonly RegistryMetricId[]): ComponentId[] {
   const out = new Set<ComponentId>();
   for (const id of metricIds) {
@@ -588,6 +657,11 @@ export function componentsFor(metricIds: readonly RegistryMetricId[]): Component
       if (guard) out.add(guard);
     }
     if (m.minVolume) out.add(m.minVolume.c);
+    // Cohort rules read the population and, for discovery metrics, the classes flag.
+    if (m.cohort) {
+      out.add(m.cohort.population);
+      if (m.cohort.needsClasses) out.add(CLASSES_COMPONENT);
+    }
   }
   return [...out].sort();
 }

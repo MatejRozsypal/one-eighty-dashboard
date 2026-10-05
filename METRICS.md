@@ -503,6 +503,8 @@ Components are `mart_daily_kpis` columns, summed. Metrics:
 | | `meta_hook_rate` | `video_play_actions / impressions` of ad days with video plays, `mart_meta_ad_perf` ("hit rate" in the owner's request). |
 | | `meta_hold_rate` | `video_thruplays / impressions` of ad days with video plays. |
 | | `meta_frequency` | `impressions / reach` summed over campaign days: average daily frequency, below true period frequency. |
+| Creative hit rate (launch cohorts, `mart.rpt_ad_launch`) | `hit_rate` | `winners / launched`, pooled. Launched = Meta ads whose first delivery falls in the bucket, pre-existing ads and relaunches left out. Winner = lifetime-to-date purchases >= the client's `readPurchases` and shrunk ROAS >= its `targetRoas` (Settings), shrinkage toward the stored trailing-year Meta ROAS. Not benchmarkable; reference line ~5 %. Amendment 25. |
+| | `winners`, `ads_launched` | Sums of the per-ad winner and launch counts. A client without thresholds is `not_measured` "No thresholds" for hit rate and winners, never 0; ads launched needs no thresholds. |
 | Google | `google_spend` | Sum. |
 | | `google_roas` | `google_revenue / google_spend`. |
 | | `google_ctr` | `google_clicks / google_impressions`. |
@@ -598,6 +600,16 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 ---
 
 ## Changelog (most recent first)
+
+### 2026-10-05 (amendment 25): Creative hit rate in Reports (HR3)
+
+Frontend semantic layer only; the table is HR1's `mart.rpt_ad_launch` (migration 254, already live). `SEMANTIC_VERSION` 6 to 7.
+1. **New metrics** `hit_rate`, `winners`, `ads_launched` (Meta group). Same definition as the Creative tile (design 40, section 2.2): launched = first delivery in the bucket, not pre-existing, not a relaunch; winner = `classify()` on lifetime totals against the client's own thresholds and stored prior ROAS; open = not a winner and under 60 days old.
+2. **Entity mart.** `ad_launch` is classified per ad before summing: the SQL returns one row per client, period, bucket and ad (inputs with ANY_VALUE), and the evaluator maps each row through `launchStatus()` (lib/creative/hitRate.ts, the Creative tile's function) into 0/1 counts. Thresholds come from Postgres `creative_settings` per request and never reach SQL or a cache key: a Settings edit applies at once.
+3. **Rollups.** Combined = sum of winners / sum of launched, each client against its own bar. A client without thresholds is left out with the usual coverage note ("3 of 4 clients", "Venev: No thresholds").
+4. **Maturity.** A current period with an open launch carries "Launches under 60 days old still open"; for hit rate and winners the delta is suppressed when the current period is maturing and the comparison is not. "Winners judged on lifetime to date" always applies.
+5. **Live (2025-10-01 to 2026-09-30, thresholds Dobias 3.00/25, Ethia 2.50/10, Manami 2.25/15, Venev 2.10/10):** Dobias 6 of 35 (17.1 %), Ethia 7 of 156 (4.5 %), Manami 9 of 122 (7.4 %), Venev 0 of 9 (all open); combined 22 of 322 (6.8 %). Equal to the Creative tile. Query: 46 KB processed (10 MB billed minimum).
+6. The alias "hit rate" now finds this metric; hook rate keeps "thumbstop rate".
 
 ### 2026-10-05 (amendment 24): Reports CM3 equals Snapshot, hook rate on 3-second plays, shared KPI queries (QF1)
 

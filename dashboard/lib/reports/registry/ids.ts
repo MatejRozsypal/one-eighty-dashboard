@@ -16,8 +16,9 @@
 /**
  * Queryable metrics: the 30 phase-1 metrics read from `mart_daily_kpis`, then
  * the Meta soft metrics read from `mart_meta_campaign_perf` and
- * `mart_meta_ad_perf` (added 2026-10-04, semantic version 5). The only ids a
- * widget query accepts.
+ * `mart_meta_ad_perf` (added 2026-10-04, semantic version 5), then the
+ * creative hit rate read from `mart.rpt_ad_launch` (2026-10-05, version 7).
+ * The only ids a widget query accepts.
  */
 export const METRIC_IDS = [
   // Profitability
@@ -70,6 +71,10 @@ export const METRIC_IDS = [
   "meta_hold_rate",
   "meta_frequency",
   "meta_conversion_rate",
+  // Creative hit rate (launch cohorts, mart.rpt_ad_launch), added 2026-10-05, semantic version 7.
+  "hit_rate",
+  "winners",
+  "ads_launched",
 ] as const;
 
 /** Phase 2, reserved: defined in the registry, not yet queryable. */

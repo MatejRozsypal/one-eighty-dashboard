@@ -26,6 +26,7 @@
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis, type TooltipProps } from "recharts";
 import type { MetricId } from "@/lib/reports/registry/ids";
+import type { MetricReference } from "@/lib/reports/registry/types";
 import { NO_VALUE } from "@/lib/format";
 import { BenchmarkStrip } from "./BenchmarkHover";
 import { MetricSwitch, NotesMark, SeriesLegend, type LegendItem } from "./CellStatus";
@@ -94,6 +95,8 @@ export function LineWidget({ result, metrics, caveatTexts, size }: ChartWidgetPr
   const anyGap = legend.some((l) => l.cell && l.cell.status !== "ok");
   const matches = metric.benchmarkable ? benchmarksFor(result, metric.id) : [];
   const lines = metric.benchmarkable ? drawnBenchmarks(matches) : [];
+  // A fixed reference value (hit rate ~5%): a dashed line like a benchmark, labelled, never stale.
+  const reference = (metric as { reference?: MetricReference }).reference;
 
   // Every partial bucket is shaded, the leading one as well as the trailing
   // one: the segment that joins a part-week to its neighbour is a ramp, not a
@@ -222,6 +225,16 @@ export function LineWidget({ result, metrics, caveatTexts, size }: ChartWidgetPr
                   label={{ value: `I ${fmt(b.value)}`, position: "insideTopRight", fontSize: 10.5, fontFamily: "var(--font-mono)", fill: "var(--text-muted)" }}
                 />
               ))}
+              {reference && (
+                <ReferenceLine
+                  y={reference.value}
+                  stroke={BENCHMARK.stroke}
+                  strokeWidth={BENCHMARK.width}
+                  strokeDasharray={BENCHMARK.dash}
+                  ifOverflow="extendDomain"
+                  label={{ value: reference.label, position: "insideTopLeft", fontSize: 10.5, fontFamily: "var(--font-mono)", fill: "var(--text-muted)" }}
+                />
+              )}
               {comparing &&
                 drawn.map(({ s, k }) => (
                   <Line

@@ -10,6 +10,7 @@
  * capabilities.ts (WP1).
  */
 
+import type { CreativeThresholds } from "@/lib/creative/stats";
 import type { RegistryMetricId } from "./ids";
 
 export type { MetricId, Phase2MetricId, RegistryMetricId } from "./ids";
@@ -18,9 +19,9 @@ export type { MetricId, Phase2MetricId, RegistryMetricId } from "./ids";
  * Part of every cache key. Bump it whenever a formula, a component column or
  * an evaluation rule changes, so no cached result outlives its definition.
  */
-export const SEMANTIC_VERSION = 6;
+export const SEMANTIC_VERSION = 7;
 
-export type MartId = "kpis" | "meta_campaign" | "meta_ad" | "email_campaign";
+export type MartId = "kpis" | "meta_campaign" | "meta_ad" | "email_campaign" | "ad_launch";
 export type Grain = "day" | "week" | "month";
 export type QueryGrain = Grain | "total";
 export type Unit = "money" | "count" | "ratio" | "percent";
@@ -96,6 +97,15 @@ export interface ReportClient {
    * Absent or null means unstated and counts as 0, exactly like Snapshot.
    */
   costRates?: Readonly<Partial<Record<CostRateKey, number | null>>>;
+  /**
+   * Creative thresholds the client set in Settings (Postgres
+   * `creative_settings`, `toThresholds()`), the bar a launched ad must clear
+   * to be a winner. Merged in per request by the query route like
+   * `costRates`, never part of SQL or a cache key, so a Settings edit applies
+   * at once. Absent or null: no thresholds, and every hit-rate cell of the
+   * client is not_measured "No thresholds".
+   */
+  creativeThresholds?: CreativeThresholds | null;
 }
 
 /** Stated per-order costs (Settings): fulfilment (CM2 and CM3) and other CM1 costs. */
@@ -130,6 +140,28 @@ export interface MartDef {
    * BigQuery job. Evaluation reads only the metric's components.
    */
   selectAll?: true;
+  /**
+   * Entity mart (one row per entity, an ad): rows are classified one by one
+   * before they are summed, because a per-ad verdict cannot be expressed as a
+   * component sum. The compiler groups by the entity key as well, selects
+   * every input component of the mart with ANY_VALUE and leaves out rows
+   * where any `exclude` column is TRUE. The evaluator maps each entity row
+   * through the classifier into its `classified` components (plain 0/1
+   * counts), so bucketing, rollups, comparisons and coverage apply unchanged.
+   * Thresholds never reach SQL or the cache key.
+   */
+  entity?: EntityDef;
+}
+
+/** Classifiers of entity marts, implemented in evaluate.ts. */
+export type EntityClassifier = "creative_hit";
+
+export interface EntityDef {
+  /** Entity key column (`ad_id`). */
+  key: string;
+  classifier: EntityClassifier;
+  /** BOOL columns: a row where any is TRUE is not an entity of this mart (pre-existing ads, relaunches). */
+  exclude: readonly string[];
 }
 
 export type ComponentId = `${MartId}.${string}`;
@@ -192,6 +224,20 @@ export interface ComponentDef {
    * row. Must be money with nullMeans "zero" and may rename its column.
    */
   perClientRate?: CostRateKey;
+  /**
+   * Output of an entity mart's classifier (`ad_launch.winners`): a virtual
+   * 0/1 count per entity row, written by evaluate.ts and never emitted in SQL.
+   * `column` repeats the id part and is not a physical column. Every other
+   * component of an entity mart is a classifier input, selected with
+   * ANY_VALUE per entity and never read by a metric.
+   * - needsThresholds: the client's `creativeThresholds` decide the value;
+   *   without them a metric reading it is not_measured "No thresholds".
+   * - lowerBound: the value can still grow while entities are open (an ad
+   *   under 60 days old may still become a winner). Metrics reading it carry
+   *   the maturing caveat, and their delta is suppressed when the current
+   *   period is maturing and the comparison is not.
+   */
+  classified?: { needsThresholds: boolean; lowerBound: boolean };
 }
 
 /** Identifier rule for marts, tables and columns. Enforced when the registry loads. */
@@ -230,7 +276,11 @@ export type CaveatId =
   | "new_flag_window"
   | "period_share_not_rcr"
   /** Added by RS0: set by the evaluator when foreign_ccy_rows > 0 (design 2.9 step 2). */
-  | "foreign_currency_rows";
+  | "foreign_currency_rows"
+  /** Hit rate (HR3): set by the evaluator when a launch in the current period is still open (under 60 days old). */
+  | "cohort_maturing"
+  /** Hit rate (HR3): winners are judged on lifetime-to-date totals, not on the period alone. */
+  | "lifetime_to_date";
 
 export interface CaveatDef {
   /** Hover text. Short, no em dash. */
@@ -260,6 +310,18 @@ export interface MetricBase {
   minVolume?: { c: ComponentId; shareOfMax: number };
   phase: 1 | 2;
   deprecated?: boolean;
+  /**
+   * A fixed reference value (not an industry benchmark, never stale, not in
+   * ref.industry_benchmarks): the KPI tile names it on hover, Line and Bar
+   * draw it as a dashed line. Same unit as the metric's value.
+   */
+  reference?: MetricReference;
+}
+
+export interface MetricReference {
+  value: number;
+  /** Two or three words, "Reference ~5%". */
+  label: string;
 }
 
 /** Signed sum of components: revenue, CM3 = revenue - cogs - paid_spend. */

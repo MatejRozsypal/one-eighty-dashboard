@@ -26,6 +26,7 @@
  * Design: 11_reporting_suite_design.md section 2.4. Owner: WP1 (RS1).
  */
 
+import { HIT_RATE_REFERENCE } from "@/lib/creative/hitRate";
 import { allOf } from "./capabilities";
 import { COMPONENTS, MARTS, getComponent } from "./components";
 import { METRIC_IDS, REGISTRY_METRIC_IDS, type MetricId, type RegistryMetricId } from "./ids";
@@ -40,6 +41,7 @@ import {
   type Grain,
   type MetricDef,
   type MetricGroup,
+  type MetricReference,
   type MetricRegistry,
   type RegisteredMetric,
   type Term,
@@ -80,6 +82,7 @@ interface Opts {
   minVolume?: { c: ComponentId; shareOfMax: number };
   phase?: 1 | 2;
   deprecated?: boolean;
+  reference?: MetricReference;
 }
 
 type Spec =
@@ -153,6 +156,8 @@ function defineMetrics(specs: Record<RegistryMetricId, Spec>): MetricRegistry {
     const defs = comps.map(getComponent);
     for (const c of defs) {
       const mart = MARTS[c.mart];
+      // Entity marts: metrics read the classifier's outputs, never its per-entity inputs (summing a ROAS is meaningless).
+      if ("entity" in mart && c.classified === undefined) throw new Error(`Reports registry: ${id} reads entity input ${c.id}; use a classified component`);
       if (mart.phase > phase) throw new Error(`Reports registry: phase ${phase} metric ${id} reads phase ${mart.phase} mart ${mart.id}`);
       for (const g of def.grains) if (!(mart.grains as readonly Grain[]).includes(g)) throw new Error(`Reports registry: ${id} grain ${g} not in mart ${mart.id}`);
     }
@@ -454,7 +459,7 @@ export const METRICS: MetricRegistry = defineMetrics({
     ...PCT_UP,
     description: "3-second video plays per impression of video ads (ads with plays in the period, all their days).",
     benchmarkable: true,
-    aliases: ["hit rate", "thumbstop rate"],
+    aliases: ["thumbstop rate"],
     definitionKey: "Hook rate",
   }),
   meta_hold_rate: ratio("Hold rate", "meta", [ma("video_thruplays")], [ma("video_impressions")], {
@@ -481,6 +486,33 @@ export const METRICS: MetricRegistry = defineMetrics({
     benchmarkable: true,
     caveats: ["platform_attributed"],
     aliases: ["conversion rate", "meta cvr"],
+  }),
+
+  // Creative hit rate (HR3): launch cohorts from mart.rpt_ad_launch, entity
+  // mart classified per ad in evaluate.ts against the client's own Settings
+  // thresholds, with the same launchStatus() as the Creative tile. Combined
+  // = sum of winners / sum of launched, each client judged by its own bar.
+  hit_rate: ratio("Hit rate", "meta", [t("ad_launch.winners")], [t("ad_launch.launched")], {
+    ...PCT_UP,
+    description: "Winners among Meta ads first delivered in the period, relaunches excluded. Winner: the client's purchase and ROAS bar, lifetime to date.",
+    benchmarkable: false,
+    caveats: ["cohort_maturing", "lifetime_to_date"],
+    aliases: ["creative hit rate", "winner rate"],
+    reference: { value: HIT_RATE_REFERENCE, label: "Reference ~5%" },
+  }),
+  winners: sum("Winners", "meta", [t("ad_launch.winners")], {
+    ...COUNT_UP,
+    description: "Meta ads first delivered in the period that clear the client's winner bar, lifetime to date.",
+    benchmarkable: false,
+    caveats: ["cohort_maturing", "lifetime_to_date"],
+    aliases: ["winning ads", "creative winners"],
+  }),
+  ads_launched: sum("Ads launched", "meta", [t("ad_launch.launched")], {
+    ...COUNT_UP,
+    goodWhen: "neutral",
+    description: "Meta ads first delivered in the period. Relaunches of an asset that already ran and ads running before the history starts are left out.",
+    benchmarkable: false,
+    aliases: ["launches", "new ads"],
   }),
 
   // Phase 2: email campaigns (flows are cumulative snapshots)

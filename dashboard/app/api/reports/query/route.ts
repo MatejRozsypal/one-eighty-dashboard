@@ -26,13 +26,20 @@
  *     and are only read after the gate.
  *
  * Flow: gate (404) -> parse (400) -> report visibility (404) -> clients ->
- * resolve (413) -> compile -> run (422 / 504 / 500) -> benchmarks and stated
- * cost rates -> evaluate -> access log -> 200.
+ * resolve (413) -> compile -> run (422 / 504 / 500) -> benchmarks, stated
+ * cost rates and creative thresholds -> evaluate -> access log -> 200.
  *
  * Stated cost rates (CM3 and CM1 parity with Snapshot): read from Postgres
  * `client_settings` per request, only when a metric of the widget needs one,
  * and merged into the widget's clients as `costRates`. They never reach SQL,
  * so cached rows stay valid and a Settings edit applies on the next request.
+ *
+ * Creative thresholds (hit rate, HR3): the same pattern. Read from Postgres
+ * `creative_settings` per request, only when a widget component is a
+ * classified count that needs them (winners, open), and merged into the
+ * clients as `creativeThresholds` after compile. A threshold edit applies on
+ * the next request with no cache invalidation, and the SQL and key never
+ * change.
  */
 
 import { reportsAccessOrNull, type Access } from "@/lib/authz";
@@ -47,6 +54,8 @@ import { canViewReport } from "@/lib/reports/store";
 import { getComponent } from "@/lib/reports/registry/components";
 import type { ComponentId, ReportClient } from "@/lib/reports/registry/types";
 import { listClientSettings } from "@/lib/users/settings";
+import { getCreativeSettings, toThresholds } from "@/lib/creative/store";
+import type { CreativeThresholds } from "@/lib/creative/stats";
 import {
   isReportsError,
   type CompileWidget,
@@ -158,6 +167,28 @@ async function statedRates(componentIds: readonly ComponentId[], clientIds: read
 }
 
 // ---------------------------------------------------------------------------
+// Creative thresholds
+// ---------------------------------------------------------------------------
+
+/**
+ * Creative thresholds (Settings) of the given clients, or null when no
+ * component of the widget needs them. A client without the three money lines
+ * maps to null ("No thresholds"). A failed read leaves every client without
+ * thresholds (cells read "No thresholds", never a zero) and is logged, the
+ * same fallback shape as the stated rates.
+ */
+async function creativeThresholds(componentIds: readonly ComponentId[], clientIds: readonly string[]): Promise<Map<string, CreativeThresholds | null> | null> {
+  if (!componentIds.some((id) => getComponent(id).classified?.needsThresholds === true)) return null;
+  try {
+    const settings = await Promise.all(clientIds.map((id) => getCreativeSettings(id)));
+    return new Map(settings.map((s) => [s.clientId, toThresholds(s)] as const));
+  } catch (error) {
+    console.warn("[reports] creative_settings unreadable, hit rate reads No thresholds", error instanceof Error ? error.message : "");
+    return new Map();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -205,15 +236,27 @@ export async function POST(request: Request): Promise<Response> {
 
     // 5. Compile and run. Benchmarks and stated cost rates load in parallel.
     const compiled = compileFn(widget);
-    const [run, benchmarks, rates] = await Promise.all([
+    const [run, benchmarks, rates, thresholds] = await Promise.all([
       runFn(compiled, { rangeTo: widget.period.current.to, userEmail: access.email, widgetType: body.widgetType }),
       benchmarksFn(widget),
       statedRates(widget.components, widget.clients.map((c) => c.id)),
+      creativeThresholds(widget.components, widget.queryClientIds),
     ]);
 
-    // 6. Evaluate in TypeScript from the summed components. Rates go into the
-    // clients only now: they are not part of the compiled SQL or its key.
-    const evaluated = rates === null ? widget : { ...widget, clients: widget.clients.map((c) => ({ ...c, costRates: rates.get(c.id) ?? {} })) };
+    // 6. Evaluate in TypeScript from the summed components. Rates and
+    // creative thresholds go into the clients only now: they are not part of
+    // the compiled SQL or its key.
+    const evaluated =
+      rates === null && thresholds === null
+        ? widget
+        : {
+            ...widget,
+            clients: widget.clients.map((c) => ({
+              ...c,
+              ...(rates !== null ? { costRates: rates.get(c.id) ?? {} } : {}),
+              ...(thresholds !== null ? { creativeThresholds: thresholds.get(c.id) ?? null } : {}),
+            })),
+          };
     const result = evaluateFn({
       widget: evaluated,
       rows: run.rows,

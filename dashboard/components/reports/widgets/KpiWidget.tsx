@@ -18,6 +18,7 @@
  */
 
 import { Sparkline } from "@/components/ui/Sparkline";
+import type { MetricReference } from "@/lib/reports/registry/types";
 import { BenchmarkStrip } from "./BenchmarkHover";
 import { CellDelta, NotesMark, PendingCell, StatusText } from "./CellStatus";
 import { formatMetricValue } from "./format";
@@ -47,7 +48,9 @@ export function KpiWidget({ result, metrics, caveatTexts, seriesId, metricId, pe
   // No sparkline behind an n/a: a trend line next to "no data" reads as data.
   const spark = ok && cell.points && cell.points.filter((p) => p !== null).length >= 2 ? cell.points : null;
   const matches = benchmarksFor(result, metric.id, series);
-  const notes = cellNotes(series, metric, cell, caveatTexts);
+  // A fixed reference value (hit rate ~5%) is named on hover, never drawn as a benchmark.
+  const reference = (metric as { reference?: MetricReference }).reference;
+  const notes = [...cellNotes(series, metric, cell, caveatTexts), ...(reference ? [reference.label] : [])];
 
   return (
     <div className="flex h-full min-h-0 flex-col justify-between gap-2">

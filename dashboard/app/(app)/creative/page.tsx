@@ -34,7 +34,12 @@ import {
   type FormatFilter,
 } from "@/lib/creative/hitRate";
 import { toQueueProposal, type QueueRow } from "@/lib/creative/view";
-import { CreativeNotConnected, Scorecard, SectionHead } from "@/components/creative/primitives";
+import {
+  CreativeNotConnected,
+  Scorecard,
+  SectionHead,
+  rateChange,
+} from "@/components/creative/primitives";
 import { NoData, NotConnected } from "@/components/ui/EmptyState";
 import { Notice } from "@/components/ui/Notice";
 import { buildAdViews, loadCreative } from "@/lib/creative/page";
@@ -43,7 +48,6 @@ import { conceptLabel } from "@/lib/creative/display";
 import { CONFIRM_THRESHOLD, propose } from "@/lib/creative/matching";
 import { formatNumber, NO_VALUE } from "@/lib/format";
 import { comparisonLabel, rangeLabel } from "@/lib/params";
-import { delta } from "@/lib/period";
 import { money, roas, unitMoney } from "@/components/creative/primitives";
 import type { AdView } from "@/lib/creative/view";
 
@@ -105,12 +109,21 @@ export default async function CreativesPage({
   // Rendered against `display`, which equals `thresholds` when they are set and
   // is a judgement-free stand-in when they are not. The wall of creative is the
   // product; it does not wait for anybody to visit Settings.
+  const comparison = ctx.params.period.comparison;
+  const launchRange =
+    comparison && comparison.from < ctx.params.range.from
+      ? { from: comparison.from, to: ctx.params.range.to }
+      : ctx.params.range;
   const [views, launches] = await Promise.all([
     data.available ? buildAdViews(ctx, display) : Promise.resolve([] as AdView[]),
     // The hit rate counts ads by FIRST delivery, lifetime to date, so it reads
     // its own table rather than the period totals above. Not ready reads as
     // n/a, never as zero.
-    data.available ? getLaunches(client.clientId, ctx.params.range) : Promise.resolve(null),
+    // With a comparison selected the read also reaches back to the comparison
+    // period's start, so its launches are loaded for the Hit rate tile.
+    data.available
+      ? getLaunches(client.clientId, launchRange)
+      : Promise.resolve(null),
   ]);
 
   const formatParam = one(searchParams.hrfmt);
@@ -118,6 +131,13 @@ export default async function CreativesPage({
   const launched = launches && launches.state === "ready" ? launches : null;
   const hit = launched ? hitRate(inRange(launched.rows, ctx.params.range), thresholds) : null;
   const hitText = tileText(hit, thresholds);
+  // The comparison period's hit rate, read from the same launch table. A
+  // period with no launches has no rate (zero launches is not a 0% hit rate),
+  // so the tile then carries no change at all.
+  const prevHit =
+    launched && comparison && thresholds
+      ? hitRate(inRange(launched.rows, comparison), thresholds)
+      : null;
   const trendState: HitRateTrendState = !launched
     ? "not-ready"
     : thresholds
@@ -158,7 +178,9 @@ export default async function CreativesPage({
       label: "Spend",
       value: money(account.spend, currency),
       sub: `${account.ads} creatives`,
-      delta: delta(account.spend, prev?.spend ?? null),
+      change: prev
+        ? { current: account.spend, previous: prev.spend, kind: "money" as const, currency }
+        : null,
       // Spending more is neither good nor bad on its own, and colouring it
       // would assert a judgement the number does not support.
       goodWhen: "neutral" as const,
@@ -167,21 +189,28 @@ export default async function CreativesPage({
       label: "Blended ROAS",
       value: roas(account.meanRoas),
       sub: thresholds ? `target ${thresholds.targetRoas.toFixed(2)}` : "no target set",
-      delta: delta(account.meanRoas, prevRoas),
+      change: { current: account.meanRoas, previous: prevRoas, kind: "ratio" as const },
       goodWhen: "up" as const,
     },
     {
       label: "CPA",
       value: unitMoney(account.cpa, currency),
       sub: thresholds ? `target ${unitMoney(thresholds.targetCpa, currency)}` : "no target set",
-      delta: delta(account.cpa, prevCpa),
+      change: {
+        current: account.cpa,
+        previous: prevCpa,
+        kind: "money" as const,
+        currency,
+      },
       goodWhen: "down" as const,
     },
     {
       label: "Purchases",
       value: formatNumber(account.purchases),
       sub: compare ?? undefined,
-      delta: delta(account.purchases, prev?.purchases ?? null),
+      change: prev
+        ? { current: account.purchases, previous: prev.purchases, kind: "count" as const }
+        : null,
       goodWhen: "up" as const,
     },
     // The four that judge the rest. They need a kill line and a target to mean
@@ -210,6 +239,10 @@ export default async function CreativesPage({
       value: hitText.value ?? NO_VALUE,
       sub: hitText.sub,
       info: hitText.info,
+      // Percentage points in both modes, and only when the comparison period
+      // launched something.
+      change: prevHit && hit ? rateChange(hit.rate, prevHit.rate, prevHit.launched) : null,
+      goodWhen: "up" as const,
     },
   ];
 

@@ -14,7 +14,14 @@
  */
 
 import type { ReactNode } from "react";
-import { formatMoney, formatNumber, formatRatio, NO_VALUE, isNoValue } from "@/lib/format";
+import {
+  formatMoney,
+  formatNumber,
+  formatRatio,
+  NO_VALUE,
+  isNoValue,
+  type DeltaInput,
+} from "@/lib/format";
 import { Header } from "@/components/shell/Header";
 import { NotConnected } from "@/components/ui/EmptyState";
 import { InfoTip } from "@/components/ui/InfoTip";
@@ -150,11 +157,18 @@ export interface Tile {
   info?: string;
   /**
    * Period-over-period change, when a comparison range is selected. Only the
-   * four delivery figures carry one, spend, ROAS, CPA and purchases have
-   * enough events behind them to move for a reason. A "winners" count that went
-   * from 1 to 2 is not up 100%.
+   * four delivery figures and the hit rate (percentage points, and only when the
+   * comparison period launched something) carry one. Spend, ROAS, CPA and
+   * purchases have enough events behind them to move for a reason. A "winners"
+   * count that went from 1 to 2 is not up 100%.
    */
   delta?: number | null;
+  /**
+   * The same four figures, as current and comparison values plus the metric
+   * kind, so the chip follows the "% | 123" toggle. Takes precedence over
+   * `delta`. Null or omitted: no chip.
+   */
+  change?: DeltaInput | null;
   /** Which direction is good. Spend is neutral; CPA is good when it falls. */
   goodWhen?: GoodWhen;
 }
@@ -200,6 +214,21 @@ export function StatLine({ tiles }: { tiles: Tile[] }) {
 }
 
 /**
+ * The change for a rate tile such as the hit rate, or null when it would not be
+ * honest to draw one: the comparison period launched nothing (a rate over zero
+ * launches is undefined, not zero), or either rate is missing. Rates are shown
+ * in percentage points in both delta modes.
+ */
+export function rateChange(
+  current: number | null,
+  previous: number | null,
+  previousLaunched: number
+): DeltaInput | null {
+  if (previousLaunched <= 0 || current === null || previous === null) return null;
+  return { current, previous, kind: "rate" };
+}
+
+/**
  * The scorecard strip.
  *
  * Symmetric by contract: eight tiles render 4 x 2, six render 3 x 2. A ragged
@@ -236,8 +265,11 @@ export function Scorecard({ tiles }: { tiles: Tile[] }) {
             {t.sub && (
               <span className="truncate text-[12px] text-content-muted">{t.sub}</span>
             )}
-            {t.delta !== undefined && t.delta !== null && (
-              <DeltaChip delta={t.delta} goodWhen={t.goodWhen ?? "up"} />
+            {t.change ? (
+              <DeltaChip change={t.change} goodWhen={t.goodWhen ?? "up"} />
+            ) : (
+              t.delta !== undefined &&
+              t.delta !== null && <DeltaChip delta={t.delta} goodWhen={t.goodWhen ?? "up"} />
             )}
           </div>
         </div>

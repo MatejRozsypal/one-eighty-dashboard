@@ -8,8 +8,9 @@
 
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
-import { parseViewParams, type SearchParams } from "@/lib/params";
+import { parseViewParams, comparisonLabel, type SearchParams } from "@/lib/params";
 import { getEmailSummary, getFlows } from "@/lib/queries/email";
+import type { DeltaInput, DeltaKind } from "@/lib/format";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { Header } from "@/components/shell/Header";
@@ -20,6 +21,7 @@ import { NotConnected, NoData, Value } from "@/components/ui/EmptyState";
 import { DataTable } from "@/components/ui/DataTable";
 import { NO_VALUE, plainDashes } from "@/lib/format";
 import { EmptyNote } from "@/components/ui/PageNotes";
+import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 
 export const metadata: Metadata = { title: "Email" };
 export const dynamic = "force-dynamic";
@@ -43,8 +45,17 @@ export default async function EmailPage({
     );
   }
 
-  const [summary, flows] = await Promise.all([
+  // The comparison period's totals are read in parallel, and only when a
+  // comparison is selected. Totals come from their own query with no LIMIT, so
+  // one campaign row is enough here. Flows are cumulative counters since each
+  // flow was switched on (see `getFlows`), not period figures, so the flows
+  // block has nothing to compare and carries no change.
+  const comparison = params.period.comparison;
+  const [summary, previous, flows] = await Promise.all([
     getEmailSummary(client.clientId, params.range, 30, client.emailPlatform),
+    comparison
+      ? getEmailSummary(client.clientId, comparison, 1, client.emailPlatform)
+      : Promise.resolve(null),
     // The daily flow series is Klaviyo only.
     client.emailPlatform === "ecomail"
       ? null
@@ -59,7 +70,7 @@ export default async function EmailPage({
   const header = (
     <>
       <Header title="Email" />
-      <PageControls client={client} params={params} />
+      <PageControls client={client} params={params} compare />
     </>
   );
 
@@ -74,22 +85,64 @@ export default async function EmailPage({
     );
   }
 
+  const compareLabel = comparisonLabel(params);
+  // One chip per headline tile. No chip when nothing was sent in the comparison
+  // period (its summary is null) or a figure is missing on either side.
+  const chg = (
+    pick: (s: NonNullable<typeof summary>) => number | null,
+    kind: DeltaKind,
+    extra: Partial<DeltaInput> = {}
+  ): DeltaInput | null =>
+    previous
+      ? { current: pick(summary), previous: pick(previous), kind, currency: client.currency, ...extra }
+      : null;
+
+  const tiles: Array<{
+    label: string;
+    value: string;
+    accent?: boolean;
+    info?: string;
+    change: DeltaInput | null;
+    goodWhen?: GoodWhen;
+  }> = [
+    {
+      label: "Campaign revenue",
+      value: money(summary.totalRevenue),
+      accent: true,
+      change: chg((s) => s.totalRevenue, "money"),
+    },
+    {
+      label: "Emails sent",
+      value: formatNumber(summary.totalSent),
+      // Sending more is volume, not performance.
+      change: chg((s) => s.totalSent, "count"),
+      goodWhen: "neutral",
+    },
+    {
+      label: "Revenue / recipient",
+      value: unitMoney(summary.revenuePerRecipient),
+      change: chg((s) => s.revenuePerRecipient, "money"),
+    },
+    {
+      label: "Open rate",
+      value: formatPercent(summary.avgOpenRate),
+      change: chg((s) => s.avgOpenRate, "rate"),
+    },
+    {
+      label: "Click rate",
+      value: formatPercent(summary.avgClickRate, { decimals: 2 }),
+      // Click rates sit well under 1%: points at two decimals.
+      change: chg((s) => s.avgClickRate, "rate", { decimals: 2 }),
+      info: "Unique clicks divided by delivered, not click-to-open, so it reads lower than most email platforms show. Period rates are recomputed from sums.",
+    },
+  ];
+
   return (
     <>
       {header}
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <section className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-          {[
-            { label: "Campaign revenue", value: money(summary.totalRevenue), accent: true },
-            { label: "Emails sent", value: formatNumber(summary.totalSent) },
-            { label: "Revenue / recipient", value: unitMoney(summary.revenuePerRecipient) },
-            { label: "Open rate", value: formatPercent(summary.avgOpenRate) },
-            {
-              label: "Click rate",
-              value: formatPercent(summary.avgClickRate, { decimals: 2 }),
-              info: "Unique clicks divided by delivered, not click-to-open, so it reads lower than most email platforms show. Period rates are recomputed from sums.",
-            },
-          ].map((s) => (
+          {tiles.map((s) => (
             <div
               key={s.label}
               className="flex flex-col gap-[9px] rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-sm"
@@ -105,6 +158,23 @@ export default async function EmailPage({
               >
                 <Value>{s.value}</Value>
               </span>
+              {comparison && (
+                // Holds the row's height when a tile has no chip, so the strip
+                // does not reflow between tiles.
+                <span className="inline-flex min-h-[18px] min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap">
+                  <DeltaChip
+                    change={s.change}
+                    goodWhen={s.goodWhen ?? "up"}
+                    after={
+                      compareLabel ? (
+                        <span className="hidden truncate font-mono text-[11.5px] tracking-[0.02em] text-content-muted sm:inline">
+                          {compareLabel}
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                </span>
+              )}
             </div>
           ))}
         </section>

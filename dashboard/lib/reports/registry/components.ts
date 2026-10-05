@@ -38,7 +38,8 @@ import {
 } from "./types";
 
 export const MARTS = {
-  kpis: { id: "kpis", table: "mart.mart_daily_kpis", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1 },
+  // selectAll: every KPI widget selects all kpis components, so widgets over the same filters share one query and one cache entry.
+  kpis: { id: "kpis", table: "mart.mart_daily_kpis", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1, selectAll: true },
   // Meta marts: one row per campaign (ad) and day, money in the ad account currency (`currency`).
   meta_campaign: { id: "meta_campaign", table: "mart.mart_meta_campaign_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1, accountCurrency: true },
   meta_ad: { id: "meta_ad", table: "mart.mart_meta_ad_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1, accountCurrency: true },
@@ -62,6 +63,9 @@ export const MARTS = {
 // bucket is empty). Checked live 2026-10-04.
 const PAID: CapExpr = { any: ["meta", "googleAds"] };
 
+/** Video ads: ads with video plays on any day of the period (per ad, not per row). */
+const VIDEO_ADS = { onlyWhenPositive: "meta_ad.video_play_actions", filterScope: { key: "ad_id" } } as const;
+
 type ComponentSpec = Omit<ComponentDef, "id" | "mart" | "column"> & { column?: string };
 
 function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>): Readonly<Record<K, ComponentDef>> {
@@ -74,8 +78,18 @@ function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>
     if (!(mart in MARTS)) throw new Error(`Reports registry: component ${id} names an unknown mart`);
     if (!IDENTIFIER_RE.test(id.slice(dot + 1))) throw new Error(`Reports registry: component ${id} has an invalid id`);
     if (!IDENTIFIER_RE.test(column)) throw new Error(`Reports registry: component ${id} has an invalid column name`);
-    if (columnOverride !== undefined && spec.onlyWhenPositive === undefined) {
-      throw new Error(`Reports registry: component ${id} renames its column without a row filter`);
+    if (columnOverride !== undefined && spec.onlyWhenPositive === undefined && spec.perClientRate === undefined) {
+      throw new Error(`Reports registry: component ${id} renames its column without a row filter or a stated rate`);
+    }
+    if (spec.perClientRate !== undefined) {
+      if (!spec.money || spec.nullMeans !== "zero") throw new Error(`Reports registry: ${id} stated-rate components are money with nullMeans "zero"`);
+      if (spec.onlyWhenPositive !== undefined || spec.missingWhenNull !== undefined || spec.zeroIsMissingWhen !== undefined) {
+        throw new Error(`Reports registry: ${id} stated-rate components take no filter or guard`);
+      }
+    }
+    if (spec.filterScope !== undefined) {
+      if (spec.onlyWhenPositive === undefined) throw new Error(`Reports registry: ${id} filterScope needs onlyWhenPositive`);
+      if (!IDENTIFIER_RE.test(spec.filterScope.key)) throw new Error(`Reports registry: ${id} filterScope key is not an identifier`);
     }
     const def: ComponentDef = { id, mart, column, ...spec };
     out[id] = Object.freeze(def);
@@ -124,6 +138,13 @@ export const COMPONENTS = defineComponents({
   "kpis.cogs": { money: true, requires: "shop", nullMeans: "gap", zeroIsMissingWhen: "kpis.revenue" },
   /** Part of the mart's CM3 (owner decision: CM3 = mart definition). COALESCEd to 0 in the view. */
   "kpis.fulfillment_cost": { money: true, requires: "shop", nullMeans: "zero" },
+  /**
+   * Stated per-order costs (Settings), as on Snapshot: orders summed as money
+   * (native rows, per-month FX), multiplied by the client's stated rate in
+   * evaluate.ts. An unstated rate is 0. Snapshot: m("(k.orders * @rate)").
+   */
+  "kpis.fulfilment_stated": { money: true, requires: "shop", nullMeans: "zero", column: "orders", perClientRate: "fulfilment" },
+  "kpis.other_cm1_stated": { money: true, requires: "shop", nullMeans: "zero", column: "orders", perClientRate: "otherCm1" },
   "kpis.orders": { money: false, requires: "shop", nullMeans: "zero" },
   "kpis.new_customer_orders": { money: false, requires: "shop", nullMeans: "zero" },
   "kpis.returning_customer_orders": { money: false, requires: "shop", nullMeans: "zero" },
@@ -147,19 +168,21 @@ export const COMPONENTS = defineComponents({
   "meta_campaign.add_to_cart": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
   "meta_campaign.initiate_checkout": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
   "meta_campaign.purchases": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_campaign.spend" },
-  // Meta ad mart: video plays live only here. video_play_actions is the 3-second play count (hook numerator), video_thruplays the hold numerator.
+  // Meta ad mart: video metrics live only here. video_play_actions is Meta's
+  // video starts (about 3x the 3-second plays, so it is not the hook
+  // numerator); it only classifies video ads. video_views (actions[video_view])
+  // is the 3-second play count, the hook numerator (owner decision D2,
+  // 2026-10-05). A video ad is one with plays on any day of the period, per
+  // ad (VIDEO_ADS), the same rule as the Paid Meta tab; all its days count,
+  // including days without plays.
   "meta_ad.spend": { money: true, requires: "meta", nullMeans: "gap" },
   "meta_ad.video_play_actions": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_ad.spend" },
-  "meta_ad.video_thruplays": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_ad.spend" },
-  /** Impressions of rows with video plays (video ads only): hook and hold denominator, as on the Meta tab. */
-  "meta_ad.video_impressions": {
-    money: false,
-    requires: "meta",
-    nullMeans: "gap",
-    missingWhenNull: "meta_ad.spend",
-    column: "impressions",
-    onlyWhenPositive: "meta_ad.video_play_actions",
-  },
+  /** 3-second video plays of video ads: hook numerator. */
+  "meta_ad.video_views": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_ad.spend", ...VIDEO_ADS },
+  /** ThruPlays of video ads: hold numerator. */
+  "meta_ad.video_thruplays": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_ad.spend", ...VIDEO_ADS },
+  /** Impressions of video ads: hook and hold denominator, as on the Meta tab. */
+  "meta_ad.video_impressions": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_ad.spend", column: "impressions", ...VIDEO_ADS },
   // phase 2
   "email_campaign.sent": { money: false, requires: "email", nullMeans: "zero" },
   "email_campaign.delivered": { money: false, requires: "email", nullMeans: "zero" },

@@ -13,6 +13,13 @@
  * Here: revenue and cogs are gap terms, fulfilment and paid spend count as 0
  * when null. Checked 2026-10-04 on manami, 2026-07-06 to 2026-10-03: the
  * component formula equals SUM(cm3) exactly (251,049.928669, 0 row mismatches).
+ * On top of the mart, CM3 subtracts the per-order costs stated in Settings
+ * (fulfilment and other CM1 costs, orders x rate), exactly like Snapshot
+ * (lib/queries/pnl.ts), so both pages show the same CM3 (owner decision
+ * 2026-10-05, QA C-01). CM1 % subtracts the other CM1 cost likewise. An
+ * unstated rate is 0 on both pages. A Woo client with a stated fulfilment
+ * rate has both the mart Woo fulfilment and the stated rate subtracted, on
+ * both pages.
  *
  * Pure module, safe for the browser bundle.
  *
@@ -100,13 +107,18 @@ const COUNT_UP = { unit: "count", format: F.n, goodWhen: "up" } as const;
 const SHOP_CAV: CaveatId[] = ["revenue_incl_vat", "returns_not_netted"];
 const PAID_CAV: CaveatId[] = [...SHOP_CAV, "google_only_paid"];
 
-/** CM3 terms, mart definition. */
+/** CM3 terms: mart definition, then the stated per-order costs (Snapshot parity). */
 const CM3_TERMS: readonly Term[] = [
   t("kpis.revenue"),
   t("kpis.cogs", -1),
   t("kpis.fulfillment_cost", -1, "zero"),
   t("kpis.paid_spend", -1, "zero"),
+  t("kpis.fulfilment_stated", -1, "zero"),
+  t("kpis.other_cm1_stated", -1, "zero"),
 ];
+
+/** CM1 terms: revenue - COGS - other CM1 costs stated in Settings (Snapshot cm1). */
+const CM1_TERMS: readonly Term[] = [t("kpis.revenue"), t("kpis.cogs", -1), t("kpis.other_cm1_stated", -1, "zero")];
 
 function termsOf(def: MetricDef): readonly Term[] {
   return def.kind === "sum" ? def.terms : [...def.numerator, ...def.denominator];
@@ -196,9 +208,9 @@ export const METRICS: MetricRegistry = defineMetrics({
     description: "Cost of goods sold.",
     benchmarkable: false,
   }),
-  cm1_pct: ratio("CM1 %", "profitability", [t("kpis.revenue"), t("kpis.cogs", -1)], [t("kpis.revenue")], {
+  cm1_pct: ratio("CM1 %", "profitability", CM1_TERMS, [t("kpis.revenue")], {
     ...PCT_UP,
-    description: "Revenue minus COGS, as a share of revenue.",
+    description: "Revenue minus COGS and stated other CM1 costs, as a share of revenue.",
     benchmarkable: true,
     caveats: SHOP_CAV,
     aliases: ["gross margin"],
@@ -206,7 +218,7 @@ export const METRICS: MetricRegistry = defineMetrics({
   }),
   cm3: sum("CM3", "profitability", CM3_TERMS, {
     ...MONEY_UP,
-    description: "Revenue minus COGS, fulfilment and paid spend.",
+    description: "Revenue minus COGS, fulfilment, stated per-order costs and paid spend.",
     benchmarkable: false,
     caveats: PAID_CAV,
     definitionKey: "CM3",
@@ -438,16 +450,16 @@ export const METRICS: MetricRegistry = defineMetrics({
     caveats: ["platform_attributed"],
     aliases: ["cost per initiate checkout"],
   }),
-  meta_hook_rate: ratio("Hook rate", "meta", [ma("video_play_actions")], [ma("video_impressions")], {
+  meta_hook_rate: ratio("Hook rate", "meta", [ma("video_views")], [ma("video_impressions")], {
     ...PCT_UP,
-    description: "3-second video plays per impression, video ads only (ad days with plays).",
+    description: "3-second video plays per impression of video ads (ads with plays in the period, all their days).",
     benchmarkable: true,
     aliases: ["hit rate", "thumbstop rate"],
     definitionKey: "Hook rate",
   }),
   meta_hold_rate: ratio("Hold rate", "meta", [ma("video_thruplays")], [ma("video_impressions")], {
     ...PCT_UP,
-    description: "ThruPlays per impression, video ads only. A ThruPlay is 15 seconds watched, or the whole video if shorter.",
+    description: "ThruPlays per impression of video ads. A ThruPlay is 15 seconds watched, or the whole video if shorter.",
     benchmarkable: true,
     aliases: ["thruplay rate"],
     definitionKey: "Hold rate",

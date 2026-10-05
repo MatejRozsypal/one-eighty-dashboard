@@ -599,6 +599,13 @@ Always re-aggregate from sums; never SUM or AVG a pre-computed ratio.
 
 ## Changelog (most recent first)
 
+### 2026-10-05 (amendment 24): Reports CM3 equals Snapshot, hook rate on 3-second plays, shared KPI queries (QF1)
+
+Frontend semantic layer only, no warehouse change. `SEMANTIC_VERSION` 5 to 6.
+1. **CM3 parity (QA C-01, owner decision).** Reports CM3, CM3 % and CM1 % now subtract the per-order costs stated in Settings (`client_settings.fulfilment_per_order`, `other_cm1_per_order`), exactly like Snapshot: CM3 = mart CM3 - orders x fulfilment rate - orders x other CM1 rate; CM1 % subtracts the other CM1 rate only. Orders are summed as money in SQL (native rows, and per-month FX in display currency), the rate is applied in TypeScript per client, so rate x sum equals Snapshot's `SUM(orders x rate)` converted per row. An unstated rate counts as 0 on both pages. A Woo client with a stated fulfilment rate has both the mart Woo fulfilment and the stated rate subtracted, on both pages. Dobias 2026-07-06 to 2026-10-03 in CZK: mart CM3 9,464,598; with the stated rate (Snapshot QA: fulfilment 1,800,591, 20.5 per order inferred) 7,664,007 (58.8 %); Manami 251,328 and Ethia 121,417 unchanged.
+2. **Hook rate (owner decision D2).** Numerator is `video_views` (actions[video_view], 3-second plays), not `video_play_actions` (video starts, about 3x more). Video ads are decided per ad over the whole period (plays on any day), all their days count, the same rule as the Paid Meta tab; hold rate uses the same denominator. Sep 2026: Dobias 17.34 %, Ethia 25.91 %, Manami 11.16 %, Venev 18.81 % (were 52 / 81 / 34 / 68 % with starts per ad day).
+3. **Shared queries.** Every KPI view widget selects all KPI components, so widgets over the same clients, period, grain and currency share one query and one cache entry (Portfolio overview: 6 distinct queries before, 2 after).
+
 ### 2026-10-04 (amendment 22): `ref.ad_spend_zero_days` (migration 235)
 
 Owner decision 2026-10-04: Venev was not advertising on days with no Meta spend before its ads started, those days count as 0, not missing. New `ref.ad_spend_zero_days`; `mart_daily_kpis` fills a NULL `meta_spend`, `google_spend` and `paid_spend` with 0 on registered days, only there (details under Known data gaps). Deployed 2026-10-04, prod md5 of the view `9a5405191e68a9be6d52f8f6b5e8cfdc`. Effect: Venev only, 606 daily rows and 41 monthly rows (2022-07 to 2025-11) NULL to 0 spend; Dobias, Ethia, Manami, RawBark zero diff. Not covered: Venev NULL Meta days after 2025-12-04 (17, listed under Known data gaps), including 2026-08-12, so the Paid efficiency previous-period delta for Sep 2026 stays n/a until those are confirmed.

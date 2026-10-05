@@ -40,6 +40,15 @@
  * - Several marts (kpis plus the Meta campaign and ad marts): every CTE has
  *   its own date predicate, guards, NULL counts and FX joins on its own
  *   currency column, so the evaluator can keep each mart's guards apart.
+ * - Scoped row filters (filterScope, video ads per ad): a pre-CTE
+ *   `<mart>__scope_<filter>_<key>` decides the filter once per client, period
+ *   and key over the whole period (LOGICAL_OR(filter > 0)); the mart CTE
+ *   LEFT JOINs it and sums every row of a qualifying key. The pre-CTE carries
+ *   the same date predicate and period tagging (asserted like a mart CTE).
+ * - Shared queries: a mart flagged `selectAll` (kpis) selects every one of its
+ *   components, not only the widget's. Widgets over the same clients, period,
+ *   grain and currency then compile to byte-identical SQL and one cache key.
+ *   `components` of the result lists what the SQL returns (the superset).
  *
  * The registry is injected: createCompiler({ marts, components }).
  * `compileWidget` at the bottom of this file is bound to registry/components.ts.
@@ -159,19 +168,30 @@ export function datePredicate(mart: Pick<MartDef, "dateColumn">): string {
   return `t.${ident(mart.dateColumn, "Date column")} BETWEEN @scanFrom AND @scanTo`;
 }
 
+/** Name of the pre-CTE that decides a scoped row filter: `meta_ad__scope_video_play_actions_ad_id`. */
+export function scopeCteName(mart: MartId, filterColumn: string, key: string): string {
+  return ident(`${mart}__scope_${ident(filterColumn, "Filter column")}_${ident(key, "Scope key")}`, "Scope CTE");
+}
+
 /**
- * Throws unless every mart CTE in `sql` contains its date predicate.
+ * Throws unless every mart CTE in `sql`, and every scope pre-CTE of that mart
+ * (`<mart>__scope_*`), contains the mart's date predicate.
  * Exported so check:reports can prove that a tampered query is rejected.
  */
 export function assertDatePredicates(sql: string, marts: ReadonlyArray<Pick<MartDef, "id" | "dateColumn">>): void {
   for (const mart of marts) {
     const head = `\n${mart.id} AS (\n`;
-    const start = sql.indexOf(head);
-    if (start < 0) fail(`Mart CTE ${mart.id} not found`);
-    const end = sql.indexOf("\n)", start + head.length);
-    if (end < 0) fail(`Mart CTE ${mart.id} is not closed`);
-    const body = sql.slice(start + head.length, end);
-    if (!body.includes(datePredicate(mart))) fail(`Mart CTE ${mart.id} lacks its date predicate on ${mart.dateColumn}`);
+    if (sql.indexOf(head) < 0) fail(`Mart CTE ${mart.id} not found`);
+    const heads = [head];
+    for (const m of sql.matchAll(new RegExp(`\\n(${mart.id}__scope_[a-z0-9_]+) AS \\(\\n`, "g"))) heads.push(`\n${m[1]} AS (\n`);
+    for (const h of heads) {
+      const name = h.slice(1, h.indexOf(" AS ("));
+      const start = sql.indexOf(h);
+      const end = sql.indexOf("\n)", start + h.length);
+      if (end < 0) fail(`CTE ${name} is not closed`);
+      const body = sql.slice(start + h.length, end);
+      if (!body.includes(datePredicate(mart))) fail(`CTE ${name} lacks its date predicate on ${mart.dateColumn}`);
+    }
   }
 }
 
@@ -217,12 +237,56 @@ interface MartPlan {
   money: boolean;
 }
 
+/** One scoped row filter of a mart: its pre-CTE, the join alias and the filter and key columns. */
+interface Scope {
+  name: string;
+  alias: string;
+  filterColumn: string;
+  key: string;
+}
+
+const PERIOD_UNNEST = `CROSS JOIN UNNEST([STRUCT('cur' AS period, @curFrom AS from_date, @curTo AS to_date), STRUCT('cmp', @cmpFrom, @cmpTo)]) AS p`;
+
+/** The distinct scoped row filters of a mart plan, in component order. */
+function scopesOf(plan: MartPlan, components: CompilerRegistry["components"]): Map<string, Scope> {
+  const out = new Map<string, Scope>();
+  for (const c of plan.components) {
+    if (c.filterScope === undefined) continue;
+    if (c.onlyWhenPositive === undefined) fail(`filterScope of ${c.id} without onlyWhenPositive`);
+    const f = components[c.onlyWhenPositive];
+    if (!f || f.mart !== plan.mart.id) fail(`onlyWhenPositive ${c.onlyWhenPositive} of ${c.id} is not a component of mart ${plan.mart.id}`);
+    const name = scopeCteName(plan.mart.id, f.column, c.filterScope.key);
+    if (!out.has(name)) out.set(name, { name, alias: `s${out.size + 1}`, filterColumn: ident(f.column, "Filter column"), key: ident(c.filterScope.key, "Scope key") });
+  }
+  return out;
+}
+
+/** Pre-CTE of a scoped row filter: one flag per client, period and key over the whole period. */
+function scopeCte(scope: Scope, mart: MartDef, hasComparison: boolean, projectId: string): string {
+  const date = `t.${ident(mart.dateColumn, "Date column")}`;
+  return [
+    `${scope.name} AS (`,
+    `  SELECT`,
+    [`t.client_id`, hasComparison ? `p.period` : `'cur' AS period`, `t.${scope.key} AS scope_key`, `LOGICAL_OR(t.${scope.filterColumn} > 0) AS scope_flag`]
+      .map((x) => `    ${x}`)
+      .join(",\n"),
+    `  FROM ${tableRef(projectId, mart.table)} AS t`,
+    ...(hasComparison ? [`  ${PERIOD_UNNEST}`] : []),
+    `  WHERE t.client_id IN UNNEST(@clientIds)`,
+    `    AND ${datePredicate(mart)}`,
+    hasComparison ? `    AND ${date} BETWEEN p.from_date AND p.to_date` : `    AND ${date} BETWEEN @curFrom AND @curTo`,
+    `  GROUP BY 1, 2, 3`,
+    `)`,
+  ].join("\n");
+}
+
 function martCte(
   plan: MartPlan,
   grain: QueryGrain,
   hasComparison: boolean,
   projectId: string,
-  components: CompilerRegistry["components"]
+  components: CompilerRegistry["components"],
+  scopes: Map<string, Scope>
 ): string {
   const { mart } = plan;
   const date = `t.${ident(mart.dateColumn, "Date column")}`;
@@ -251,7 +315,14 @@ function martCte(
       const f = components[c.onlyWhenPositive];
       if (!f || f.mart !== mart.id) fail(`onlyWhenPositive ${c.onlyWhenPositive} of ${c.id} is not a component of mart ${mart.id}`);
       if (c.money) fail(`Row filter on money component ${c.id}`);
-      rowFilter = `t.${ident(f.column, "Filter column")} > 0`;
+      if (c.filterScope !== undefined) {
+        // Decided per key over the whole period (pre-CTE), not per row.
+        const scope = scopes.get(scopeCteName(mart.id, f.column, c.filterScope.key));
+        if (!scope) fail(`Scope of ${c.id} was not planned`);
+        rowFilter = `COALESCE(${scope.alias}.scope_flag, FALSE)`;
+      } else {
+        rowFilter = `t.${ident(f.column, "Filter column")} > 0`;
+      }
     }
     // A NULL counts only where the guard component (revenue for COGS) is > 0.
     let isNull = `${col} IS NULL`;
@@ -284,10 +355,10 @@ function martCte(
 
   const from: string[] = [`FROM ${tableRef(projectId, mart.table)} AS t`];
   if (ccyCol) from.push(`JOIN ${tableRef(projectId, REF_CLIENTS)} AS c ON c.client_id = t.client_id`);
-  if (hasComparison) {
-    from.push(
-      `CROSS JOIN UNNEST([STRUCT('cur' AS period, @curFrom AS from_date, @curTo AS to_date), STRUCT('cmp', @cmpFrom, @cmpTo)]) AS p`
-    );
+  if (hasComparison) from.push(PERIOD_UNNEST);
+  for (const scope of scopes.values()) {
+    const onPeriod = hasComparison ? ` AND ${scope.alias}.period = p.period` : "";
+    from.push(`LEFT JOIN ${scope.name} AS ${scope.alias} ON ${scope.alias}.client_id = t.client_id${onPeriod} AND ${scope.alias}.scope_key = t.${scope.key}`);
   }
   if (plan.money) {
     from.push(`LEFT JOIN fx AS src ON src.month_start = DATE_TRUNC(${date}, MONTH) AND src.ccy = ${ccyCol}`);
@@ -352,9 +423,21 @@ export function compileWidgetWith(
     if (!mart || mart.id !== id) fail(`Unknown mart ${id}`);
     ident(mart.id, "Mart id");
     if (grain !== "total" && !mart.grains.includes(grain)) fail(`Mart ${id} does not support grain ${grain}`);
-    const components = byMart.get(id) ?? [];
+    let components = byMart.get(id) ?? [];
+    // Shared query: every component of the mart, sorted by id, so the SQL does not depend on the widget's metrics.
+    if (mart.selectAll === true) {
+      components = (Object.values(registry.components) as Array<ComponentDef | undefined>)
+        .filter((c): c is ComponentDef => c !== undefined && c.mart === id)
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      for (const c of components) {
+        const m = COMPONENT_ID_RE.exec(c.id);
+        if (!m || m[1] !== id) fail(`Component ${c.id} does not match its definition`);
+        ident(c.column, "Component column");
+      }
+    }
     return { mart, components, money: components.some((c) => c.money) };
   });
+  const selectedIds = plans.flatMap((p) => p.components.map((c) => c.id)).sort();
   const anyMoney = plans.some((p) => p.money);
 
   // Params: re-validated, sorted, built in a fixed order (the key depends on it).
@@ -392,7 +475,11 @@ export function compileWidgetWith(
   // SQL.
   const ctes: string[] = [];
   if (anyMoney) ctes.push(fxCtes(projectId));
-  for (const plan of plans) ctes.push(martCte(plan, grain, hasComparison, projectId, registry.components));
+  for (const plan of plans) {
+    const scopes = scopesOf(plan, registry.components);
+    for (const scope of scopes.values()) ctes.push(scopeCte(scope, plan.mart, hasComparison, projectId));
+    ctes.push(martCte(plan, grain, hasComparison, projectId, registry.components, scopes));
+  }
 
   const [first, ...rest] = martIds;
   const fromClause = [first, ...rest.map((id) => `FULL OUTER JOIN ${id} USING (client_id, period, bucket)`)].join("\n");
@@ -408,7 +495,7 @@ export function compileWidgetWith(
     params,
     types,
     marts: martIds,
-    components: componentIds,
+    components: selectedIds,
     hasComparison,
   };
 }

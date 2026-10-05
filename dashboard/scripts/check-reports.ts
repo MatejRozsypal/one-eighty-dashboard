@@ -477,7 +477,47 @@ if (real.registry) {
   check("FX4 sql: Meta money converted per row from the account currency", metaQ.sql.includes("SUM(t.spend * src.to_czk / dst.to_czk) AS meta_campaign__spend__disp") && metaQ.sql.includes("SUM(IF(t.currency = c.currency, t.spend, NULL)) AS meta_campaign__spend__nat"));
   check("FX4 sql: per-mart guards", (["kpis", "meta_ad", "meta_campaign"] as const).every((m) => metaQ.sql.includes(`AS ${m}__n_rows`) && metaQ.sql.includes(`AS ${m}__foreign_ccy_rows`)) && metaQ.sql.includes("AS meta_campaign__fx_missing_rows") && metaQ.sql.includes("0 AS meta_ad__fx_missing_rows"));
   check("FX4 sql: Meta outcomes count NULL spend rows of their own mart", metaQ.sql.includes("COUNTIF(t.spend IS NULL) AS meta_campaign__landing_page_views__nulls") && !metaQ.sql.includes("t.landing_page_views IS NULL"));
-  check("FX4 sql: video impressions filtered on plays > 0", metaQ.sql.includes("SUM(IF(t.video_play_actions > 0, t.impressions, NULL)) AS meta_ad__video_impressions") && metaQ.sql.includes("COUNTIF(t.video_play_actions > 0 AND t.spend IS NULL) AS meta_ad__video_impressions__nulls"));
+  const SCOPE = "meta_ad__scope_video_play_actions_ad_id";
+  check("QF1 sql: video ads decided per ad over the period in a scope pre-CTE", metaQ.sql.includes(`\n${SCOPE} AS (\n`) && metaQ.sql.includes("t.ad_id AS scope_key,\n    LOGICAL_OR(t.video_play_actions > 0) AS scope_flag"));
+  check("QF1 sql: scope pre-CTE carries the date predicate and the period tagging", (() => {
+    const start = metaQ.sql.indexOf(`\n${SCOPE} AS (\n`);
+    const body = metaQ.sql.slice(start, metaQ.sql.indexOf("\n)", start));
+    return body.includes("t.date BETWEEN @scanFrom AND @scanTo") && body.includes("t.date BETWEEN p.from_date AND p.to_date") && body.includes("p.period") && body.includes("t.client_id IN UNNEST(@clientIds)");
+  })());
+  check("QF1 sql: ad mart joins the scope on client, period and ad", metaQ.sql.includes(`LEFT JOIN ${SCOPE} AS s1 ON s1.client_id = t.client_id AND s1.period = p.period AND s1.scope_key = t.ad_id`));
+  check("QF1 sql: video impressions keep every day of a video ad (zero-play days included), never a row-level filter", metaQ.sql.includes("SUM(IF(COALESCE(s1.scope_flag, FALSE), t.impressions, NULL)) AS meta_ad__video_impressions") && metaQ.sql.includes("COUNTIF(COALESCE(s1.scope_flag, FALSE) AND t.spend IS NULL) AS meta_ad__video_impressions__nulls") && !metaQ.sql.includes("IF(t.video_play_actions > 0"));
+  check("FX4: tampered scope pre-CTE without its date predicate is rejected", (() => {
+    try {
+      assertDatePredicates(metaQ.sql.replace(new RegExp(`(\\n${SCOPE} AS \\([\\s\\S]*?)AND t\\.date BETWEEN @scanFrom AND @scanTo`), "$1AND TRUE"), [real.registry!.marts.meta_ad!]);
+      return false;
+    } catch (error) {
+      return /date predicate/.test(String(error));
+    }
+  })());
+  {
+    const hookQ = createCompiler(real.registry, { projectId: PROJECT })(
+      resolved({ clientIds: ["venev"], components: ["meta_ad.video_impressions", "meta_ad.video_views"], grain: "total", current: { from: "2026-09-01", to: "2026-09-30" }, compare: "none" })
+    );
+    check("QF1 sql: without comparison the scope is tagged 'cur' and joined on client and ad", hookQ.sql.includes("'cur' AS period,\n    t.ad_id AS scope_key") && hookQ.sql.includes(`LEFT JOIN ${SCOPE} AS s1 ON s1.client_id = t.client_id AND s1.scope_key = t.ad_id`) && hookQ.sql.includes("t.date BETWEEN @curFrom AND @curTo"));
+    check("QF1 sql: hook numerator is video_views of video ads", hookQ.sql.includes("SUM(IF(COALESCE(s1.scope_flag, FALSE), t.video_views, NULL)) AS meta_ad__video_views"));
+  }
+
+  // QF1 shared query: kpis selects every component, so widgets over the same filters share one SQL and key.
+  {
+    const realCompile = createCompiler(real.registry, { projectId: PROJECT });
+    const base = { clientIds: ["dobias", "manami"], grain: "week" as const, current: { from: "2026-07-06", to: "2026-10-03" }, compare: "previous_period" as const };
+    const a = realCompile(resolved({ ...base, components: ["kpis.revenue"] }));
+    const b = realCompile(resolved({ ...base, components: ["kpis.cogs", "kpis.fulfillment_cost", "kpis.fulfilment_stated", "kpis.other_cm1_stated", "kpis.paid_spend", "kpis.revenue"] }));
+    const c = realCompile(resolved({ ...base, components: ["kpis.new_customer_orders"] }));
+    const kpiIds = Object.keys(real.registry.components).filter((id) => id.startsWith("kpis.")).sort();
+    check("QF1 shared: different kpis metrics compile to byte-identical SQL and one key", a.sql === b.sql && b.sql === c.sql && a.key === b.key && b.key === c.key);
+    check("QF1 shared: the compiled components are every kpis component", a.components.join() === kpiIds.join() && kpiIds.length === 24);
+    check("QF1 shared: counts-only widget joins FX too (superset has money)", c.sql.includes("fx_pairs") && c.params.displayCurrency === "CZK");
+    const m = realCompile(resolved({ ...base, components: ["kpis.revenue", "meta_campaign.spend"] }));
+    check("QF1 shared: Meta marts keep the widget's own components", m.components.filter((id) => id.startsWith("meta_campaign.")).join() === "meta_campaign.spend" && m.components.filter((id) => id.startsWith("kpis.")).length === 24);
+    check("QF1 stated cost: orders emitted as money twice (native rows, per-month FX), rate never in SQL", a.sql.includes("SUM(IF(t.currency = c.currency, t.orders, NULL)) AS kpis__fulfilment_stated__nat") && a.sql.includes("SUM(t.orders * src.to_czk / dst.to_czk) AS kpis__fulfilment_stated__disp") && a.sql.includes("SUM(t.orders * src.to_czk / dst.to_czk) AS kpis__other_cm1_stated__disp") && !/rate|@fulfil/i.test(Object.keys(a.params).join()));
+    check("QF1 shared: fixture registry (no selectAll) keeps the widget subset", merCac.components.join() === "kpis.new_customer_orders,kpis.paid_spend,kpis.revenue");
+  }
   check("FX4 sql: assertDatePredicates passes for all three marts", (() => { try { assertDatePredicates(metaQ.sql, [real.registry!.marts.kpis!, real.registry!.marts.meta_ad!, real.registry!.marts.meta_campaign!]); return true; } catch { return false; } })());
   check("FX4: tampered Meta CTE without its date predicate is rejected", (() => {
     try {

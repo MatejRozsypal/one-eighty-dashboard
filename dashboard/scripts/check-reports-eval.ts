@@ -102,13 +102,16 @@ const LIVE_KPIS_COLUMNS = [
 ];
 /** Live columns used from mart.mart_meta_campaign_perf and mart.mart_meta_ad_perf, INFORMATION_SCHEMA.COLUMNS, 2026-10-04. */
 const LIVE_META_CAMPAIGN_COLUMNS = ["date", "currency", "spend", "impressions", "reach", "link_clicks", "landing_page_views", "add_to_cart", "initiate_checkout", "purchases"];
-const LIVE_META_AD_COLUMNS = ["date", "currency", "spend", "impressions", "video_play_actions", "video_thruplays"];
+const LIVE_META_AD_COLUMNS = ["date", "currency", "ad_id", "spend", "impressions", "video_play_actions", "video_views", "video_thruplays"];
 const LIVE_EMAIL_CAMPAIGN_COLUMNS = ["send_date", "currency", "sent", "delivered", "unique_opens", "unique_clicks", "revenue"];
 const LIVE = { kpis: LIVE_KPIS_COLUMNS, meta_campaign: LIVE_META_CAMPAIGN_COLUMNS, meta_ad: LIVE_META_AD_COLUMNS, email_campaign: LIVE_EMAIL_CAMPAIGN_COLUMNS } as const;
 
 for (const c of Object.values(COMPONENTS)) {
   check(`component ${c.id} column is an identifier`, IDENTIFIER_RE.test(c.column));
   check(`component ${c.id} exists in the live view`, (LIVE[c.mart] as readonly string[]).includes(c.column));
+}
+for (const c of Object.values(COMPONENTS)) {
+  if (c.filterScope) check(`component ${c.id} scope key exists in the live view`, (LIVE[c.mart] as readonly string[]).includes(c.filterScope.key));
 }
 for (const m of Object.values(MARTS)) {
   check(`mart ${m.id} date column live`, (LIVE[m.id] as readonly string[]).includes(m.dateColumn));
@@ -121,12 +124,21 @@ check("every registry id defined", REGISTRY_METRIC_IDS.every((id) => METRICS[id]
 check("44 queryable metrics (30 KPI view + 14 Meta soft)", METRIC_IDS.length === 44 && METRIC_IDS.every((id) => METRICS[id].phase === 1));
 check("4 phase-2 metrics (email)", PHASE2_METRIC_IDS.length === 4 && PHASE2_METRIC_IDS.every((id) => METRICS[id].phase === 2));
 check("picker list holds the 44 queryable metrics", METRIC_LIST.length === 44);
-check("cm3 = revenue - cogs - fulfillment - paid (mart definition)", METRICS.cm3.kind === "sum" && eqJson(METRICS.cm3.terms, [
+check("cm3 = revenue - cogs - fulfillment - paid (mart) - stated fulfilment and other CM1 (Snapshot parity)", METRICS.cm3.kind === "sum" && eqJson(METRICS.cm3.terms, [
   { c: "kpis.revenue", sign: 1, nullAs: "gap" },
   { c: "kpis.cogs", sign: -1, nullAs: "gap" },
   { c: "kpis.fulfillment_cost", sign: -1, nullAs: "zero" },
   { c: "kpis.paid_spend", sign: -1, nullAs: "zero" },
+  { c: "kpis.fulfilment_stated", sign: -1, nullAs: "zero" },
+  { c: "kpis.other_cm1_stated", sign: -1, nullAs: "zero" },
 ]));
+check("cm1_pct = revenue - cogs - stated other CM1", METRICS.cm1_pct.kind === "ratio" && eqJson(METRICS.cm1_pct.numerator, [
+  { c: "kpis.revenue", sign: 1, nullAs: "gap" },
+  { c: "kpis.cogs", sign: -1, nullAs: "gap" },
+  { c: "kpis.other_cm1_stated", sign: -1, nullAs: "zero" },
+]));
+check("stated-rate components: orders as money, zero, one rate each", (["kpis.fulfilment_stated", "kpis.other_cm1_stated"] as const).every((id) => COMPONENTS[id].column === "orders" && COMPONENTS[id].money && COMPONENTS[id].nullMeans === "zero") && COMPONENTS["kpis.fulfilment_stated"].perClientRate === "fulfilment" && COMPONENTS["kpis.other_cm1_stated"].perClientRate === "otherCm1");
+check("only kpis selects all components (shared query)", MARTS.kpis.selectAll === true && !("selectAll" in MARTS.meta_ad) && !("selectAll" in MARTS.meta_campaign) && !("selectAll" in MARTS.email_campaign));
 check("cm3_pct uses the same numerator", METRICS.cm3_pct.kind === "ratio" && METRICS.cm3.kind === "sum" && eqJson(METRICS.cm3_pct.numerator, METRICS.cm3.terms));
 check("meta.components sorted and unique", REGISTRY_METRIC_IDS.every((id) => {
   const c = METRICS[id].meta.components;
@@ -213,7 +225,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
 {
   const w = widget(["meta_roas", "cm3"], { grain: "week" });
   check("availability: charlie has no meta", w.availability.charlie.meta_roas?.ok === false && eqJson(w.availability.charlie.meta_roas?.missing, ["meta"]));
-  check("components sorted incl. fulfilment", eqJson(w.components, ["kpis.cogs", "kpis.fulfillment_cost", "kpis.meta_revenue", "kpis.meta_spend", "kpis.paid_spend", "kpis.revenue"]));
+  check("components sorted incl. fulfilment", eqJson(w.components, ["kpis.cogs", "kpis.fulfillment_cost", "kpis.fulfilment_stated", "kpis.meta_revenue", "kpis.meta_spend", "kpis.other_cm1_stated", "kpis.paid_spend", "kpis.revenue"]));
   check("marts", eqJson(w.marts, ["kpis"]));
   const w2 = widget(["meta_roas"]);
   check("client with every metric not connected left out of query ids", eqJson(w2.queryClientIds, ["alpha", "bravo", "delta"]));
@@ -616,7 +628,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   check("F1: registry nullMeans: shop zero, ad platform gap, cogs gap", COMPONENTS["kpis.revenue"].nullMeans === "zero" && COMPONENTS["kpis.orders"].nullMeans === "zero" && COMPONENTS["kpis.paid_spend"].nullMeans === "gap" && COMPONENTS["kpis.meta_spend"].nullMeans === "gap" && COMPONENTS["kpis.cogs"].nullMeans === "gap");
   check("Gap rule: spend components count their own NULLs", (["kpis.paid_spend", "kpis.meta_spend", "kpis.google_spend"] as const).every((id) => COMPONENTS[id].missingWhenNull === undefined));
   check("Gap rule: ad outcomes are gaps only on days without their platform's spend", (["revenue", "purchases", "impressions", "clicks"] as const).every((c) => COMPONENTS[`kpis.meta_${c}`].missingWhenNull === "kpis.meta_spend" && COMPONENTS[`kpis.google_${c}`].missingWhenNull === "kpis.google_spend"));
-  check("Gap rule: only ad outcomes use missingWhenNull (8 KPI view, 7 Meta campaign, 3 Meta ad)", Object.values(COMPONENTS).filter((c) => c.missingWhenNull !== undefined).length === 18);
+  check("Gap rule: only ad outcomes use missingWhenNull (8 KPI view, 7 Meta campaign, 4 Meta ad)", Object.values(COMPONENTS).filter((c) => c.missingWhenNull !== undefined).length === 19);
   // Ethia/venev Sep 2026: meta_revenue NULL on days with Meta spend. The SQL counts only NULL-spend days for it (0 here), so Meta ROAS is a value.
   const ethiaLike = evalW(widget(["meta_roas", "meta_cpa"], { grain: "total", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" } }), [
     row("alpha", "cur", TOTAL, { "kpis.meta_revenue": withNulls(2440, 0), "kpis.meta_spend": withNulls(1000, 0), "kpis.meta_purchases": withNulls(10, 0) }),
@@ -683,8 +695,8 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   check("FX4: link CTR = link clicks / impressions", termIds(r("meta_link_ctr").numerator) === "meta_campaign.link_clicks" && termIds(r("meta_link_ctr").denominator) === "meta_campaign.impressions");
   check("FX4: ATC rate = ATC / LPV (owner formula, replaces the reserved ATC / link clicks)", termIds(r("meta_atc_rate").numerator) === "meta_campaign.add_to_cart" && termIds(r("meta_atc_rate").denominator) === "meta_campaign.landing_page_views");
   check("FX4: ATC to purchase, conversion rate", termIds(r("meta_atc_to_purchase").numerator) === "meta_campaign.purchases" && termIds(r("meta_atc_to_purchase").denominator) === "meta_campaign.add_to_cart" && termIds(r("meta_conversion_rate").denominator) === "meta_campaign.link_clicks");
-  check("FX4: hook and hold over video-ad impressions", termIds(r("meta_hook_rate").numerator) === "meta_ad.video_play_actions" && termIds(r("meta_hold_rate").numerator) === "meta_ad.video_thruplays" && termIds(r("meta_hook_rate").denominator) === "meta_ad.video_impressions");
-  check("FX4: video impressions = impressions filtered on plays > 0", COMPONENTS["meta_ad.video_impressions"].column === "impressions" && COMPONENTS["meta_ad.video_impressions"].onlyWhenPositive === "meta_ad.video_play_actions");
+  check("QF1: hook = 3-second views (video_views) / video-ad impressions; hold = ThruPlays / video-ad impressions", termIds(r("meta_hook_rate").numerator) === "meta_ad.video_views" && termIds(r("meta_hold_rate").numerator) === "meta_ad.video_thruplays" && termIds(r("meta_hook_rate").denominator) === "meta_ad.video_impressions" && termIds(r("meta_hold_rate").denominator) === "meta_ad.video_impressions");
+  check("QF1: video ads decided per ad over the period (plays > 0), numerators and denominator alike", (["meta_ad.video_impressions", "meta_ad.video_views", "meta_ad.video_thruplays"] as const).every((id) => COMPONENTS[id].onlyWhenPositive === "meta_ad.video_play_actions" && COMPONENTS[id].filterScope?.key === "ad_id") && COMPONENTS["meta_ad.video_impressions"].column === "impressions");
   check("FX4: frequency = impressions / reach, neutral, not benchmarkable", termIds(r("meta_frequency").numerator) === "meta_campaign.impressions" && termIds(r("meta_frequency").denominator) === "meta_campaign.reach" && f("meta_frequency").goodWhen === "neutral" && !f("meta_frequency").benchmarkable && /average daily frequency/i.test(f("meta_frequency").description));
   check("FX4: Meta CPM and CPA stay on the KPI view", termIds(r("meta_cpm").numerator) === "kpis.meta_spend" && termIds(r("meta_cpa").denominator) === "kpis.meta_purchases");
   check("FX4: cost metrics are money (display), rates native", f("meta_cost_per_lpv").meta.fxMode === "display" && f("meta_link_ctr").meta.fxMode === "native-per-client");
@@ -699,7 +711,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
 
   const wm = widget(["meta_cost_per_lpv", "revenue", "meta_hook_rate"], { filters: { clients: { mode: "list", ids: ["alpha"] } } });
   check("FX4: resolve lists the three marts", eqJson(wm.marts, ["kpis", "meta_ad", "meta_campaign"]));
-  check("FX4: resolve components", eqJson(wm.components, ["kpis.revenue", "meta_ad.video_impressions", "meta_ad.video_play_actions", "meta_campaign.landing_page_views", "meta_campaign.spend"]));
+  check("FX4: resolve components", eqJson(wm.components, ["kpis.revenue", "meta_ad.video_impressions", "meta_ad.video_views", "meta_campaign.landing_page_views", "meta_campaign.spend"]));
 
   type MG = Partial<{ nRows: number; foreignCcyRows: number; fxMissingRows: number; fxMissingMonths: string[] }>;
   const rowM = (clientId: string, bucket: string, guards: Partial<Record<"kpis" | "meta_campaign" | "meta_ad", MG>>, values: Partial<Record<ComponentId, V>>, period: "cur" | "cmp" = "cur"): ComponentRow => {
@@ -759,8 +771,8 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   const wc = widget(["meta_link_ctr", "meta_cost_per_lpv", "meta_hook_rate"], { split: "combined", filters: { clients: { mode: "list", ids: ["alpha", "bravo", "charlie"] }, compare: "none" } });
   check("FX4: client without Meta is not queried", !wc.queryClientIds.includes("charlie") && wc.availability.charlie?.meta_link_ctr?.ok === false);
   const rc2 = evalW(wc, [
-    rowM("alpha", TOTAL, { meta_campaign: {}, meta_ad: {} }, { "meta_campaign.link_clicks": 100, "meta_campaign.impressions": 10000, "meta_campaign.spend": 2000, "meta_campaign.landing_page_views": 80, "meta_ad.video_play_actions": 300, "meta_ad.video_impressions": 1000 }),
-    rowM("bravo", TOTAL, { meta_campaign: {}, meta_ad: {} }, { "meta_campaign.link_clicks": [300, 300], "meta_campaign.impressions": 10000, "meta_campaign.spend": [100, 2200], "meta_campaign.landing_page_views": 120, "meta_ad.video_play_actions": 100, "meta_ad.video_impressions": 1000 }),
+    rowM("alpha", TOTAL, { meta_campaign: {}, meta_ad: {} }, { "meta_campaign.link_clicks": 100, "meta_campaign.impressions": 10000, "meta_campaign.spend": 2000, "meta_campaign.landing_page_views": 80, "meta_ad.video_views": 300, "meta_ad.video_impressions": 1000 }),
+    rowM("bravo", TOTAL, { meta_campaign: {}, meta_ad: {} }, { "meta_campaign.link_clicks": [300, 300], "meta_campaign.impressions": 10000, "meta_campaign.spend": [100, 2200], "meta_campaign.landing_page_views": 120, "meta_ad.video_views": 100, "meta_ad.video_impressions": 1000 }),
   ]);
   const cc = cell(rc2, "combined", "meta_link_ctr");
   check("FX4: combined link CTR from summed components, 2 of 3", close(cc.total, 0.02) && eqJson(cc.coverage, { included: 2, of: 3 }) && cc.excluded?.[0]?.id === "charlie" && cc.excluded?.[0]?.reason === "Meta not connected");
@@ -778,6 +790,79 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   ]);
   const cb = cell(rb, "alpha", "meta_link_ctr");
   check("FX4: week without Meta rows is a null point, the total uses the other week", cb.points?.[0] === null && close(cb.points?.[1], 0.02) && close(cb.total, 0.02) && cell(rb, "alpha", "revenue").total === 1200);
+}
+
+// 4.14 Stated per-order costs (QF1, C-01): CM3 and CM1 equal Snapshot.
+{
+  const TOTAL = "1970-01-01";
+  const RATES = { fulfilment: 20.5, otherCm1: null };
+  const withRates = (c: ReportClient, rates: ReportClient["costRates"]): ReportClient => ({ ...c, costRates: rates });
+  // alpha CZK with a stated fulfilment rate; charlie CZK without one.
+  const clients = FIXTURE_CLIENTS.map((c) => (c.id === "alpha" ? withRates(c, { fulfilment: 10, otherCm1: 2 }) : c));
+  const w = widget(["cm3", "cm3_pct", "cm1_pct"], { filters: { clients: { mode: "list", ids: ["alpha", "charlie"] }, compare: "none" }, clients });
+  const base = { "kpis.revenue": 10000, "kpis.cogs": 4000, "kpis.fulfillment_cost": null, "kpis.paid_spend": 1000 } as const;
+  const rows = [
+    row("alpha", "cur", TOTAL, { ...base, "kpis.fulfilment_stated": 100, "kpis.other_cm1_stated": 100 }),
+    row("charlie", "cur", TOTAL, { ...base, "kpis.fulfilment_stated": 100, "kpis.other_cm1_stated": 100 }),
+  ];
+  const r = evalW(w, rows);
+  check("QF1: a stated rate multiplies only that client (alpha: 10 and 2 per order x 100 orders)", close(cell(r, "alpha", "cm3").total, 10000 - 4000 - 1000 - 1000 - 200));
+  check("QF1: a client without stated rates equals mart CM3", close(cell(r, "charlie", "cm3").total, 10000 - 4000 - 1000));
+  check("QF1: CM3 % uses the same terms", close(cell(r, "alpha", "cm3_pct").total, 3800 / 10000) && close(cell(r, "charlie", "cm3_pct").total, 0.5));
+  check("QF1: CM1 % subtracts only the other CM1 rate", close(cell(r, "alpha", "cm1_pct").total, (10000 - 4000 - 200) / 10000) && close(cell(r, "charlie", "cm1_pct").total, 0.6));
+  const rNull = evalW(widget(["cm3"], { filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" }, clients: FIXTURE_CLIENTS.map((c) => (c.id === "alpha" ? withRates(c, { fulfilment: null, otherCm1: null }) : c)) }), [rows[0]]);
+  check("QF1: null rates equal mart CM3 (unstated counts as 0, like Snapshot)", close(cell(rNull, "alpha", "cm3").total, 5000));
+  const wc = widget(["cm3"], { split: "combined", filters: { clients: { mode: "list", ids: ["alpha", "charlie"] }, compare: "none" }, clients });
+  check("QF1: rollup sums each client with its own rate", close(cell(evalW(wc, rows), "combined", "cm3").total, 3800 + 5000));
+
+  // bravo trades in USD (Dobias-like). Display CZK: orders converted per month (SQL __disp = SUM(orders x monthly rate)), times the USD rate.
+  const usd = FIXTURE_CLIENTS.map((c) => (c.id === "bravo" ? withRates(c, RATES) : c));
+  const wu = widget(["cm3", "cm3_pct"], { grain: "month", filters: { clients: { mode: "list", ids: ["bravo"] }, compare: "none", currency: "CZK", period: { kind: "custom", from: "2026-08-01", to: "2026-09-30" } }, clients: usd });
+  check("QF1: USD client shown in CZK", wu.displayCurrency === "CZK");
+  // Aug: 100 orders at 23 CZK/USD; Sep: 50 orders at 24 CZK/USD.
+  const ru = evalW(wu, [
+    row("bravo", "cur", "2026-08-01", { "kpis.revenue": [10000, 230000], "kpis.cogs": [3000, 69000], "kpis.paid_spend": [1000, 23000], "kpis.fulfilment_stated": [100, 2300], "kpis.other_cm1_stated": [100, 2300] }, { foreignCcyRows: 0 }),
+    row("bravo", "cur", "2026-09-01", { "kpis.revenue": [5000, 120000], "kpis.cogs": [1500, 36000], "kpis.paid_spend": [500, 12000], "kpis.fulfilment_stated": [50, 1200], "kpis.other_cm1_stated": [50, 1200] }, { foreignCcyRows: 0 }),
+  ]);
+  const cu = cell(ru, "bravo", "cm3");
+  const fulfilCzk = 20.5 * (100 * 23 + 50 * 24);
+  check("QF1: CZK display of a USD client converts the stated cost per month", close(cu.total, 350000 - 105000 - 35000 - fulfilCzk) && close(cu.points?.[0], 230000 - 69000 - 23000 - 20.5 * 2300) && close(cu.points?.[1], 120000 - 36000 - 12000 - 20.5 * 1200));
+  check("QF1: CM3 % of a USD client reads native sums (USD rate x USD orders)", close(cell(ru, "bravo", "cm3_pct").total, (15000 - 4500 - 1500 - 20.5 * 150) / 15000));
+  // Snapshot reference, Dobias 2026-07-06..2026-10-03 in CZK (read-only MCP 2026-10-05): SUM(cm3) 9,464,598.48891, SUM(orders x USD/CZK) 87,833.725.
+  const rd = evalW(widget(["cm3"], { filters: { clients: { mode: "list", ids: ["bravo"] }, compare: "none", currency: "CZK" }, clients: usd }), [
+    row("bravo", "cur", TOTAL, { "kpis.revenue": [null, 13028626.24832], "kpis.cogs": [null, 1], "kpis.fulfillment_cost": [null, 0], "kpis.paid_spend": [null, 13028626.24832 - 9464598.48891 - 1], "kpis.fulfilment_stated": [null, 87833.725], "kpis.other_cm1_stated": [null, 87833.725] }, { foreignCcyRows: 1 }),
+  ]);
+  check("QF1: Dobias-shaped CZK CM3 = SUM(cm3) - rate x SUM(orders fx) (QA Snapshot 7,664,008 at a 20.5 rate)", close(cell(rd, "bravo", "cm3").total, 9464598.48891 - 20.5 * 87833.725) && Math.abs((cell(rd, "bravo", "cm3").total ?? 0) - 7664008) < 1);
+}
+
+// 4.15 Shared query (QF1, C-03): a widget evaluated from the kpis superset equals the same widget from its own components.
+{
+  const TOTAL = "1970-01-01";
+  const KPI_ALL = Object.values(COMPONENTS).filter((c) => c.mart === "kpis").map((c) => c.id);
+  const clients = FIXTURE_CLIENTS.map((c) => (c.id === "alpha" ? { ...c, costRates: { fulfilment: 7, otherCm1: 1.5 } } : c));
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 1000;
+  const metrics: MetricId[] = ["revenue", "cm3", "cm3_pct", "cm1_pct", "mer", "cac", "aov", "meta_roas"];
+  for (const split of ["client", "combined"] as const) {
+    for (const grain of ["total", "week"] as const) {
+      const w = widget(metrics, { grain, split, filters: { clients: { mode: "list", ids: ["alpha", "bravo", "delta"] } }, clients });
+      const buckets = grain === "total" ? [TOTAL] : buildBuckets(w.period.current, "week");
+      const cmpBuckets = grain === "total" ? [TOTAL] : buildBuckets(w.period.comparison!, "week");
+      const superRows: ComponentRow[] = [];
+      for (const id of w.queryClientIds) {
+        for (const [period, bs] of [["cur", buckets], ["cmp", cmpBuckets]] as const) {
+          for (const b of bs) {
+            const values: Partial<Record<ComponentId, V>> = {};
+            for (const c of KPI_ALL) values[c] = (COMPONENTS as Record<string, { money: boolean }>)[c].money ? [rnd(), rnd() * 20] : Math.round(rnd());
+            superRows.push(row(id, period, b, values));
+          }
+        }
+      }
+      const own = new Set(w.components);
+      const subsetRows = superRows.map((x) => ({ ...x, values: Object.fromEntries(Object.entries(x.values).filter(([k]) => own.has(k as ComponentId))) }));
+      check(`QF1: superset rows evaluate like subset rows (${split}, ${grain})`, eqJson(evalW(w, superRows), evalW(w, subsetRows)));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

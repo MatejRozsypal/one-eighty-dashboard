@@ -18,7 +18,7 @@ export type { MetricId, Phase2MetricId, RegistryMetricId } from "./ids";
  * Part of every cache key. Bump it whenever a formula, a component column or
  * an evaluation rule changes, so no cached result outlives its definition.
  */
-export const SEMANTIC_VERSION = 5;
+export const SEMANTIC_VERSION = 6;
 
 export type MartId = "kpis" | "meta_campaign" | "meta_ad" | "email_campaign";
 export type Grain = "day" | "week" | "month";
@@ -89,7 +89,17 @@ export interface ReportClient {
   region: string | null;
   /** Colour slot: index in the alphabetical list of all active clients, mod SERIES_SLOTS. */
   slot: number;
+  /**
+   * Per-order costs the client stated in Settings (Postgres `client_settings`),
+   * in the client's trading currency. Merged in per request by the query route,
+   * never part of SQL or a cache key, so a Settings edit applies at once.
+   * Absent or null means unstated and counts as 0, exactly like Snapshot.
+   */
+  costRates?: Readonly<Partial<Record<CostRateKey, number | null>>>;
 }
+
+/** Stated per-order costs (Settings): fulfilment (CM2 and CM3) and other CM1 costs. */
+export type CostRateKey = "fulfilment" | "otherCm1";
 
 // ---------------------------------------------------------------------------
 // Marts and components
@@ -113,6 +123,13 @@ export interface MartDef {
    * still returned: the evaluator needs it to know the native sum is partial.
    */
   accountCurrency?: true;
+  /**
+   * Shared query: the compiler selects every component of this mart, not only
+   * the widget's, so widgets with the same clients, period, grain and currency
+   * compile to byte-identical SQL and share one cache entry and one in-flight
+   * BigQuery job. Evaluation reads only the metric's components.
+   */
+  selectAll?: true;
 }
 
 export type ComponentId = `${MartId}.${string}`;
@@ -159,6 +176,22 @@ export interface ComponentDef {
    * (rows with video plays), the denominator of hook and hold rate.
    */
   onlyWhenPositive?: ComponentId;
+  /**
+   * Scope of the row filter. Absent: each row is tested on its own. With a key
+   * (`ad_id`), the filter is decided once per client, period and key over the
+   * whole period (LOGICAL_OR of filter > 0), and every row of a qualifying key
+   * is summed, including its days with no plays. Video ads per ad, as on the
+   * Paid Meta tab. Requires onlyWhenPositive.
+   */
+  filterScope?: { key: string };
+  /**
+   * Money component whose summed column (orders) is multiplied, per client, by
+   * the stated rate `ReportClient.costRates[perClientRate]` in evaluate.ts.
+   * The compiler emits it like any money column (native rows and per-month
+   * FX), so rate x the sum equals Snapshot's SUM(orders x rate) converted per
+   * row. Must be money with nullMeans "zero" and may rename its column.
+   */
+  perClientRate?: CostRateKey;
 }
 
 /** Identifier rule for marts, tables and columns. Enforced when the registry loads. */

@@ -26,6 +26,7 @@ materialised table the same SQL processes 34.5 KB, 8 slot seconds, 0.5 s, with i
   `qa/253_regression.sql`, `live/mart.rpt_kpis_daily.sql`, `live/mart.sp_refresh_rpt_kpis.sql`.
 - Deploy order: 253 (grant, procedure, first CALL), checks in section P, one manual n8n run, activate, then
   the QF1 registry switch. Only Reports moves to the table; Snapshot, Goals and Paid keep the view.
+- **Update 2026-10-05, DEPLOYED to prod:** procedure and table created and first CALL run (5,371 rows, 61 monthly partitions, table equals the view for all 5 clients, 90-day widget 46.9 KB); statement 0 (GRANT) NOT applied, scheduler is an owner-run BigQuery scheduled query `rpt_refresh_hourly` (to be created by the owner), n8n workflow stays inactive; registry switch not done. Details in `deploy_253.md`.
 
 ---
 

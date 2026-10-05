@@ -14,8 +14,8 @@
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
-import { parseViewParams, type SearchParams } from "@/lib/params";
-import { getOrdersSummary, getRecentOrders } from "@/lib/queries/orders";
+import { parseViewParams, comparisonLabel, type SearchParams } from "@/lib/params";
+import { getOrdersSummary, getRecentOrders, type OrdersSummary } from "@/lib/queries/orders";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
 import { NO_VALUE } from "@/lib/format";
 import { Header } from "@/components/shell/Header";
@@ -80,8 +80,13 @@ export default async function OrdersPage({
     );
   }
 
-  const [summary, orders] = await Promise.all([
+  // The comparison period's summary is read in parallel, and only when a
+  // comparison is selected. The recent-orders list is a list of orders, not a
+  // period total, so it has no comparison.
+  const comparison = params.period.comparison;
+  const [summary, previous, orders] = await Promise.all([
     getOrdersSummary(client.clientId, params.range),
+    comparison ? getOrdersSummary(client.clientId, comparison) : Promise.resolve(null),
     getRecentOrders(client.clientId, params.range, 50),
   ]);
 
@@ -91,7 +96,7 @@ export default async function OrdersPage({
     <>
       <Header title="Orders" />
 
-      <PageControls client={client} params={params} />
+      <PageControls client={client} params={params} compare />
     </>
   );
 
@@ -113,6 +118,20 @@ export default async function OrdersPage({
 
   const isCurrencySplit = summary.dimension === "currency";
   const source = client.shopPlatform ?? "Shop";
+  const compareLabel = comparisonLabel(params);
+  // No comparison selected, or nothing sold in it: no chips, and the cards keep
+  // their height. A null on either side of a metric (no cost data in the
+  // comparison period) drops that one chip rather than printing a change
+  // against a figure we do not have.
+  const chg = (
+    pick: (s: OrdersSummary) => number | null,
+    kind: "money" | "count" | "rate"
+  ) =>
+    comparison
+      ? previous
+        ? { current: pick(summary), previous: pick(previous), kind, currency: client.currency }
+        : null
+      : undefined;
 
   // Columns follow the platform. A platform with no per-order discounts or
   // shipping split drops those columns rather than rendering a column of "n/a"
@@ -144,22 +163,53 @@ export default async function OrdersPage({
       {header}
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
         <section className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-          <MetricCard label="Orders" value={formatNumber(summary.orders)} source={source} />
-          <MetricCard label="Revenue" value={money(summary.revenue)} source={source} />
-          <MetricCard label="AOV (net)" value={money(summary.aovNet)} source={source} />
+          <MetricCard
+            label="Orders"
+            value={formatNumber(summary.orders)}
+            change={chg((s) => s.orders, "count")}
+            comparisonLabel={compareLabel}
+            source={source}
+          />
+          <MetricCard
+            label="Revenue"
+            value={money(summary.revenue)}
+            change={chg((s) => s.revenue, "money")}
+            comparisonLabel={compareLabel}
+            source={source}
+          />
+          <MetricCard
+            label="AOV (net)"
+            value={money(summary.aovNet)}
+            change={chg((s) => s.aovNet, "money")}
+            comparisonLabel={compareLabel}
+            source={source}
+          />
           {summary.hasShippingSplit && (
             <MetricCard
               label="AOV incl. shipping"
               value={money(summary.aovInclShipping)}
+              change={chg((s) => s.aovInclShipping, "money")}
+              comparisonLabel={compareLabel}
               source={source}
             />
           )}
           {summary.margin !== null && (
-            <MetricCard label="Gross profit" value={money(summary.margin)} source={source} />
+            <MetricCard
+              label="Gross profit"
+              value={money(summary.margin)}
+              change={chg((s) => s.margin, "money")}
+              comparisonLabel={compareLabel}
+              source={source}
+            />
           )}
           <MetricCard
             label="Returning"
             value={formatPercent(summary.returningShare)}
+            // A share of orders: points in both modes. A higher share is not
+            // better or worse on its own (it is also fewer new customers).
+            change={chg((s) => s.returningShare, "rate")}
+            goodWhen="neutral"
+            comparisonLabel={compareLabel}
             source={source}
           />
         </section>

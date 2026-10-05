@@ -4,6 +4,31 @@ Chronological record of substantive changes. Most-recent first. For the cumulati
 
 ---
 
+## 2026-10-05: `mart.rpt_kpis_daily` (migration 253, QF3): Reports reads a table, not the view (PREPARED, NOT DEPLOYED)
+
+QA finding C-03 (Reports takes 15 to 25 s to settle). `mart.mart_daily_kpis` is a view and cannot prune by
+date: one compiled 90-day, 5-client widget processes 419.5 MB and 1,644 slot seconds (3.0 s). Against the
+materialised table the same SQL processes 34.5 KB, 8 slot seconds, 0.5 s, with identical results.
+
+- **New, additive:** table `mart.rpt_kpis_daily` (the 34 view columns + `refreshed_at`, monthly partitions,
+  clustered by client and date) and procedure `mart.sp_refresh_rpt_kpis()`: builds `__next`, ASSERTs (rows > 0,
+  >= 90 % of the live table, unique client and date, latest date not older than 2 days), swaps with
+  `CREATE OR REPLACE TABLE ... COPY`. A failed check keeps the old table (tested). About 13 s and 450 MB per run.
+- **Monthly, not daily partitions** (deviation from the plan): daily made each run 70 to 88 s because of
+  1,827 tiny partitions; monthly is 12 to 13 s with the same scan cost for Reports.
+- **Scheduler:** n8n workflow "BQ: refresh rpt_kpis_daily" (id `BnRCbPqaYSO0zwIS`), hourly at :10, created
+  **inactive**, export `infra/n8n/wf_rpt_kpis_refresh.json`. About USD 2 per month.
+- **IAM gap found:** the n8n account (`sa-n8n-writer`) has no access to `mart`, so the hourly CALL would fail.
+  253 statement 0 grants it `dataEditor` on `mart` (owner decision; alternative: a scheduled query owned
+  by the owner, no IAM change).
+- Regression in `mart_qa` (`qf3_*`): table equals the view for all clients, 0 rows both directions (FLOAT64
+  Google columns rounded to 6 decimals, known RawBark noise). Files: `infra/bigquery/253_rpt_kpis_daily.sql`,
+  `qa/253_regression.sql`, `live/mart.rpt_kpis_daily.sql`, `live/mart.sp_refresh_rpt_kpis.sql`.
+- Deploy order: 253 (grant, procedure, first CALL), checks in section P, one manual n8n run, activate, then
+  the QF1 registry switch. Only Reports moves to the table; Snapshot, Goals and Paid keep the view.
+
+---
+
 ## 2026-10-04: `ref.ad_spend_zero_days` (migration 235): "no ads ran" is zero spend, not missing
 
 Owner decision: a NULL ad spend stays **missing data** (a gap in Reports), except on days registered as

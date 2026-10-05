@@ -24,8 +24,10 @@ Every new migration (228 and up) must cite the `live/` file it changes in its he
 | `ops.<table>.sql` | 5 | same, every base table in `ops` |
 | `scheduled_query.refresh_feed_freshness.sql` | 1 | the hourly scheduled query that fills `ops.feed_freshness` (verbatim) |
 | `scheduled_queries.md` | 1 | list of scheduled queries and DTS transfer configs |
+| `mart.rpt_kpis_daily.sql` | 1 | `INFORMATION_SCHEMA.TABLES.ddl` of the one base table in `mart` (migration 253, **pending deploy**: written from the `mart_qa` candidate with the name mapped back, md5 of the file without its trailing newline `c8c7144fed6bdbb678f02043b0e92e67`) |
+| `mart.sp_refresh_rpt_kpis.sql` | 1 | the procedure that rebuilds `mart.rpt_kpis_daily` (migration 253, **pending deploy**), verbatim as sent in 253; after the deploy compare with `INFORMATION_SCHEMA.ROUTINES.ddl` |
 
-Not covered: stored procedures and functions (`ops.sp_load_ga4_sessions`, `ops.sp_load_ga4_sessions_for` live in `../243_ga4_sessions.sql`; `ref.sp_rebuild_creative_tags`, `ref.creative_name_key`), `raw`, `raw_google_ads`, `raw_meta_*`, `analytics_*`, `mart_qa` and other datasets, and view definitions
+Not covered: stored procedures and functions, except `mart.sp_refresh_rpt_kpis` (253) (others: `ops.sp_load_ga4_sessions`, `ops.sp_load_ga4_sessions_for` live in `../243_ga4_sessions.sql`; `ref.sp_rebuild_creative_tags`, `ref.creative_name_key`), `raw`, `raw_google_ads`, `raw_meta_*`, `analytics_*`, `mart_qa` and other datasets, and view definitions
 that reference views from those datasets are exported as they are.
 
 ## Normalisation (so that a re-export produces no diff)
@@ -70,6 +72,14 @@ Notes:
   `dts_config_id=6a928d0e-0000-2e90-a9a8-f4f5e80cace4`) or from `bq show --transfer_config`, see `scheduled_queries.md`.
 - The snapshot was produced without the `bq` CLI (not installed on the workstation) through the BigQuery MCP
   connector with the same two queries; the transformation above is what was applied.
+
+## Pending deploy (remove this section once deployed and verified)
+
+- **253** `mart.rpt_kpis_daily` and `mart.sp_refresh_rpt_kpis`: the two files above describe the state after
+  `../253_rpt_kpis_daily.sql`. Until it is deployed they do not exist live, so a re-export will show them as
+  stale. Checks after the deploy: `../qa/253_regression.sql` section P. The regenerate script above exports
+  views and `stg`/`ref`/`ops` tables only; export the `mart` table with
+  `WHERE table_schema = "mart" AND table_type = "BASE TABLE"` and the procedure from `INFORMATION_SCHEMA.ROUTINES`.
 
 ## Known live oddities worth a ticket (not fixed here)
 

@@ -21,7 +21,7 @@ import {
   type SearchParams,
 } from "@/lib/params";
 import { ROLLUP_CURRENCY, type DisplayCurrency } from "@/lib/currency";
-import { formatMoney, formatNumber, formatRatio } from "@/lib/format";
+import { formatMoney, formatNumber, formatRatio, type DeltaInput, type DeltaKind } from "@/lib/format";
 import { optional } from "@/lib/queries/errors";
 import {
   getCampaignsAcross,
@@ -45,7 +45,6 @@ import {
   bucketize,
   chartPoints,
   dailySeries,
-  deltaOf,
   efficiency,
   rowsIn,
   spendMix,
@@ -128,7 +127,9 @@ export default async function PaidPage({
   const metaMissing = hasGoogle && !hasMeta;
   const badge = metaMissing ? "Meta not connected" : undefined;
   const compareLabel = comparisonLabel(params);
-  const delta = (c: number | null, p: number | null) => deltaOf(c, p, comparing);
+  // Undefined holds the tile's space when comparison is off; the chip follows the delta toggle.
+  const change = (c: number | null, p: number | null, kind: DeltaKind): DeltaInput | undefined =>
+    comparing ? { current: c, previous: p, kind, currency } : undefined;
 
   const sources = [client.shopPlatform ?? "Shop", hasMeta ? "Meta" : null, hasGoogle ? "Google Ads" : null]
     .filter(Boolean)
@@ -186,7 +187,7 @@ export default async function PaidPage({
           <PaidTile
             label="Paid spend"
             value={money(cur.paidSpend)}
-            delta={delta(cur.paidSpend, prev.paidSpend)}
+            change={change(cur.paidSpend, prev.paidSpend, "money")}
             goodWhen="neutral"
             comparisonLabel={compareLabel}
             series={spendLine}
@@ -196,7 +197,7 @@ export default async function PaidPage({
           <PaidTile
             label="New-customer revenue"
             value={money(cur.newCustomerRevenue)}
-            delta={delta(cur.newCustomerRevenue, prev.newCustomerRevenue)}
+            change={change(cur.newCustomerRevenue, prev.newCustomerRevenue, "money")}
             comparisonLabel={compareLabel}
             series={ncRevLine}
             sources={sources}
@@ -204,7 +205,7 @@ export default async function PaidPage({
           <PaidTile
             label="aMER"
             value={formatRatio(eff.amer)}
-            delta={delta(eff.amer, prevEff.amer)}
+            change={change(eff.amer, prevEff.amer, "ratio")}
             comparisonLabel={compareLabel}
             series={amerLine}
             badge={badge}
@@ -213,7 +214,7 @@ export default async function PaidPage({
           <PaidTile
             label="nCAC"
             value={unit(eff.ncac)}
-            delta={delta(eff.ncac, prevEff.ncac)}
+            change={change(eff.ncac, prevEff.ncac, "money")}
             goodWhen="down"
             comparisonLabel={compareLabel}
             series={ncacLine}
@@ -228,7 +229,7 @@ export default async function PaidPage({
             compact
             label="MER"
             value={formatRatio(eff.mer)}
-            delta={delta(eff.mer, prevEff.mer)}
+            change={change(eff.mer, prevEff.mer, "ratio")}
             comparisonLabel={compareLabel}
             badge={badge}
           />
@@ -236,7 +237,7 @@ export default async function PaidPage({
             compact
             label="CAC (blended)"
             value={unit(eff.cac)}
-            delta={delta(eff.cac, prevEff.cac)}
+            change={change(eff.cac, prevEff.cac, "money")}
             goodWhen="down"
             comparisonLabel={compareLabel}
             badge={badge}
@@ -245,14 +246,14 @@ export default async function PaidPage({
             compact
             label="Revenue"
             value={money(cur.revenue)}
-            delta={delta(cur.revenue, prev.revenue)}
+            change={change(cur.revenue, prev.revenue, "money")}
             comparisonLabel={compareLabel}
           />
           <PaidTile
             compact
             label="New customers"
             value={formatNumber(cur.newCustomerOrders)}
-            delta={delta(cur.newCustomerOrders, prev.newCustomerOrders)}
+            change={change(cur.newCustomerOrders, prev.newCustomerOrders, "count")}
             comparisonLabel={compareLabel}
           />
         </section>

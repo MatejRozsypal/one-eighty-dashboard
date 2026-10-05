@@ -4,7 +4,7 @@
  */
 
 import type { ReactNode } from "react";
-import { NO_VALUE } from "@/lib/format";
+import { NO_VALUE, type DeltaInput } from "@/lib/format";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 
 /** A figure cell: mono, tabular. The caller passes an already formatted string. */
@@ -51,48 +51,18 @@ export function LowVolumeFig({ children, low }: { children: string; low: boolean
   );
 }
 
-/** Relative change cell. Missing change is the no-value glyph, never blank. */
+/**
+ * Change cell, in the mode the delta toggle shows. A missing change (either
+ * side absent, or a relative change from zero) is the no-value glyph, never blank.
+ */
 export function DeltaCell({
-  delta,
+  change,
   goodWhen = "up",
 }: {
-  delta: number | null;
+  change: DeltaInput | null;
   goodWhen?: GoodWhen;
 }): ReactNode {
-  if (delta === null) return NO_VALUE;
-  return <DeltaChip delta={delta} goodWhen={goodWhen} />;
-}
-
-/** Change in a rate, in percentage points. `delta` is a fraction (0.004 is 0.4 pp). */
-export function PpChip({
-  delta,
-  goodWhen = "up",
-}: {
-  delta: number | null;
-  goodWhen?: GoodWhen;
-}) {
-  if (delta === null) return null;
-  const pp = delta * 100;
-  const flat = Math.abs(pp) < 0.05;
-  const direction = flat ? "flat" : pp > 0 ? "up" : "down";
-  const sentiment =
-    goodWhen === "neutral" || flat ? "neutral" : direction === goodWhen ? "good" : "bad";
-  const color = {
-    good: "text-positive",
-    bad: "text-negative",
-    neutral: "text-content-muted",
-  }[sentiment];
-  const arrow = { up: "▲", down: "▼", flat: "→" }[direction];
-  return (
-    <span
-      className={`inline-flex items-center gap-[5px] font-mono text-[12px] font-medium tabular ${color}`}
-    >
-      <span aria-hidden="true" className="text-[9px]">
-        {arrow}
-      </span>
-      {Math.abs(pp).toFixed(1)} pp
-    </span>
-  );
+  return <DeltaChip change={change} goodWhen={goodWhen} fallback={NO_VALUE} />;
 }
 
 /** The card every section sits in. */

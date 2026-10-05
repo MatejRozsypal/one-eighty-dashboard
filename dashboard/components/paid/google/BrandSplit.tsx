@@ -6,20 +6,27 @@
  * Search IS appears only where the class has a reported share.
  */
 
-import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
+import {
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatRatio,
+  type DeltaInput,
+  type DeltaKind,
+} from "@/lib/format";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 import { Value } from "@/components/ui/EmptyState";
-import { pointChange, ratio, relativeChange, searchImpressionShare, sumOf } from "@/lib/paid/math";
+import { ratio, searchImpressionShare, sumOf } from "@/lib/paid/math";
 import type { GadsCampaignAgg } from "@/lib/queries/paidGoogle";
 import { classSplit, partOf, rates } from "./aggregate";
 import { CLASS_LABEL } from "./labels";
-import { PpChip, Section } from "./parts";
+import { Section } from "./parts";
 
 interface Line {
   label: string;
   value: string;
-  delta?: number | null;
-  pointDelta?: number | null;
+  /** Both values and the kind (rates show points); null when comparison is off. */
+  change?: DeltaInput | null;
   goodWhen?: GoodWhen;
 }
 
@@ -38,8 +45,13 @@ export function BrandSplit({
   const totalCur = sumOf(partOf(campaigns, "current"), (m) => m.spend);
   const totalPrev = compare ? sumOf(partOf(campaigns, "previous"), (m) => m.spend) : null;
 
-  const cmp = (a: number | null, b: number | null) => (compare ? relativeChange(a, b) : null);
-  const pts = (a: number | null, b: number | null) => (compare ? pointChange(a, b) : null);
+  const chg = (
+    a: number | null,
+    b: number | null,
+    kind: DeltaKind,
+    decimals?: number
+  ): DeltaInput | null =>
+    compare ? { current: a, previous: b, kind, currency, ...(decimals !== undefined ? { decimals } : {}) } : null;
 
   return (
     <Section title="Brand split">
@@ -56,36 +68,36 @@ export function BrandSplit({
             {
               label: "Spend",
               value: formatMoney(current?.spend ?? null, currency),
-              delta: cmp(current?.spend ?? null, previous?.spend ?? null),
+              change: chg(current?.spend ?? null, previous?.spend ?? null, "money"),
               goodWhen: "neutral",
             },
             {
               label: "Share",
               value: formatPercent(share),
-              pointDelta: pts(share, sharePrev),
+              change: chg(share, sharePrev, "rate"),
               goodWhen: "neutral",
             },
             {
               label: "Value",
               value: formatMoney(current?.value ?? null, currency),
-              delta: cmp(current?.value ?? null, previous?.value ?? null),
+              change: chg(current?.value ?? null, previous?.value ?? null, "money"),
             },
-            { label: "ROAS", value: formatRatio(r.roas), delta: cmp(r.roas, rp.roas) },
+            { label: "ROAS", value: formatRatio(r.roas), change: chg(r.roas, rp.roas, "ratio") },
             {
               label: "Conversions",
               value: formatNumber(current?.conversions ?? null, { decimals: 1 }),
-              delta: cmp(current?.conversions ?? null, previous?.conversions ?? null),
+              change: chg(current?.conversions ?? null, previous?.conversions ?? null, "count", 1),
             },
             {
               label: "CPA",
               value: formatMoney(r.cpa, currency, { unit: true }),
-              delta: cmp(r.cpa, rp.cpa),
+              change: chg(r.cpa, rp.cpa, "money"),
               goodWhen: "down",
             },
             {
               label: "CPC",
               value: formatMoney(r.cpc, currency, { unit: true }),
-              delta: cmp(r.cpc, rp.cpc),
+              change: chg(r.cpc, rp.cpc, "money"),
               goodWhen: "down",
             },
           ];
@@ -93,7 +105,7 @@ export function BrandSplit({
             lines.push({
               label: "Search IS",
               value: formatPercent(is),
-              pointDelta: pts(is, isPrev),
+              change: chg(is, isPrev, "rate"),
             });
           }
 
@@ -112,11 +124,7 @@ export function BrandSplit({
                       {l.label}
                     </dt>
                     <dd className="flex items-baseline gap-2.5">
-                      {l.pointDelta !== undefined && l.pointDelta !== null ? (
-                        <PpChip delta={l.pointDelta} goodWhen={l.goodWhen ?? "up"} />
-                      ) : l.delta !== undefined && l.delta !== null ? (
-                        <DeltaChip delta={l.delta} goodWhen={l.goodWhen ?? "up"} />
-                      ) : null}
+                      <DeltaChip change={l.change} goodWhen={l.goodWhen ?? "up"} />
                       <span className="font-mono text-[13px] font-semibold tabular text-content-strong">
                         <Value>{l.value}</Value>
                       </span>

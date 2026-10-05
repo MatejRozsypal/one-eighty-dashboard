@@ -3,15 +3,23 @@
  *
  * Row 1: Spend, Conv. value, ROAS, Conversions, CPA. Row 2: eight compact
  * tiles for brand mix and auction health. Conversions are the purchase
- * category. Every tile carries its change against the comparison period: rates
- * in percentage points, money, counts and ratios in percent.
+ * category. Every tile carries its change against the comparison period, in the
+ * mode the delta toggle shows (rates always in percentage points).
  *
- * The tile is local, not `KpiTile`: these tiles need a free-text tooltip and a
- * point-change chip, and the lost impression share tooltips must say the figure
- * is an upper bound.
+ * The tile is local, not `KpiTile`: these tiles need a free-text tooltip, and
+ * the lost impression share tooltips must say the figure is an upper bound.
  */
 
-import { formatMoney, formatNumber, formatPercent, formatRatio, isNoValue, NO_VALUE } from "@/lib/format";
+import {
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatRatio,
+  isNoValue,
+  NO_VALUE,
+  type DeltaInput,
+  type DeltaKind,
+} from "@/lib/format";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
@@ -21,14 +29,11 @@ import {
   lostBudgetShare,
   lostRankShare,
   nonBrandRoas,
-  pointChange,
   ratio,
-  relativeChange,
   searchImpressionShare,
 } from "@/lib/paid/math";
 import type { GadsCampaignAgg, GadsLeakage } from "@/lib/queries/paidGoogle";
 import { classedRows, partOf, rates, rollUp } from "./aggregate";
-import { PpChip } from "./parts";
 
 /** Google reports a share under 10% as a floor value, so lost share is an upper bound. */
 const FLOOR_NOTE =
@@ -41,10 +46,8 @@ function withNote(key: string, note: string): MetricDefinition {
 interface Tile {
   label: string;
   value: string;
-  /** Relative change, a fraction. */
-  delta?: number | null;
-  /** Change in a rate, in fraction points. */
-  pointDelta?: number | null;
+  /** Both values and the kind (rates show points); null or absent when comparison is off. */
+  change?: DeltaInput | null;
   goodWhen?: GoodWhen;
   /** Definition from the metrics list, possibly with a local note. */
   definition?: MetricDefinition;
@@ -68,11 +71,7 @@ function GadsTile({ tile, large }: { tile: Tile; large: boolean }) {
       >
         {missing ? NO_VALUE : tile.value}
       </span>
-      {tile.pointDelta !== undefined && tile.pointDelta !== null ? (
-        <PpChip delta={tile.pointDelta} goodWhen={tile.goodWhen ?? "up"} />
-      ) : tile.delta !== undefined && tile.delta !== null ? (
-        <DeltaChip delta={tile.delta} goodWhen={tile.goodWhen ?? "up"} />
-      ) : null}
+      <DeltaChip change={tile.change} goodWhen={tile.goodWhen ?? "up"} />
     </div>
   );
 }
@@ -94,8 +93,13 @@ export function GoogleKpis({
   const r = rates(cur);
   const p = rates(prev);
 
-  const cmp = (a: number | null, b: number | null) => (compare ? relativeChange(a, b) : null);
-  const pts = (a: number | null, b: number | null) => (compare ? pointChange(a, b) : null);
+  const chg = (
+    a: number | null,
+    b: number | null,
+    kind: DeltaKind,
+    decimals?: number
+  ): DeltaInput | null =>
+    compare ? { current: a, previous: b, kind, currency, ...(decimals !== undefined ? { decimals } : {}) } : null;
 
   const curClassed = classedRows(campaigns, "current");
   const prevClassed = classedRows(campaigns, "previous");
@@ -122,31 +126,31 @@ export function GoogleKpis({
     {
       label: "Spend",
       value: money(cur?.spend ?? null),
-      delta: cmp(cur?.spend ?? null, prev?.spend ?? null),
+      change: chg(cur?.spend ?? null, prev?.spend ?? null, "money"),
       goodWhen: "neutral",
     },
     {
       label: "Conv. value",
       value: money(cur?.value ?? null),
-      delta: cmp(cur?.value ?? null, prev?.value ?? null),
+      change: chg(cur?.value ?? null, prev?.value ?? null, "money"),
       info: "Purchase conversions only.",
     },
     {
       label: "ROAS",
       value: formatRatio(r.roas),
-      delta: cmp(r.roas, p.roas),
+      change: chg(r.roas, p.roas, "ratio"),
       info: "Purchase conversion value divided by spend.",
     },
     {
       label: "Conversions",
       value: formatNumber(cur?.conversions ?? null, { decimals: 1 }),
-      delta: cmp(cur?.conversions ?? null, prev?.conversions ?? null),
+      change: chg(cur?.conversions ?? null, prev?.conversions ?? null, "count", 1),
       info: "Purchase conversions only. Google counts fractions under data-driven attribution.",
     },
     {
       label: "CPA",
       value: unitMoney(r.cpa),
-      delta: cmp(r.cpa, p.cpa),
+      change: chg(r.cpa, p.cpa, "money"),
       goodWhen: "down",
     },
   ];
@@ -155,20 +159,20 @@ export function GoogleKpis({
     {
       label: "Brand share",
       value: formatPercent(brand),
-      pointDelta: pts(brand, brandPrev),
+      change: chg(brand, brandPrev, "rate"),
       goodWhen: "neutral",
       definition: METRIC_DEFINITIONS["Brand share"],
     },
     {
       label: "Non-brand ROAS",
       value: formatRatio(nbRoas),
-      delta: cmp(nbRoas, nbRoasPrev),
+      change: chg(nbRoas, nbRoasPrev, "ratio"),
       definition: METRIC_DEFINITIONS["Non-brand ROAS"],
     },
     {
       label: "Search IS",
       value: formatPercent(searchIs),
-      pointDelta: pts(searchIs, searchIsPrev),
+      change: chg(searchIs, searchIsPrev, "rate"),
       definition: withNote(
         "Search IS",
         "Search network only. Google reports shares under 10% as a floor value, so small shares read high."
@@ -177,34 +181,34 @@ export function GoogleKpis({
     {
       label: "Lost IS (budget)",
       value: formatPercent(lostB),
-      pointDelta: pts(lostB, lostBPrev),
+      change: chg(lostB, lostBPrev, "rate"),
       goodWhen: "down",
       definition: withNote("Lost IS (budget)", FLOOR_NOTE),
     },
     {
       label: "Lost IS (rank)",
       value: formatPercent(lostR),
-      pointDelta: pts(lostR, lostRPrev),
+      change: chg(lostR, lostRPrev, "rate"),
       goodWhen: "down",
       definition: withNote("Lost IS (rank)", FLOOR_NOTE),
     },
     {
       label: "CTR",
       value: formatPercent(r.ctr, { decimals: 2 }),
-      pointDelta: pts(r.ctr, p.ctr),
+      change: chg(r.ctr, p.ctr, "rate"),
       info: "Clicks divided by impressions, all networks.",
     },
     {
       label: "CPC",
       value: unitMoney(r.cpc),
-      delta: cmp(r.cpc, p.cpc),
+      change: chg(r.cpc, p.cpc, "money"),
       goodWhen: "down",
       info: "Spend divided by clicks, all networks.",
     },
     {
       label: "Brand leakage",
       value: formatPercent(leak),
-      pointDelta: pts(leak, leakPrev),
+      change: chg(leak, leakPrev, "rate"),
       goodWhen: "down",
       definition: METRIC_DEFINITIONS["Brand leakage"],
     },

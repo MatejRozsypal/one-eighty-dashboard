@@ -1,13 +1,12 @@
 /**
  * Small pieces shared by the Google tab's sections: the section shell, the
- * point-change chip, the coverage chip and the low-volume mark.
+ * coverage chip and the low-volume mark.
  */
 
 import type { ReactNode } from "react";
 import { AppLink } from "@/components/ui/AppLink";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Value } from "@/components/ui/EmptyState";
-import type { GoodWhen } from "@/components/ui/Delta";
 import { formatPercent } from "@/lib/format";
 
 /** The card every section sits in: a header row (title left, controls right), then the body. */
@@ -28,42 +27,6 @@ export function Section({
       </div>
       {children}
     </section>
-  );
-}
-
-/**
- * Change in a rate, in percentage points (0.012 renders "1.2pp").
- * The arrow follows the movement; only the colour follows whether it is good.
- */
-export function PpChip({
-  delta,
-  goodWhen = "up",
-}: {
-  /** Difference in fraction points. Null renders nothing. */
-  delta: number | null;
-  goodWhen?: GoodWhen;
-}) {
-  if (delta === null) return null;
-  const flat = Math.abs(delta) < 0.0005;
-  const direction = flat ? "flat" : delta > 0 ? "up" : "down";
-  const sentiment =
-    goodWhen === "neutral" || flat ? "neutral" : direction === goodWhen ? "good" : "bad";
-  const color = {
-    good: "text-positive",
-    bad: "text-negative",
-    neutral: "text-content-muted",
-  }[sentiment];
-  const arrow = { up: "▲", down: "▼", flat: "→" }[direction];
-
-  return (
-    <span
-      className={`inline-flex items-center gap-[5px] font-mono text-[12px] font-medium tabular ${color}`}
-    >
-      <span aria-hidden="true" className="text-[9px]">
-        {arrow}
-      </span>
-      {(Math.abs(delta) * 100).toFixed(1)}pp
-    </span>
   );
 }
 

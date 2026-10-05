@@ -7,8 +7,9 @@
  * the one-line badge a figure can carry ("Meta not connected": the ratio is
  * overstated when a platform's spend is missing from the denominator).
  *
- * A null value renders the muted "n/a", never zero. `delta` undefined holds
- * the space so the grid does not reflow when comparison is switched off.
+ * A null value renders the muted "n/a", never zero. `change` undefined holds
+ * the space so the grid does not reflow when comparison is switched off; null
+ * shows no chip. The chip follows the delta toggle (percent or absolute).
  */
 
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
@@ -16,12 +17,12 @@ import { Sparkline } from "@/components/ui/Sparkline";
 import { Badge } from "@/components/ui/Badge";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
-import { NO_VALUE, isNoValue } from "@/lib/format";
+import { NO_VALUE, isNoValue, type DeltaInput } from "@/lib/format";
 
 export function PaidTile({
   label,
   value,
-  delta,
+  change,
   goodWhen = "up",
   comparisonLabel,
   series,
@@ -33,8 +34,8 @@ export function PaidTile({
   label: string;
   /** Preformatted. Null or "n/a" renders the muted "n/a". */
   value: string | null;
-  /** Fraction. Null shows no chip, undefined holds the space. */
-  delta?: number | null;
+  /** Both values and the kind. Null shows no chip, undefined holds the space. */
+  change?: DeltaInput | null;
   goodWhen?: GoodWhen;
   comparisonLabel?: string;
   /** Daily values for the trend line (hero tiles only). */
@@ -83,14 +84,19 @@ export function PaidTile({
             {missing ? NO_VALUE : value}
           </span>
 
-          {delta !== undefined ? (
+          {change !== undefined ? (
             <span className="inline-flex min-h-3 items-center gap-1.5 whitespace-nowrap">
-              <DeltaChip delta={delta} goodWhen={goodWhen} />
-              {delta !== null && comparisonLabel && (
-                <span className="font-mono text-[11.5px] tracking-[0.02em] text-content-muted">
-                  {comparisonLabel}
-                </span>
-              )}
+              <DeltaChip
+                change={change}
+                goodWhen={goodWhen}
+                after={
+                  comparisonLabel ? (
+                    <span className="font-mono text-[11.5px] tracking-[0.02em] text-content-muted">
+                      {comparisonLabel}
+                    </span>
+                  ) : null
+                }
+              />
             </span>
           ) : (
             <span className="block h-3" aria-hidden="true" />

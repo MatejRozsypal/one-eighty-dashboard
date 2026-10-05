@@ -30,7 +30,8 @@ import { Eyebrow } from "@/components/ui/Eyebrow";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import type { PnlSnapshot } from "@/lib/queries/pnl";
-import { metric, hasNoCostData, paidSpendDelta } from "@/lib/queries/pnl";
+import { metricChange, hasNoCostData, paidSpendChange } from "@/lib/queries/pnl";
+import type { DeltaInput } from "@/lib/format";
 
 const CHART_HEIGHT = 290;
 
@@ -48,7 +49,8 @@ interface Step {
   /** Bar magnitude, in currency units. */
   magnitude: number;
   kind: "total" | "cost" | "placeholder";
-  delta?: number | null;
+  /** Current and comparison values: the chip follows the % / 123 toggle. */
+  change?: DeltaInput | null;
   goodWhen?: "up" | "down" | "neutral";
   isHero?: boolean;
   /** Set on placeholder steps. */
@@ -84,7 +86,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
       base: 0,
       magnitude: revenue,
       kind: "total",
-      delta: metric(snapshot, (x) => x.revenue).delta,
+      change: metricChange(snapshot, (x) => x.revenue, "money"),
       goodWhen: "up",
     },
     noCost
@@ -95,7 +97,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
           base: cm1,
           magnitude: t.cogs ?? 0,
           kind: "cost",
-          delta: metric(snapshot, (x) => x.cogs).delta,
+          change: metricChange(snapshot, (x) => x.cogs, "money"),
           goodWhen: "down",
         },
     noCost
@@ -106,7 +108,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
           base: 0,
           magnitude: cm1,
           kind: "total",
-          delta: metric(snapshot, (x) => x.cm1).delta,
+          change: metricChange(snapshot, (x) => x.cm1, "money"),
           goodWhen: "up",
         },
     t.otherCm1Cost === null
@@ -141,7 +143,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
           base: 0,
           magnitude: cm2,
           kind: "total",
-          delta: metric(snapshot, (x) => x.cm2).delta,
+          change: metricChange(snapshot, (x) => x.cm2, "money"),
           goodWhen: "up",
         },
     {
@@ -152,7 +154,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
       kind: "cost",
       // Same rule as the Paid spend tile: no delta against a comparison that
       // only partly had spend.
-      delta: paidSpendDelta(snapshot),
+      change: paidSpendChange(snapshot),
       goodWhen: "neutral",
     },
     noCost
@@ -163,7 +165,7 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
           base: 0,
           magnitude: cm3,
           kind: "total",
-          delta: metric(snapshot, (x) => x.cm3).delta,
+          change: metricChange(snapshot, (x) => x.cm3, "money"),
           goodWhen: "up",
           isHero: true,
         },
@@ -250,8 +252,8 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
                 {step.kind === "placeholder" ? step.missing : money(step.value)}
               </span>
               <span className="h-[17px]">
-                {step.delta !== undefined && (
-                  <DeltaChip delta={step.delta} goodWhen={step.goodWhen} />
+                {step.change !== undefined && (
+                  <DeltaChip change={step.change} goodWhen={step.goodWhen} />
                 )}
               </span>
             </div>

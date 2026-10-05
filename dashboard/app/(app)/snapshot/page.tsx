@@ -17,8 +17,8 @@ import { parseViewParams, viewQuery, comparisonLabel, type SearchParams } from "
 import {
   getPnlSnapshot,
   hasNoCostData,
-  metric,
-  paidSpendDelta as paidSpendDeltaOf,
+  metricChange,
+  paidSpendChange as paidSpendChangeOf,
   spendGapNotice,
 } from "@/lib/queries/pnl";
 import { getLifetimeSummary, getPayback } from "@/lib/queries/lifetime";
@@ -136,7 +136,7 @@ export default async function SnapshotPage({
   // A paid spend delta against a period that only partly had spend would be a
   // fiction too, so the tile and the margin stack share one rule.
   const gapNotice = spendGapNotice(snapshot);
-  const paidSpendDelta = paidSpendDeltaOf(snapshot);
+  const paidSpendChange = paidSpendChangeOf(snapshot);
 
   return (
     <>
@@ -167,7 +167,7 @@ export default async function SnapshotPage({
           <MetricCard
             label="Revenue"
             value={formatMoney(t.revenue, currency)}
-            delta={hasComparison ? metric(snapshot, (x) => x.revenue).delta : undefined}
+            change={hasComparison ? metricChange(snapshot, (x) => x.revenue, "money") : undefined}
             goodWhen="up"
             comparisonLabel={compareLabel}
             source={shopSource}
@@ -176,7 +176,7 @@ export default async function SnapshotPage({
           <MetricCard
             label="CM3"
             value={formatMoney(t.cm3, currency)}
-            delta={hasComparison ? metric(snapshot, (x) => x.cm3).delta : undefined}
+            change={hasComparison ? metricChange(snapshot, (x) => x.cm3, "money") : undefined}
             goodWhen="up"
             comparisonLabel={compareLabel}
             source="Warehouse"
@@ -186,7 +186,8 @@ export default async function SnapshotPage({
           <MetricCard
             label="CM3 %"
             value={formatPercent(t.cm3Pct)}
-            delta={hasComparison ? metric(snapshot, (x) => x.cm3Pct).delta : undefined}
+            // A margin is a rate: its change is in percentage points in both modes.
+            change={hasComparison ? metricChange(snapshot, (x) => x.cm3Pct, "rate") : undefined}
             goodWhen="up"
             comparisonLabel={compareLabel}
             source="Warehouse"
@@ -199,7 +200,7 @@ export default async function SnapshotPage({
           <MetricCard
             label="Paid spend"
             value={formatMoney(t.paidSpend, currency)}
-            delta={hasComparison ? paidSpendDelta : undefined}
+            change={hasComparison ? paidSpendChange : undefined}
             // Spend rising is neither good nor bad on its own. It depends
             // entirely on what it bought. Colouring it would assert a judgement
             // the number doesn't support.

@@ -12,14 +12,16 @@ import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
 import { monthsInRange } from "@/lib/period";
 import { PageControls } from "@/components/controls/PageControls";
-import { getGrowth } from "@/lib/queries/growth";
+import { getGrowth, type GrowthMonth } from "@/lib/queries/growth";
 import { growthStats } from "@/components/growth/stats";
 import { getYearOverYear } from "@/lib/queries/yoy";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
+import { deltaSortKey, type DeltaInput } from "@/lib/format";
 import { Header } from "@/components/shell/Header";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
 import { DeltaChip } from "@/components/ui/Delta";
+import { DeltaModeToggle } from "@/components/controls/DeltaModeToggle";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
 import { DataTable } from "@/components/ui/DataTable";
 import { YearOverYear } from "@/components/dashboard/YearOverYear";
@@ -79,6 +81,19 @@ export default async function GrowthPage({
 
   const { avgMonthlyGrowth, cumulativeGrowth } = growthStats(months);
 
+  // Month over month in both modes: this month against the month before.
+  const revenueChange = (m: GrowthMonth): DeltaInput => ({
+    current: m.revenue,
+    previous: m.previousRevenue,
+    kind: "money",
+    currency: client.currency,
+  });
+  const newOrdersChange = (m: GrowthMonth): DeltaInput => ({
+    current: m.newCustomerOrders,
+    previous: m.previousNewCustomerOrders,
+    kind: "count",
+  });
+
   // Chronological for the chart, newest-first for the table, a chart reads
   // left to right, a table reads most-recent first.
   const chrono = [...months].reverse();
@@ -112,6 +127,8 @@ export default async function GrowthPage({
             { value: "yoy", label: "Year over year" },
           ]}
         />
+        {/* Both views are a comparison, so the % / 123 choice applies to both. */}
+        <DeltaModeToggle />
       </div>
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
@@ -200,9 +217,9 @@ export default async function GrowthPage({
                     sort: [
                       m.monthStart,
                       m.revenue,
-                      m.isPartial ? null : m.revenueMoM,
+                      m.isPartial ? null : deltaSortKey(revenueChange(m)),
                       m.newCustomerOrders,
-                      m.isPartial ? null : m.newCustomerOrdersMoM,
+                      m.isPartial ? null : deltaSortKey(newOrdersChange(m)),
                       null,
                     ],
                     cells: [
@@ -212,18 +229,26 @@ export default async function GrowthPage({
                       <span className="font-mono text-[14px] font-semibold tracking-heading tabular text-content-strong">
                         <Value>{formatMoney(m.revenue, client.currency)}</Value>
                       </span>,
-                      !m.isPartial && m.revenueMoM !== null ? (
-                        <DeltaChip delta={m.revenueMoM} goodWhen="up" />
-                      ) : (
+                      m.isPartial ? (
                         <NoValue />
+                      ) : (
+                        <DeltaChip
+                          change={revenueChange(m)}
+                          goodWhen="up"
+                          fallback={<NoValue />}
+                        />
                       ),
                       <span className="font-mono text-[14px] tracking-heading tabular text-content-strong">
                         <Value>{formatNumber(m.newCustomerOrders)}</Value>
                       </span>,
-                      !m.isPartial && m.newCustomerOrdersMoM !== null ? (
-                        <DeltaChip delta={m.newCustomerOrdersMoM} goodWhen="up" />
-                      ) : (
+                      m.isPartial ? (
                         <NoValue />
+                      ) : (
+                        <DeltaChip
+                          change={newOrdersChange(m)}
+                          goodWhen="up"
+                          fallback={<NoValue />}
+                        />
                       ),
                       m.isPartial ? (
                         <Badge variant="neutral" size="sm" dot>

@@ -77,16 +77,23 @@ export function YearOverYear({
                 </span>
 
                 <span>
-                  {y.cappedYoY !== null ? (
-                    <DeltaChip delta={y.cappedYoY} goodWhen="up" />
-                  ) : (
-                    <span
-                      className="font-mono text-[12px] text-gray-300"
-                      title="No prior year data"
-                    >
-                      {NO_VALUE}
-                    </span>
-                  )}
+                  <DeltaChip
+                    change={{
+                      current: y.cappedRevenue,
+                      previous: y.cappedPrevious,
+                      kind: "money",
+                      currency,
+                    }}
+                    goodWhen="up"
+                    fallback={
+                      <span
+                        className="font-mono text-[12px] text-gray-300"
+                        title="No prior year data"
+                      >
+                        {NO_VALUE}
+                      </span>
+                    }
+                  />
                 </span>
 
                 {/*

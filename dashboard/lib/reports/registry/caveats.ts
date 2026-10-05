@@ -22,6 +22,9 @@ export const CAVEATS: CaveatRegistry = {
   period_share_not_rcr: { short: "Order share, not cohort repeat rate", applies: () => true },
   /** Data-driven: the evaluator adds it when a client has rows in another currency. Never from registry fields. */
   foreign_currency_rows: { short: "Some orders in another currency", applies: () => false },
+  /** Data-driven: the evaluator adds it when a current-period launch is under 60 days old and not yet a winner. */
+  cohort_maturing: { short: "Launches under 60 days old still open", applies: () => false },
+  lifetime_to_date: { short: "Winners judged on lifetime to date", applies: () => true },
 };
 
 /** Stable order for output lists. */
@@ -35,6 +38,8 @@ export const CAVEAT_ORDER: readonly CaveatId[] = [
   "new_flag_window",
   "period_share_not_rcr",
   "foreign_currency_rows",
+  "cohort_maturing",
+  "lifetime_to_date",
 ];
 
 /** Registry-driven caveats of one client, in CAVEAT_ORDER. */

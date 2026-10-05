@@ -57,12 +57,28 @@
  *   the comparison value and the delta are null.
  * - Deltas: percentage points for percent units, relative otherwise.
  * - Status precedence: not_connected > fx_missing > not_measured > no_data > ok.
+ * - Entity marts (launch cohorts, HR3): each row is one ad. Before any
+ *   summing, `classifyEntityRows` maps the row's lifetime inputs through the
+ *   mart's classifier with the client's own `creativeThresholds` (merged in
+ *   by the query route, never in SQL or the key) into 0/1 counts: launched,
+ *   winners, open. The classifier is launchStatus() from
+ *   lib/creative/hitRate.ts, the Creative tile's function, so both agree by
+ *   construction. From then on the counts are ordinary components: hit rate
+ *   = sum of winners / sum of launched for every bucket, total and rollup.
+ *   A client without thresholds is not_measured "No thresholds" for every
+ *   metric that needs them, so rollups leave it out with a coverage note.
+ *   Ads launched needs no thresholds. A current period with open launches
+ *   (under 60 days old, not yet a winner) carries the cohort_maturing
+ *   caveat, and for metrics that are a lower bound while ads are open
+ *   (winners, hit rate) the delta is suppressed when the current period is
+ *   maturing and the comparison is not: older cohorts had more time.
  *
  * Pure: no BigQuery, no session.
  *
  * Design: 11_reporting_suite_design.md sections 2.9 and 2.12. Owner: WP1 (RS1).
  */
 
+import { launchStatus } from "@/lib/creative/hitRate";
 import { delta as relativeDelta } from "@/lib/period";
 import { TOTAL_BUCKET, type ComponentRow, type ComponentSum, type EvaluateModule, type EvaluateWidget, type MartGuards, type ResolvedWidget } from "./contracts";
 import { SERIES_SLOTS } from "./limits";
@@ -269,6 +285,110 @@ export function evaluateFormula(metric: RegisteredMetric, get: (c: ComponentId) 
 }
 
 // ---------------------------------------------------------------------------
+// Entity marts: classify each entity row before anything is summed
+// ---------------------------------------------------------------------------
+
+/** Status words of a cell whose client has no creative thresholds in Settings. */
+export const NO_THRESHOLDS = "No thresholds";
+
+/** The creative_hit classifier's inputs and outputs (registry/components.ts, mart ad_launch). */
+const HIT = {
+  purchases: "ad_launch.purchases",
+  spend: "ad_launch.spend",
+  revenue: "ad_launch.revenue",
+  ageDays: "ad_launch.age_days",
+  priorRoas: "ad_launch.prior_roas",
+  launched: "ad_launch.launched",
+  winners: "ad_launch.winners",
+  open: "ad_launch.open",
+} as const satisfies Record<string, ComponentId>;
+
+/** The classified component that counts entities still open (the current period is maturing while it is > 0). */
+const MATURING_COMPONENT: ComponentId = HIT.open;
+
+const ENTITY_MARTS: readonly MartDef[] = (Object.values(MARTS) as MartDef[]).filter((m) => m.entity !== undefined);
+
+const count = (n: number): ComponentSum => ({ nat: n, disp: n, natNulls: 0, dispNulls: 0 });
+
+/** One ad of the launch cohort mart -> launched, winners and open, against the client's own thresholds. */
+function classifyCreativeHit(values: ComponentRow["values"], client: ReportClient | undefined): Partial<Record<ComponentId, ComponentSum>> {
+  const read = (id: ComponentId): number | null => {
+    const v = values[id];
+    return v ? num(v.nat) ?? num(v.disp) : null;
+  };
+  const out: Partial<Record<ComponentId, ComponentSum>> = { [HIT.launched]: count(1) };
+  const t = client?.creativeThresholds ?? null;
+  // Without thresholds there is no winner and no open count: a 0 would be a claim, and a false one.
+  if (t === null) return out;
+  const status = launchStatus(
+    {
+      adId: "",
+      adName: "",
+      firstDate: "",
+      ageDays: read(HIT.ageDays) ?? 0,
+      spend: read(HIT.spend) ?? 0,
+      revenue: read(HIT.revenue) ?? 0,
+      purchases: read(HIT.purchases) ?? 0,
+      isVideo: false,
+      // Relaunches and pre-existing ads were left out in SQL (MartDef.entity.exclude).
+      isRelaunch: false,
+      isPreexisting: false,
+      conceptId: null,
+      conceptName: null,
+      priorRoas: read(HIT.priorRoas),
+    },
+    t
+  );
+  out[HIT.winners] = count(status === "winner" ? 1 : 0);
+  out[HIT.open] = count(status === "open" ? 1 : 0);
+  return out;
+}
+
+/**
+ * Rows in, rows out: on a row of an entity mart (its n_rows guard > 0) the
+ * mart's inputs are replaced by the classifier's outputs; on every other row
+ * the (NULL) inputs are dropped. Never mutates the input rows: they are the
+ * cached run result. Rows without an entity mart pass through untouched.
+ */
+export function classifyEntityRows(rows: readonly ComponentRow[], clients: ReadonlyMap<string, ReportClient>): ComponentRow[] {
+  if (ENTITY_MARTS.length === 0) return [...rows];
+  return rows.map((row) => {
+    let values: ComponentRow["values"] | null = null;
+    for (const mart of ENTITY_MARTS) {
+      const inputs = (Object.keys(row.values) as ComponentId[]).filter((id) => getComponent(id).mart === mart.id);
+      const isEntityRow = (row.guards[mart.id]?.nRows ?? 0) > 0;
+      if (inputs.length === 0 && !isEntityRow) continue;
+      values ??= { ...row.values };
+      for (const id of inputs) delete values[id];
+      if (!isEntityRow) continue;
+      switch (mart.entity!.classifier) {
+        case "creative_hit":
+          Object.assign(values, classifyCreativeHit(row.values, clients.get(row.clientId)));
+          break;
+      }
+    }
+    return values === null ? row : { ...row, values };
+  });
+}
+
+/** True when the metric reads a classified component that only the client's thresholds can decide. */
+function needsThresholds(metric: RegisteredMetric): boolean {
+  return metric.meta.components.some((c) => getComponent(c).classified?.needsThresholds === true);
+}
+
+/** True when the metric is a lower bound while entities are still open (winners, hit rate). */
+function isLowerBound(metric: RegisteredMetric): boolean {
+  return metric.meta.components.some((c) => getComponent(c).classified?.lowerBound === true);
+}
+
+/** Open entities summed over the members' row groups (0 without any). */
+function openOf(members: readonly Member[]): number {
+  let n = 0;
+  for (const m of members) n += num(m.agg?.values.get(MATURING_COMPONENT)?.nat) ?? 0;
+  return n;
+}
+
+// ---------------------------------------------------------------------------
 // Outcomes
 // ---------------------------------------------------------------------------
 
@@ -315,6 +435,8 @@ function outcome(metric: RegisteredMetric, members: readonly Member[], mode: Rea
     summed.set(id, { value: compFx ? null : value, fx: compFx, gap: compGap });
   }
   if (fx) return { value: null, status: "fx_missing", fxMonths: [...fxMonths].sort() };
+  // Hit rate without the client's own bar: not measured, never a zero.
+  if (needsThresholds(metric) && present.some((m) => !m.client.creativeThresholds)) return { value: null, status: "not_measured", fxMonths: [], reason: NO_THRESHOLDS };
   if (present.some((m) => m.innerGuardFail || guardFails(m.agg, metric))) return { value: null, status: "not_measured", fxMonths: [] };
   const r = evaluateFormula(metric, (c) => summed.get(c) ?? { value: null, fx: false });
   if (r.value === null) {
@@ -441,7 +563,7 @@ export const evaluateWidget: EvaluateWidget = (input) => {
   // Index rows: client -> period -> bucket -> Agg.
   const known = new Map(widget.clients.map((c) => [c.id, c] as const));
   const data = new Map<string, { cur: ClientPeriod; cmp: ClientPeriod }>();
-  for (const row of rows) {
+  for (const row of classifyEntityRows(rows, known)) {
     if (!known.has(row.clientId)) continue;
     if (row.period === "cmp" && !cmpRange) continue;
     let d = data.get(row.clientId);
@@ -473,6 +595,7 @@ export const evaluateWidget: EvaluateWidget = (input) => {
       for (const cv of clientCaveats(c)) caveats.add(cv);
       const d = data.get(c.id);
       if (d && (flaggedForeignRows(d.cur.total) > 0 || flaggedForeignRows(d.cmp.total) > 0)) caveats.add("foreign_currency_rows");
+      if (d && (num(d.cur.total.values.get(MATURING_COMPONENT)?.nat) ?? 0) > 0) caveats.add("cohort_maturing");
     }
 
     const cells: Partial<Record<MetricId, MetricCell>> = {};
@@ -518,6 +641,8 @@ export const evaluateWidget: EvaluateWidget = (input) => {
       let pointCoverage: number[] | undefined;
       let rollupCoverage: { included: number; of: number } | undefined;
       let excluded: Exclusion[] = [];
+      /** Open launches in the current and comparison totals of the clients summed (maturity, HR3). */
+      let maturing = { cur: 0, cmp: 0 };
       const collectFx = (o: Outcome) => {
         if (o.status === "fx_missing") for (const m of o.fxMonths) fxWarningMonths.add(m);
       };
@@ -529,6 +654,7 @@ export const evaluateWidget: EvaluateWidget = (input) => {
         cur = outcome(metric, members(included, "cur", null), mode, display);
         const cmp = cmpRange ? outcome(metric, members(included, "cmp", null), mode, display) : null;
         if (cur.status === "ok" && cmp && cmp.status === "ok") compareTotal = cmp.value;
+        maturing = { cur: openOf(members(included, "cur", null)), cmp: cmpRange ? openOf(members(included, "cmp", null)) : 0 };
         if (grain !== "total") curPoints = rowKeys.map((b) => outcome(metric, members(included, "cur", b), mode, display));
         if (grain !== "total" && cmpRange) {
           const cmpOs = buckets.map((_, i) => (i < cmpRowKeys.length ? outcome(metric, members(included, "cmp", cmpRowKeys[i]), mode, display) : NO_ROWS));
@@ -548,6 +674,7 @@ export const evaluateWidget: EvaluateWidget = (input) => {
           const cmpR = rollupOutcome(metric, members(curR.kept, "cmp", null), display);
           collectExcludedFx(cmpR);
           if (curR.status === "ok" && cmpR.status === "ok" && cmpR.excluded.length === 0) compareTotal = cmpR.value;
+          maturing = { cur: openOf(members(curR.kept, "cur", null)), cmp: openOf(members(curR.kept, "cmp", null)) };
         }
         if (grain !== "total") {
           const curRs = rowKeys.map((b) => rollupOutcome(metric, members(included, "cur", b), display));
@@ -572,6 +699,8 @@ export const evaluateWidget: EvaluateWidget = (input) => {
       let delta: number | null = null;
       if (ok && cur.value !== null && compareTotal !== null) {
         delta = deltaKind === "pp" ? cur.value - compareTotal : relativeDelta(cur.value, compareTotal);
+        // A maturing current cohort against a settled one: the older cohorts had more time to win, so no delta.
+        if (isLowerBound(metric) && maturing.cur > 0 && maturing.cmp === 0) delta = null;
       }
       const notConnected = group.clients
         .filter((c) => widget.availability[c.id]?.[id]?.ok !== true)

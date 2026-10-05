@@ -70,7 +70,7 @@ function check(name: string, ok: boolean, detail?: string): void {
 // Ids and limits
 // ---------------------------------------------------------------------------
 
-check("44 queryable metric ids (30 KPI view + 14 Meta soft)", METRIC_IDS.length === 44, String(METRIC_IDS.length));
+check("47 queryable metric ids (30 KPI view + 14 Meta soft + 3 hit rate)", METRIC_IDS.length === 47, String(METRIC_IDS.length));
 check("metric ids unique", new Set([...METRIC_IDS, ...PHASE2_METRIC_IDS]).size === METRIC_IDS.length + PHASE2_METRIC_IDS.length);
 check("phase 2 ids are not queryable", PHASE2_METRIC_IDS.every((id) => !isMetricId(id)));
 check("client role never gets Reports", !(REPORTS_ROLES as readonly string[]).includes("client"));
@@ -206,6 +206,7 @@ const FIXTURE_MARTS: Record<MartId, MartDef> = {
   meta_campaign: { id: "meta_campaign", table: "mart.mart_meta_campaign_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 2 },
   meta_ad: { id: "meta_ad", table: "mart.mart_meta_ad_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 2 },
   email_campaign: { id: "email_campaign", table: "mart.mart_email_campaign_perf", dateColumn: "send_date", currencyColumn: "currency", grains: ["week", "month"], phase: 2 },
+  ad_launch: { id: "ad_launch", table: "mart.rpt_ad_launch", dateColumn: "first_date", currencyColumn: null, grains: ["day", "week", "month"], phase: 2 },
 };
 
 const FIXTURE_COMPONENT_LIST: Array<[ComponentId, boolean]> = [
@@ -527,11 +528,55 @@ if (real.registry) {
       return /date predicate/.test(String(error));
     }
   })());
+  // HR3: hit rate reads the launch cohort entity mart; thresholds never reach SQL or the key.
+  {
+    const realCompile = createCompiler(real.registry, { projectId: PROJECT });
+    const base = { clientIds: ["dobias", "ethia", "manami", "venev"], grain: "month" as const, current: { from: "2025-10-01", to: "2026-09-30" }, compare: "previous_period" as const };
+    const w = resolved({ ...base, components: ["ad_launch.launched", "ad_launch.winners"] });
+    const q = realCompile(w);
+    const INPUTS = "ad_launch.age_days,ad_launch.prior_roas,ad_launch.purchases,ad_launch.revenue,ad_launch.spend";
+    check("HR3 sql: entity mart selects every classifier input, never a classified output", q.components.join() === INPUTS && !/ad_launch__(winners|launched|open)/.test(q.sql), q.components.join());
+    check("HR3 sql: one row per ad (entity key, GROUP BY 4), inputs as ANY_VALUE with NULL counts", q.sql.includes("t.ad_id AS entity_key") && q.sql.includes("GROUP BY 1, 2, 3, 4") && q.sql.includes("ANY_VALUE(t.purchases) AS ad_launch__purchases") && q.sql.includes("COUNTIF(t.prior_roas IS NULL) AS ad_launch__prior_roas__nulls"));
+    check("HR3 sql: pre-existing ads and relaunches excluded in WHERE", q.sql.includes("AND t.is_preexisting IS NOT TRUE") && q.sql.includes("AND t.is_relaunch IS NOT TRUE"));
+    check("HR3 sql: bucketed on first delivery, date predicate and period tagging", q.sql.includes("DATE_TRUNC(t.first_date, MONTH) AS bucket") && q.sql.includes("t.first_date BETWEEN @scanFrom AND @scanTo") && q.sql.includes("t.first_date BETWEEN p.from_date AND p.to_date") && q.sql.includes("FROM `oneeighty-warehouse.mart.rpt_ad_launch` AS t"));
+    check("HR3 sql: no FX, no display currency param (no money)", !q.sql.includes("fx_pairs") && !("displayCurrency" in q.params) && q.sql.includes("0 AS ad_launch__fx_missing_rows"));
+    check("HR3 sql: assertDatePredicates passes", (() => { try { assertDatePredicates(q.sql, [real.registry!.marts.ad_launch!]); return true; } catch { return false; } })());
+    check("HR3: tampered entity CTE without its date predicate is rejected", (() => {
+      try {
+        assertDatePredicates(q.sql.replace("AND t.first_date BETWEEN @scanFrom AND @scanTo", "AND TRUE"), [real.registry!.marts.ad_launch!]);
+        return false;
+      } catch (error) {
+        return /date predicate/.test(String(error));
+      }
+    })());
+    const T = (targetRoas: number, readPurchases: number) => ({ killRoas: 1.8, targetRoas, targetCpa: 500, grossMargin: null, scaleMultiplier: 1.2, aggressiveMultiplier: 2, holdGateX: 1, iterateGateX: 2, killGateX: 3, readPurchases, directionalPurchases: 6, maxCiHalfWidth: 0.25, hookRateFloor: 0.2, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3, noTouchDays: 14, minAdsetBudgetDaily: null, perAdFloorDaily: null, tier: null });
+    const withT = (t: ReturnType<typeof T> | null) => realCompile({ ...w, clients: w.clients.map((c) => ({ ...c, creativeThresholds: t })) });
+    const a = withT(T(2.25, 15));
+    const b = withT(T(3, 25));
+    const n = withT(null);
+    check("HR3: changing thresholds leaves SQL and cache key byte-identical", a.sql === q.sql && b.sql === q.sql && n.sql === q.sql && a.key === q.key && b.key === q.key && n.key === q.key && JSON.stringify(a.params) === JSON.stringify(b.params));
+    check("HR3: no threshold value anywhere in SQL or params", !/2\.25|readPurchases|target/i.test(a.sql + JSON.stringify(a.params)));
+    const l = realCompile(resolved({ ...base, components: ["ad_launch.launched"] }));
+    check("HR3 shared: hit rate, winners and ads launched compile to one SQL and key", l.sql === q.sql && l.key === q.key);
+    const mixed = realCompile(resolved({ ...base, components: ["ad_launch.launched", "ad_launch.winners", "kpis.revenue"] }));
+    check("HR3 sql: mixed with kpis, every CTE carries entity_key and the join uses it", mixed.sql.includes("FROM ad_launch\nFULL OUTER JOIN kpis USING (client_id, period, bucket, entity_key)") && mixed.sql.includes("'' AS entity_key") && mixed.sql.endsWith("ORDER BY client_id, period, bucket, entity_key"));
+    const plain = realCompile(resolved({ ...base, components: ["kpis.revenue"] }));
+    check("HR3 sql: widgets without an entity mart are unchanged (no entity_key)", !plain.sql.includes("entity_key") && plain.sql.endsWith("ORDER BY client_id, period, bucket"));
+    const nl = normaliseRows(
+      [{ client_id: "manami", period: "cur", bucket: { value: "2026-09-01" }, entity_key: "123", ad_launch__n_rows: 1, ad_launch__foreign_ccy_rows: 0, ad_launch__fx_missing_rows: 0, ad_launch__fx_missing_months: [], ad_launch__purchases: 16, ad_launch__spend: big2("1000.5"), ad_launch__revenue: big2("2600"), ad_launch__age_days: 70, ad_launch__prior_roas: big2("2.0287"), ad_launch__prior_roas__nulls: 0 }],
+      q
+    );
+    check("HR3 normalise: entity row inputs as numbers", nl[0].values["ad_launch.spend"]?.nat === 1000.5 && nl[0].values["ad_launch.prior_roas"]?.nat === 2.0287 && nl[0].values["ad_launch.purchases"]?.nat === 16 && nl[0].guards.ad_launch?.nRows === 1);
+  }
   const nm = normaliseRows(
     [{ client_id: "venev", period: "cur", bucket: { value: "2026-09-07" }, kpis__n_rows: 7, kpis__foreign_ccy_rows: 0, kpis__fx_missing_rows: 0, kpis__fx_missing_months: [], meta_campaign__n_rows: null, meta_campaign__foreign_ccy_rows: null, meta_campaign__fx_missing_rows: null, meta_campaign__fx_missing_months: null, meta_campaign__spend__nat: null, meta_campaign__spend__disp: null, meta_campaign__landing_page_views: null }],
     { components: ["meta_campaign.landing_page_views", "meta_campaign.spend"], marts: ["kpis", "meta_campaign"] }
   );
   check("FX4 normalise: absent joined side gives zero guards and null sums", nm[0].guards.meta_campaign?.nRows === 0 && nm[0].values["meta_campaign.spend"]?.disp === null && nm[0].values["meta_campaign.landing_page_views"]?.nat === null && nm[0].values["meta_campaign.landing_page_views"]?.natNulls === 0);
+}
+
+function big2(s: string) {
+  return { toString: () => s, valueOf: () => s, toJSON: () => s };
 }
 
 function firstDiff(a: string, b: string): string {

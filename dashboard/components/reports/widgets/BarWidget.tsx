@@ -22,6 +22,7 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Rectangle, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis, type TooltipProps } from "recharts";
 import { NO_VALUE } from "@/lib/format";
 import type { MetricId } from "@/lib/reports/registry/ids";
+import type { MetricReference } from "@/lib/reports/registry/types";
 import { BenchmarkStrip } from "./BenchmarkHover";
 import { MetricSwitch, SeriesLegend, type LegendItem } from "./CellStatus";
 import { ChartFrame, TooltipCard, TooltipRow, categoryTick, useHatch } from "./ChartFrame";
@@ -73,6 +74,9 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
   const showLegend = result.series.length >= 2 || anyGap;
   const matches = metric.benchmarkable && !stacked ? benchmarksFor(result, metric.id) : [];
   const benchLines = drawnBenchmarks(matches);
+  // A fixed reference value (hit rate ~5%): a dashed marker like a benchmark, not on stacked bars.
+  const reference = stacked ? undefined : (metric as { reference?: MetricReference }).reference;
+  const referenceLabel = (label: string) => ({ value: label, position: "insideTopLeft" as const, fontSize: 10.5, fontFamily: "var(--font-mono)", fill: TEXT_MUTED });
 
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -178,6 +182,9 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
                   label={benchLabel(b.value)}
                 />
               ))}
+              {reference && (
+                <ReferenceLine x={reference.value} stroke={BENCHMARK.stroke} strokeWidth={BENCHMARK.width} strokeDasharray={BENCHMARK.dash} ifOverflow="extendDomain" label={referenceLabel(reference.label)} />
+              )}
               <Bar dataKey="v" background={{ fill: "transparent" }} shape={shape} isAnimationActive={false} />
             </BarChart>
           </ChartFrame>
@@ -263,6 +270,9 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
                   label={benchLabel(b.value)}
                 />
               ))}
+              {reference && (
+                <ReferenceLine y={reference.value} stroke={BENCHMARK.stroke} strokeWidth={BENCHMARK.width} strokeDasharray={BENCHMARK.dash} ifOverflow="extendDomain" label={referenceLabel(reference.label)} />
+              )}
               {drawn.map(({ s, k }, i) => (
                 <Bar
                   key={s.id}

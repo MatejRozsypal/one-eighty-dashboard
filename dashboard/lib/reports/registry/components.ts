@@ -44,6 +44,18 @@ export const MARTS = {
   meta_campaign: { id: "meta_campaign", table: "mart.mart_meta_campaign_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1, accountCurrency: true },
   meta_ad: { id: "meta_ad", table: "mart.mart_meta_ad_perf", dateColumn: "date", currencyColumn: "currency", grains: ["day", "week", "month"], phase: 1, accountCurrency: true },
   email_campaign: { id: "email_campaign", table: "mart.mart_email_campaign_perf", dateColumn: "send_date", currencyColumn: "currency", grains: ["week", "month"], phase: 2 },
+  // Launch cohorts (HR1, migration 254): one row per Meta ad, lifetime to date, bucketed by the day of first delivery.
+  // Entity mart: each ad is classified (winner, open) in evaluate.ts against the client's own thresholds.
+  // No currency column: spend and revenue only enter the ad's own ROAS, which has no currency.
+  ad_launch: {
+    id: "ad_launch",
+    table: "mart.rpt_ad_launch",
+    dateColumn: "first_date",
+    currencyColumn: null,
+    grains: ["day", "week", "month"],
+    phase: 1,
+    entity: { key: "ad_id", classifier: "creative_hit", exclude: ["is_preexisting", "is_relaunch"] },
+  },
 } as const satisfies MartRegistry;
 
 // nullMeans (see ComponentDef): shop columns are NULL on a day without orders
@@ -87,6 +99,17 @@ function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>
         throw new Error(`Reports registry: ${id} stated-rate components take no filter or guard`);
       }
     }
+    const entity = (MARTS[mart] as { entity?: { key: string; exclude: readonly string[] } }).entity;
+    if (spec.classified !== undefined) {
+      if (!entity) throw new Error(`Reports registry: ${id} classified components belong to an entity mart`);
+      if (spec.money || spec.nullMeans !== "zero" || columnOverride !== undefined) throw new Error(`Reports registry: ${id} classified components are counts with nullMeans "zero" and no column`);
+    }
+    if (entity && spec.classified === undefined) {
+      if (spec.money || spec.nullMeans !== "zero") throw new Error(`Reports registry: ${id} entity inputs are non-money with nullMeans "zero" (no FX, ANY_VALUE per entity)`);
+    }
+    if (entity && (spec.onlyWhenPositive !== undefined || spec.missingWhenNull !== undefined || spec.zeroIsMissingWhen !== undefined || spec.perClientRate !== undefined)) {
+      throw new Error(`Reports registry: ${id} entity mart components take no filter, guard or rate`);
+    }
     if (spec.filterScope !== undefined) {
       if (spec.onlyWhenPositive === undefined) throw new Error(`Reports registry: ${id} filterScope needs onlyWhenPositive`);
       if (!IDENTIFIER_RE.test(spec.filterScope.key)) throw new Error(`Reports registry: ${id} filterScope key is not an identifier`);
@@ -120,7 +143,8 @@ function defineComponents<K extends ComponentId>(specs: Record<K, ComponentSpec>
     if (def.zeroIsMissingWhen !== undefined) throw new Error(`Reports registry: ${def.id} cannot combine onlyWhenPositive and zeroIsMissingWhen`);
   }
   for (const m of Object.values(MARTS)) {
-    for (const ident of [...m.table.split("."), m.dateColumn, ...(m.currencyColumn ? [m.currencyColumn] : [])]) {
+    const entity = (m as { entity?: { key: string; exclude: readonly string[] } }).entity;
+    for (const ident of [...m.table.split("."), m.dateColumn, ...(m.currencyColumn ? [m.currencyColumn] : []), ...(entity ? [entity.key, ...entity.exclude] : [])]) {
       if (!IDENTIFIER_RE.test(ident)) throw new Error(`Reports registry: mart ${m.id} has an invalid identifier`);
     }
   }
@@ -183,6 +207,22 @@ export const COMPONENTS = defineComponents({
   "meta_ad.video_thruplays": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_ad.spend", ...VIDEO_ADS },
   /** Impressions of video ads: hook and hold denominator, as on the Meta tab. */
   "meta_ad.video_impressions": { money: false, requires: "meta", nullMeans: "gap", missingWhenNull: "meta_ad.spend", column: "impressions", ...VIDEO_ADS },
+  // Launch cohorts (entity mart). Inputs: one value per ad, lifetime to date
+  // (ANY_VALUE per ad). Outputs: written per ad by the creative_hit
+  // classifier in evaluate.ts, which reuses launchStatus() from
+  // lib/creative/hitRate.ts, the function behind the Creative tile.
+  "ad_launch.purchases": { money: false, requires: "meta", nullMeans: "zero" },
+  "ad_launch.spend": { money: false, requires: "meta", nullMeans: "zero" },
+  "ad_launch.revenue": { money: false, requires: "meta", nullMeans: "zero" },
+  "ad_launch.age_days": { money: false, requires: "meta", nullMeans: "zero" },
+  /** The client's trailing 365-day Meta ROAS, the shrinkage anchor. NULL: the ad cannot be judged, never a winner. */
+  "ad_launch.prior_roas": { money: false, requires: "meta", nullMeans: "zero" },
+  /** 1 per ad first delivered in the bucket (pre-existing ads and relaunches are not in the rows at all). */
+  "ad_launch.launched": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: false, lowerBound: false } },
+  /** 1 per ad that is a winner on its lifetime totals: purchases >= readPurchases and shrunk ROAS >= targetRoas. */
+  "ad_launch.winners": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: true, lowerBound: true } },
+  /** 1 per ad that is not a winner and under 60 days old: it may still qualify. */
+  "ad_launch.open": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: true, lowerBound: false } },
   // phase 2
   "email_campaign.sent": { money: false, requires: "email", nullMeans: "zero" },
   "email_campaign.delivered": { money: false, requires: "email", nullMeans: "zero" },
@@ -208,5 +248,6 @@ export function getComponent(id: ComponentId): ComponentDef {
 
 /** Components of one mart, sorted by id. */
 export function componentsOfMart(mart: MartId): ComponentDef[] {
+  // Every component of the mart, inputs and classified outputs alike.
   return (Object.values(COMPONENTS) as ComponentDef[]).filter((c) => c.mart === mart).sort((a, b) => (a.id < b.id ? -1 : 1));
 }

@@ -17,7 +17,9 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { matchBenchmarks, fxFactor, regionPreference } from "@/lib/reports/benchmarkMatch";
 import type { BenchmarkRow, ComponentRow, ComponentSum, FxRate, ResolvedWidget } from "@/lib/reports/contracts";
-import { evaluateWidget } from "@/lib/reports/evaluate";
+import { NO_THRESHOLDS, classifyEntityRows, evaluateWidget } from "@/lib/reports/evaluate";
+import { HIT_RATE_REFERENCE, hitRate, launchStatus, type LaunchRow } from "@/lib/creative/hitRate";
+import type { CreativeThresholds } from "@/lib/creative/stats";
 import { FIXTURE_CLIENTS, FIXTURE_FILTERS, FIXTURE_RESOLVED, FIXTURE_ROWS, FIXTURE_TODAY } from "@/lib/reports/fixtures";
 import { CAPABILITIES, evalCapExpr, missingCapabilities, toReportCapabilities } from "@/lib/reports/registry/capabilities";
 import { CAVEATS, clientCaveats, visibleCaveats } from "@/lib/reports/registry/caveats";
@@ -104,11 +106,14 @@ const LIVE_KPIS_COLUMNS = [
 const LIVE_META_CAMPAIGN_COLUMNS = ["date", "currency", "spend", "impressions", "reach", "link_clicks", "landing_page_views", "add_to_cart", "initiate_checkout", "purchases"];
 const LIVE_META_AD_COLUMNS = ["date", "currency", "ad_id", "spend", "impressions", "video_play_actions", "video_views", "video_thruplays"];
 const LIVE_EMAIL_CAMPAIGN_COLUMNS = ["send_date", "currency", "sent", "delivered", "unique_opens", "unique_clicks", "revenue"];
-const LIVE = { kpis: LIVE_KPIS_COLUMNS, meta_campaign: LIVE_META_CAMPAIGN_COLUMNS, meta_ad: LIVE_META_AD_COLUMNS, email_campaign: LIVE_EMAIL_CAMPAIGN_COLUMNS } as const;
+/** Live columns used from mart.rpt_ad_launch (HR1, migration 254), INFORMATION_SCHEMA.COLUMNS, 2026-10-05. */
+const LIVE_AD_LAUNCH_COLUMNS = ["client_id", "ad_id", "first_date", "spend", "revenue", "purchases", "age_days", "is_preexisting", "is_relaunch", "prior_roas"];
+const LIVE = { kpis: LIVE_KPIS_COLUMNS, meta_campaign: LIVE_META_CAMPAIGN_COLUMNS, meta_ad: LIVE_META_AD_COLUMNS, email_campaign: LIVE_EMAIL_CAMPAIGN_COLUMNS, ad_launch: LIVE_AD_LAUNCH_COLUMNS } as const;
 
 for (const c of Object.values(COMPONENTS)) {
   check(`component ${c.id} column is an identifier`, IDENTIFIER_RE.test(c.column));
-  check(`component ${c.id} exists in the live view`, (LIVE[c.mart] as readonly string[]).includes(c.column));
+  // Classified components (hit rate) are written by the evaluator, never read from a column.
+  if (c.classified === undefined) check(`component ${c.id} exists in the live view`, (LIVE[c.mart] as readonly string[]).includes(c.column));
 }
 for (const c of Object.values(COMPONENTS)) {
   if (c.filterScope) check(`component ${c.id} scope key exists in the live view`, (LIVE[c.mart] as readonly string[]).includes(c.filterScope.key));
@@ -121,9 +126,9 @@ check("excluded columns are not components", !["unique_customers", "cm1", "cm2",
 check("cogs guard is revenue", COMPONENTS["kpis.cogs"].zeroIsMissingWhen === "kpis.revenue");
 
 check("every registry id defined", REGISTRY_METRIC_IDS.every((id) => METRICS[id]?.id === id));
-check("44 queryable metrics (30 KPI view + 14 Meta soft)", METRIC_IDS.length === 44 && METRIC_IDS.every((id) => METRICS[id].phase === 1));
+check("47 queryable metrics (30 KPI view + 14 Meta soft + 3 hit rate)", METRIC_IDS.length === 47 && METRIC_IDS.every((id) => METRICS[id].phase === 1));
 check("4 phase-2 metrics (email)", PHASE2_METRIC_IDS.length === 4 && PHASE2_METRIC_IDS.every((id) => METRICS[id].phase === 2));
-check("picker list holds the 44 queryable metrics", METRIC_LIST.length === 44);
+check("picker list holds the 47 queryable metrics", METRIC_LIST.length === 47);
 check("cm3 = revenue - cogs - fulfillment - paid (mart) - stated fulfilment and other CM1 (Snapshot parity)", METRICS.cm3.kind === "sum" && eqJson(METRICS.cm3.terms, [
   { c: "kpis.revenue", sign: 1, nullAs: "gap" },
   { c: "kpis.cogs", sign: -1, nullAs: "gap" },
@@ -682,7 +687,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     "meta_atc_to_purchase", "meta_initiate_checkout", "meta_cost_per_ic", "meta_hook_rate", "meta_hold_rate", "meta_frequency", "meta_conversion_rate",
   ];
   check("FX4: every Meta soft metric is queryable, in the meta group, requires meta", META_SOFT.every((id) => (METRIC_IDS as readonly string[]).includes(id) && METRICS[id].group === "meta" && METRICS[id].meta.requires === "meta"));
-  check("FX4: picker keeps Meta soft metrics in the Meta group", METRIC_LIST.filter((m) => m.group === "meta").length === 21);
+  check("FX4: picker keeps Meta soft metrics in the Meta group", METRIC_LIST.filter((m) => m.group === "meta").length === 24);
   const words = (t: string) => t.trim().split(/\s+/).length;
   check("FX4: descriptions at most 40 words, no dash, tenant-neutral", META_SOFT.every((id) => {
     const d = METRICS[id].description;
@@ -703,7 +708,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   check("FX4: benchmarkable where it makes sense", ["meta_cost_per_lpv", "meta_link_ctr", "meta_cpc_link", "meta_cost_per_atc", "meta_atc_rate", "meta_atc_to_purchase", "meta_cost_per_ic", "meta_hook_rate", "meta_hold_rate", "meta_conversion_rate"].every((id) => f(id as MetricId).benchmarkable) && !f("meta_lpv").benchmarkable && !f("meta_add_to_cart").benchmarkable);
   check("FX4: Meta marts in ad account currency", MARTS.meta_campaign.accountCurrency === true && MARTS.meta_ad.accountCurrency === true && !("accountCurrency" in MARTS.kpis) && MARTS.meta_campaign.phase === 1 && MARTS.meta_ad.phase === 1);
   check("FX4: outcomes are gaps only when spend is NULL", ["impressions", "reach", "link_clicks", "landing_page_views", "add_to_cart", "initiate_checkout", "purchases"].every((c) => COMPONENTS[`meta_campaign.${c}` as keyof typeof COMPONENTS].missingWhenNull === "meta_campaign.spend") && COMPONENTS["meta_ad.video_impressions"].missingWhenNull === "meta_ad.spend");
-  check("FX4: alias 'hit rate' finds hook rate", findMetricId("hit rate") === "meta_hook_rate" && findMetricId("cost per landing page view") === "meta_cost_per_lpv" && findMetricId("average daily frequency") === "meta_frequency");
+  check("HR3: 'hit rate' is the creative hit rate now, hook rate keeps 'thumbstop rate'", findMetricId("hit rate") === "hit_rate" && findMetricId("thumbstop rate") === "meta_hook_rate" && findMetricId("cost per landing page view") === "meta_cost_per_lpv" && findMetricId("average daily frequency") === "meta_frequency");
   {
     const aliases = METRIC_IDS.flatMap((id) => [...new Set([id, METRICS[id].label.toLowerCase(), ...(METRICS[id].aliases ?? []).map((a) => a.toLowerCase())])]);
     check("FX4: ids, labels and aliases unique", new Set(aliases).size === aliases.length);
@@ -862,6 +867,157 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
       const subsetRows = superRows.map((x) => ({ ...x, values: Object.fromEntries(Object.entries(x.values).filter(([k]) => own.has(k as ComponentId))) }));
       check(`QF1: superset rows evaluate like subset rows (${split}, ${grain})`, eqJson(evalW(w, superRows), evalW(w, subsetRows)));
     }
+  }
+}
+
+// 4.16 Creative hit rate (HR3): entity mart classified per ad against each client's own thresholds.
+{
+  const TOTAL = "1970-01-01";
+  const T = (targetRoas: number, readPurchases: number): CreativeThresholds => ({
+    killRoas: 1.8, targetRoas, targetCpa: 500, grossMargin: null,
+    scaleMultiplier: 1.2, aggressiveMultiplier: 2, holdGateX: 1, iterateGateX: 2, killGateX: 3,
+    readPurchases, directionalPurchases: Math.max(5, Math.round(readPurchases * 0.4)), maxCiHalfWidth: 0.25,
+    hookRateFloor: 0.2, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3,
+    noTouchDays: 14, minAdsetBudgetDaily: null, perAdFloorDaily: null, tier: null,
+  });
+  type Ad = { p: number; spend: number; rev: number; age: number; prior?: number | null };
+  const rowL = (clientId: string, period: "cur" | "cmp", bucket: string, ad: Ad): ComponentRow => ({
+    clientId,
+    period,
+    bucket,
+    guards: { ad_launch: { nRows: 1, foreignCcyRows: 0, fxMissingRows: 0, fxMissingMonths: [] } },
+    values: {
+      "ad_launch.purchases": { nat: ad.p, disp: ad.p, natNulls: 0, dispNulls: 0 },
+      "ad_launch.spend": { nat: ad.spend, disp: ad.spend, natNulls: 0, dispNulls: 0 },
+      "ad_launch.revenue": { nat: ad.rev, disp: ad.rev, natNulls: 0, dispNulls: 0 },
+      "ad_launch.age_days": { nat: ad.age, disp: ad.age, natNulls: 0, dispNulls: 0 },
+      "ad_launch.prior_roas": ad.prior === null ? { nat: null, disp: null, natNulls: 1, dispNulls: 1 } : { nat: ad.prior ?? 2, disp: ad.prior ?? 2, natNulls: 0, dispNulls: 0 },
+    },
+  });
+  // Registry.
+  const hr = METRICS.hit_rate;
+  check("HR3: hit rate = winners / launched, percent, 1 decimal, up, not benchmarkable", hr.kind === "ratio" && eqJson(hr.numerator, [{ c: "ad_launch.winners", sign: 1, nullAs: "gap" }]) && eqJson(hr.denominator, [{ c: "ad_launch.launched", sign: 1, nullAs: "gap" }]) && hr.unit === "percent" && hr.format.decimals === 1 && hr.goodWhen === "up" && !hr.benchmarkable);
+  check("HR3: winners and ads launched are sums of the classified counts", METRICS.winners.kind === "sum" && eqJson(METRICS.winners.terms.map((x) => x.c), ["ad_launch.winners"]) && METRICS.ads_launched.kind === "sum" && eqJson(METRICS.ads_launched.terms.map((x) => x.c), ["ad_launch.launched"]));
+  check("HR3: the three need Meta and sit in the Meta group", (["hit_rate", "winners", "ads_launched"] as const).every((id) => evalCapExpr(METRICS[id].meta.requires, { ...alpha.capabilities, meta: false }) === false && METRICS[id].group === "meta"));
+  check("HR3: reference ~5% is the Creative constant, not a benchmark", hr.reference?.value === HIT_RATE_REFERENCE && HIT_RATE_REFERENCE === 0.05 && hr.reference.label === "Reference ~5%" && METRICS.winners.reference === undefined);
+  check("HR3: caveats maturing and lifetime on hit rate and winners only", eqJson(hr.caveats, ["cohort_maturing", "lifetime_to_date"]) && eqJson(METRICS.winners.caveats, ["cohort_maturing", "lifetime_to_date"]) && METRICS.ads_launched.caveats === undefined);
+  check("HR3: cohort_maturing is data-driven, lifetime_to_date always applies", FIXTURE_CLIENTS.every((c) => !CAVEATS.cohort_maturing.applies(c) && CAVEATS.lifetime_to_date.applies(c)));
+  check("HR3: ad_launch is an entity mart on first_date, no currency, relaunches and pre-existing ads excluded", MARTS.ad_launch.table === "mart.rpt_ad_launch" && MARTS.ad_launch.dateColumn === "first_date" && MARTS.ad_launch.currencyColumn === null && MARTS.ad_launch.entity.key === "ad_id" && eqJson(MARTS.ad_launch.entity.exclude, ["is_preexisting", "is_relaunch"]));
+  check("HR3: classified outputs: launched needs no thresholds, winners is a lower bound", COMPONENTS["ad_launch.launched"].classified?.needsThresholds === false && COMPONENTS["ad_launch.winners"].classified?.needsThresholds === true && COMPONENTS["ad_launch.winners"].classified?.lowerBound === true && COMPONENTS["ad_launch.open"].classified?.lowerBound === false);
+  check("HR3: resolve asks only for the classified outputs, the compiler adds the inputs", eqJson(componentsFor(["hit_rate"]), ["ad_launch.launched", "ad_launch.winners"]) && eqJson(componentsFor(["ads_launched"]), ["ad_launch.launched"]));
+
+  // Classifier = launchStatus() of the Creative tile, row for row, across a grid; input rows untouched.
+  {
+    const t = T(2.25, 15);
+    const client = { ...alpha, creativeThresholds: t };
+    const grid: Ad[] = [];
+    for (const p of [0, 5, 14, 15, 16, 40]) for (const roas of [0, 1.5, 2.2, 2.25, 2.4, 3.5]) for (const age of [10, 59, 60, 200]) grid.push({ p, spend: 1000, rev: 1000 * roas, age, prior: 2.03 });
+    grid.push({ p: 50, spend: 1000, rev: 5000, age: 100, prior: null });
+    grid.push({ p: 50, spend: 0, rev: 0, age: 100 });
+    const rows = grid.map((ad) => rowL("alpha", "cur", TOTAL, ad));
+    const before = JSON.stringify(rows);
+    const out = classifyEntityRows(rows, new Map([["alpha", client]]));
+    let same = 0;
+    grid.forEach((ad, i) => {
+      const lr: LaunchRow = { adId: "x", adName: "x", firstDate: "2026-09-01", ageDays: ad.age, spend: ad.spend, revenue: ad.rev, purchases: ad.p, isVideo: false, isRelaunch: false, isPreexisting: false, conceptId: null, conceptName: null, priorRoas: ad.prior === undefined ? 2 : ad.prior };
+      const s = launchStatus(lr, t);
+      const v = out[i].values;
+      if (v["ad_launch.launched"]?.nat === 1 && v["ad_launch.winners"]?.nat === (s === "winner" ? 1 : 0) && v["ad_launch.open"]?.nat === (s === "open" ? 1 : 0) && v["ad_launch.purchases"] === undefined) same += 1;
+    });
+    check("HR3: classifier equals launchStatus() on every grid row (Creative tile parity by construction)", same === grid.length, `${same}/${grid.length}`);
+    check("HR3: classifier never mutates the cached rows", JSON.stringify(rows) === before);
+    check("HR3: no prior ROAS is never a winner", out[grid.length - 2].values["ad_launch.winners"]?.nat === 0);
+    const none = classifyEntityRows([rows[0]], new Map([["alpha", { ...alpha, creativeThresholds: null }]]))[0].values;
+    check("HR3: without thresholds only launched is written (no false zero)", none["ad_launch.launched"]?.nat === 1 && none["ad_launch.winners"] === undefined && none["ad_launch.open"] === undefined);
+    const kpiRow = row("alpha", "cur", TOTAL, { "kpis.revenue": 5 });
+    check("HR3: rows without an entity mart pass through as the same object", classifyEntityRows([kpiRow], new Map())[0] === kpiRow);
+  }
+
+  // alpha (Manami-like bar 2.25 / 15): 4 ads, 2 winners, 1 open; delta (bar 3.00 / 25): 3 ads, 1 winner; bravo: no thresholds, 2 ads.
+  const clients = FIXTURE_CLIENTS.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: T(2.25, 15) } : c.id === "delta" ? { ...c, creativeThresholds: T(3, 25) } : c.id === "bravo" ? { ...c, creativeThresholds: null } : c));
+  const ids = { clients: { mode: "list" as const, ids: ["alpha", "bravo", "delta"] }, compare: "none" as const };
+  const curRows = [
+    rowL("alpha", "cur", TOTAL, { p: 20, spend: 1000, rev: 3000, age: 90 }), // winner
+    rowL("alpha", "cur", TOTAL, { p: 40, spend: 1000, rev: 2600, age: 90 }), // winner
+    rowL("alpha", "cur", TOTAL, { p: 3, spend: 500, rev: 600, age: 20 }), // open
+    rowL("alpha", "cur", TOTAL, { p: 3, spend: 500, rev: 600, age: 80 }), // settled
+    rowL("delta", "cur", TOTAL, { p: 30, spend: 1000, rev: 4000, age: 100 }), // winner
+    rowL("delta", "cur", TOTAL, { p: 20, spend: 1000, rev: 4000, age: 100 }), // n < 25: never a winner
+    rowL("delta", "cur", TOTAL, { p: 0, spend: 100, rev: 0, age: 100 }),
+    rowL("bravo", "cur", TOTAL, { p: 90, spend: 1000, rev: 9000, age: 100 }),
+    rowL("bravo", "cur", TOTAL, { p: 0, spend: 100, rev: 0, age: 100 }),
+  ];
+  const rc = evalW(widget(["hit_rate", "winners", "ads_launched"], { filters: ids, clients }), curRows);
+  check("HR3: per client hit rate, winners, launched", close(cell(rc, "alpha", "hit_rate").total, 0.5) && cell(rc, "alpha", "winners").total === 2 && cell(rc, "alpha", "ads_launched").total === 4 && close(cell(rc, "delta", "hit_rate").total, 1 / 3));
+  check("HR3: n < readPurchases is never a winner, whatever the ROAS", cell(rc, "delta", "winners").total === 1);
+  const nb = cell(rc, "bravo", "hit_rate");
+  check("HR3: no thresholds: not_measured 'No thresholds', never 0", nb.status === "not_measured" && nb.reason === NO_THRESHOLDS && nb.total === null && cell(rc, "bravo", "winners").reason === NO_THRESHOLDS);
+  check("HR3: ads launched needs no thresholds", cell(rc, "bravo", "ads_launched").status === "ok" && cell(rc, "bravo", "ads_launched").total === 2);
+  check("HR3: maturing caveat on the series with an open launch only", rc.series.find((s) => s.id === "alpha")!.caveats.includes("cohort_maturing") && !rc.series.find((s) => s.id === "delta")!.caveats.includes("cohort_maturing") && visibleCaveats(rc.series.find((s) => s.id === "alpha")!.caveats, METRICS.hit_rate.caveats).includes("cohort_maturing") && !visibleCaveats(rc.series.find((s) => s.id === "alpha")!.caveats, METRICS.ads_launched.caveats).includes("cohort_maturing"));
+
+  const rk = evalW(widget(["hit_rate", "winners", "ads_launched"], { split: "combined", filters: ids, clients }), curRows);
+  const ck = cell(rk, "combined", "hit_rate");
+  check("HR3: combined = sum of winners / sum of launched (3 of 7), not a mean of rates", close(ck.total, 3 / 7) && !close(ck.total, (0.5 + 1 / 3) / 2));
+  check("HR3: no-threshold client left out of the combined with a coverage note", eqJson(ck.coverage, { included: 2, of: 3 }) && eqJson(ck.excluded, [{ id: "bravo", name: bravo.name, reason: NO_THRESHOLDS }]));
+  check("HR3: combined winners 3 of 3 clients' bars, combined launched sums all 3 clients", cell(rk, "combined", "winners").total === 3 && cell(rk, "combined", "ads_launched").total === 9 && eqJson(cell(rk, "combined", "ads_launched").coverage, { included: 3, of: 3 }));
+  check("HR3: combined carries the maturing caveat when a member is maturing", rk.series[0].caveats.includes("cohort_maturing"));
+
+  // Thresholds change the evaluation only (SQL and key are asserted in check:reports).
+  const strict = clients.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: T(2.5, 15) } : c));
+  check("HR3: a stricter target changes the result at once (Settings edit, no cache change)", close(cell(evalW(widget(["hit_rate"], { filters: ids, clients: strict }), curRows), "alpha", "hit_rate").total, 0.25));
+
+  // Comparison: a maturing current cohort against a settled previous one has no delta.
+  {
+    const cmpIds = { clients: { mode: "list" as const, ids: ["alpha"] }, compare: "previous_period" as const };
+    const settledCmp = [rowL("alpha", "cmp", TOTAL, { p: 20, spend: 1000, rev: 3000, age: 120 }), rowL("alpha", "cmp", TOTAL, { p: 2, spend: 100, rev: 0, age: 120 })];
+    const curSettled = curRows.slice(0, 2).concat(curRows[3]).map((r) => ({ ...r }));
+    const rm = evalW(widget(["hit_rate", "winners", "ads_launched"], { filters: cmpIds, clients }), [...curRows.slice(0, 4), ...settledCmp]);
+    check("HR3: maturing current vs settled previous: delta suppressed, previous kept", cell(rm, "alpha", "hit_rate").delta === null && close(cell(rm, "alpha", "hit_rate").compareTotal, 0.5) && cell(rm, "alpha", "winners").delta === null);
+    check("HR3: ads launched keeps its delta (not a lower bound)", close(cell(rm, "alpha", "ads_launched").delta, 1));
+    const rs = evalW(widget(["hit_rate"], { filters: cmpIds, clients }), [...curSettled, ...settledCmp]);
+    check("HR3: settled vs settled keeps the delta (pp)", close(cell(rs, "alpha", "hit_rate").delta, 2 / 3 - 0.5));
+    const openCmp = [...settledCmp, rowL("alpha", "cmp", TOTAL, { p: 1, spend: 100, rev: 0, age: 40 })];
+    const ro = evalW(widget(["hit_rate"], { filters: cmpIds, clients }), [...curRows.slice(0, 4), ...openCmp]);
+    check("HR3: both maturing keeps the delta", close(cell(ro, "alpha", "hit_rate").delta, 0.5 - 1 / 3));
+    const rkc = evalW(widget(["hit_rate"], { split: "combined", filters: { ...ids, compare: "previous_period" }, clients }), [...curRows, ...settledCmp, rowL("delta", "cmp", TOTAL, { p: 30, spend: 1000, rev: 4000, age: 150 })]);
+    check("HR3: combined delta suppressed too when the kept clients are maturing now and not before", cell(rkc, "combined", "hit_rate").delta === null && close(cell(rkc, "combined", "hit_rate").compareTotal, 2 / 3));
+  }
+
+  // Buckets: launches bucketed by first delivery month; a month without launches is a gap, not 0 %.
+  {
+    const wmo = widget(["hit_rate", "ads_launched"], { grain: "month", filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none", period: { kind: "custom", from: "2026-07-01", to: "2026-09-30" } }, clients });
+    const r = evalW(wmo, [
+      rowL("alpha", "cur", "2026-07-01", { p: 20, spend: 1000, rev: 3000, age: 90 }),
+      rowL("alpha", "cur", "2026-07-01", { p: 2, spend: 100, rev: 0, age: 90 }),
+      rowL("alpha", "cur", "2026-09-01", { p: 2, spend: 100, rev: 0, age: 20 }),
+    ]);
+    check("HR3: month points 50 %, gap, 0 % (open) and total 1 of 3", eqJson(cell(r, "alpha", "hit_rate").points, [0.5, null, 0]) && close(cell(r, "alpha", "hit_rate").total, 1 / 3) && eqJson(cell(r, "alpha", "ads_launched").points, [2, null, 1]));
+  }
+
+  // Mixed widget: KPI rows and entity rows never meet (SQL joins on entity_key), so revenue is not multiplied by the ad count.
+  {
+    const wx = widget(["revenue", "hit_rate"], { filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" }, clients });
+    const kpi = row("alpha", "cur", TOTAL, { "kpis.revenue": 1000 });
+    const nullInputs = { "ad_launch.purchases": null, "ad_launch.spend": null, "ad_launch.revenue": null, "ad_launch.age_days": null, "ad_launch.prior_roas": null } as const;
+    const kpiJoined: ComponentRow = { ...kpi, guards: { ...kpi.guards, ad_launch: { nRows: 0, foreignCcyRows: 0, fxMissingRows: 0, fxMissingMonths: [] } }, values: { ...kpi.values, ...Object.fromEntries(Object.keys(nullInputs).map((k) => [k, { nat: null, disp: null, natNulls: 0, dispNulls: 0 }])) } };
+    const ads = curRows.slice(0, 4).map((r) => ({ ...r, guards: { ...r.guards, kpis: { nRows: 0, foreignCcyRows: 0, fxMissingRows: 0, fxMissingMonths: [] } } }));
+    const r = evalW(wx, [kpiJoined, ...ads]);
+    check("HR3: mixed widget: revenue once, hit rate from the ads", close(cell(r, "alpha", "revenue").total, 1000) && close(cell(r, "alpha", "hit_rate").total, 0.5));
+  }
+
+  // Parity with the Creative tile: random launches, Reports total = hitRate() of lib/creative/hitRate.ts.
+  {
+    const t = T(2.25, 15);
+    let seed = 11;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const launches: LaunchRow[] = Array.from({ length: 150 }, (_, i) => {
+      const p = Math.floor(rnd() * 40);
+      const spend = 100 + rnd() * 3000;
+      return { adId: `a${i}`, adName: "", firstDate: "2026-09-10", ageDays: Math.floor(rnd() * 120), spend, revenue: spend * rnd() * 4.5, purchases: p, isVideo: false, isRelaunch: false, isPreexisting: false, conceptId: null, conceptName: null, priorRoas: 2.0287 };
+    });
+    const tile = hitRate(launches, t);
+    const r = evalW(widget(["hit_rate", "winners", "ads_launched"], { filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" }, clients: clients.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: t } : c)) }), launches.map((l) => rowL("alpha", "cur", TOTAL, { p: l.purchases, spend: l.spend, rev: l.revenue, age: l.ageDays, prior: l.priorRoas })));
+    check("HR3: Reports equals the Creative tile on the same launches (winners, launched, rate)", cell(r, "alpha", "winners").total === tile.winners && cell(r, "alpha", "ads_launched").total === tile.launched && close(cell(r, "alpha", "hit_rate").total, tile.rate ?? -1) && (tile.winners ?? 0) > 0, `${tile.winners}/${tile.launched}`);
   }
 }
 

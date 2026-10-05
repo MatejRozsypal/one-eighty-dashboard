@@ -49,6 +49,18 @@
  *   components, not only the widget's. Widgets over the same clients, period,
  *   grain and currency then compile to byte-identical SQL and one cache key.
  *   `components` of the result lists what the SQL returns (the superset).
+ * - Entity marts (`entity`, the launch cohort mart): one result row per
+ *   client, period, bucket AND entity key (the ad). Every input component of
+ *   the mart is selected with ANY_VALUE (one value per ad, lifetime to date),
+ *   whatever the widget's metrics, and rows where an `exclude` column is TRUE
+ *   are left out in WHERE. Classified components (winners, launched, open)
+ *   are never emitted: evaluate.ts writes them per row from the inputs and
+ *   the client's thresholds, so thresholds never reach the SQL or the key.
+ *   When a widget has an entity mart, every CTE carries an `entity_key`
+ *   column ('' for the other marts) and the marts are joined USING
+ *   (client_id, period, bucket, entity_key): an entity row never meets a
+ *   row of another mart, so no sum is duplicated. Widgets without an entity
+ *   mart compile to exactly the SQL they did before.
  *
  * The registry is injected: createCompiler({ marts, components }).
  * `compileWidget` at the bottom of this file is bound to registry/components.ts.
@@ -245,6 +257,9 @@ interface Scope {
   key: string;
 }
 
+/** Join and output column of the entity key; '' on the rows of every other mart. */
+export const ENTITY_KEY = "entity_key";
+
 const PERIOD_UNNEST = `CROSS JOIN UNNEST([STRUCT('cur' AS period, @curFrom AS from_date, @curTo AS to_date), STRUCT('cmp', @cmpFrom, @cmpTo)]) AS p`;
 
 /** The distinct scoped row filters of a mart plan, in component order. */
@@ -286,9 +301,11 @@ function martCte(
   hasComparison: boolean,
   projectId: string,
   components: CompilerRegistry["components"],
-  scopes: Map<string, Scope>
+  scopes: Map<string, Scope>,
+  entityKeyed: boolean
 ): string {
   const { mart } = plan;
+  if (mart.entity) return entityCte(plan, grain, hasComparison, projectId);
   const date = `t.${ident(mart.dateColumn, "Date column")}`;
   const ccyCol = mart.currencyColumn === null ? null : `t.${ident(mart.currencyColumn, "Currency column")}`;
   const fxMissing = `src.to_czk IS NULL OR dst.to_czk IS NULL`;
@@ -298,6 +315,7 @@ function martCte(
     `t.client_id`,
     hasComparison ? `p.period` : `'cur' AS period`,
     `${BUCKET_SQL[grain](date)} AS bucket`,
+    ...(entityKeyed ? [`'' AS ${ENTITY_KEY}`] : []),
     `COUNT(*) AS ${g("n_rows")}`,
     ccyCol ? `COUNTIF(${ccyCol} <> c.currency) AS ${g("foreign_ccy_rows")}` : `0 AS ${g("foreign_ccy_rows")}`,
     plan.money ? `COUNTIF(${fxMissing}) AS ${g("fx_missing_rows")}` : `0 AS ${g("fx_missing_rows")}`,
@@ -382,6 +400,51 @@ function martCte(
   ].join("\n");
 }
 
+/**
+ * CTE of an entity mart: one row per client, period, bucket and entity, with
+ * the classifier inputs as ANY_VALUE (the mart holds one row per entity) and
+ * their NULL counts. No FX: entity marts have no money components.
+ */
+function entityCte(plan: MartPlan, grain: QueryGrain, hasComparison: boolean, projectId: string): string {
+  const { mart } = plan;
+  const entity = mart.entity!;
+  if (mart.currencyColumn !== null || plan.money) fail(`Entity mart ${mart.id} has money or a currency column`);
+  const date = `t.${ident(mart.dateColumn, "Date column")}`;
+  const g = (name: (typeof GUARD_COLUMNS)[number]) => guardAlias(mart.id, name);
+  const select: string[] = [
+    `t.client_id`,
+    hasComparison ? `p.period` : `'cur' AS period`,
+    `${BUCKET_SQL[grain](date)} AS bucket`,
+    `t.${ident(entity.key, "Entity key")} AS ${ENTITY_KEY}`,
+    `COUNT(*) AS ${g("n_rows")}`,
+    `0 AS ${g("foreign_ccy_rows")}`,
+    `0 AS ${g("fx_missing_rows")}`,
+    `ARRAY<DATE>[] AS ${g("fx_missing_months")}`,
+  ];
+  for (const c of plan.components) {
+    const col = `t.${ident(c.column, "Component column")}`;
+    const alias = componentAlias(c.id);
+    select.push(`ANY_VALUE(${col}) AS ${alias}`);
+    select.push(`COUNTIF(${col} IS NULL) AS ${alias}__nulls`);
+  }
+  const from = [`FROM ${tableRef(projectId, mart.table)} AS t`, ...(hasComparison ? [PERIOD_UNNEST] : [])];
+  const where = [
+    `WHERE t.client_id IN UNNEST(@clientIds)`,
+    `  AND ${datePredicate(mart)}`,
+    hasComparison ? `  AND ${date} BETWEEN p.from_date AND p.to_date` : `  AND ${date} BETWEEN @curFrom AND @curTo`,
+    ...entity.exclude.map((x) => `  AND t.${ident(x, "Exclude column")} IS NOT TRUE`),
+  ];
+  return [
+    `${mart.id} AS (`,
+    `  SELECT`,
+    select.map((s) => `    ${s}`).join(",\n"),
+    ...from.map((f) => `  ${f}`),
+    ...where.map((w) => `  ${w}`),
+    `  GROUP BY 1, 2, 3, 4`,
+    `)`,
+  ].join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Compiler
 // ---------------------------------------------------------------------------
@@ -424,8 +487,21 @@ export function compileWidgetWith(
     ident(mart.id, "Mart id");
     if (grain !== "total" && !mart.grains.includes(grain)) fail(`Mart ${id} does not support grain ${grain}`);
     let components = byMart.get(id) ?? [];
+    if (mart.entity) {
+      // Entity mart: every classifier input, whatever the widget asked for (the classified outputs are written in evaluate.ts).
+      components = (Object.values(registry.components) as Array<ComponentDef | undefined>)
+        .filter((c): c is ComponentDef => c !== undefined && c.mart === id && c.classified === undefined)
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      if (components.length === 0) fail(`Entity mart ${id} has no input components`);
+      for (const c of components) {
+        const m = COMPONENT_ID_RE.exec(c.id);
+        if (!m || m[1] !== id) fail(`Component ${c.id} does not match its definition`);
+        ident(c.column, "Component column");
+        if (c.money) fail(`Entity input ${c.id} is money`);
+      }
+    }
     // Shared query: every component of the mart, sorted by id, so the SQL does not depend on the widget's metrics.
-    if (mart.selectAll === true) {
+    if (mart.selectAll === true && !mart.entity) {
       components = (Object.values(registry.components) as Array<ComponentDef | undefined>)
         .filter((c): c is ComponentDef => c !== undefined && c.mart === id)
         .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -439,6 +515,7 @@ export function compileWidgetWith(
   });
   const selectedIds = plans.flatMap((p) => p.components.map((c) => c.id)).sort();
   const anyMoney = plans.some((p) => p.money);
+  const entityKeyed = plans.some((p) => p.mart.entity !== undefined);
 
   // Params: re-validated, sorted, built in a fixed order (the key depends on it).
   const clientIds = [...new Set(widget.queryClientIds)].sort();
@@ -478,12 +555,13 @@ export function compileWidgetWith(
   for (const plan of plans) {
     const scopes = scopesOf(plan, registry.components);
     for (const scope of scopes.values()) ctes.push(scopeCte(scope, plan.mart, hasComparison, projectId));
-    ctes.push(martCte(plan, grain, hasComparison, projectId, registry.components, scopes));
+    ctes.push(martCte(plan, grain, hasComparison, projectId, registry.components, scopes, entityKeyed));
   }
 
   const [first, ...rest] = martIds;
-  const fromClause = [first, ...rest.map((id) => `FULL OUTER JOIN ${id} USING (client_id, period, bucket)`)].join("\n");
-  const sql = [`WITH`, ctes.join(",\n"), `SELECT *`, `FROM ${fromClause}`, `ORDER BY client_id, period, bucket`].join("\n");
+  const using = entityKeyed ? `client_id, period, bucket, ${ENTITY_KEY}` : `client_id, period, bucket`;
+  const fromClause = [first, ...rest.map((id) => `FULL OUTER JOIN ${id} USING (${using})`)].join("\n");
+  const sql = [`WITH`, ctes.join(",\n"), `SELECT *`, `FROM ${fromClause}`, `ORDER BY ${using}`].join("\n");
 
   assertDatePredicates(sql, plans.map((p) => p.mart));
 

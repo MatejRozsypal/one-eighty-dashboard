@@ -289,7 +289,7 @@ export interface PipelineRun {
 export async function getPipelineRuns(limit = 12): Promise<PipelineRun[] | null> {
   try {
     const rows = await query<Record<string, unknown>>(
-      `SELECT started_at, workflow_name, rows_written, status,
+      `SELECT started_at, workflow, rows_loaded, status,
               TIMESTAMP_DIFF(finished_at, started_at, SECOND) AS duration_s
        FROM \`${PROJECT_ID}.ops.pipeline_log\`
        WHERE started_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
@@ -300,8 +300,8 @@ export async function getPipelineRuns(limit = 12): Promise<PipelineRun[] | null>
 
     return rows.map((r) => ({
       startedAt: String((r.started_at as { value?: string })?.value ?? r.started_at),
-      workflow: String(r.workflow_name ?? NO_VALUE),
-      rows: r.rows_written === null ? null : Number(r.rows_written),
+      workflow: String(r.workflow ?? NO_VALUE),
+      rows: r.rows_loaded === null || r.rows_loaded === undefined ? null : Number(r.rows_loaded),
       durationSeconds: r.duration_s === null ? null : Number(r.duration_s),
       status: String(r.status ?? "unknown"),
     }));

@@ -266,3 +266,25 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     limitation: "Shop revenue may include tax where GA4 does not, which lowers coverage.",
   },
 };
+
+// ── Repeat rate page ─────────────────────────────────────────────────────────
+// Plain sentences for the (i) tips on /repeat-rate, at most 40 words each, no
+// dashes, no table or client names. Functions take the horizon in days so one
+// definition serves every tile.
+export const RETENTION_TIPS = {
+  repeat: (days: number) =>
+    `Share of customers with a second order within ${days} days of the first. Only customers whose first order is at least ${days} days old count.`,
+  fullSize: (days: number) =>
+    `Share of customers with a later order containing a full-size product within ${days} days of the first order. Full size in the first order does not count.`,
+  maturing:
+    "Customers of the selected entry whose first order is under 90 days old. They join the headline figures as they mature.",
+  cohorts:
+    "Rows are first-order months. A cell shows once every customer in the month has had the full horizon.",
+  trend: "One point per first-order month, with its 95% range. Bars are quarters pooled.",
+  timeToRepeat:
+    "Share converted by day since the first order. Recent customers count until today.",
+  timeToFull:
+    "Share with a full-size order by day since the first order. Recent customers count until today.",
+  entryProducts: "What the first order contained. Same-day orders count as one.",
+  early: "First months of data. May include earlier customers.",
+} as const;

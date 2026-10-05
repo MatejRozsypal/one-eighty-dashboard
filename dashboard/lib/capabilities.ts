@@ -52,6 +52,7 @@ export const PAGE_REQUIREMENTS: readonly PageRequirement[] = [
   { prefix: "/unit-economics", anyOf: SHOP, source: "Shop" },
   // Retention
   { prefix: "/customers", anyOf: SHOP, source: "Shop" },
+  { prefix: "/repeat-rate", anyOf: SHOP, source: "Shop" },
   { prefix: "/gaps", anyOf: SHOP, source: "Shop" },
   { prefix: "/cohorts", anyOf: SHOP, source: "Shop" },
   { prefix: "/repurchase", anyOf: SHOP, source: "Shop" },

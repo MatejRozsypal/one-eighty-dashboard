@@ -58,6 +58,7 @@ export const NAV: NavGroup[] = [
     label: "Retention",
     items: [
       { label: "Customers", href: "/customers" },
+      { label: "Repeat rate", href: "/repeat-rate" },
       { label: "Time between orders", href: "/gaps" },
       { label: "Cohorts", href: "/cohorts" },
       { label: "Repurchase", href: "/repurchase" },

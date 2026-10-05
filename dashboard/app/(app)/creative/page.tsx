@@ -22,6 +22,17 @@ import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { PageControls } from "@/components/controls/PageControls";
 import { CreativeGrid } from "@/components/creative/CreativeGrid";
 import { UnmappedQueue } from "@/components/creative/UnmappedQueue";
+import { HitRateTrend, type HitRateTrendState } from "@/components/creative/HitRateTrend";
+import { getLaunches } from "@/lib/queries/creativeLaunch";
+import {
+  FORMAT_FILTERS,
+  conceptSplit,
+  hitRate,
+  inRange,
+  launchMonths,
+  tileText,
+  type FormatFilter,
+} from "@/lib/creative/hitRate";
 import { toQueueProposal, type QueueRow } from "@/lib/creative/view";
 import { CreativeNotConnected, Scorecard, SectionHead } from "@/components/creative/primitives";
 import { NoData, NotConnected } from "@/components/ui/EmptyState";
@@ -33,11 +44,26 @@ import { CONFIRM_THRESHOLD, propose } from "@/lib/creative/matching";
 import { formatNumber, NO_VALUE } from "@/lib/format";
 import { comparisonLabel, rangeLabel } from "@/lib/params";
 import { delta } from "@/lib/period";
-import { money, pct, roas, unitMoney } from "@/components/creative/primitives";
+import { money, roas, unitMoney } from "@/components/creative/primitives";
 import type { AdView } from "@/lib/creative/view";
 
 const one = (v: string | string[] | undefined) =>
   (Array.isArray(v) ? v[0] : v) || null;
+
+/** The page's own URL with the trend's format filter changed, every other param kept. */
+function formatHref(
+  search: { [k: string]: string | string[] | undefined },
+  format: FormatFilter
+): string {
+  const q = new URLSearchParams();
+  for (const key of Object.keys(search)) {
+    const v = one(search[key]);
+    if (v !== null && key !== "hrfmt") q.set(key, v);
+  }
+  if (format !== "all") q.set("hrfmt", format);
+  const qs = q.toString();
+  return `/creative${qs ? `?${qs}` : ""}`;
+}
 
 /**
  * What to call a linked-in filter value.
@@ -79,7 +105,26 @@ export default async function CreativesPage({
   // Rendered against `display`, which equals `thresholds` when they are set and
   // is a judgement-free stand-in when they are not. The wall of creative is the
   // product; it does not wait for anybody to visit Settings.
-  const views = data.available ? await buildAdViews(ctx, display) : [];
+  const [views, launches] = await Promise.all([
+    data.available ? buildAdViews(ctx, display) : Promise.resolve([] as AdView[]),
+    // The hit rate counts ads by FIRST delivery, lifetime to date, so it reads
+    // its own table rather than the period totals above. Not ready reads as
+    // n/a, never as zero.
+    data.available ? getLaunches(client.clientId, ctx.params.range) : Promise.resolve(null),
+  ]);
+
+  const formatParam = one(searchParams.hrfmt);
+  const format: FormatFilter = FORMAT_FILTERS.find((f) => f === formatParam) ?? "all";
+  const launched = launches && launches.state === "ready" ? launches : null;
+  const hit = launched ? hitRate(inRange(launched.rows, ctx.params.range), thresholds) : null;
+  const hitText = tileText(hit, thresholds);
+  const trendState: HitRateTrendState = !launched
+    ? "not-ready"
+    : thresholds
+      ? "ready"
+      : "no-thresholds";
+  const rangeRows = launched ? inRange(launched.rows, ctx.params.range) : [];
+  const split = launched ? conceptSplit(rangeRows, thresholds) : null;
 
   // ── A filter linked in from Breakdown or Concepts ───────────────────────
   // `?focus=<AdView field>&is=<raw value>`. The display text is taken from the
@@ -146,7 +191,7 @@ export default async function CreativesPage({
       label: "Winners",
       value: w ? String(w.winners) : NO_VALUE,
       sub: w ? `${w.decided} decided` : undefined,
-      info: "Ads at or above target ROAS, with enough purchases to read.",
+      info: "Ads with delivery in the period at or above target ROAS, with enough purchases to read.",
     },
     {
       label: "Carriers",
@@ -158,10 +203,13 @@ export default async function CreativesPage({
       value: w ? String(w.losers) : NO_VALUE,
       info: "Below the kill line.",
     },
+    // Not winners over ads with delivery: that moves with how many old ads
+    // are still running. Winners over ads FIRST delivered in the period.
     {
       label: "Hit rate",
-      value: w ? pct(w.hitRate) : NO_VALUE,
-      info: "Winners as a share of all ads. Reference: about 5%.",
+      value: hitText.value ?? NO_VALUE,
+      sub: hitText.sub,
+      info: hitText.info,
     },
   ];
 
@@ -193,6 +241,20 @@ export default async function CreativesPage({
         ) : (
           <>
             <Scorecard tiles={tiles} />
+
+            <HitRateTrend
+              state={trendState}
+              months={
+                launched
+                  ? launchMonths(launched.rows, thresholds, launched.through, ctx.params.range, format)
+                  : []
+              }
+              format={format}
+              hrefs={Object.fromEntries(
+                FORMAT_FILTERS.map((f) => [f, formatHref(searchParams, f)])
+              ) as Record<FormatFilter, string>}
+              concepts={split ? split.rows : null}
+            />
 
             <SectionHead title="Every creative" />
 

@@ -23,6 +23,7 @@ import { ZERO, type AdRow, type Components, type MonthlySpend, type Tags, NO_TAG
 import type { CreativeData, CreativeAsset, AdBreakdowns, UnmappedData, TagCoverage, PersonaRow, ConceptRow } from "@/lib/queries/creative";
 import { daysInRange, type DateRange } from "@/lib/period";
 import type { Candidate } from "@/lib/creative/matching";
+import type { LaunchData } from "@/lib/queries/creativeLaunch";
 import { unit } from "@/lib/demo/random";
 
 const MONTHS = ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"];
@@ -537,4 +538,41 @@ export function demoTotals(range: DateRange): Components | null {
     }
   }
   return out.spend > 0 ? out : null;
+}
+
+/**
+ * The demo account's ads as launches, for the hit rate.
+ *
+ * First delivery is the first month the seed spent in, on a day taken from the
+ * seed's id so it is the same on every render. Lifetime figures are the seed's
+ * own. Nothing here is relaunched or pre-existing: the demo has no asset
+ * history to be one.
+ */
+export function demoLaunches(): LaunchData {
+  const through = "2026-09-08";
+  const total = SEEDS.reduce((a, s) => ({ s: a.s + s.s, r: a.r + s.r }), { s: 0, r: 0 });
+  const priorRoas = total.s > 0 ? total.r / total.s : null;
+  const rows = SEEDS.map((seed) => {
+    const first = Math.max(0, seed.m.findIndex((v) => v > 0));
+    const day = 1 + Math.floor(unit(`launch:${seed.id}`) * 26);
+    const firstDate = `${MONTHS[first]}-${String(day).padStart(2, "0")}`;
+    const last = firstDate > through ? through : firstDate;
+    const concept = seed.concept ? CONCEPTS[seed.concept] : null;
+    return {
+      adId: seed.id,
+      adName: seed.name,
+      firstDate: last,
+      ageDays: daysInRange({ from: last, to: through }) - 1,
+      spend: seed.s,
+      revenue: seed.r,
+      purchases: seed.p,
+      isVideo: seed.format === "DYN",
+      isRelaunch: false,
+      isPreexisting: false,
+      conceptId: seed.concept,
+      conceptName: concept ? concept.name : null,
+      priorRoas,
+    };
+  });
+  return { state: "ready", rows, through };
 }

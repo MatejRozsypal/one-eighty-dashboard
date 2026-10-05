@@ -1,0 +1,61 @@
+-- =============================================================================
+-- qa/260_regression.sql
+-- Regression and acceptance for 260_stg_shoptet_items_status.sql (WR2, design 2.4).
+-- Run 2026-10-05 in mart_qa AFTER 259 was deployed (baseline = prod with 259), then deployed
+-- to prod and re-checked. Results under each check.
+--
+-- Candidates (mart_qa, prefix wr2b_), views, built from the LIVE definitions:
+--   wr2b_stg_shoptet_order_items   live definition with the one status filter replaced (REPLACE in a script)
+--   plus the whole downstream closure, each live definition with every reference to a closure
+--   member repointed to its wr2b_ twin (created in repeated passes until all existed):
+--     stg: stg_customer_order_items, stg_shoptet_orders, stg_customer_orders
+--     mart: mart_product_perf, mart_sku_perf, mart_unit_economics, mart_customer_product_steps,
+--           mart_first_product_repeat, mart_product_journey, mart_daily_kpis, mart_monthly_kpis,
+--           mart_orders, mart_order_gaps, mart_customer_cohort_grid, mart_customer_cohorts,
+--           mart_customer_daily, mart_customer_lifetime, mart_customer_market_daily,
+--           mart_customer_payback
+--   Checked: no wr2b_ view still references a prod closure member.
+--   Closure found by walking INFORMATION_SCHEMA.VIEWS definitions of stg, mart, ops, ref (4 levels, no more).
+-- Compare template: see 259_regression.sql, run per pair, no date filter.
+-- =============================================================================
+
+-- A1. Exactly the 128 orders and 227 lines leave the item level
+--   prod lines 7,040, candidate lines 6,813; lines gone 227 (all manami), orders gone 128,
+--   lines added 0, changed common rows 0, revenue_czk gone 130,297.98
+--   gone statuses: "Stornovana" and "2. pripominka -> storno" (Czech with diacritics in the data)
+--   gone date range 2024-05-06 .. 2026-09-27
+
+-- A2. Customer marts and order level: 0 and 0
+--   stg_shoptet_orders        3,515 rows each side, 0 and 0
+--   stg_customer_orders       139,389 rows each side, 0 and 0
+--   mart_daily_kpis           5,372 rows each side, 0 and 0
+--   mart_orders               108,193 / 108,193, 0 and 0
+--   mart_order_gaps           42,062 / 42,062, 0 and 0
+--   mart_customer_cohort_grid 5,691, mart_customer_daily 4,397, mart_customer_lifetime 35,954,
+--   mart_customer_market_daily 7,359, mart_customer_payback 4,884: all 0 and 0
+--   mart_monthly_kpis, mart_customer_cohorts, mart_first_product_repeat: a few rows differ for
+--     several clients in both directions, only in FLOAT64 columns (google_* sums, avg_orders_per_customer
+--     at the 53/40 = 1.325 rounding tie, avg_lifetime_orders). The same views also differ for clients
+--     that have nothing to do with Shoptet (rawbark, dobias, venev), which is summation order noise.
+--     With those float columns excluded: 0 and 0 for all clients.
+--   mart_customer_product_steps and mart_product_journey: 0 and 0 on rerun (one earlier run showed
+--     Dobias rows differing in both directions with equal counts; Dobias raw data was loading).
+
+-- A3. Item level deltas (manami, all dates in the 60 month window)
+--   mart_product_perf   rows 4,362 -> 4,250, units 7,249 -> 7,018 (-231), revenue 3,530,101.87 -> 3,399,803.89
+--                       (-130,297.98), margin 2,405,892.48 -> 2,317,064.19 (-88,828.29)
+--   mart_sku_perf       rows 5,378 -> 5,246, same units, revenue and margin deltas
+--   mart_unit_economics 7,004 units, 3,395,965.37 net sales, 2,314,672.67 gross profit, 1,179 rows: UNCHANGED.
+--       It already inner joins stg_shoptet_orders, which excluded cancelled orders. The design expected a
+--       delta here; there is none.
+--   Largest product_perf drops by revenue: set (sample set) -25,800 and 43 units; Parfem NEZNA -18,525;
+--     Pletovy olej Krasna -9,555; Osobni JEDINECNY parfem -8,400; Parfem NESPOUTANA -8,325.
+--   Every remaining item line has an order in stg_shoptet_orders (0 orphans), 0 lines with status like storno.
+--   Other clients: mart_product_perf, mart_sku_perf, mart_unit_economics have 0 rows differing.
+
+-- A4. Post deploy on prod (2026-10-05, after CREATE OR REPLACE VIEW stg.stg_shoptet_order_items)
+--   md5 of the live definition (RTRIM ';') = 5508e5a8df5d6665335c3ab700c0ed27 = md5 of the file body
+--   manami lines 6,813; stg_shoptet_orders 3,515 and stg_customer_orders 139,389 rows (unchanged)
+--   SKU 153 still one row: 974 customers / 149 repeaters (labels did not move)
+--   prod vs wr2b_ for item level views, product_perf, sku_perf, unit_economics, steps, journey: 0 and 0
+--     (stg_customer_order_items showed Dobias both ways once; 0 on rerun, same loading effect)

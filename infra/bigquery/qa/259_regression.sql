@@ -1,0 +1,57 @@
+-- =============================================================================
+-- qa/259_regression.sql
+-- Regression and acceptance for 259_stg_customer_items_shoptet_label.sql (WR2, design 2.3).
+-- Run 2026-10-05 in mart_qa, then deployed to prod and re-checked. Results under each check.
+--
+-- Candidates (mart_qa, prefix wr2_), all views, built from the LIVE definitions:
+--   wr2_stg_customer_order_items       the 259 file with the view name mapped
+--   wr2_mart_customer_product_steps    live mart view, source repointed to the candidate
+--   wr2_mart_first_product_repeat      live mart view, source repointed to the candidate
+--   wr2_mart_product_journey           live mart view, source repointed to the candidate
+-- Repointing was done with REPLACE() over INFORMATION_SCHEMA.VIEWS.view_definition inside a
+-- script (EXECUTE IMMEDIATE), creating steps, then first_product_repeat, then journey.
+--
+-- Compare template (A = prod, B = candidate), both directions, grouped by client:
+--   WITH a AS (SELECT client_id, TO_JSON_STRING(t) j FROM `oneeighty-warehouse.<prod view>` t),
+--        b AS (SELECT client_id, TO_JSON_STRING(t) j FROM `oneeighty-warehouse.mart_qa.wr2_<view>` t)
+--   SELECT 'prod_not_cand', client_id, COUNT(*) FROM (SELECT * FROM a EXCEPT DISTINCT SELECT * FROM b) GROUP BY 2
+--   UNION ALL
+--   SELECT 'cand_not_prod', client_id, COUNT(*) FROM (SELECT * FROM b EXCEPT DISTINCT SELECT * FROM a) GROUP BY 2;
+-- (order_date < CURRENT_DATE() added for the two views that have an order_date.)
+-- =============================================================================
+
+-- R1. Non-Shoptet clients (dobias, venev shopify; ethia, rawbark woocommerce): 0 diff rows
+--   stg_customer_order_items          0 and 0 for all four clients (7,029 Manami rows differ, see R2)
+--   mart_customer_product_steps       0 and 0 (Dobias showed 1,475 rows both ways in one run and 0 in
+--                                     three reruns: Dobias raw data was loading between the two
+--                                     evaluations of the long query. Rerun with a Dobias-only filter: 80,234 rows
+--                                     on both sides, 0 and 0.)
+--   mart_product_journey              0 and 0 for non-Manami clients on rerun
+--   mart_first_product_repeat         every client differs only in avg_lifetime_orders in the last
+--                                     float digits (AVG over INT64 is summed in a different order
+--                                     on each evaluation). With avg_lifetime_orders rounded to 9 decimals
+--                                     (or excluded): 0 and 0 for all non-Manami clients.
+
+-- R2. Manami differs only in product label and key
+--   Same compare with product_key and product_name nulled (stg) / product nulled (steps):
+--     stg_customer_order_items   7,029 rows each side, 0 and 0
+--     mart_customer_product_steps  3,495 rows each side, 0 and 0
+--   So step, lifetime_orders, first_order_date, order, revenue, cost are unchanged.
+--   Label and key changes (Shoptet lines, distinct old name -> new name):
+--     item_code 153 (set):  "Testovaci sada parfemu" (514 lines), "NOVA Testovaci sada parfemu" (362),
+--       "NOVA Testovaci sada vsech parfemu" (60) -> "Testovaci sada vsech parfemu" (972 lines already had it)
+--     item_code 75/xxx: "Tester" (at least 157 lines in 4 codes) -> "Vzorek parfemu" (latest name for base 75)
+--     item_code 78: "Darkove baleni parfemu" (66) -> "Darkove baleni"
+--     product_key changes from item_name to item_code for every Shoptet line (key only, no label change)
+--   (Czech names without diacritics here only to keep this file ASCII.)
+
+-- R3. Acceptance: SKU 153 is one row (mart_first_product_repeat, manami)
+--   audit time: 4 rows of 325 + 466 + 57 + 126 = 974 customers, 62 + 65 + 7 + 15 = 149 repeaters
+--   now:        1 row "Testovaci sada vsech parfemu", 974 customers, 149 repeaters,
+--               earliest first order 2024-05-06, latest 2026-04-07 (180 day maturity)
+--   Total Manami customers in the first-product table is unchanged.
+
+-- R4. Post deploy on prod (2026-10-05, after CREATE OR REPLACE VIEW stg.stg_customer_order_items)
+--   md5 of the live definition (RTRIM ';') = a53af0b2c4187f5c207055e686b771fa = md5 of the file body
+--   prod vs wr2_stg_customer_order_items: 0 and 0 (all clients)
+--   prod mart_first_product_repeat manami: "Testovaci sada vsech parfemu" 974 / 149

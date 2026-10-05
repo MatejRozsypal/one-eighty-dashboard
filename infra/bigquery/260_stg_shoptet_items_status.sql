@@ -1,3 +1,23 @@
+-- =============================================================================
+-- 260_stg_shoptet_items_status.sql
+-- Purpose: item-level status parity with the order level. stg.stg_shoptet_order_items
+--   filtered cancelled orders by exact match on ('storno','cancelled','zrušeno'), which
+--   never matches Shoptet's real status 'Stornována'. stg.stg_shoptet_orders already
+--   uses NOT LIKE '%storno%'. Result: 128 cancelled Manami orders (227 lines, about
+--   130k CZK) sat in the item-level views.
+-- Change: status filter only, now identical to stg_shoptet_orders:
+--   LOWER(statusName) NOT LIKE '%storno%' AND LOWER(statusName) NOT IN ('cancelled','zrušeno').
+-- Based on: infra/bigquery/live/stg.stg_shoptet_order_items.sql (live 2026-10-05,
+--   md5 of the definition e1a2e2ef9293b0f4974dfca1c3bfd858).
+-- Affected clients: manami (the only Shoptet client). It moves item-level numbers
+--   people know: mart_product_perf, mart_sku_perf, mart_unit_economics (Products, SKU,
+--   Unit economics pages) and the Repurchase item marts. stg_shoptet_orders,
+--   stg_customer_orders and all customer and KPI marts are unchanged (0 and 0).
+-- Regression: qa/260_regression.sql (design 2.5, WR2). Results recorded there.
+-- Deploy order: after 259 (separately approved). Rollback: previous live text in
+--   scratchpad/rollback (stg.stg_shoptet_order_items.pre260.sql).
+-- Design ref: retention design 2.4 (renumbered from 258).
+-- =============================================================================
 CREATE OR REPLACE VIEW `oneeighty-warehouse.stg.stg_shoptet_order_items` AS
 WITH base AS (
   SELECT * EXCEPT(rn),

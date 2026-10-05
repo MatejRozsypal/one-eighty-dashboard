@@ -59,12 +59,6 @@ export default async function RepurchasePage({
     optional(() => getFirstProductRepeat(client.clientId, 15), []),
   ]);
 
-  const blendedRate = (() => {
-    const customers = breakdown.reduce((a, r) => a + r.customers, 0);
-    const repeaters = breakdown.reduce((a, r) => a + r.repeaters, 0);
-    return customers > 0 ? repeaters / customers : null;
-  })();
-
   const hasJourney = journey !== null && journey.links.length > 0;
 
   return (
@@ -78,18 +72,6 @@ export default async function RepurchasePage({
           <NoData />
         ) : (
           <>
-            {blendedRate !== null && (
-              <div className="flex items-center gap-1.5 text-[13px] text-content-body">
-                <b className="text-content-strong">
-                  {formatPercent(blendedRate, { decimals: 1 })}
-                </b>{" "}
-                of customers came back, lifetime.
-                <InfoTip
-                  text={`This page ignores the date range. Repurchase is a property of a customer's lifetime, and only customers whose first order is at least ${MATURITY_DAYS} days old are counted.`}
-                />
-              </div>
-            )}
-
             {hasJourney && journey ? (
               <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
                 <Eyebrow>
@@ -110,7 +92,9 @@ export default async function RepurchasePage({
                 <div className="flex items-center border-b border-hairline px-5 py-4 lg:px-[26px]">
                   <Eyebrow>
                     First product
-                    <InfoTip text="Ranked by repeat rate. Products with fewer than 30 matured customers are left out. Each order is attributed to its highest-revenue product." />
+                    <InfoTip
+                      text={`Customers whose first order is at least ${MATURITY_DAYS} days old. Repeat counts any later order. Grouped by product code.`}
+                    />
                   </Eyebrow>
                 </div>
 
@@ -146,13 +130,7 @@ export default async function RepurchasePage({
                           </span>,
                           <span
                             key="rate"
-                            className={`text-[13px] font-semibold tabular-nums ${
-                              blendedRate !== null &&
-                              r.repeatRate !== null &&
-                              r.repeatRate >= blendedRate
-                                ? "text-positive"
-                                : "text-content-strong"
-                            }`}
+                            className="text-[13px] font-semibold tabular-nums text-content-strong"
                           >
                             <Value>{formatPercent(r.repeatRate, { decimals: 1 })}</Value>
                           </span>,

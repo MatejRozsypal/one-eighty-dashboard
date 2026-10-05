@@ -32,7 +32,10 @@ import {
   COVER_TARGET_DAYS,
 } from "@/lib/inventory/model";
 import { formatMoney, formatNumber } from "@/lib/currency";
+import { currentAccess, isInternal } from "@/lib/authz";
 import { Header } from "@/components/shell/Header";
+import { AppLink } from "@/components/ui/AppLink";
+import { Notice } from "@/components/ui/Notice";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable } from "@/components/ui/DataTable";
@@ -90,13 +93,24 @@ export default async function BuyingPlanPage({
   }
 
   // A count older than 30 days is not a basis for an order. TrustBar carries the
-  // one notice; nothing is rendered below it.
+  // notice that says so, and one line below it says what to do next (QA N-03).
+  // Data health is internal only, so a client account gets no link it cannot open.
   if (snapshotTooOldForBuying(summary)) {
+    const canOpenHealth = isInternal((await currentAccess())?.role ?? null);
     return (
       <>
         {header}
         <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
           <TrustBar summary={summary} />
+          {canOpenHealth && (
+            <Notice>
+              Re-sync the products feed in{" "}
+              <AppLink href="/health" className="font-medium underline underline-offset-2">
+                Data health
+              </AppLink>
+              .
+            </Notice>
+          )}
         </main>
       </>
     );

@@ -13,6 +13,8 @@ import { pageAvailability, missingSource, hasShop } from "@/lib/capabilities";
 import { productFor } from "@/lib/products";
 import { navFor, railProducts, pageTitle, activeNavHref, selectedClient } from "@/lib/nav";
 import { formatMoney, formatNumber, formatPercent, formatRatio, NO_VALUE } from "@/lib/format";
+import { tickLabels } from "@/components/dashboard/RevenueMix";
+import { aggregate, spendGapNotice, paidSpendDelta, type PnlDay, type PnlSnapshot } from "@/lib/queries/pnl";
 import type { ClientCapabilities } from "@/lib/clients";
 
 type Caps = ClientCapabilities;
@@ -155,6 +157,67 @@ eq("formatMoney 0.62 default", formatMoney(0.62, "USD"), "$1");
 eq("formatMoney compact", formatMoney(1234567, "CZK", { compact: true }), "CZK 1.2M");
 eq("formatPercent", formatPercent(0.35), "35.0%");
 eq("formatRatio", formatRatio(4.2), "4.20×");
+
+// Negatives: U+2212 for money, percentages, counts and ratios; never a signed zero (QA A-20).
+eq("formatMoney negative", formatMoney(-27660, "USD"), "\u2212$27,660");
+eq("formatMoney negative CZK", formatMoney(-856248, "CZK"), "\u2212CZK 856,248");
+eq("formatMoney -0.4 is unsigned", formatMoney(-0.4, "EUR"), "\u20ac0");
+eq("formatMoney negated discount", formatMoney(-105, "USD"), "\u2212$105");
+eq("formatMoney negated tiny discount", formatMoney(-0.3, "EUR"), "\u20ac0");
+eq("formatPercent negative", formatPercent(-0.128), "\u221212.8%");
+eq("formatPercent -0.0004 is unsigned", formatPercent(-0.0004), "0.0%");
+eq("formatNumber negative", formatNumber(-15), "\u221215");
+eq("formatRatio negative", formatRatio(-0.5), "\u22120.50\u00d7");
+eq("formatRatio -0.001 is unsigned", formatRatio(-0.001), "0.00\u00d7");
+
+// Revenue mix axis: one tick per day on a short range, never a repeated date (QA N-04).
+eq("tickLabels 4 days", tickLabels({ days: 4, from: "2026-10-01" }), ["Oct 1", "Oct 2", "Oct 3", "Oct 4"]);
+eq("tickLabels 1 day", tickLabels({ days: 1, from: "2026-10-01" }), ["Oct 1"]);
+eq("tickLabels 7 days distinct", new Set(tickLabels({ days: 7, from: "2026-10-01" })).size, 5);
+eq("tickLabels 30 days", tickLabels({ days: 30, from: "2026-09-01" }), ["Sep 1", "Sep 8", "Sep 16", "Sep 23", "Sep 30"]);
+
+// Spend gap: one rule for the tile, the margin stack and the notice (QA N-01, N-02).
+{
+  const day = (date: string, spend: number | null): PnlDay => ({
+    date, currency: "CZK", revenue: 100, netSales: 100, grossRevenueInclTax: 100, shippingRevenue: 0,
+    taxCollected: 0, newCustomerRevenue: 50, returningCustomerRevenue: 50, cogs: 40, cm1: 60, cm2: 60,
+    cm3: 60 - (spend ?? 0), metaSpend: spend, googleSpend: null, paidSpend: spend, orders: 1,
+    uniqueCustomers: 1, newCustomerOrders: 1, returningCustomerOrders: 0, fulfilmentCost: null, otherCm1Cost: null,
+  });
+  // Current range Oct 5 to Oct 9, spend from Oct 7. Comparison range Sep 30 to Oct 4, spend from Oct 2.
+  const cur = { from: "2026-10-05", to: "2026-10-09" };
+  const prevRange = { from: "2026-09-30", to: "2026-10-04" };
+  const curRows = [day("2026-10-05", null), day("2026-10-06", null), day("2026-10-07", 10), day("2026-10-08", 10), day("2026-10-09", 10)];
+  const prevRows = [day("2026-09-30", null), day("2026-10-01", null), day("2026-10-02", 10), day("2026-10-03", 10), day("2026-10-04", 10)];
+  const snap = (withPrev: boolean): PnlSnapshot => ({
+    period: {} as PnlSnapshot["period"],
+    currency: "CZK",
+    current: aggregate(curRows, { range: cur, paidCapable: true }),
+    previous: withPrev ? aggregate(prevRows, { range: prevRange, paidCapable: true }) : null,
+    series: curRows,
+  });
+  const none = spendGapNotice(snap(false));
+  const prev = spendGapNotice(snap(true));
+  eq("notice date, compare none", none, { from: "2026-10-07", scope: "current" });
+  eq("notice date, compare previous", prev, { from: "2026-10-07", scope: "current" });
+  eq("paid spend delta withheld under a gap", paidSpendDelta(snap(true)), null);
+
+  // Current range complete, comparison starts before spend: delta withheld, notice names the comparison.
+  const full: PnlSnapshot = {
+    ...snap(true),
+    current: aggregate([day("2026-10-05", 10), day("2026-10-06", 10)], { range: { from: "2026-10-05", to: "2026-10-06" }, paidCapable: true }),
+  };
+  eq("comparison-only gap notice", spendGapNotice(full), { from: "2026-10-02", scope: "comparison" });
+  eq("comparison-only gap withholds delta", paidSpendDelta(full), null);
+
+  // No gap anywhere: a delta, no notice.
+  const clean: PnlSnapshot = {
+    ...full,
+    previous: aggregate([day("2026-10-03", 5), day("2026-10-04", 5)], { range: { from: "2026-10-03", to: "2026-10-04" }, paidCapable: true }),
+  };
+  eq("no gap, no notice", spendGapNotice(clean), null);
+  eq("no gap, delta shown", paidSpendDelta(clean), 1);
+}
 
 console.log(`${checks - failures}/${checks} checks passed`);
 if (failures > 0) process.exit(1);

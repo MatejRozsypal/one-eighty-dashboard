@@ -145,17 +145,26 @@ export function buildMixModel(
   return { grain, days, from: range.from, buckets };
 }
 
-/** Five evenly spaced dates across the axis, labelled to suit its length. */
+/**
+ * Evenly spaced dates across the axis, labelled to suit its length: five on a
+ * long axis, one per day when there are no more days than that. Rounding five
+ * fractions onto a 4-day axis lands two of them on the same day ("Oct 3, Oct 3"),
+ * so day indexes are de-duplicated rather than trusted.
+ */
 export function tickLabels(model: Pick<MixModel, "days" | "from">): string[] {
   const long = model.days > 180;
-  return [0, 0.25, 0.5, 0.75, 1].map((f) => {
-    const i = Math.round(f * (model.days - 1));
-    return new Date(toMs(model.from) + i * DAY_MS).toLocaleDateString("en-US", {
+  const slots = 5;
+  const indexes =
+    model.days <= slots
+      ? Array.from({ length: model.days }, (_, i) => i)
+      : [...new Set([0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(f * (model.days - 1))))];
+  return indexes.map((i) =>
+    new Date(toMs(model.from) + i * DAY_MS).toLocaleDateString("en-US", {
       month: "short",
       ...(long ? { year: "numeric" } : { day: "numeric" }),
       timeZone: "UTC",
-    });
-  });
+    })
+  );
 }
 
 export function RevenueMix({

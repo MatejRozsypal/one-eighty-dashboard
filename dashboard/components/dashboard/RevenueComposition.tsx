@@ -42,11 +42,20 @@ export function RevenueComposition({
   totals,
   currency,
   discounts,
+  discountsNativeOnly = null,
 }: {
   totals: PnlTotals;
   currency: string;
-  /** Null when the shop platform doesn't expose it. */
+  /**
+   * Native-currency discounts. Null when the shop platform doesn't expose it,
+   * or when the page is in a converted view (see `discountsNativeOnly`).
+   */
   discounts: number | null;
+  /**
+   * Converted view: discounts only exist in the client's own currency, so the
+   * row says which one ("USD only") instead of a bare "n/a".
+   */
+  discountsNativeOnly?: string | null;
 }) {
   const money = (v: number | null) => formatMoney(v, currency);
   const taxUnknown = totals.taxCollected === null;
@@ -66,8 +75,13 @@ export function RevenueComposition({
     },
     {
       label: "Discounts given",
-      value: discounts === null ? NO_VALUE : `−${money(discounts)}`,
-      negative: discounts !== null,
+      value:
+        discounts !== null
+          ? money(-discounts)
+          : discountsNativeOnly
+            ? `${discountsNativeOnly} only`
+            : NO_VALUE,
+      negative: discounts !== null && discounts > 0,
     },
   ];
 
@@ -99,7 +113,7 @@ export function RevenueComposition({
               className={`whitespace-nowrap font-mono text-[14px] tabular ${
                 row.total ? "font-semibold" : ""
               } ${
-                row.value === NO_VALUE
+                row.value === NO_VALUE || row.value.endsWith(" only")
                   ? "text-content-muted"
                   : row.negative
                     ? "text-negative"

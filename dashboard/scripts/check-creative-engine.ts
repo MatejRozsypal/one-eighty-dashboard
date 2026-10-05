@@ -27,7 +27,7 @@ import { demoCreative } from "@/lib/demo/creative";
 import { packSpec, horizons, personaCapacity, launchCadence } from "@/lib/creative/velocity";
 import { moneyVerdict, diagnose, unjudgedVerdict } from "@/lib/creative/verdict";
 import { ZERO, derive, add, fillNames, tagCoverage, type Components } from "@/lib/creative/model";
-import { cleanPersona, noEmDash } from "@/lib/creative/display";
+import { cleanPersona, conceptLabel, humanizeConceptCode, isConceptCode, noEmDash } from "@/lib/creative/display";
 import { roas as fmtRoas } from "@/components/creative/primitives";
 import { cadenceTicks, LaunchCadence } from "@/components/creative/LaunchCadence";
 import { focusLabel } from "@/lib/creative/vocabulary";
@@ -391,6 +391,20 @@ console.log("\n=== QF8: hook rate numerator, outbound CTR, names, coverage, labe
   eq("a bare code is not emptied", cleanPersona("MAN_SensitiveSkin_Switcher_40s"), "MAN_SensitiveSkin_Switcher_40s");
   eq("em dash replaced", noEmDash("a \u2014 b"), "a - b");
   eq("no em dash survives", /\u2014/.test(cleanPersona("x \u2014 y \u2014 VEN_A_B_30s")), false);
+
+  // B-17: concept codes are humanised, one helper everywhere.
+  eq("concept code humanised", humanizeConceptCode("MAN_SensitiveSwitcher_ContrarianTruth_v1"), "Sensitive Switcher, Contrarian Truth, v1");
+  eq("acronym in a code keeps together", humanizeConceptCode("VEN_UGCHook_Proof_v2"), "UGC Hook, Proof, v2");
+  eq("not a code, unchanged", humanizeConceptCode("Parfem nema byt jako ostatni"), "Parfem nema byt jako ostatni");
+  eq("isConceptCode true", isConceptCode("MAN_SensitiveSwitcher_ContrarianTruth_v1"), true);
+  eq("isConceptCode false for C07", isConceptCode("C07"), false);
+  eq("label: a written name wins over a code id", conceptLabel("MAN_SensitiveSwitcher_ContrarianTruth_v1", "Parfem nema byt jako ostatni"), "Parfem nema byt jako ostatni");
+  eq("label: a code id alone is humanised", conceptLabel("MAN_SensitiveSwitcher_ContrarianTruth_v1", null), "Sensitive Switcher, Contrarian Truth, v1");
+  eq("label: a code used as the name is humanised", conceptLabel("86ca9t2h4", "MAN_SensitiveSwitcher_ContrarianTruth_v1"), "Sensitive Switcher, Contrarian Truth, v1");
+  eq("label: a short id stays beside the name", conceptLabel("C07", "Nezna kuze"), "C07 Nezna kuze");
+  eq("label: a ClickUp task id is never printed", conceptLabel("86ca9t2h4", null), null);
+  eq("label: nothing", conceptLabel(null, null), null);
+  eq("label has no underscore", /_/.test(conceptLabel("MAN_SensitiveSwitcher_ContrarianTruth_v1", null) ?? ""), false);
 
   // B-20: the static diagnosis does not repeat its label.
   const ds = diagnose(comp({ impressions: 380000, clicks: 11800, spend: 118400, purchases: 195, revenue: 281800 }), "STAT", T);

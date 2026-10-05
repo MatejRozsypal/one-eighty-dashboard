@@ -40,6 +40,32 @@ export function sumOf<T>(rows: readonly T[], pick: (row: T) => Num): number | nu
 }
 
 /**
+ * Return on ad spend of one row: value / spend, with the zero-value rule.
+ *
+ * Meta's marts leave revenue NULL when nothing was bought, so a row with spend
+ * and no purchases already shows n/a. Google's marts SUM the value column, so
+ * the same row arrives as 0 and used to print "0.00x". The rule that makes the
+ * two tabs agree:
+ *
+ *   spend missing or 0                          -> null (n/a)
+ *   value missing                               -> null (n/a)
+ *   value 0 and no conversions (none recorded)  -> null (n/a): nothing was
+ *                                                  attributed, so there is no
+ *                                                  return to state
+ *   value 0 with conversions above 0            -> 0 ("0.00x"): conversions
+ *                                                  were recorded and worth 0
+ *
+ * Pass `conversions` whenever the row has them. Left out, a zero value with
+ * spend is a real zero.
+ */
+export function roasOf(value: Num, spend: Num, conversions?: Num): number | null {
+  if (spend === null || spend === undefined || spend === 0) return null;
+  if (value === null || value === undefined) return null;
+  if (value === 0 && conversions !== undefined && !(conversions !== null && conversions > 0)) return null;
+  return ratio(value, spend);
+}
+
+/**
  * SUM(numerator) / SUM(denominator) over rows. With `where`, both sums are
  * restricted to the rows that pass (hook rate counts only video ads).
  */

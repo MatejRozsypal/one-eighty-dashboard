@@ -11,7 +11,7 @@ import { DataTable, type DataTableRow } from "@/components/ui/DataTable";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { NoData } from "@/components/ui/EmptyState";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
-import { isLowVolume, ratio, sumOf, unlessLowVolume } from "@/lib/paid/math";
+import { isLowVolume, ratio, roasOf, sumOf, unlessLowVolume } from "@/lib/paid/math";
 import type {
   GadsAdGroupRow,
   GadsCampaignAgg,
@@ -45,7 +45,7 @@ export function GoogleCampaignDetail({
 
   const groupSpend = sumOf(adGroups, (g) => g.spend);
   const adGroupRows: DataTableRow[] = adGroups.map((g) => {
-    const roas = ratio(g.value, g.spend);
+    const roas = roasOf(g.value, g.spend, g.conversions);
     const cpa = ratio(g.spend, g.conversions);
     const ctr = ratio(g.clicks, g.impressions);
     const cpc = ratio(g.spend, g.clicks);
@@ -126,7 +126,7 @@ export function GoogleCampaignDetail({
             <ul className="flex flex-col gap-3">
               {devices.map((d) => {
                 const share = ratio(d.spend, deviceSpend) ?? 0;
-                const roas = ratio(d.value, d.spend);
+                const roas = roasOf(d.value, d.spend, d.conversions);
                 return (
                   <li key={d.device} className="flex flex-col gap-1.5">
                     <div className="flex items-baseline justify-between gap-3 font-mono text-[11.5px]">

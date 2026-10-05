@@ -4,6 +4,7 @@
  */
 
 import type { ReactNode } from "react";
+import { AppLink } from "@/components/ui/AppLink";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { Value } from "@/components/ui/EmptyState";
 import type { GoodWhen } from "@/components/ui/Delta";
@@ -141,5 +142,54 @@ export function TextCell({
     >
       {text}
     </span>
+  );
+}
+
+/**
+ * How many rows of a long table are rendered server-side before "Show all".
+ *
+ * Search terms, keywords and products each arrive as up to 200 rows, and the
+ * sortable table ships every row twice (once as HTML, once in the flight
+ * payload for the client component), which put the RawBark tab above 1 MB.
+ * The page renders the top rows by spend and keeps the rest one link away.
+ */
+export const ROW_CAP = 50;
+
+/** Rows to render: the first `ROW_CAP`, or all of them when `expanded`. */
+export function capRows<T>(rows: readonly T[], expanded: boolean): T[] {
+  return expanded || rows.length <= ROW_CAP ? [...rows] : rows.slice(0, ROW_CAP);
+}
+
+/** The line under a capped table: how many rows are shown and the link that toggles it. Nothing when the table fits. */
+export function RowCap({
+  total,
+  expanded,
+  moreHref,
+  lessHref,
+}: {
+  total: number;
+  expanded: boolean;
+  moreHref: string;
+  lessHref: string;
+}) {
+  if (total <= ROW_CAP) return null;
+  const linkClass = "text-content-accent underline underline-offset-2";
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline px-5 py-3 text-[12.5px] text-content-muted">
+      <span>
+        {expanded
+          ? `Showing all ${total} rows, by spend.`
+          : `Showing the top ${ROW_CAP} of ${total} rows, by spend.`}
+      </span>
+      {expanded ? (
+        <AppLink href={lessHref} scroll={false} className={linkClass}>
+          Show top {ROW_CAP}
+        </AppLink>
+      ) : (
+        <AppLink href={moreHref} scroll={false} className={linkClass}>
+          Show all {total}
+        </AppLink>
+      )}
+    </div>
   );
 }

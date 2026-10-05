@@ -167,10 +167,16 @@ export interface MetaAdsetRow {
   addToCart: number | null;
 }
 
+/**
+ * The ad set mart names an ad set it has no name for by its own ID, so an ID
+ * in the name column means "no name", not a name.
+ */
 function adsetFrom(r: Record<string, unknown>): MetaAdsetRow {
+  const id = String(r.adset_id);
+  const raw = r.adset_name === null || r.adset_name === undefined ? "" : String(r.adset_name).trim();
   return {
-    adsetId: String(r.adset_id),
-    name: r.adset_name === null || r.adset_name === undefined ? null : String(r.adset_name),
+    adsetId: id,
+    name: raw === "" || raw === id ? null : raw,
     spend: num(r.spend),
     revenue: num(r.revenue),
     purchases: num(r.purchases),
@@ -211,7 +217,7 @@ export async function getMetaAdsets(
      LIMIT 50`,
     params
   );
-  if (direct.length > 0) return direct.map(adsetFrom);
+  if (direct.length > 0) return withAdsetNames(clientId, direct.map(adsetFrom));
 
   const rolled = await query<Record<string, unknown>>(
     `WITH r AS (
@@ -236,7 +242,44 @@ export async function getMetaAdsets(
      LIMIT 50`,
     params
   );
-  return rolled.map(adsetFrom);
+  return withAdsetNames(clientId, rolled.map(adsetFrom));
+}
+
+/**
+ * Fill in the ad sets that still have no name. The ad set mart names an ad set
+ * from the creative snapshot of ONE ad (`ANY_VALUE`), which can be an ad whose
+ * snapshot carries no name even when the other ads of the same ad set do, and
+ * an ad set whose ads were added after the last snapshot has none at all (Manami
+ * 22SEP and 27SEP packs, QA B-08). So the lookup here reads every snapshot of
+ * every ad, newest first, across the campaign, then the ad set mart's own name
+ * column. An ad set that no source names keeps `name: null` and the table shows
+ * its ID.
+ */
+async function withAdsetNames(clientId: string, rows: MetaAdsetRow[]): Promise<MetaAdsetRow[]> {
+  // The IDs come from the warehouse, not from the request, and are digits only
+  // (checked), so they go in as literals: the query helper takes scalar params.
+  const missing = rows.filter((r) => r.name === null && /^\d{1,32}$/.test(r.adsetId)).map((r) => r.adsetId);
+  if (missing.length === 0) return rows;
+  const ids = missing.map((id) => `'${id}'`).join(", ");
+
+  const found = await query<Record<string, unknown>>(
+    `SELECT adset_id,
+            ARRAY_AGG(adset_name ORDER BY pri, d DESC LIMIT 1)[OFFSET(0)] AS adset_name
+     FROM (
+       SELECT adset_id, TRIM(adset_name) AS adset_name, 1 AS pri, as_of AS d
+       FROM \`${PROJECT_ID}.mart.mart_creative_asset\`
+       WHERE client_id = @clientId AND adset_id IN (${ids})
+       UNION ALL
+       SELECT adset_id, TRIM(adset_name) AS adset_name, 2 AS pri, date AS d
+       FROM \`${PROJECT_ID}.mart.mart_creative_adset_perf\`
+       WHERE client_id = @clientId AND adset_id IN (${ids})
+     )
+     WHERE adset_name IS NOT NULL AND adset_name != '' AND adset_name != adset_id
+     GROUP BY adset_id`,
+    { clientId }
+  );
+  const names = new Map(found.map((r) => [String(r.adset_id), String(r.adset_name)]));
+  return rows.map((r) => (r.name === null && names.has(r.adsetId) ? { ...r, name: names.get(r.adsetId) ?? null } : r));
 }
 
 export interface MetaAdRow {

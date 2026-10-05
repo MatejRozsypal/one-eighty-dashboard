@@ -28,6 +28,7 @@ import { NoData, NotConnected } from "@/components/ui/EmptyState";
 import { Notice } from "@/components/ui/Notice";
 import { buildAdViews, loadCreative } from "@/lib/creative/page";
 import { winnerEconomics } from "@/lib/creative/model";
+import { conceptLabel } from "@/lib/creative/display";
 import { CONFIRM_THRESHOLD, propose } from "@/lib/creative/matching";
 import { formatNumber, NO_VALUE } from "@/lib/format";
 import { comparisonLabel, rangeLabel } from "@/lib/params";
@@ -51,7 +52,7 @@ function displayFor(ads: AdView[], field: string, value: string): string | null 
     (a) => ((a as unknown as Record<string, unknown>)[field] ?? null) === value
   );
   if (!hit) return null;
-  if (field === "conceptId") return hit.conceptName ?? value;
+  if (field === "conceptId") return conceptLabel(hit.conceptId, hit.conceptName) ?? value;
   if (field === "adId") return hit.adName ?? value;
   if (field === "campaignId") return hit.campaignName ?? value;
   if (field === "format") return hit.format === "DYN" ? "Video" : hit.format === "STAT" ? "Static" : value;

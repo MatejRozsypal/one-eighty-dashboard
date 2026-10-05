@@ -1,5 +1,5 @@
 /**
- * Products that Shopping, PMax and Demand Gen spent on, top 200 by spend.
+ * Products that Shopping, PMax and Demand Gen spent on, top 200 by spend (the top 50 rendered until "Show all").
  *
  * Without a Merchant Center link an item is its id plus product type level 1,
  * so the group-by control also offers product type, brand and custom label 0.
@@ -10,10 +10,10 @@
 import { DataTable, type DataTableRow } from "@/components/ui/DataTable";
 import { SegmentedControl, type Segment } from "@/components/controls/SegmentedControl";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
-import { isLowVolume, ratio, sumOf, unlessLowVolume } from "@/lib/paid/math";
+import { isLowVolume, ratio, roasOf, sumOf, unlessLowVolume } from "@/lib/paid/math";
 import type { GadsProductGroup, GadsProductRow } from "@/lib/queries/paidGoogle";
 import { channelLabel } from "./labels";
-import { CoverageChip, NumCell, RatioCell, Section, SpendCell, TextCell } from "./parts";
+import { capRows, CoverageChip, NumCell, RatioCell, RowCap, Section, SpendCell, TextCell } from "./parts";
 
 const GRID =
   "grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_repeat(7,minmax(0,0.9fr))] items-center gap-2";
@@ -31,6 +31,9 @@ export function Products({
   zeroOnly,
   coverage,
   currency,
+  expanded,
+  moreHref,
+  lessHref,
 }: {
   rows: GadsProductRow[];
   group: GadsProductGroup;
@@ -38,6 +41,10 @@ export function Products({
   /** Product spend over Shopping and PMax spend. Null when those campaigns did not spend. */
   coverage: number | null;
   currency: string;
+  /** All rows rendered, instead of the top `ROW_CAP`. */
+  expanded: boolean;
+  moreHref: string;
+  lessHref: string;
 }) {
   const groupSegments: Segment[] = [
     { value: "item", label: "Product" },
@@ -53,8 +60,8 @@ export function Products({
   const total = sumOf(rows, (r) => r.spend);
   const unit = (v: number | null) => formatMoney(v, currency, { unit: true });
 
-  const tableRows: DataTableRow[] = rows.map((r, i) => {
-    const roas = ratio(r.value, r.spend);
+  const tableRows: DataTableRow[] = capRows(rows, expanded).map((r, i) => {
+    const roas = roasOf(r.value, r.spend, r.conversions);
     const cpa = ratio(r.spend, r.conversions);
     const ctr = ratio(r.clicks, r.impressions);
     const low = isLowVolume({ spend: r.spend, purchases: r.conversions }, total);
@@ -130,6 +137,7 @@ export function Products({
           />
         </div>
       </div>
+      <RowCap total={rows.length} expanded={expanded} moreHref={moreHref} lessHref={lessHref} />
     </Section>
   );
 }

@@ -36,6 +36,7 @@ import {
   unitMoney,
 } from "@/components/creative/primitives";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { conceptLabel } from "@/lib/creative/display";
 import { formatNumber, isNoValue, NO_VALUE } from "@/lib/format";
 
 const mmss = (s: number) =>
@@ -163,7 +164,7 @@ export function AdDetail({
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {ad.conceptId && (
-                <Tag value={`${ad.conceptId} ${ad.conceptName ?? ""}`.trim()} missing="concept" />
+                <Tag value={conceptLabel(ad.conceptId, ad.conceptName)} missing="concept" />
               )}
               <Tag value={ad.persona} missing="persona" />
               <Tag value={ad.angle} missing="angle" />
@@ -264,13 +265,7 @@ export function AdDetail({
                       No retention data.
                     </p>
                   </Block>
-                ) : (
-                  <Block title="Retention">
-                    <p className="m-0 text-[13px] leading-[1.6] text-content-muted">
-                      Static ad: judge on CTR.
-                    </p>
-                  </Block>
-                )}
+                ) : null /* A static has no retention curve, and the Diagnosis above already says so. */}
 
                 <Copy ad={ad} />
               </>

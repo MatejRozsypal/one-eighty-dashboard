@@ -27,7 +27,7 @@ import { query, PROJECT_ID } from "@/lib/bigquery";
 import { isMissingObject } from "@/lib/queries/errors";
 import { num, isoDate } from "@/lib/coerce";
 import { isDemo } from "@/lib/demo/client";
-import { cleanPersona, noEmDash } from "@/lib/creative/display";
+import { cleanPersona, conceptLabel, noEmDash } from "@/lib/creative/display";
 import {
   ZERO,
   type AdRow,
@@ -710,7 +710,7 @@ export async function getConcepts(clientId: string): Promise<ConceptRow[]> {
     return rows.map((r) => ({
       conceptId: String(r.concept_id),
       conceptCode: s(r.concept_code),
-      name: noEmDash(String(r.name ?? r.concept_id)),
+      name: conceptLabel(String(r.concept_id), s(r.name)) ?? noEmDash(String(r.name ?? r.concept_id)),
       angle: s(r.angle),
       offer: s(r.offer),
       personaId: s(r.persona_id),

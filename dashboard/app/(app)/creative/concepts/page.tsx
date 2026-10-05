@@ -32,6 +32,7 @@ import { buildAdViews, loadCreative, type CreativeContext } from "@/lib/creative
 import { rangeLabel } from "@/lib/params";
 import { getConcepts, getPersonas } from "@/lib/queries/creative";
 import { groupBy, read, sum, UNTAGGED } from "@/lib/creative/model";
+import { conceptLabel, humanizeConceptCode } from "@/lib/creative/display";
 import { moneyVerdict, unjudgedVerdict } from "@/lib/creative/verdict";
 import { toAdsetView, toVerdictView, type AdView } from "@/lib/creative/view";
 import { listDecisions } from "@/lib/creative/store";
@@ -93,7 +94,7 @@ export default async function ConceptsPage({
   const groups = groupBy(
     data.ads,
     (ad) => ad.tags.conceptId,
-    (ad) => ad.tags.conceptName ?? ad.tags.conceptId ?? ""
+    (ad) => conceptLabel(ad.tags.conceptId, ad.tags.conceptName) ?? ""
   );
 
   // Carries the client and the window into the link, so following a concept
@@ -144,7 +145,7 @@ export default async function ConceptsPage({
       conceptCode: meta?.conceptCode ?? null,
       clickupUrl: g.untagged ? null : conceptUrl.get(g.key) ?? null,
       adsHref: g.untagged ? null : adsHref(g.key),
-      name: g.untagged ? UNTAGGED : (first.tags.conceptName ?? g.key),
+      name: g.untagged ? UNTAGGED : (conceptLabel(first.tags.conceptId, first.tags.conceptName) ?? g.key),
       persona: first.tags.personaName ?? first.tags.personaId,
       angle: first.tags.angle,
       offer: first.tags.offer,
@@ -371,7 +372,7 @@ export default async function ConceptsPage({
                 {dormant.map((c) => (
                   <li key={c.conceptId} className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
                     {c.conceptCode && (
-                      <span className="font-mono text-[11.5px] text-content-muted">{c.conceptCode}</span>
+                      <span className="text-[11.5px] text-content-muted">{humanizeConceptCode(c.conceptCode)}</span>
                     )}
                     <span className="text-[13.5px] text-content-body">{c.name}</span>
                     <span className="flex flex-wrap gap-1.5">

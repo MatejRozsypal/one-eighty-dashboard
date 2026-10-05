@@ -1,5 +1,5 @@
 /**
- * Search terms and keywords, top 200 by spend.
+ * Search terms and keywords, top 200 by spend, the top 50 rendered until "Show all".
  *
  * Terms cover only part of Search spend (Google hides low-volume queries), so
  * the header says how much. PMax terms are not offered until that data is
@@ -11,10 +11,10 @@ import type { ReactNode } from "react";
 import { DataTable, type DataTableRow } from "@/components/ui/DataTable";
 import { SegmentedControl, type Segment } from "@/components/controls/SegmentedControl";
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
-import { isLowVolume, ratio, sumOf, unlessLowVolume } from "@/lib/paid/math";
+import { isLowVolume, ratio, roasOf, sumOf, unlessLowVolume } from "@/lib/paid/math";
 import type { GadsKeywordRow, GadsTermMode, GadsTermRow } from "@/lib/queries/paidGoogle";
 import { matchLabel, statusLabel } from "./labels";
-import { CoverageChip, NumCell, RatioCell, Section, SpendCell, TextCell } from "./parts";
+import { capRows, CoverageChip, NumCell, RatioCell, RowCap, Section, SpendCell, TextCell } from "./parts";
 
 export type SearchSource = "terms" | "keywords";
 
@@ -30,6 +30,9 @@ export function SearchTerms({
   keywords,
   coverage,
   currency,
+  expanded,
+  moreHref,
+  lessHref,
 }: {
   source: SearchSource;
   mode: GadsTermMode;
@@ -38,6 +41,10 @@ export function SearchTerms({
   /** Search-term spend over Search campaign spend. Null when there is no Search spend. */
   coverage: number | null;
   currency: string;
+  /** All rows rendered, instead of the top `ROW_CAP`. */
+  expanded: boolean;
+  moreHref: string;
+  lessHref: string;
 }) {
   const sourceSegments: Segment[] = [
     { value: "terms", label: "Search terms" },
@@ -55,8 +62,8 @@ export function SearchTerms({
   let table: ReactNode;
   if (source === "terms") {
     const total = sumOf(terms, (t) => t.spend);
-    const rows: DataTableRow[] = terms.map((t, i) => {
-      const roas = ratio(t.value, t.spend);
+    const rows: DataTableRow[] = capRows(terms, expanded).map((t, i) => {
+      const roas = roasOf(t.value, t.spend, t.conversions);
       const cpa = ratio(t.spend, t.conversions);
       const cpc = ratio(t.spend, t.clicks);
       const low = isLowVolume({ spend: t.spend, purchases: t.conversions }, total);
@@ -134,8 +141,8 @@ export function SearchTerms({
     );
   } else {
     const total = sumOf(keywords, (k) => k.spend);
-    const rows: DataTableRow[] = keywords.map((k, i) => {
-      const roas = ratio(k.value, k.spend);
+    const rows: DataTableRow[] = capRows(keywords, expanded).map((k, i) => {
+      const roas = roasOf(k.value, k.spend, k.conversions);
       const cpa = ratio(k.spend, k.conversions);
       const ctr = ratio(k.clicks, k.impressions);
       const cpc = ratio(k.spend, k.clicks);
@@ -216,6 +223,12 @@ export function SearchTerms({
       }
     >
       {table}
+      <RowCap
+        total={source === "terms" ? terms.length : keywords.length}
+        expanded={expanded}
+        moreHref={moreHref}
+        lessHref={lessHref}
+      />
     </Section>
   );
 }

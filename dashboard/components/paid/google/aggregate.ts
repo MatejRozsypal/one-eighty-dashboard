@@ -7,7 +7,7 @@
  * campaign table beneath it.
  */
 
-import { sumOf, ratio } from "@/lib/paid/math";
+import { sumOf, ratio, roasOf } from "@/lib/paid/math";
 import type { BrandClass } from "@/lib/paid/types";
 import type { GadsCampaignAgg, GadsMetrics } from "@/lib/queries/paidGoogle";
 
@@ -62,7 +62,7 @@ export function classedRows(
 /** Rates over one set of summed components. Every one is sum over sum. */
 export function rates(m: GadsMetrics | null) {
   return {
-    roas: m ? ratio(m.value, m.spend) : null,
+    roas: m ? roasOf(m.value, m.spend, m.conversions) : null,
     cpa: m ? ratio(m.spend, m.conversions) : null,
     cvr: m ? ratio(m.conversions, m.clicks) : null,
     ctr: m ? ratio(m.clicks, m.impressions) : null,

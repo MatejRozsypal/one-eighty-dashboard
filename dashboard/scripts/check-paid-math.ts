@@ -12,7 +12,7 @@ import {
   isLowVolume, unlessLowVolume, LOW_VOLUME_MIN_PURCHASES,
   searchImpressionShare, lostBudgetShare, lostRankShare, topImpressionShare, absTopImpressionShare,
   brandShare, nonBrandRoas, brandLeakage, overClaim, trackingCoverage,
-  bucketGrain, bucketStart, funnelShare,
+  bucketGrain, bucketStart, funnelShare, roasOf,
 } from "@/lib/paid/math";
 import { tabHref, creativeHref } from "@/lib/paid/links";
 import { navFor, PAID_TABS, activeNavHref, pageTitle } from "@/lib/nav";
@@ -41,6 +41,16 @@ function near(label: string, actual: number | null, expected: number, eps = 1e-9
     console.error(`FAIL ${label}: got ${actual}, want ${expected}`);
   }
 }
+
+// ── roasOf (N-02) ───────────────────────────────────────────────────────────
+eq("roasOf normal", roasOf(300, 100, 5), 3);
+eq("roasOf zero spend and zero value is n/a", roasOf(0, 0, 0), null);
+eq("roasOf zero spend is n/a", roasOf(50, 0, 1), null);
+eq("roasOf spend, no conversions, value 0 is n/a", roasOf(0, 100, 0), null);
+eq("roasOf spend, conversions not measured, value 0 is n/a", roasOf(0, 100, null), null);
+eq("roasOf spend, conversions with a real 0 value is 0", roasOf(0, 100, 2), 0);
+eq("roasOf without conversions, value 0 with spend is a real 0", roasOf(0, 100), 0);
+eq("roasOf null value is n/a", roasOf(null, 100, 3), null);
 
 // ── ratio, sumOf, ratioOfSums ───────────────────────────────────────────────
 eq("ratio basic", ratio(10, 4), 2.5);

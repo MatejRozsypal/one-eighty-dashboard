@@ -184,3 +184,11 @@ Dashboard winners (purchases >= N and shrunk ROAS >= target, N = shrinkage weigh
 No ad changes status between (i) and (ii) under either prior. The standard basis differs from today's numbers only on
 ads that ran in 7d_click-only ad sets (22 of 459 ads gain view-through purchases: dobias 5, ethia 5, manami 12);
 none of them crosses a threshold. A 7-day-click-only basis would have cut winners from 32 to 11.
+
+## 10. Live verification (2026-10-05 11:35 UTC)
+
+One production run of the published workflow was triggered manually (same as an hourly run). All 4 clients × 3 chunks
+wrote legacy and window rows in lockstep (dobias 1,574 / 1,574, ethia 169 / 169, manami 782 / 782, venev 339 / 339,
+days 2026-08-30 to 2026-10-04). Check C over the last 35 days: 0 mismatch days for every client; legacy purchases and
+value equal 7d_click (+ 1d_view on view ad sets) to the unit. Successful production executions are not kept by this
+n8n instance, so failures surface through the error workflow `lslDsvbP8jLKEgw0` and check C2 (coverage).

@@ -16,8 +16,8 @@
  * UI copy is English throughout, so `en-US` grouping is used for every
  * currency: the symbol changes, the separators do not.
  *
- * Negative money uses U+2212 (see `tidySign`); a negative that rounds to zero
- * prints without a sign.
+ * Every negative (money, percentage, count) uses U+2212 (see `tidySign`); a
+ * negative that rounds to zero prints without a sign.
  *
  * Missing values: every formatter returns `NO_VALUE` ("n/a") for null. Never a
  * dash, never "0". Render sites mute it (`<Value>` in components/ui/EmptyState,
@@ -31,14 +31,15 @@ export const NO_VALUE = "n/a";
 export const MINUS = "\u2212";
 
 /**
- * Sign rule shared by the formatters. A negative that rounds to zero ("-$0",
- * "-0.0%") loses its sign; a real negative money value gets the U+2212 minus so
- * the margin stack, discounts and deltas all read alike.
+ * Sign rule shared by every formatter. A negative that rounds to zero ("-$0",
+ * "-0.0%") loses its sign; any other negative (money, percentage, count) gets
+ * the U+2212 minus so the margin stack, discounts, deltas and growth lines all
+ * read alike. Intl always emits an ASCII hyphen-minus, which is what is swapped.
  */
-function tidySign(formatted: string, money: boolean): string {
+function tidySign(formatted: string): string {
   if (!formatted.includes("-")) return formatted;
   if (!/[1-9]/.test(formatted)) return formatted.replace("-", "");
-  return money ? formatted.replace("-", MINUS) : formatted;
+  return formatted.replace("-", MINUS);
 }
 
 /** True when a formatted string is the no-value glyph (for muting). */
@@ -82,8 +83,7 @@ export function formatMoney(
       ...(digits === null
         ? { maximumFractionDigits: 1 }
         : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
-    }).format(value),
-    true
+    }).format(value)
   );
 }
 
@@ -97,8 +97,7 @@ export function formatNumber(
     new Intl.NumberFormat("en-US", {
       notation: compact ? "compact" : "standard",
       maximumFractionDigits: decimals,
-    }).format(value),
-    false
+    }).format(value)
   );
 }
 
@@ -113,8 +112,7 @@ export function formatPercent(
       style: "percent",
       maximumFractionDigits: decimals,
       minimumFractionDigits: decimals,
-    }).format(value),
-    false
+    }).format(value)
   );
 }
 
@@ -124,7 +122,7 @@ export function formatRatio(
   { decimals = 2 }: { decimals?: number } = {}
 ): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return NO_VALUE;
-  return `${value.toFixed(decimals)}×`;
+  return tidySign(`${value.toFixed(decimals)}×`);
 }
 
 /**

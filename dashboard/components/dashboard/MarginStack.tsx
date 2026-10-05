@@ -30,7 +30,7 @@ import { Eyebrow } from "@/components/ui/Eyebrow";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import type { PnlSnapshot } from "@/lib/queries/pnl";
-import { metric, hasNoCostData } from "@/lib/queries/pnl";
+import { metric, hasNoCostData, paidSpendDelta } from "@/lib/queries/pnl";
 
 const CHART_HEIGHT = 290;
 
@@ -150,7 +150,9 @@ export function MarginStack({ snapshot }: { snapshot: PnlSnapshot }) {
       base: noCost ? 0 : cm3,
       magnitude: t.paidSpend ?? 0,
       kind: "cost",
-      delta: metric(snapshot, (x) => x.paidSpend).delta,
+      // Same rule as the Paid spend tile: no delta against a comparison that
+      // only partly had spend.
+      delta: paidSpendDelta(snapshot),
       goodWhen: "neutral",
     },
     noCost

@@ -31,7 +31,7 @@ import { InfoTip } from "@/components/ui/InfoTip";
 import { NotConnected, NoData, Value } from "@/components/ui/EmptyState";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { SegmentedControl } from "@/components/controls/SegmentedControl";
-import { MarketFilter } from "@/components/controls/MarketFilter";
+import { MarketChips } from "@/components/dashboard/MarketChips";
 import { CohortHeatmap } from "@/components/dashboard/CohortHeatmap";
 import { DataTable } from "@/components/ui/DataTable";
 
@@ -178,7 +178,7 @@ export default async function CohortsPage({
               </div>
 
               {grid.markets.length > 1 && (
-                <MarketFilter
+                <MarketChips
                   markets={grid.markets}
                   kind={grid.marketKind}
                   active={selectedMarkets}

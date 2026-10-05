@@ -14,7 +14,13 @@ import { getClients, resolveClient } from "@/lib/clients";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
 import { includesToday } from "@/lib/period";
 import { parseViewParams, viewQuery, comparisonLabel, type SearchParams } from "@/lib/params";
-import { getPnlSnapshot, hasNoCostData, metric } from "@/lib/queries/pnl";
+import {
+  getPnlSnapshot,
+  hasNoCostData,
+  metric,
+  paidSpendDelta as paidSpendDeltaOf,
+  spendGapNotice,
+} from "@/lib/queries/pnl";
 import { getLifetimeSummary, getPayback } from "@/lib/queries/lifetime";
 import { getClientSettings } from "@/lib/users/settings";
 import { getDiscounts, getExcludedCurrencies } from "@/lib/queries/context";
@@ -109,8 +115,8 @@ export default async function SnapshotPage({
   const qs = viewQuery({ ...params, clientId: client.clientId });
 
   // Discounts are a native-currency figure. Next to a converted P&L it would be
-  // mislabelled, so it is withheld instead. Lifetime and payback are formatted
-  // in the native currency by BottomLine.
+  // mislabelled, so the row says which currency it exists in ("USD only").
+  // Lifetime and payback are formatted in the native currency by BottomLine.
   const discounts = display === "native" ? nativeDiscounts : null;
 
   const shopSource = client.shopPlatform ?? "Shop";
@@ -125,17 +131,12 @@ export default async function SnapshotPage({
 
   const newShare = safeDiv(t.newCustomerRevenue, t.revenue);
 
-  // Leading spend gap (this period or the comparison): the ratios over spend
-  // are withheld, and one line says where spend starts. A paid spend delta
-  // against a period that only partly had spend would be a fiction too.
-  const prev = snapshot.previous;
-  const spendGap = t.leadingSpendGap || (prev?.leadingSpendGap ?? false);
-  const spendFrom = [t.spendFrom, prev?.spendFrom ?? null]
-    .filter((d): d is string => d !== null)
-    .sort()[0];
-  const paidSpendDelta = spendGap
-    ? null
-    : metric(snapshot, (x) => x.paidSpend).delta;
+  // Leading spend gap: the ratios over spend are withheld, and one line says
+  // where spend starts (in the current range, whatever the compare toggle is).
+  // A paid spend delta against a period that only partly had spend would be a
+  // fiction too, so the tile and the margin stack share one rule.
+  const gapNotice = spendGapNotice(snapshot);
+  const paidSpendDelta = paidSpendDeltaOf(snapshot);
 
   return (
     <>
@@ -155,7 +156,12 @@ export default async function SnapshotPage({
 
         {googleAds && !meta && <Notice>Paid spend is Google only.</Notice>}
 
-        {spendGap && spendFrom && <Notice>Ad spend from {formatDay(spendFrom)}.</Notice>}
+        {gapNotice && (
+          <Notice>
+            {gapNotice.scope === "comparison" ? "Comparison ad spend from" : "Ad spend from"}{" "}
+            {formatDay(gapNotice.from)}.
+          </Notice>
+        )}
 
         <section className="grid grid-cols-[repeat(auto-fit,minmax(252px,1fr))] gap-4">
           <MetricCard
@@ -223,6 +229,7 @@ export default async function SnapshotPage({
             totals={t}
             currency={currency}
             discounts={discounts}
+            discountsNativeOnly={display === "native" ? null : client.currency}
           />
           <BottomLine
             payback={payback}

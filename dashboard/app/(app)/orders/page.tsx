@@ -270,7 +270,7 @@ export default async function OrdersPage({
                             {o.discounts === null
                               ? NO_VALUE
                               : o.discounts > 0
-                                ? `\u2212${money(o.discounts)}`
+                                ? money(-o.discounts)
                                 : "none"}
                           </span>
                         );

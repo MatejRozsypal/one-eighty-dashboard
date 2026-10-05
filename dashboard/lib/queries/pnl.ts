@@ -454,3 +454,43 @@ export function metric(
   const previous = snapshot.previous ? pick(snapshot.previous) : null;
   return { current, previous, delta: delta(current, previous) };
 }
+
+/**
+ * True when this period or its comparison starts before paid spend does. A
+ * paid spend delta against a period that only partly had spend would be a
+ * fiction, so every surface that shows one (the Paid spend tile, the margin
+ * stack) goes through `paidSpendDelta` and withholds it under the same rule.
+ */
+export function hasSpendGap(snapshot: PnlSnapshot): boolean {
+  return snapshot.current.leadingSpendGap || (snapshot.previous?.leadingSpendGap ?? false);
+}
+
+/** Paid spend change versus the comparison period; null under a leading gap. */
+export function paidSpendDelta(snapshot: PnlSnapshot): number | null {
+  return hasSpendGap(snapshot) ? null : metric(snapshot, (x) => x.paidSpend).delta;
+}
+
+/** Where paid spend starts, for the one-line notice that explains a "Missing days". */
+export interface SpendGapNotice {
+  /** First day with spend, ISO. */
+  from: string;
+  /** Whose gap it is. The current range always wins, so the date does not move with the compare toggle. */
+  scope: "current" | "comparison";
+}
+
+/**
+ * The notice date comes from the CURRENT range only: `current.spendFrom` is the
+ * first spend day inside it, whatever comparison is loaded. The comparison
+ * period is named only when the current range is complete and the comparison is
+ * not (the delta is withheld, and the reader should know why).
+ */
+export function spendGapNotice(snapshot: PnlSnapshot): SpendGapNotice | null {
+  const { current, previous } = snapshot;
+  if (current.leadingSpendGap && current.spendFrom) {
+    return { from: current.spendFrom, scope: "current" };
+  }
+  if (!current.leadingSpendGap && previous?.leadingSpendGap && previous.spendFrom) {
+    return { from: previous.spendFrom, scope: "comparison" };
+  }
+  return null;
+}

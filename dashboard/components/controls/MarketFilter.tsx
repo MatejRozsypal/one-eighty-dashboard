@@ -42,11 +42,16 @@ export function MarketFilter({
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { isPending, navigate } = useNavigation();
+  const { isPending, navigate, baseQuery } = useNavigation();
 
+  // Toggles merge onto the URL a still-loading change is heading to, and the
+  // selection is read from that URL too: `active` comes from the server and
+  // two quick toggles would otherwise both start from the same old set.
   function toggle(code: string) {
-    const next = new URLSearchParams(searchParams.toString());
-    const set = new Set(active);
+    const committed = searchParams.toString();
+    const base = baseQuery(pathname, committed);
+    const next = new URLSearchParams(base);
+    const set = new Set(base === committed ? active : next.getAll("market"));
     if (set.has(code)) set.delete(code);
     else set.add(code);
 
@@ -56,7 +61,7 @@ export function MarketFilter({
   }
 
   function clear() {
-    const next = new URLSearchParams(searchParams.toString());
+    const next = new URLSearchParams(baseQuery(pathname, searchParams.toString()));
     next.delete("market");
     navigate(`${pathname}?${next.toString()}`);
   }

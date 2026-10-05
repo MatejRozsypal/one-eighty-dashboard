@@ -84,7 +84,7 @@ export function AccountMenu({
   const active =
     clients.find((c) => c.clientId === searchParams.get("client")) ?? clients[0];
 
-  const { isPending, navigate } = useNavigation();
+  const { isPending, navigate, baseQuery } = useNavigation();
   // Switching re-runs every query on the page; adopting the new client straight
   // away makes the click read as taken rather than ignored. That is only safe
   // because the switch is a "client" navigation: the page body is hidden behind
@@ -131,7 +131,9 @@ export function AccountMenu({
     setOptimistic(clients.find((c) => c.clientId === clientId) ?? null);
     // Every other search param survives: changing client must not silently
     // reset the date range somebody spent time choosing.
-    const params = new URLSearchParams(searchParams.toString());
+    // Merged onto the URL a still-loading change is heading to, so a range or
+    // compare change made just before the switch survives it.
+    const params = new URLSearchParams(baseQuery(pathname, searchParams.toString()));
     params.set("client", clientId);
     navigate(`${pathname}?${params.toString()}`, { kind: "client" });
   }

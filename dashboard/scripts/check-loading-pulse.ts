@@ -26,7 +26,7 @@ import { join, relative } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppLink } from "@/components/ui/AppLink";
-import { ClientSwitchSkeleton, PendingRegionFrame, scrollFor } from "@/components/shell/NavigationPending";
+import { baseQueryFor, ClientSwitchSkeleton, PendingRegionFrame, scrollFor } from "@/components/shell/NavigationPending";
 import { Skeleton, SkeletonPage, type SkeletonBlock } from "@/components/ui/Skeleton";
 import { answerKey } from "@/components/reports/useWidgetData";
 
@@ -154,6 +154,38 @@ check(
 
   for (const f of [join("components", "shell", "AccountMenu.tsx"), join("components", "shell", "MobileTopBar.tsx")]) {
     check(`${f}: client switch is a client navigation`, read(join(ROOT, f)).includes('{ kind: "client" }'));
+  }
+}
+
+{
+  // Controls merge onto the URL still in flight, not the committed snapshot
+  // (QF2 request, r3-perf): a second change inside one load keeps the first.
+  check("base query: nothing in flight uses the committed query", baseQueryFor(null, "/snapshot", "client=a&preset=30d") === "client=a&preset=30d");
+  check("base query: in flight on the same path wins", baseQueryFor("/snapshot?client=a&preset=90d", "/snapshot", "client=a&preset=30d") === "client=a&preset=90d");
+  check("base query: in flight to another path is ignored", baseQueryFor("/growth?client=a&preset=90d", "/snapshot", "client=a&preset=30d") === "client=a&preset=30d");
+  check("base query: in flight with no query is an empty base", baseQueryFor("/snapshot", "/snapshot", "client=a") === "");
+  {
+    // The race itself: compare, then currency before the first commits.
+    const committed = "client=a&preset=30d";
+    const first = new URLSearchParams(baseQueryFor(null, "/snapshot", committed));
+    first.set("compare", "yoy");
+    const firstHref = `/snapshot?${first.toString()}`;
+    const second = new URLSearchParams(baseQueryFor(firstHref, "/snapshot", committed));
+    second.set("ccy", "CZK");
+    check("base query: second change keeps the first", second.get("compare") === "yoy" && second.get("ccy") === "CZK" && second.get("preset") === "30d", second.toString());
+  }
+  const provider = read(join(ROOT, "components", "shell", "NavigationPending.tsx"));
+  check("navigate records the newest href before the transition", /latestHref\.current = href;[\s\S]*?startTransition/.test(provider));
+  check("newest href is dropped when the transition commits", /if \(!isPending\) \{[\s\S]*?latestHref\.current = null;/.test(provider));
+  for (const f of [
+    join("components", "controls", "SegmentedControl.tsx"),
+    join("components", "controls", "DateRangeControl.tsx"),
+    join("components", "controls", "MarketFilter.tsx"),
+    join("components", "shell", "AccountMenu.tsx"),
+    join("components", "shell", "MobileTopBar.tsx"),
+  ]) {
+    const src = read(join(ROOT, f));
+    check(`${f}: builds on baseQuery`, src.includes("baseQuery(pathname,") && !/new URLSearchParams\(searchParams\.toString\(\)\)/.test(src));
   }
 }
 

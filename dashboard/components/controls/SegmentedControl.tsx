@@ -40,7 +40,7 @@ export function SegmentedControl({
   const searchParams = useSearchParams();
 
   // Shared with the rest of the page, so the figures pulse while this resolves.
-  const { isPending, navigate } = useNavigation();
+  const { isPending, navigate, baseQuery } = useNavigation();
   const [optimistic, setOptimistic] = useState<string | null>(null);
 
   // `isPending` stays true until the new server output is committed, so this
@@ -55,7 +55,9 @@ export function SegmentedControl({
     if (value === shown) return;
     setOptimistic(value);
 
-    const next = new URLSearchParams(searchParams.toString());
+    // Merged onto the URL a still-loading change is heading to, so a second
+    // control used before the first answers does not undo it.
+    const next = new URLSearchParams(baseQuery(pathname, searchParams.toString()));
     next.set(param, value);
     navigate(`${pathname}?${next.toString()}`);
   }

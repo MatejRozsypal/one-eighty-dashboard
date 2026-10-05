@@ -97,7 +97,7 @@ export function DateRangeControl({
   // the query runs behind the progress bar. Holding the popover open until
   // BigQuery answers would leave the calendar sitting there for seconds
   // looking like the click was dropped.
-  const { isPending, navigate } = useNavigation();
+  const { isPending, navigate, baseQuery } = useNavigation();
 
   // While a range is in flight the trigger and its chip show the range you
   // asked for, not the one still on screen, and both pulse until the page
@@ -139,8 +139,10 @@ export function DateRangeControl({
     };
   }, [open]);
 
+  // Merged onto the URL a still-loading change is heading to (compare,
+  // currency, client), not the committed one, so neither change is lost.
   function apply(params: Record<string, string>) {
-    const next = new URLSearchParams(searchParams.toString());
+    const next = new URLSearchParams(baseQuery(pathname, searchParams.toString()));
     for (const [k, v] of Object.entries(params)) next.set(k, v);
     if (params.from && params.to) {
       setPending({ range: { from: params.from, to: params.to }, label: "Custom" });
@@ -151,7 +153,7 @@ export function DateRangeControl({
   }
 
   function choosePreset(key: PresetKey) {
-    const next = new URLSearchParams(searchParams.toString());
+    const next = new URLSearchParams(baseQuery(pathname, searchParams.toString()));
     next.set("preset", key);
     next.delete("from");
     next.delete("to");

@@ -17,11 +17,14 @@ import {
   getCreativeAssets,
   getCreativeTotals,
   getUnmapped,
+  getVideoAdRates,
   type CreativeAsset,
   type CreativeData,
   type UnmappedData,
 } from "@/lib/queries/creative";
-import { getCreativeSettings, listConfirmedMappings, toDisplayThresholds, toThresholds, type StoredCreativeSettings } from "@/lib/creative/store";
+import { getCreativeSettings, listConfirmedMappings, toDisplayThresholds, toHitRateThresholds, toThresholds, type StoredCreativeSettings } from "@/lib/creative/store";
+import { getLaunchAnchor, type LaunchAnchor } from "@/lib/queries/creativeLaunch";
+import { relativeFloors, withFloors } from "@/lib/creative/floors";
 import { accountContext, fillNames, type AccountContext, type Components } from "@/lib/creative/model";
 import { parseViewParams, type ViewParams } from "@/lib/params";
 import { signMany, signManyDownloads } from "@/lib/creative/assets";
@@ -36,6 +39,17 @@ export interface CreativeContext {
   settings: StoredCreativeSettings;
   /** Null when the client has no kill line, target or CPA on file. */
   thresholds: CreativeThresholds | null;
+  /**
+   * What the hit rate and winners need: a target ROAS and a read threshold,
+   * nothing else (no Target CPA, no kill line). Null only without a target.
+   */
+  hitThresholds: CreativeThresholds | null;
+  /**
+   * The launch table's anchor and ages, or null when it is not ready. Every
+   * screen shrinks toward `anchor.priorRoas` and applies the winner age rule
+   * from `anchor.ageByAd`, the same as the hit rate.
+   */
+  anchor: LaunchAnchor | null;
   /**
    * Always present. Equal to `thresholds` when they are set; otherwise a
    * judgement-free stand-in so the screens can still render delivery.
@@ -90,7 +104,7 @@ export async function loadCreative(
     };
   }
 
-  const [settings, data, assets, unmapped, confirmed, previous] = await Promise.all([
+  const [settings, data, assets, unmapped, confirmed, previous, anchor, videoRates] = await Promise.all([
     getCreativeSettings(client.clientId),
     getCreativeAds(client.clientId, params.range),
     getCreativeAssets(client.clientId),
@@ -100,6 +114,12 @@ export async function loadCreative(
     options.compare && params.period.comparison
       ? getCreativeTotals(client.clientId, params.period.comparison)
       : Promise.resolve(null),
+    // The launch table's anchor (365-day ROAS) and ad ages: one winner test on
+    // every screen. Null when the table is not ready, and screens then keep
+    // the window mean and apply no age rule.
+    getLaunchAnchor(client.clientId),
+    // Genuine video ads of the trailing 180 days: the relative hook and hold floors.
+    getVideoAdRates(client.clientId),
   ]);
 
   const confirmedIds = new Set(confirmed.map((c) => c.adId));
@@ -109,6 +129,17 @@ export async function loadCreative(
   // even when the ad set mart returns nothing.
   const named: CreativeData = { ...data, ads: fillNames(data.ads, assets) };
 
+  // Relative hook and hold floors from the client's own genuine video ads;
+  // the stored Settings floors when there are too few (diagnostic only).
+  const floors = videoRates
+    ? relativeFloors(videoRates, {
+        hookRateFloor: settings.hookRateFloor,
+        holdRateFloor: settings.holdRateFloor,
+      })
+    : null;
+  const windowAccount = accountContext(named.ads, settings.targetRoas ?? 1);
+
+  const strict = toThresholds(settings);
   const ctx: CreativeContext = {
     client,
     // The Meta ad account's own currency, not the shop's. They are set
@@ -118,14 +149,19 @@ export async function loadCreative(
     params,
     previous,
     settings,
-    thresholds: toThresholds(settings),
-    display: toThresholds(settings) ?? toDisplayThresholds(settings),
+    thresholds: strict ? withFloors(strict, floors) : null,
+    hitThresholds: toHitRateThresholds(settings),
+    anchor,
+    display: withFloors(strict ?? toDisplayThresholds(settings), floors),
     data: named,
     assets,
-    // The shrinkage anchor. Computed from summed revenue over summed spend, so
-    // a 300 Kč freak at 17x cannot drag the mean that every other row is pulled
-    // toward, the learnings file has that exact ad in it.
-    account: accountContext(named.ads, settings.targetRoas ?? 1),
+    // `meanRoas` is the window's blended ROAS, summed revenue over summed
+    // spend, so a 300 Kč freak at 17x cannot drag it, the learnings file has
+    // that exact ad in it. It is what the Blended ROAS tile shows. What rows
+    // are shrunk toward is `anchorRoas`: the client's stored 365-day ROAS, the
+    // same number the hit rate uses, so the winner bar does not move with the
+    // date picker.
+    account: { ...windowAccount, anchorRoas: anchor?.priorRoas ?? windowAccount.meanRoas },
     unmapped,
     unmappedCount: unmapped.ads.filter((a) => !confirmedIds.has(a.adId)).length,
   };
@@ -160,9 +196,20 @@ export async function buildAdViews(
       ad,
       assets[i],
       { thumbUrl: thumbs[i], assetUrl: fulls[i], downloadUrl: downloads[i] },
-      ctx.account.meanRoas,
+      ctx.account.anchorRoas,
       ctx.account.spend,
-      thresholds
+      thresholds,
+      ageOf(ctx, ad.adId)
     )
   );
+}
+
+/**
+ * Days since an ad's first delivery, as the launch table has it. Null when the
+ * table is not ready (no age rule then). An ad the table does not hold yet is
+ * newer than the last build, so it is a day old at most.
+ */
+export function ageOf(ctx: Pick<CreativeContext, "anchor">, adId: string): number | null {
+  if (ctx.anchor === null) return null;
+  return ctx.anchor.ageByAd.get(adId) ?? 0;
 }

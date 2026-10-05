@@ -54,7 +54,7 @@ import { canViewReport } from "@/lib/reports/store";
 import { getComponent } from "@/lib/reports/registry/components";
 import type { ComponentId, ReportClient } from "@/lib/reports/registry/types";
 import { listClientSettings } from "@/lib/users/settings";
-import { getCreativeSettings, toThresholds } from "@/lib/creative/store";
+import { getCreativeSettings, toHitRateThresholds } from "@/lib/creative/store";
 import type { CreativeThresholds } from "@/lib/creative/stats";
 import {
   isReportsError,
@@ -172,8 +172,9 @@ async function statedRates(componentIds: readonly ComponentId[], clientIds: read
 
 /**
  * Creative thresholds (Settings) of the given clients, or null when no
- * component of the widget needs them. A client without the three money lines
- * maps to null ("No thresholds"). A failed read leaves every client without
+ * component of the widget needs them. A client without a target ROAS maps to
+ * null ("No thresholds"); the hit rate needs no Target CPA or kill line, the
+ * same as the Creative tile (`toHitRateThresholds`). A failed read leaves every client without
  * thresholds (cells read "No thresholds", never a zero) and is logged, the
  * same fallback shape as the stated rates.
  */
@@ -181,7 +182,7 @@ async function creativeThresholds(componentIds: readonly ComponentId[], clientId
   if (!componentIds.some((id) => getComponent(id).classified?.needsThresholds === true)) return null;
   try {
     const settings = await Promise.all(clientIds.map((id) => getCreativeSettings(id)));
-    return new Map(settings.map((s) => [s.clientId, toThresholds(s)] as const));
+    return new Map(settings.map((s) => [s.clientId, toHitRateThresholds(s)] as const));
   } catch (error) {
     console.warn("[reports] creative_settings unreadable, hit rate reads No thresholds", error instanceof Error ? error.message : "");
     return new Map();

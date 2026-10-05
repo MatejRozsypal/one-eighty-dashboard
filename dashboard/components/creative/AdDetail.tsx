@@ -982,10 +982,12 @@ function Metrics({
           ? "warn"
           : "bad";
 
+  // Good only for a read winner (the one test every surface shares). Above
+  // target without being one yet reads as a warning dot, not a green one.
   const roasVerdict: Verdict =
     !thresholds || ad.roas === null
       ? null
-      : ad.roas >= thresholds.targetRoas
+      : ad.outcome === "winner"
         ? "good"
         : ad.roas >= thresholds.killRoas
           ? "warn"

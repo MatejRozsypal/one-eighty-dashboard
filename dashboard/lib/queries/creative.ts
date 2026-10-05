@@ -36,6 +36,7 @@ import {
   type MonthlySpend,
   type Tags,
 } from "@/lib/creative/model";
+import { FLOOR_MIN_IMPRESSIONS, FLOOR_WINDOW_DAYS, GENUINE_VIDEO_START_SHARE, type VideoAdRates } from "@/lib/creative/floors";
 import type { Candidate } from "@/lib/creative/matching";
 import type { DateRange } from "@/lib/period";
 
@@ -807,6 +808,50 @@ export async function getCreativeTotals(
     // running then", and a delta against it would read as infinite growth.
     if (!r || n0(r.spend) === 0) return null;
     return componentsFrom(r);
+  } catch (error) {
+    if (!isMissingObject(error)) throw error;
+    return null;
+  }
+}
+
+/**
+ * The ads the relative hook and hold floors are taken over: genuine video ads
+ * (video starts >= 30% of impressions, at least 5,000 impressions) over the
+ * client's trailing 180 days of delivery, ending at its latest loaded day.
+ * One row per ad with window totals; the percentile is taken in TypeScript by
+ * `relativeFloors` so the rule is testable and the SQL carries no threshold
+ * of its own beyond the two constants it imports.
+ *
+ * Null when the mart is missing or the client has no rows. Demo clients have
+ * no floor data and use the stored floors.
+ */
+export const VIDEO_FLOOR_SQL = `
+  WITH m AS (
+    SELECT MAX(date) AS mx FROM \`${PROJECT_ID}.mart.mart_meta_ad_perf\` WHERE client_id = @clientId
+  )
+  SELECT p.ad_id,
+         SUM(p.impressions)         AS impressions,
+         SUM(p.video_views)         AS plays,
+         SUM(p.video_thruplays)     AS thruplays,
+         SUM(p.video_play_actions)  AS starts
+  FROM \`${PROJECT_ID}.mart.mart_meta_ad_perf\` p, m
+  WHERE p.client_id = @clientId
+    AND p.date > DATE_SUB(m.mx, INTERVAL ${FLOOR_WINDOW_DAYS} DAY)
+    AND p.date <= m.mx
+  GROUP BY p.ad_id
+  HAVING SUM(p.impressions) >= ${FLOOR_MIN_IMPRESSIONS}
+     AND SAFE_DIVIDE(SUM(p.video_play_actions), SUM(p.impressions)) >= ${GENUINE_VIDEO_START_SHARE}`;
+
+export async function getVideoAdRates(clientId: string): Promise<VideoAdRates[] | null> {
+  if (isDemo(clientId)) return null;
+  try {
+    const rows = await query<Record<string, unknown>>(VIDEO_FLOOR_SQL, { clientId });
+    return rows.map((r) => ({
+      impressions: n0(r.impressions),
+      plays: n0(r.plays),
+      thruplays: n0(r.thruplays),
+      starts: n0(r.starts),
+    }));
   } catch (error) {
     if (!isMissingObject(error)) throw error;
     return null;

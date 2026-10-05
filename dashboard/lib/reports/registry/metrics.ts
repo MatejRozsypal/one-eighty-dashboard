@@ -26,7 +26,6 @@
  * Design: 11_reporting_suite_design.md section 2.4. Owner: WP1 (RS1).
  */
 
-import { HIT_RATE_REFERENCE } from "@/lib/creative/hitRate";
 import { allOf } from "./capabilities";
 import { COMPONENTS, MARTS, getComponent } from "./components";
 import { METRIC_IDS, REGISTRY_METRIC_IDS, type MetricId, type RegistryMetricId } from "./ids";
@@ -498,16 +497,15 @@ export const METRICS: MetricRegistry = defineMetrics({
   // = sum of winners / sum of launched, each client judged by its own bar.
   hit_rate: ratio("Hit rate", "creative", [t("ad_launch.winners")], [t("ad_launch.launched")], {
     ...PCT_UP,
-    description: "Winners among Meta ads first delivered in the period, relaunches excluded. Winner: the client's purchase and ROAS bar, lifetime to date.",
+    description: "Winners among Meta ads first delivered in the period, relaunches excluded. Winner: the client's purchase and ROAS bar, lifetime to date, at least 14 days after first delivery.",
     benchmarkable: false,
     caveats: ["cohort_maturing", "lifetime_to_date"],
     aliases: ["creative hit rate", "winner rate"],
-    reference: { value: HIT_RATE_REFERENCE, label: "Reference ~5%" },
     showCounts: { noun: "ads" },
   }),
   winners: sum("Winners", "creative", [t("ad_launch.winners")], {
     ...COUNT_UP,
-    description: "Meta ads first delivered in the period that clear the client's winner bar, lifetime to date.",
+    description: "Meta ads first delivered in the period that clear the client's winner bar, lifetime to date, at least 14 days after first delivery.",
     benchmarkable: false,
     caveats: ["cohort_maturing", "lifetime_to_date"],
     aliases: ["winning ads", "creative winners"],

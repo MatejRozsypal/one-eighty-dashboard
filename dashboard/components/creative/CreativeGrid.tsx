@@ -19,6 +19,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { AdView } from "@/lib/creative/view";
+import { roasTone } from "@/lib/creative/tone";
 import { focusLabel } from "@/lib/creative/vocabulary";
 import { UNTAGGED } from "@/lib/creative/model";
 import { NO_VALUE } from "@/lib/format";
@@ -238,22 +239,19 @@ function Tile({
 }) {
   // A row the engine cannot read gets a grey bar and a muted figure. Colouring
   // a three-purchase ad green would be the single most misleading pixel here.
-  const readable = ad.purchases >= directionalPurchases;
-  const tone = !readable
-    ? "muted"
-    : ad.roas !== null && ad.roas >= targetRoas
-      ? "accent"
-      : ad.roas !== null && ad.roas < killRoas
-        ? "negative"
-        : "neutral";
-
-  const roasColour = !readable
-    ? "text-content-muted"
-    : ad.roas !== null && ad.roas >= targetRoas
-      ? "text-positive"
-      : ad.roas !== null && ad.roas < killRoas
-        ? "text-negative"
-        : "text-content-strong";
+  // Green is for read winners only (`classify`, the test every surface shares);
+  // an ad that clears the target without being one yet is "promising".
+  const tone = roasTone(ad, { directionalPurchases, targetRoas, killRoas });
+  const roasColour =
+    tone === "muted"
+      ? "text-content-muted"
+      : tone === "winner"
+        ? "text-positive"
+        : tone === "promising"
+          ? "text-positive/70"
+          : tone === "negative"
+            ? "text-negative"
+            : "text-content-strong";
 
   return (
     <article

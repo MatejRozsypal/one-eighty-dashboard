@@ -18,20 +18,34 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BigQuery } from "@google-cloud/bigquery";
-import { ZERO, classify } from "@/lib/creative/model";
+import { WINNER_MIN_AGE_DAYS, ZERO, classify, winnerEconomics, type AdRow } from "@/lib/creative/model";
 import type { CreativeThresholds } from "@/lib/creative/stats";
 import {
   HIT_RATE_MATURITY_DAYS,
+  HIT_RATE_REFERENCE_LABEL,
   conceptSplit,
+  deltaWithheld,
   eligible,
   hitRate,
   inRange,
+  launchContext,
   launchMonths,
   launchStatus,
+  packHitRate,
+  referenceRate,
+  referenceStart,
   tileText,
   trailingMonths,
+  updatedLabel,
   type LaunchRow,
 } from "@/lib/creative/hitRate";
+import { FLOOR_MIN_ADS, percentile, relativeFloors, withFloors, isGenuineVideo, type VideoAdRates } from "@/lib/creative/floors";
+import { diagnose } from "@/lib/creative/verdict";
+import { roasTone } from "@/lib/creative/tone";
+import { ATTRIBUTION_LABEL } from "@/lib/creative/attribution";
+import { toDisplayThresholds, toHitRateThresholds, toThresholds, type StoredCreativeSettings } from "@/lib/creative/store";
+import { ANCHOR_SQL, getLaunchAnchor } from "@/lib/queries/creativeLaunch";
+import { VIDEO_FLOOR_SQL } from "@/lib/queries/creative";
 import { HitRateTrend, rateCeiling, rateTicks } from "@/components/creative/HitRateTrend";
 import { HitRateTile } from "@/components/paid/meta/HitRateTile";
 import { demoLaunches } from "@/lib/demo/creative";
@@ -121,8 +135,9 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   ok("not a winner at 59 days is open", launchStatus(ad({ ...loser, ageDays: 59 }), T) === "open");
   ok("not a winner at 60 days is settled", launchStatus(ad({ ...loser, ageDays: 60 }), T) === "settled");
   ok("maturity window is 60 days", HIT_RATE_MATURITY_DAYS === 60);
-  ok("a young winner is a winner, not open", launchStatus(ad({ ageDays: 5 }), T) === "winner");
-  const rows = [ad({ ageDays: 5 }), ad({ ...loser, ageDays: 20 }), ad({ ...loser, ageDays: 120 })];
+  ok("ME3 C9: a winner under 14 days old is open, not a winner", launchStatus(ad({ ageDays: 5 }), T) === "open");
+  ok("ME3 C9: 13 days is open, 14 days is a winner", launchStatus(ad({ ageDays: 13 }), T) === "open" && launchStatus(ad({ ageDays: 14 }), T) === "winner" && WINNER_MIN_AGE_DAYS === 14);
+  const rows = [ad({ ageDays: 20 }), ad({ ...loser, ageDays: 20 }), ad({ ...loser, ageDays: 120 })];
   const h = hitRate(rows, T);
   ok("counts: 3 launched, 1 winner, 1 open", h.launched === 3 && h.winners === 1 && h.open === 1, JSON.stringify(h));
   ok("a cohort with an open ad is maturing", h.maturing === true);
@@ -147,7 +162,7 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   const h = hitRate(rows, null);
   ok("no thresholds: rate null, winners null, launched counted", h.rate === null && h.winners === null && h.open === null && h.launched === 2, JSON.stringify(h));
   const t = tileText(h, null);
-  ok("no thresholds: tile is n/a, sub '2 launched', info points to Settings", t.value === null && t.sub === "2 launched" && t.info === "Set thresholds in Settings.", JSON.stringify(t));
+  ok("no thresholds: tile is n/a, sub '2 launched', info points to Settings", t.value === null && t.sub === "2 launched" && t.info === "Set a target ROAS in Settings.", JSON.stringify(t));
   const m = launchMonths(rows, null, "2026-09-30", { from: "2026-07-01", to: "2026-09-30" });
   ok("no thresholds: every month's rate is null, never 0", m.every((x) => x.rate === null && x.winners === null));
   ok("no thresholds: launches still counted per month", m.find((x) => x.month === "2026-07")?.launched === 2);
@@ -167,10 +182,11 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   for (let i = 0; i < 9; i++) rows.push(ad());
   for (let i = 0; i < 95; i++) rows.push(ad({ purchases: 1, revenue: 10, ageDays: 200 }));
   for (let i = 0; i < 18; i++) rows.push(ad({ purchases: 1, revenue: 10, ageDays: 10 }));
-  const t = tileText(hitRate(rows, T), T);
+  const t = tileText(hitRate(rows, T), T, 0.074);
   ok("9 of 122, 18 open reads '7.4%'", t.value === "7.4%", String(t.value));
   ok("sub '9 of 122 launched · 18 open'", t.sub === "9 of 122 launched · 18 open", t.sub);
-  ok("info names the client's own bar and the reference", t.info.includes("15+ purchases") && t.info.includes("2.25+") && t.info.includes("5%"), t.info);
+  ok("info names the client's own bar, the age rule and the client's own reference", t.info.includes("15+ purchases") && t.info.includes("2.25+") && t.info.includes("14+ days") && t.info.includes(`${HIT_RATE_REFERENCE_LABEL}: 7.4%`), t.info);
+  ok("ME3 C10: no fixed 5% anywhere in the tile text", !tileText(hitRate(rows, T), T, null).info.includes("5%") && !tileText(hitRate(rows, T), T, null).info.includes("Reference"));
   ok("info is at most 40 words", t.info.split(/\s+/).length <= 40);
   const noOpen = tileText(hitRate(rows.slice(0, 104), T), T);
   ok("no open ads: no '· open' suffix", !noOpen.sub.includes("open"), noOpen.sub);
@@ -225,7 +241,8 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
 // ── Chart scale ──────────────────────────────────────────────────────────────
 {
   const flat = launchMonths([], T, "2026-09-30", { from: "2026-09-01", to: "2026-09-30" });
-  ok("an empty chart still reaches the 5% reference", rateCeiling(flat) >= 0.05);
+  ok("an empty chart still has a floor of 5% on the axis", rateCeiling(flat) >= 0.05);
+  ok("the ceiling clears the client's own reference line", rateCeiling(flat, 0.31) >= 0.31);
   const ceiling = rateCeiling(launchMonths([ad()], T, "2026-07-31", { from: "2026-07-01", to: "2026-07-31" }));
   ok("a 100% bar fits under the ceiling", ceiling >= 1, String(ceiling));
   ok("ticks start at 0 and end at or under the ceiling", rateTicks(0.2)[0] === 0 && rateTicks(0.2).at(-1)! <= 0.2 + 1e-9);
@@ -240,7 +257,7 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   const months = launchMonths(rows, T, "2026-09-30", { from: "2026-07-01", to: "2026-09-30" });
   const hrefs = { all: "/creative", video: "/creative?hrfmt=video", static: "/creative?hrfmt=static" };
   const html = renderToStaticMarkup(
-    createElement(HitRateTrend, { state: "ready", months, format: "all", hrefs, concepts: null })
+    createElement(HitRateTrend, { state: "ready", months, format: "all", hrefs, concepts: null, reference: 0.074 })
   );
   ok("trend shows W/n labels", html.includes(">1/2<") && html.includes(">0/1<"));
   ok("a maturing month with no winner says how many are open", html.includes("1 open"));
@@ -248,7 +265,9 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   const youngHtml = renderToStaticMarkup(createElement(HitRateTrend, { state: "ready", months: young, format: "all", hrefs, concepts: null }));
   ok("a maturing month with a bar is hatched, with the open count", youngHtml.includes('fill="url(#hr-hatch)"') && youngHtml.includes("1 open") && youngHtml.includes(">1/2<"));
   ok("a settled month is solid", html.includes('fill="var(--positive)"'));
-  ok("trend draws the 5% reference", html.includes("REF. ~5%"));
+  ok("ME3 C10: trend draws the client's own 12-month rate as the reference", html.includes("YOUR 12-MO RATE 7.4%") && !html.includes("REF. ~5%") && !html.includes("REF."));
+  const noRef = renderToStaticMarkup(createElement(HitRateTrend, { state: "ready", months, format: "all", hrefs, concepts: null }));
+  ok("ME3 C10: no reference, no line and no label", !noRef.includes("stroke-dasharray") && !noRef.includes("12-MO"));
   ok("an empty month shows a dash", html.includes(">-<"));
   ok("trend has the format control", html.includes("Video") && html.includes("Static") && html.includes('aria-current="true"'));
   ok("trend renders no em dash", !html.includes("\u2014"));
@@ -256,7 +275,7 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   const nr = renderToStaticMarkup(createElement(HitRateTrend, { state: "not-ready", months: [], format: "all", hrefs, concepts: null }));
   ok("not ready: one line, no chart, no control", nr.includes("Launch data is not ready.") && !nr.includes("<svg") && !nr.includes("Video"));
   const nt = renderToStaticMarkup(createElement(HitRateTrend, { state: "no-thresholds", months: [], format: "all", hrefs, concepts: null }));
-  ok("no thresholds: one line, no chart", nt.includes("Set thresholds in Settings.") && !nt.includes("<svg"));
+  ok("no thresholds: one line, no chart", nt.includes("Set a target ROAS in Settings.") && !nt.includes("<svg"));
   const none = renderToStaticMarkup(createElement(HitRateTrend, { state: "ready", months: launchMonths([], T, "2026-09-30", { from: "2026-09-01", to: "2026-09-30" }), format: "all", hrefs, concepts: null }));
   ok("ready with no launches: says so, no bars", none.includes("No launches in these months.") && !none.includes("<rect x"));
 
@@ -272,6 +291,193 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   ok("Paid tile without thresholds: n/a, 'Set thresholds', links to Settings", tileNt.includes("n/a") && tileNt.includes("Set thresholds") && tileNt.includes('href="/settings"'));
   const tileNr = renderToStaticMarkup(createElement(HitRateTile, { text: tileText(null, T), href: "/creative", needsThresholds: false }));
   ok("Paid tile not ready: n/a, 'Not ready'", tileNr.includes("n/a") && tileNr.includes("Not ready") && !tileNr.includes(">0%<"));
+}
+
+// ── ME3 C9: the 14-day winner rule is in the one shared classify path ───────
+{
+  const strong = { ...ZERO, spend: 1000, revenue: 2800, purchases: 15 };
+  ok("classify: old enough is a winner", classify(strong, 2.0, T, 14) === "winner" && classify(strong, 2.0, T, 400) === "winner");
+  ok("classify: under 14 days is open, not carrier or loser", classify(strong, 2.0, T, 13) === "open" && classify(strong, 2.0, T, 0) === "open");
+  ok("classify: unknown age applies no rule", classify(strong, 2.0, T) === "winner" && classify(strong, 2.0, T, null) === "winner");
+  const weak = { ...ZERO, spend: 2000, revenue: 2000, purchases: 20 };
+  ok("classify: age never turns a loser or carrier into anything else", classify(weak, 2.0, T, 3) === classify(weak, 2.0, T, 300));
+
+  const mk = (id: string, c: Partial<typeof strong>): AdRow => ({
+    adId: id, adName: id, adsetId: null, adsetName: null, campaignId: null, campaignName: null,
+    tags: {} as AdRow["tags"], components: { ...ZERO, ...c }, monthlySpend: [],
+  });
+  const ads = [mk("old", strong), mk("young", strong), mk("weak", weak)];
+  const ages: Record<string, number> = { old: 60, young: 12, weak: 60 };
+  const w = winnerEconomics(ads, 2.0, T, (id) => ages[id] ?? null);
+  ok("scorecard: the 12-day-old ad is not a winner, it is open", w.winners === 1 && w.open === 1 && w.decided === 2, JSON.stringify(w));
+  ok("scorecard without ages is the old behaviour (age unknown, no rule)", winnerEconomics(ads, 2.0, T).winners === 2);
+
+  // The scorecard, the grid and the hit rate say the same thing for the same ad.
+  let same = 0;
+  let cells = 0;
+  for (const age of [0, 5, 13, 14, 15, 59, 60, 200]) {
+    for (const p of [10, 15, 40]) {
+      for (const roas of [1.2, 2.25, 2.6, 4]) {
+        const row = ad({ ageDays: age, purchases: p, spend: 1000, revenue: 1000 * roas, priorRoas: 2.0 });
+        const viaTile = launchStatus(row, T) === "winner";
+        const viaGrid = classify({ ...ZERO, spend: 1000, revenue: 1000 * roas, purchases: p }, 2.0, T, age) === "winner";
+        const viaCard = winnerEconomics([mk("x", { spend: 1000, revenue: 1000 * roas, purchases: p })], 2.0, T, () => age).winners === 1;
+        cells += 1;
+        if (viaTile === viaGrid && viaGrid === viaCard) same += 1;
+      }
+    }
+  }
+  ok("ME3 C3: tile, grid and scorecard agree on every age x purchases x ROAS cell", same === cells, `${same}/${cells}`);
+}
+
+// ── ME3 C3: the grid colour follows classify(), directional gets 'promising' ─
+{
+  const lines = { directionalPurchases: 6, targetRoas: 2.25, killRoas: 1.8 };
+  ok("tone: a read winner is winner", roasTone({ purchases: 40, roas: 2.6, outcome: "winner" }, lines) === "winner");
+  ok("tone: above target but not a winner (directional) is promising, not winner", roasTone({ purchases: 9, roas: 3.1, outcome: "open" }, lines) === "promising");
+  ok("tone: above target and read but too young is promising", roasTone({ purchases: 30, roas: 2.6, outcome: "open" }, lines) === "promising");
+  ok("tone: under the directional gate is muted whatever the ROAS", roasTone({ purchases: 3, roas: 9, outcome: "open" }, lines) === "muted");
+  ok("tone: below the kill line is negative, between the lines neutral", roasTone({ purchases: 40, roas: 1.2, outcome: "loser" }, lines) === "negative" && roasTone({ purchases: 40, roas: 2.0, outcome: "carrier" }, lines) === "neutral");
+  const display = { ...T, targetRoas: Number.POSITIVE_INFINITY, killRoas: 0 };
+  ok("tone: with no lines set nothing is coloured", roasTone({ purchases: 40, roas: 9, outcome: classify({ ...ZERO, spend: 1000, revenue: 9000, purchases: 40 }, 2, display, 99) }, { directionalPurchases: 6, targetRoas: Infinity, killRoas: 0 }) === "neutral");
+}
+
+// ── ME3 C4: hit rate independent of Target CPA, CPA unit, no 'Body problem' at CPA 0 ─
+{
+  const base: StoredCreativeSettings = {
+    clientId: "venev", breakEvenRoas: 1.89, killRoas: 1.9, targetRoas: 2.1, targetCpa: null, grossMargin: null,
+    scaleMultiplier: 1.2, aggressiveMultiplier: 2, holdGateX: 1, iterateGateX: 2, killGateX: 3,
+    minAdsetBudgetDaily: null, perAdFloorDaily: null, monthlyBudget: null, noTouchDays: 14, tier: null,
+    readPurchases: 10, directionalPurchases: 5, maxCiHalfWidth: 0.25, hookRateFloor: 0.2, holdRateFloor: 0.05,
+    frequencyWarn: 2, frequencyAct: 3, testPurchases: 25, packsPerMonthTarget: 2, hooksPerBodyTarget: 6,
+    netNewShareTarget: 0.2, updatedAt: null, updatedBy: null,
+  };
+  ok("no CPA: verdict thresholds stay null (verdicts and spend gates need it)", toThresholds(base) === null);
+  const hit = toHitRateThresholds(base);
+  ok("no CPA: the hit rate still has thresholds (target + read threshold)", hit !== null && hit.targetRoas === 2.1 && hit.readPurchases === 10);
+  ok("no target: no hit rate thresholds", toHitRateThresholds({ ...base, targetRoas: null }) === null);
+  ok("no kill line: hit rate thresholds still exist, kill reads 0", toHitRateThresholds({ ...base, killRoas: null })?.killRoas === 0);
+  const full = toThresholds({ ...base, targetCpa: 783 })!;
+  ok("with a CPA the hit rate and verdict thresholds agree on every winner input", hit !== null && hit.targetRoas === full.targetRoas && hit.readPurchases === full.readPurchases);
+  const row = ad({ purchases: 12, spend: 1000, revenue: 2900, priorRoas: 2.0 });
+  ok("a winner is a winner with or without a CPA", launchStatus(row, hit!) === launchStatus(row, full));
+  ok("hit rate without CPA is a number", hitRate([row, ad({ purchases: 1, revenue: 5 })], hit!).rate === 0.5);
+
+  const noCpa = toDisplayThresholds(base);
+  ok("display thresholds carry CPA 0 when none is set", noCpa.targetCpa === 0);
+  const orphan = diagnose({ ...ZERO, impressions: 50000, clicks: 900, spend: 5000, purchases: 0 }, "STAT", noCpa);
+  ok("diagnose: a zero-purchase ad is NOT 'Body problem' when there is no CPA", orphan.code !== "body-problem", orphan.code);
+  const vid = diagnose({ ...ZERO, impressions: 200000, videoPlays: 90000, videoViews: 48000, videoThruplays: 14000, clicks: 4800, spend: 30000, purchases: 0 }, "DYN", noCpa);
+  ok("diagnose: same for video", vid.code !== "body-problem", vid.code);
+  const withCpa = diagnose({ ...ZERO, impressions: 50000, clicks: 900, spend: 5000, purchases: 0 }, "STAT", { ...noCpa, targetCpa: 500 });
+  ok("diagnose: with a CPA the body problem still fires", withCpa.code === "body-problem");
+}
+
+// ── ME3 C5: relative hook and hold floors ───────────────────────────────────
+{
+  ok("percentile: linear interpolation like PERCENTILE_CONT", percentile([1, 2, 3, 4], 0.25) === 1.75 && percentile([5], 0.25) === 5 && percentile([], 0.25) === null && percentile([0, 10], 0.5) === 5);
+  const vids = (n: number, hook: (i: number) => number, hold: (i: number) => number): VideoAdRates[] =>
+    Array.from({ length: n }, (_, i) => ({ impressions: 100000, plays: hook(i) * 100000, thruplays: hold(i) * 100000, starts: 60000 }));
+  const fallback = { hookRateFloor: 0.2, holdRateFloor: 0.05 };
+  const few = relativeFloors(vids(FLOOR_MIN_ADS - 1, () => 0.3, () => 0.08), fallback);
+  ok("fewer than 15 genuine video ads: the stored floors apply, labelled fallback", few.basis === "fallback" && few.hookRateFloor === 0.2 && few.holdRateFloor === 0.05 && few.ads === 14);
+  const fifteen = relativeFloors(vids(15, (i) => 0.2 + i * 0.01, (i) => 0.03 + i * 0.002), fallback);
+  // p25 of 15 values is index 3.5: hook 0.2 + 0.035 = 0.235, hold 0.03 + 0.007 = 0.037.
+  ok("15 genuine ads: p25 of hook and of hold, labelled relative", fifteen.basis === "relative" && Math.abs(fifteen.hookRateFloor - 0.235) < 1e-9 && Math.abs(fifteen.holdRateFloor - 0.037) < 1e-9 && fifteen.ads === 15, JSON.stringify(fifteen));
+  const banners: VideoAdRates[] = Array.from({ length: 30 }, () => ({ impressions: 100000, plays: 500, thruplays: 100, starts: 3000 }));
+  const mixed = relativeFloors([...vids(15, (i) => 0.2 + i * 0.01, (i) => 0.03 + i * 0.002), ...banners], fallback);
+  ok("banners with incidental video starts (3% of impressions) are not in the percentile", mixed.ads === 15 && Math.abs(mixed.hookRateFloor - 0.235) < 1e-9);
+  ok("genuine video: 30% starts and 5,000 impressions", isGenuineVideo({ impressions: 5000, plays: 1000, thruplays: 300, starts: 1500 }) && !isGenuineVideo({ impressions: 4999, plays: 1000, thruplays: 300, starts: 3000 }) && !isGenuineVideo({ impressions: 10000, plays: 1000, thruplays: 300, starts: 2999 }));
+  const t2 = withFloors(T, fifteen);
+  ok("withFloors replaces the two floors and nothing else", t2.hookRateFloor === fifteen.hookRateFloor && t2.holdRateFloor === fifteen.holdRateFloor && t2.targetRoas === T.targetRoas && t2.floorBasis === "relative");
+  ok("withFloors with no data leaves the thresholds as they were", withFloors(T, null) === T);
+  const d = diagnose({ ...ZERO, impressions: 200000, videoPlays: 90000, videoViews: 40000, videoThruplays: 14000, clicks: 4800, spend: 30000, purchases: 51 }, "DYN", t2);
+  ok("a hook under the relative floor says whose floor it is", d.code === "hook-problem" && d.say.includes("your p25 of video ads") && d.say.includes("23.5%"), d.say);
+  const d0 = diagnose({ ...ZERO, impressions: 200000, videoPlays: 90000, videoViews: 30000, videoThruplays: 14000, clicks: 4800, spend: 30000, purchases: 51 }, "DYN", T);
+  ok("the stored floor keeps its old wording", d0.code === "hook-problem" && !d0.say.includes("p25"), d0.say);
+  ok("floor SQL: genuine video only, 180 days, 5,000 impressions, one client", /SAFE_DIVIDE\(SUM\(p\.video_play_actions\), SUM\(p\.impressions\)\) >= 0\.3/.test(VIDEO_FLOOR_SQL) && VIDEO_FLOOR_SQL.includes("INTERVAL 180 DAY") && VIDEO_FLOOR_SQL.includes(">= 5000") && VIDEO_FLOOR_SQL.includes("@clientId") && !VIDEO_FLOOR_SQL.includes("\u2014"));
+}
+
+// ── ME3 C6: when the table was built, and the delta while maturing ──────────
+{
+  const now = new Date("2026-10-05T12:00:00Z");
+  ok("same day, Prague time: 'Updated 10:10'", updatedLabel("2026-10-05T08:10:12Z", now) === "Updated 10:10", String(updatedLabel("2026-10-05T08:10:12Z", now)));
+  ok("an older build shows the day: 'Updated 3 Oct 10:10'", updatedLabel("2026-10-03T08:10:12Z", now) === "Updated 3 Oct 10:10", String(updatedLabel("2026-10-03T08:10:12Z", now)));
+  ok("no timestamp or a bad one shows nothing", updatedLabel(null, now) === null && updatedLabel("not a date", now) === null);
+  const maturing = { launched: 10, winners: 1, open: 3, rate: 0.1, maturing: true };
+  const settled = { launched: 12, winners: 2, open: 0, rate: 0.17, maturing: false };
+  ok("delta withheld: current maturing against a settled comparison", deltaWithheld(maturing, settled) === true);
+  ok("delta kept: both settled, both maturing, or the current one settled", deltaWithheld(settled, settled) === false && deltaWithheld(maturing, maturing) === false && deltaWithheld(settled, maturing) === false);
+}
+
+// ── ME3 C10: the reference is the client's own trailing 365 days ────────────
+{
+  ok("the reference window starts 364 days before through (365 days inclusive)", referenceStart("2026-10-04") === "2025-10-05" && referenceStart("2026-03-01") === "2025-03-02");
+  const rows = [
+    ad({ firstDate: "2025-10-05" }),                         // first day of the window, a winner
+    ad({ firstDate: "2025-10-04" }),                         // one day too old: out
+    ad({ firstDate: "2026-02-01", purchases: 1, revenue: 5 }),
+    ad({ firstDate: "2026-09-01", purchases: 1, revenue: 5 }),
+    ad({ firstDate: "2026-02-01", isRelaunch: true }),        // relaunch: out
+  ];
+  ok("reference = winners / launched over the 365 days: 1 of 3", referenceRate(rows, T, "2026-10-04") === 1 / 3);
+  ok("reference is null without thresholds and without launches", referenceRate(rows, null, "2026-10-04") === null && referenceRate([], T, "2026-10-04") === null);
+  ok("there is no fixed 5% constant any more", !Object.keys(require("@/lib/creative/hitRate")).includes("HIT_RATE_REFERENCE"));
+}
+
+// ── ME3 C7: launch context and pack-level hit rate ───────────────────────────
+{
+  const range = { from: "2026-01-01", to: "2026-09-30" };
+  const L = (over: Partial<LaunchRow>) => ad({ adsetId: "s1", adsetFirstDate: "2026-03-01", isNewAdset: true, ...over });
+  const win = { purchases: 20, revenue: 2800 };
+  const lose = { purchases: 2, revenue: 50 };
+  const rows = [
+    L({ adId: "a", adsetId: "s1", ...win }),
+    L({ adId: "b", adsetId: "s1", ...lose, isNewAdset: false }),
+    L({ adId: "c", adsetId: "s2", adsetFirstDate: "2026-04-01", ...lose }),
+    L({ adId: "d", adsetId: "s2", adsetFirstDate: "2026-04-01", ...lose, isNewAdset: false }),
+    L({ adId: "e", adsetId: "s3", adsetFirstDate: "2025-06-01", ...win, isNewAdset: false }),   // an old ad set
+    L({ adId: "f", adsetId: null, adsetFirstDate: null, ...lose, isNewAdset: null }),
+    L({ adId: "g", adsetId: "s4", adsetFirstDate: "2026-05-01", ...lose, isRelaunch: true }),   // relaunch: out
+  ];
+  const ctx = launchContext(rows, T);
+  ok("context: new ad set 2 launched 1 winner; existing 3 launched 1 winner; 1 unknown", ctx.ready && ctx.newAdset.launched === 2 && ctx.newAdset.winners === 1 && ctx.existing.launched === 3 && ctx.existing.winners === 1 && ctx.unknown === 1 && ctx.launches === 6, JSON.stringify(ctx));
+  ok("context: rates", ctx.newAdset.rate === 0.5 && Math.abs((ctx.existing.rate ?? 0) - 1 / 3) < 1e-12);
+  const packs = packHitRate(rows, T, range);
+  ok("packs: ad sets first delivered in range with a winner (s1 yes, s2 no; s3 is old, s4 only a relaunch)", packs.ready && packs.launched === 2 && packs.winners === 1 && packs.rate === 0.5, JSON.stringify(packs));
+  ok("packs: an ad added later to a new ad set counts toward the pack", packHitRate([L({ adId: "p", adsetId: "s9", ...lose }), L({ adId: "q", adsetId: "s9", ...win, isNewAdset: false })], T, range).winners === 1);
+  const open = packHitRate([L({ adId: "o", adsetId: "s7", ...lose, ageDays: 20 })], T, range);
+  ok("packs: no winner and a young ad is open, rate is a lower bound", open.open === 1 && open.maturing === true && open.winners === 0);
+  const old = rows.map((r) => ({ ...r, adsetId: undefined, adsetFirstDate: undefined, isNewAdset: undefined }));
+  ok("columns missing: context and packs are not ready, never a split of zeros", launchContext(old, T).ready === false && packHitRate(old, T, range).ready === false);
+  ok("no thresholds: counts but no winners", launchContext(rows, null).newAdset.winners === null && packHitRate(rows, null, range).winners === null && packHitRate(rows, null, range).launched === 2);
+  ok("nothing launched: not ready (the chart already says so)", launchContext([], T).ready === false && launchContext([], T).launches === 0);
+  const hrefs = { all: "/creative", video: "/creative?hrfmt=video", static: "/creative?hrfmt=static" };
+  const months = launchMonths(rows, T, "2026-09-30", range);
+  const html = renderToStaticMarkup(createElement(HitRateTrend, { state: "ready", months, format: "all", hrefs, concepts: null, context: ctx, packs }));
+  ok("trend shows the context block with both rows and the pack row", html.includes("Launch context") && html.includes("New ad set") && html.includes("Added to existing ad set") && html.includes("Packs (new ad sets) with a winner"));
+  const nr = renderToStaticMarkup(createElement(HitRateTrend, { state: "ready", months, format: "all", hrefs, concepts: null, context: launchContext(old, T), packs: packHitRate(old, T, range) }));
+  ok("columns missing: one muted line, no table", nr.includes("Launch context is not ready.") && !nr.includes("New ad set"));
+}
+
+// ── ME3 C2: one attribution label, and it is not the old literal ────────────
+{
+  ok("the label says what is true", ATTRIBUTION_LABEL === "Meta default attribution (per ad set)");
+  const { readFileSync, readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
+  const { join } = require("node:path") as typeof import("node:path");
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((f: string) => { const p = join(dir, f); return statSync(p).isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(f) ? [p] : []; });
+  const root = join(__dirname, "..");
+  const hits = [...walk(join(root, "components")), ...walk(join(root, "app")), ...walk(join(root, "lib"))].filter((f) => /customers excluded/i.test(readFileSync(f, "utf8")) && !f.endsWith("attribution.ts"));
+  ok("no screen prints '7-day click, customers excluded' any more", hits.length === 0, hits.join(", "));
+  const bar = renderToStaticMarkup(createElement(require("@/components/creative/CreativeBar").CreativeBar, { unmapped: 0, through: "2026-10-04", updated: "Updated 10:10", currency: "CZK", href: "#u" }));
+  ok("the bar prints the label from the constant, the date and 'Updated 10:10'", bar.includes(ATTRIBUTION_LABEL) && bar.includes("through 2026-10-04") && bar.includes("Updated 10:10"));
+  ok("the bar without a build time shows no 'Updated'", !renderToStaticMarkup(createElement(require("@/components/creative/CreativeBar").CreativeBar, { unmapped: 0, through: "2026-10-04", currency: "CZK", href: "#u" })).includes("Updated"));
+}
+
+// ── Queries: shape of the anchor read ────────────────────────────────────────
+{
+  ok("anchor SQL reads one client's launch table only", /mart\.rpt_ad_launch/.test(ANCHOR_SQL) && ANCHOR_SQL.includes("@clientId") && ANCHOR_SQL.includes("age_days") && ANCHOR_SQL.includes("prior_roas") && !ANCHOR_SQL.includes("\u2014"));
+  ok("launch SQL reaches back to the reference window and selects all columns (ad set columns arrive later)", /INTERVAL 364 DAY/.test(LAUNCH_SQL) && /r\.\*/.test(LAUNCH_SQL) && /refreshed_at/.test(LAUNCH_SQL));
 }
 
 async function main() {
@@ -318,24 +524,56 @@ async function main() {
     const missing = await getLaunches("manami", range);
     ok("missing table: not ready, no throw", missing.state === "not-ready");
 
-    stub(null, [{ through: null, table_rows: 0, ad_id: null }]);
+    stub(null, [{ table_through: null, table_rows: 0, ad_id: null }]);
     const empty = await getLaunches("manami", range);
     ok("table exists but holds nothing for the client: not ready, not zero", empty.state === "not-ready");
 
-    stub(null, [{ through: { value: "2026-10-04" }, table_rows: 450, ad_id: null }]);
+    stub(null, [{ table_through: { value: "2026-10-04" }, table_rows: 450, ad_id: null }]);
     const quiet = await getLaunches("manami", range);
     ok("client present, no ad matches: ready with no rows", quiet.state === "ready" && quiet.rows.length === 0 && quiet.through === "2026-10-04");
 
     stub(null, [
-      { through: { value: "2026-10-04" }, table_rows: 450, ad_id: "1", first_date: { value: "2026-07-03" }, age_days: 93, spend: 1000, revenue: 2800, purchases: 15, is_video: false, is_relaunch: false, is_preexisting: false, prior_roas: 2.029 },
+      { table_through: { value: "2026-10-04" }, table_refreshed_at: "2026-10-05T08:10:12Z", table_rows: 450, ad_id: "1", first_date: { value: "2026-07-03" }, age_days: 93, spend: 1000, revenue: 2800, purchases: 15, is_video: false, is_relaunch: false, is_preexisting: false, prior_roas: 2.029 },
     ]);
     const got = await getLaunches("manami", range);
     ok("a populated result maps to launches", got.state === "ready" && got.rows.length === 1 && got.rows[0].priorRoas === 2.029);
+    ok("ME3 C6: the table's build time rides along", got.state === "ready" && got.refreshedAt === "2026-10-05T08:10:12Z");
+    ok("ME3 C7: a table without the ad set columns maps them to undefined (not ready), never to false", got.state === "ready" && got.rows[0].isNewAdset === undefined && got.rows[0].adsetId === undefined && got.rows[0].adsetFirstDate === undefined);
 
     stub({ code: 403, message: "Access Denied: Table oneeighty-warehouse:mart.rpt_ad_launch: Permission denied" });
     let threw = false;
     try { await getLaunches("manami", range); } catch { threw = true; }
     ok("a permission failure is thrown, not shown as not ready", threw);
+  } finally {
+    (BigQuery.prototype as unknown as { query: unknown }).query = real;
+  }
+}
+
+// ── ME3: the anchor read ─────────────────────────────────────────────────────
+{
+  const real = BigQuery.prototype.query;
+  const stub = (error: { code?: number; message: string } | null, rows: Array<Record<string, unknown>> = []) => {
+    (BigQuery.prototype as unknown as { query: unknown }).query = async () => {
+      if (error) throw Object.assign(new Error(error.message), error);
+      return [rows];
+    };
+  };
+  try {
+    stub({ code: 404, message: "Not found: Table oneeighty-warehouse:mart.rpt_ad_launch was not found in location EU" });
+    ok("anchor: a missing table reads as null (no age rule, window mean)", (await getLaunchAnchor("manami")) === null);
+    stub(null, []);
+    ok("anchor: an empty client reads as null", (await getLaunchAnchor("manami")) === null);
+    stub(null, [
+      { ad_id: "1", age_days: 40, prior_roas: "2.029", through: { value: "2026-10-04" }, refreshed_at: "2026-10-05T08:10:12Z" },
+      { ad_id: "2", age_days: 3, prior_roas: "2.029", through: { value: "2026-10-04" }, refreshed_at: "2026-10-05T08:10:12Z" },
+    ]);
+    const a = await getLaunchAnchor("manami");
+    ok("anchor: prior, through, build time and ages by ad", a !== null && a.priorRoas === 2.029 && a.through === "2026-10-04" && a.refreshedAt === "2026-10-05T08:10:12Z" && a.ageByAd.get("1") === 40 && a.ageByAd.get("2") === 3);
+    stub({ code: 403, message: "Access Denied: Table oneeighty-warehouse:mart.rpt_ad_launch: Permission denied" });
+    let threw = false;
+    try { await getLaunchAnchor("manami"); } catch { threw = true; }
+    ok("anchor: a permission failure is thrown", threw);
+    ok("anchor: the demo client is served without BigQuery", ((await getLaunchAnchor("demo"))?.ageByAd.size ?? 0) > 0);
   } finally {
     (BigQuery.prototype as unknown as { query: unknown }).query = real;
   }

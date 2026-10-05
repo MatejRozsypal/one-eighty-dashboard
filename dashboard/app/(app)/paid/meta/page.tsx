@@ -44,8 +44,8 @@ import {
 import { CampaignDetail } from "@/components/paid/meta/CampaignDetail";
 import { HitRateTile } from "@/components/paid/meta/HitRateTile";
 import { getLaunches } from "@/lib/queries/creativeLaunch";
-import { getCreativeSettings, toThresholds } from "@/lib/creative/store";
-import { hitRate, inRange, tileText } from "@/lib/creative/hitRate";
+import { getCreativeSettings, toHitRateThresholds } from "@/lib/creative/store";
+import { hitRate, inRange, referenceRate, tileText } from "@/lib/creative/hitRate";
 import { AudienceBreakdown } from "@/components/paid/meta/AudienceBreakdown";
 import { pick } from "@/components/paid/meta/links";
 
@@ -113,10 +113,13 @@ export default async function PaidMetaPage({
     );
   }
 
-  const thresholds = toThresholds(creativeSettings);
+  // The hit rate needs a target ROAS and a read threshold, not a Target CPA.
+  const thresholds = toHitRateThresholds(creativeSettings);
   const launched = launches.state === "ready" ? launches : null;
   const hit = launched ? hitRate(inRange(launched.rows, params.range), thresholds) : null;
-  const hitText = tileText(hit, thresholds);
+  // Reference: the client's own hit rate over its trailing 12 months.
+  const reference = launched ? referenceRate(launched.rows, thresholds, launched.through) : null;
+  const hitText = tileText(hit, thresholds, reference);
   // On this tile a missing threshold says so in the sub line, as the way out.
   const hitTile =
     hit && thresholds === null ? { ...hitText, sub: "Set thresholds" } : hitText;

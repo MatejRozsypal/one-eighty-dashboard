@@ -183,7 +183,9 @@ export function toAdView(
   signed: { thumbUrl: string | null; assetUrl: string | null; downloadUrl: string | null },
   accountMeanRoas: number,
   accountSpend: number,
-  t: CreativeThresholds
+  t: CreativeThresholds,
+  /** Days since first delivery, for the 14-day winner rule. Null when unknown. */
+  ageDays: number | null = null
 ): AdView {
   const r = read(ad.components, accountMeanRoas, accountSpend, t);
   const d = derive(ad.components);
@@ -209,7 +211,7 @@ export function toAdView(
     ciLow: r.ciLow,
     ciHigh: r.ciHigh,
     confidence: r.confidence,
-    outcome: classify(ad.components, accountMeanRoas, t),
+    outcome: classify(ad.components, accountMeanRoas, t, ageDays),
 
     cpa: d.cpa,
     ctr: d.ctr,

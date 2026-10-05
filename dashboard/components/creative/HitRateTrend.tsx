@@ -15,8 +15,14 @@
  * A month with no launches shows a dash. It is not 0%: nothing was launched,
  * so nothing could win.
  *
- * Hand-written SVG per the repo convention. The dashed rule is the reference
- * (about 5%), not an industry benchmark.
+ * Hand-written SVG per the repo convention. The dashed rule is the client's
+ * own hit rate over its trailing 12 months ("Your 12-mo rate"). There is no
+ * fixed benchmark: a number with no source would only teach the reader to
+ * ignore the line.
+ *
+ * Under the chart, the launch context: hit rate for ads launched into a NEW ad
+ * set vs added to an existing one, and the pack-level rate (ad sets with at
+ * least one winner), the SOP's own unit.
  *
  * View state is in the URL (`hrfmt`), so the segmented control is plain links
  * and the whole component is a server component.
@@ -28,11 +34,14 @@ import { NO_VALUE } from "@/lib/format";
 import {
   FORMAT_FILTERS,
   HIT_RATE_MATURITY_DAYS,
-  HIT_RATE_REFERENCE,
+  HIT_RATE_REFERENCE_LABEL,
   formatRate,
   type ConceptSplitRow,
   type FormatFilter,
+  type HitRate,
+  type LaunchContext,
   type LaunchMonth,
+  type PackHitRate,
 } from "@/lib/creative/hitRate";
 
 const FORMAT_LABELS: Record<FormatFilter, string> = {
@@ -51,13 +60,13 @@ export function rateTicks(max: number): number[] {
 }
 
 /** The chart's top: above the tallest bar and the reference, in steps the ticks land on. */
-export function rateCeiling(months: LaunchMonth[]): number {
-  const top = Math.max(HIT_RATE_REFERENCE, ...months.map((m) => m.rate ?? 0));
+export function rateCeiling(months: LaunchMonth[], reference: number | null = null): number {
+  const top = Math.max(0.05, reference ?? 0, ...months.map((m) => m.rate ?? 0));
   const step = top <= 0.2 ? 0.05 : top <= 0.5 ? 0.1 : 0.25;
   return Math.ceil((top * 1.15) / step - 1e-9) * step;
 }
 
-function Chart({ months }: { months: LaunchMonth[] }) {
+function Chart({ months, reference }: { months: LaunchMonth[]; reference: number | null }) {
   const W = 900;
   const H = 214;
   const ML = 36;
@@ -66,20 +75,22 @@ function Chart({ months }: { months: LaunchMonth[] }) {
   const MB = 46;
   const pw = W - ML - MR;
   const ph = H - MT - MB;
-  const maxY = rateCeiling(months);
+  const maxY = rateCeiling(months, reference);
   const ticks = rateTicks(maxY);
   const slot = pw / months.length;
   const barW = slot * 0.5;
   const X = (i: number) => ML + (i + 0.5) * slot;
   const Y = (v: number) => MT + ph - (v / maxY) * ph;
-  const refY = Y(HIT_RATE_REFERENCE);
+  const refY = reference === null ? null : Y(reference);
 
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
       className="h-auto w-full"
       role="img"
-      aria-label={`Hit rate for ads launched in each of the last ${months.length} months, against a reference of about 5%`}
+      aria-label={`Hit rate for ads launched in each of the last ${months.length} months${
+        reference === null ? "" : `, against ${HIT_RATE_REFERENCE_LABEL.toLowerCase()} of ${formatRate(reference)}`
+      }`}
     >
       <defs>
         <pattern id="hr-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -171,26 +182,30 @@ function Chart({ months }: { months: LaunchMonth[] }) {
         );
       })}
 
-      <line
-        x1={ML}
-        x2={W - MR}
-        y1={refY}
-        y2={refY}
-        stroke="var(--text-strong)"
-        strokeWidth="1.25"
-        strokeDasharray="4 3"
-      />
-      <text
-        x={W - MR}
-        y={refY - 6}
-        textAnchor="end"
-        fontFamily="var(--font-mono)"
-        fontSize="10.5"
-        fill="var(--text-strong)"
-        letterSpacing=".05em"
-      >
-        REF. ~5%
-      </text>
+      {refY !== null && reference !== null && (
+        <>
+          <line
+            x1={ML}
+            x2={W - MR}
+            y1={refY}
+            y2={refY}
+            stroke="var(--text-strong)"
+            strokeWidth="1.25"
+            strokeDasharray="4 3"
+          />
+          <text
+            x={W - MR}
+            y={refY - 6}
+            textAnchor="end"
+            fontFamily="var(--font-mono)"
+            fontSize="10.5"
+            fill="var(--text-strong)"
+            letterSpacing=".05em"
+          >
+            {`${HIT_RATE_REFERENCE_LABEL.toUpperCase()} ${formatRate(reference)}`}
+          </text>
+        </>
+      )}
     </svg>
   );
 }
@@ -253,6 +268,59 @@ function ConceptTable({ rows }: { rows: ConceptSplitRow[] }) {
   );
 }
 
+function ContextRow({ label, r, noun }: { label: string; r: HitRate; noun?: string }) {
+  return (
+    <tr className="border-t border-hairline">
+      <td className="py-2 pr-3 text-content-strong">{label}</td>
+      <td className="px-3 py-2 text-right font-mono tabular">{r.launched}</td>
+      <td className="px-3 py-2 text-right font-mono tabular">{r.winners ?? NO_VALUE}</td>
+      <td className="py-2 pl-3 text-right font-mono tabular" title={noun}>
+        {formatRate(r.rate) ?? NO_VALUE}
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * New ad set vs added to an existing ad set, then the pack-level rate. Not
+ * ready (the launch table lacks the ad set columns) is one line, never a split
+ * of zeros.
+ */
+function ContextBlock({ context, packs }: { context: LaunchContext; packs: PackHitRate | null }) {
+  if (context.launches === 0) return null;
+  if (!context.ready) {
+    return (
+      <p className="m-0 text-[12.5px] text-content-muted">Launch context is not ready.</p>
+    );
+  }
+  return (
+    <div className="glass px-4 py-3">
+      <table className="w-full border-collapse text-left text-[13px]">
+        <thead>
+          <tr className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+            <th className="py-2 pr-3 font-medium">Launch context</th>
+            <th className="px-3 py-2 text-right font-medium">Launched</th>
+            <th className="px-3 py-2 text-right font-medium">Winners</th>
+            <th className="py-2 pl-3 text-right font-medium">Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          <ContextRow label="New ad set" r={context.newAdset} />
+          <ContextRow label="Added to existing ad set" r={context.existing} />
+          {packs && packs.ready && (
+            <ContextRow label="Packs (new ad sets) with a winner" r={packs} noun="Ad sets that first delivered in the range" />
+          )}
+        </tbody>
+      </table>
+      {context.unknown > 0 && (
+        <p className="m-0 mt-1 text-[11.5px] text-content-muted">
+          {context.unknown} {context.unknown === 1 ? "launch" : "launches"} with no ad set, in neither row.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export type HitRateTrendState = "ready" | "not-ready" | "no-thresholds";
 
 export function HitRateTrend({
@@ -261,6 +329,9 @@ export function HitRateTrend({
   format,
   hrefs,
   concepts,
+  reference = null,
+  context = null,
+  packs = null,
 }: {
   state: HitRateTrendState;
   months: LaunchMonth[];
@@ -268,6 +339,11 @@ export function HitRateTrend({
   hrefs: Record<FormatFilter, string>;
   /** Null hides the split (fewer than half of the launches in range carry a concept). */
   concepts: ConceptSplitRow[] | null;
+  /** The client's own trailing 12-month hit rate, drawn as the dashed line. Null draws none. */
+  reference?: number | null;
+  /** Hit rate by launch context for the launches in range. Null hides the block. */
+  context?: LaunchContext | null;
+  packs?: PackHitRate | null;
 }) {
   const empty = months.every((m) => m.launched === 0);
   const maturing = months.some((m) => m.maturing);
@@ -276,7 +352,7 @@ export function HitRateTrend({
     <section className="flex flex-col gap-3">
       <SectionHead
         title="Hit rate by launch month"
-        info={`Winners over ads first delivered in the month, judged lifetime to date. Hatched months have ads under ${HIT_RATE_MATURITY_DAYS} days old, so the rate can still rise. Highlighted months are in the selected range.`}
+        info={`Winners over ads first delivered in the month, judged lifetime to date. Hatched months have ads under ${HIT_RATE_MATURITY_DAYS} days old, so the rate can still rise. Highlighted months are in the selected range. The dashed line is ${HIT_RATE_REFERENCE_LABEL.toLowerCase()}.`}
       >
         {state === "ready" && <FormatControl format={format} hrefs={hrefs} />}
       </SectionHead>
@@ -284,7 +360,7 @@ export function HitRateTrend({
       {state === "not-ready" ? (
         <p className="m-0 text-[13px] text-content-muted">Launch data is not ready.</p>
       ) : state === "no-thresholds" ? (
-        <p className="m-0 text-[13px] text-content-muted">Set thresholds in Settings.</p>
+        <p className="m-0 text-[13px] text-content-muted">Set a target ROAS in Settings.</p>
       ) : (
         <div className="glass px-4 py-3.5">
           {empty ? (
@@ -292,7 +368,7 @@ export function HitRateTrend({
               No launches in these months.
             </p>
           ) : (
-            <Chart months={months} />
+            <Chart months={months} reference={reference} />
           )}
           {maturing && !empty && (
             <p className="m-0 mt-1 text-[11.5px] text-content-muted">
@@ -301,6 +377,8 @@ export function HitRateTrend({
           )}
         </div>
       )}
+
+      {state === "ready" && context && <ContextBlock context={context} packs={packs} />}
 
       {state === "ready" && concepts && concepts.length > 0 && (
         <div className="glass px-4 py-3">

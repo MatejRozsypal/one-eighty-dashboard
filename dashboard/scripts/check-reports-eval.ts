@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { matchBenchmarks, fxFactor, regionPreference } from "@/lib/reports/benchmarkMatch";
 import type { BenchmarkRow, ComponentRow, ComponentSum, FxRate, ResolvedWidget } from "@/lib/reports/contracts";
 import { NO_THRESHOLDS, classifyEntityRows, evaluateWidget } from "@/lib/reports/evaluate";
-import { HIT_RATE_REFERENCE, hitRate, launchStatus, type LaunchRow } from "@/lib/creative/hitRate";
+import { hitRate, launchStatus, type LaunchRow } from "@/lib/creative/hitRate";
 import type { CreativeThresholds } from "@/lib/creative/stats";
 import { FIXTURE_CLIENTS, FIXTURE_FILTERS, FIXTURE_RESOLVED, FIXTURE_ROWS, FIXTURE_TODAY } from "@/lib/reports/fixtures";
 import { CAPABILITIES, evalCapExpr, missingCapabilities, toReportCapabilities } from "@/lib/reports/registry/capabilities";
@@ -899,7 +899,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   check("HR3: hit rate = winners / launched, percent, 1 decimal, up, not benchmarkable", hr.kind === "ratio" && eqJson(hr.numerator, [{ c: "ad_launch.winners", sign: 1, nullAs: "gap" }]) && eqJson(hr.denominator, [{ c: "ad_launch.launched", sign: 1, nullAs: "gap" }]) && hr.unit === "percent" && hr.format.decimals === 1 && hr.goodWhen === "up" && !hr.benchmarkable);
   check("HR3: winners and ads launched are sums of the classified counts", METRICS.winners.kind === "sum" && eqJson(METRICS.winners.terms.map((x) => x.c), ["ad_launch.winners"]) && METRICS.ads_launched.kind === "sum" && eqJson(METRICS.ads_launched.terms.map((x) => x.c), ["ad_launch.launched"]));
   check("HR3: the three need Meta and sit in the Creative group", (["hit_rate", "winners", "ads_launched"] as const).every((id) => evalCapExpr(METRICS[id].meta.requires, { ...alpha.capabilities, meta: false }) === false && METRICS[id].group === "creative"));
-  check("HR3: reference ~5% is the Creative constant, not a benchmark", hr.reference?.value === HIT_RATE_REFERENCE && HIT_RATE_REFERENCE === 0.05 && hr.reference.label === "Reference ~5%" && METRICS.winners.reference === undefined);
+  check("ME3 C10: no metric carries a fixed reference value (the unsourced ~5% is gone)", hr.reference === undefined && METRICS.winners.reference === undefined && METRICS.ads_launched.reference === undefined);
   check("HR3: caveats maturing and lifetime on hit rate and winners only", eqJson(hr.caveats, ["cohort_maturing", "lifetime_to_date"]) && eqJson(METRICS.winners.caveats, ["cohort_maturing", "lifetime_to_date"]) && METRICS.ads_launched.caveats === undefined);
   check("HR3: cohort_maturing is data-driven, lifetime_to_date always applies", FIXTURE_CLIENTS.every((c) => !CAVEATS.cohort_maturing.applies(c) && CAVEATS.lifetime_to_date.applies(c)));
   check("HR3: ad_launch is an entity mart on first_date, no currency, relaunches and pre-existing ads excluded", MARTS.ad_launch.table === "mart.rpt_ad_launch" && MARTS.ad_launch.dateColumn === "first_date" && MARTS.ad_launch.currencyColumn === null && MARTS.ad_launch.entity.key === "ad_id" && eqJson(MARTS.ad_launch.entity.exclude, ["is_preexisting", "is_relaunch"]));

@@ -10,13 +10,14 @@
  * Below sm the tile can shrink (min-w-0) and its header wraps, so nothing runs
  * past the card edge on a phone.
  *
- * Optional, for the Paid tabs: `delta` (a fraction, with `goodWhen` saying which
- * direction is good) renders a change chip under the figure, and `metricKey`
+ * Optional, for the Paid tabs: `change` (current, previous, kind; or the legacy
+ * `delta` fraction), with `goodWhen` saying which direction is good, renders a
+ * change chip under the figure that follows the delta toggle, and `metricKey`
  * adds the (i) tooltip with that metric's definition from `lib/metrics.ts`.
  * Callers that pass neither render exactly as before.
  */
 
-import { NO_VALUE, isNoValue } from "@/lib/format";
+import { NO_VALUE, isNoValue, type DeltaInput } from "@/lib/format";
 import { stateLine, type MetricState } from "@/components/dashboard/MetricCard";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
@@ -32,13 +33,15 @@ export interface Kpi {
   state?: MetricState;
   /** Change against the comparison period, as a fraction. Null shows no chip; omit it to hold no space. */
   delta?: number | null;
+  /** Current and comparison values plus the kind: the chip follows the delta toggle. Wins over `delta`. */
+  change?: DeltaInput | null;
   /** Which direction is good. Default "up"; spend, frequency and share are "neutral". */
   goodWhen?: GoodWhen;
   /** Key into `METRIC_DEFINITIONS`. Adds the (i) tooltip. */
   metricKey?: string;
 }
 
-export function KpiTile({ label, value, scope, state, delta, goodWhen = "up", metricKey }: Kpi) {
+export function KpiTile({ label, value, scope, state, delta, change, goodWhen = "up", metricKey }: Kpi) {
   const line = state ? stateLine(state) : null;
   const missing = value === null || isNoValue(value);
   const definition = metricKey ? METRIC_DEFINITIONS[metricKey] : undefined;
@@ -69,10 +72,10 @@ export function KpiTile({ label, value, scope, state, delta, goodWhen = "up", me
           {missing ? NO_VALUE : value}
         </span>
       )}
-      {line === null && delta !== undefined && delta !== null && (
-        <span className="flex min-w-0 max-w-full flex-wrap">
-          <DeltaChip delta={delta} goodWhen={goodWhen} />
-        </span>
+      {line === null && (change || (delta !== undefined && delta !== null)) && (
+        // No wrapper: a chip with nothing to show renders nothing, so the
+        // tile's gap is not spent on an empty row.
+        <DeltaChip delta={delta} change={change} goodWhen={goodWhen} className="self-start" />
       )}
     </div>
   );

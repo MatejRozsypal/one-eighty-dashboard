@@ -85,7 +85,15 @@ export function RankedWidget({ result, metrics, caveatTexts, view, pending = fal
               <NotesMark lines={cell.lowVolume && notes.length ? [...notes, "Low volume"] : notes} />
             </span>
             <span className="justify-self-end">
-              <CellDelta delta={cell.delta} kind={cell.deltaKind} goodWhen={metric.goodWhen} />
+              <CellDelta
+                delta={cell.delta}
+                kind={cell.deltaKind}
+                goodWhen={metric.goodWhen}
+                total={cell.total}
+                compareTotal={cell.compareTotal}
+                format={metric.format}
+                currency={result.currency}
+              />
             </span>
           </li>
         );

@@ -11,7 +11,7 @@
  * 1.13 (formats), 2.10 (gap rendering). Owner: RS7 (widgets).
  */
 
-import { NO_VALUE, formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
+import { NO_VALUE, formatMoney, formatNumber, formatPercent, formatRatio, type DeltaKind } from "@/lib/format";
 import type { FormatSpec, QueryGrain } from "@/lib/reports/registry/types";
 import { CELL_STATUS_LABEL, type MetricCell, type WidgetResult } from "@/lib/reports/types";
 
@@ -73,6 +73,20 @@ export function formatAxisValue(value: number | null | undefined, spec: FormatSp
 export function formatDeltaMagnitude(delta: number, kind: "relative" | "pp"): string {
   const magnitude = Math.abs(delta);
   return kind === "pp" ? `${(magnitude * 100).toFixed(1)} pp` : formatPercent(magnitude);
+}
+
+/** The delta kind of a registry format: percent metrics are rates (pp in both modes). */
+export function deltaKindOf(style: FormatSpec["style"]): DeltaKind {
+  switch (style) {
+    case "money":
+      return "money";
+    case "number":
+      return "count";
+    case "ratio":
+      return "ratio";
+    case "percent":
+      return "rate";
+  }
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;

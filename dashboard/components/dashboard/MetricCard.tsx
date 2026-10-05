@@ -25,7 +25,7 @@ import { Sparkline } from "@/components/ui/Sparkline";
 import { Badge } from "@/components/ui/Badge";
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
-import { NO_VALUE, isNoValue } from "@/lib/format";
+import { NO_VALUE, isNoValue, type DeltaInput } from "@/lib/format";
 
 const PLATFORM_COLORS: Record<string, string> = {
   shopify: "bg-platform-shopify",
@@ -61,6 +61,7 @@ export function MetricCard({
   label,
   value,
   delta,
+  change,
   goodWhen = "up",
   comparisonLabel,
   source,
@@ -71,7 +72,14 @@ export function MetricCard({
   label: string;
   /** Preformatted value. Null (or "n/a") renders a muted "n/a". */
   value: string | null;
+  /** Legacy: relative change as a fraction, always a percent. Prefer `change`. */
   delta?: number | null;
+  /**
+   * Current and comparison values plus the metric kind: the chip follows the
+   * delta toggle (percent or absolute). Null holds the row with no chip;
+   * omitted (with `delta` omitted) holds blank space.
+   */
+  change?: DeltaInput | null;
   goodWhen?: GoodWhen;
   comparisonLabel?: string;
   /** Platform key, or "Warehouse" for computed metrics. */
@@ -159,19 +167,26 @@ export function MetricCard({
               <span className="text-[12px] leading-[1.5] text-content-body">
                 {state.reason}
               </span>
-            ) : delta !== undefined ? (
+            ) : delta !== undefined || change !== undefined ? (
               <span
                 className="inline-flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap"
-                title={delta !== null && comparisonLabel ? comparisonLabel : undefined}
+                title={comparisonLabel}
               >
-                <DeltaChip delta={delta} goodWhen={goodWhen} />
-                {/* "vs prev period" is dropped below sm, where a two-column card
-                    is narrower than the chip plus the text. The title keeps it. */}
-                {delta !== null && comparisonLabel && (
-                  <span className="hidden truncate font-mono text-[11.5px] tracking-[0.02em] text-content-muted sm:inline">
-                    {comparisonLabel}
-                  </span>
-                )}
+                <DeltaChip
+                  delta={delta}
+                  change={change}
+                  goodWhen={goodWhen}
+                  after={
+                    /* "vs prev period" is dropped below sm, where a two-column
+                       card is narrower than the chip plus the text. The title
+                       keeps it. Shown only when the chip is. */
+                    comparisonLabel ? (
+                      <span className="hidden truncate font-mono text-[11.5px] tracking-[0.02em] text-content-muted sm:inline">
+                        {comparisonLabel}
+                      </span>
+                    ) : undefined
+                  }
+                />
               </span>
             ) : (
               // Comparison off, hold the vertical space so the card grid

@@ -32,7 +32,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { RouteProgress } from "@/components/ui/RouteProgress";
 import { SkeletonChart, SkeletonKpiRow, SkeletonTable } from "@/components/ui/Skeleton";
 
@@ -114,6 +114,15 @@ export function baseQueryFor(
   return target.search.startsWith("?") ? target.search.slice(1) : target.search;
 }
 
+/** True when two hrefs, resolved against `here`, point at the same path. Pure. */
+export function samePath(a: string, b: string, here: string): boolean {
+  try {
+    return new URL(a, here).pathname === new URL(b, here).pathname;
+  } catch {
+    return false;
+  }
+}
+
 interface NavigationState {
   /** True from the click until the server's new output is committed. */
   isPending: boolean;
@@ -134,6 +143,18 @@ interface NavigationState {
    * render, so two clicks in the same tick still see each other.
    */
   baseQuery: (pathname: string, committed: string) => string;
+  /**
+   * Write a display-only change (the delta mode) into the URL without a
+   * server render: no query reads it, so a round trip would re-run every
+   * BigQuery query on the page to redraw the same numbers.
+   *
+   * Race rule: while a navigation to the same page is in flight, `href` is
+   * handed to `navigate` instead, superseding it (the page pulses, and the
+   * change cannot be lost when the older target commits). While one to
+   * another page is in flight the URL is left alone; the caller's own state
+   * carries the change there. Build `href` on `baseQuery`.
+   */
+  replaceInPlace: (href: string) => void;
 }
 
 const NavigationContext = createContext<NavigationState>({
@@ -150,6 +171,9 @@ const NavigationContext = createContext<NavigationState>({
     if (typeof window !== "undefined") window.location.reload();
   },
   baseQuery: (_pathname, committed) => committed,
+  replaceInPlace: (href) => {
+    if (typeof window !== "undefined") window.history.replaceState(null, "", href);
+  },
 });
 
 export function useNavigation(): NavigationState {
@@ -169,6 +193,17 @@ export function NavigationPendingProvider({
   // click in the same tick already sees the first. Dropped when the transition
   // commits, after which `useSearchParams()` is current again.
   const latestHref = useRef<string | null>(null);
+  // The href an in-place write (`replaceInPlace`) just put in the address bar.
+  // Next applies it to `useSearchParams()` in a transition, so a control
+  // clicked in the same tick would otherwise build on the old query and undo
+  // it. Dropped as soon as the committed URL changes (it then reflects the
+  // write) and by any `navigate`.
+  const inPlaceHref = useRef<string | null>(null);
+  const pathnameNow = usePathname();
+  const committedQuery = useSearchParams().toString();
+  useEffect(() => {
+    inPlaceHref.current = null;
+  }, [pathnameNow, committedQuery]);
 
   useEffect(() => {
     if (!isPending) {
@@ -192,6 +227,7 @@ export function NavigationPendingProvider({
       // Set in the same batch as the transition starts, so the first frame
       // that shows the pending state already shows the right kind of it.
       latestHref.current = href;
+      inPlaceHref.current = null;
       setPendingHref(href);
       setKind(options?.kind ?? "view");
       startTransition(() => {
@@ -211,8 +247,26 @@ export function NavigationPendingProvider({
   }, [router]);
 
   const baseQuery = useCallback(
-    (pathname: string, committed: string) => baseQueryFor(latestHref.current, pathname, committed),
+    (pathname: string, committed: string) =>
+      baseQueryFor(latestHref.current ?? inPlaceHref.current, pathname, committed),
     [],
+  );
+
+  const replaceInPlace = useCallback(
+    (href: string) => {
+      if (typeof window === "undefined") return;
+      const here = window.location.href;
+      const inFlight = latestHref.current;
+      if (inFlight !== null) {
+        if (samePath(inFlight, href, here)) navigate(href);
+        return;
+      }
+      // Next 14.2 patches replaceState: `useSearchParams` and `usePathname`
+      // follow, the router keeps its tree, nothing is fetched.
+      inPlaceHref.current = href;
+      window.history.replaceState(null, "", href);
+    },
+    [navigate],
   );
 
   // Derived from `isPending` rather than cleared in the effect above, so the
@@ -222,8 +276,8 @@ export function NavigationPendingProvider({
   const pendingKind = isPending ? kind : null;
 
   const value = useMemo(
-    () => ({ isPending, pendingHref, pendingKind, managed: true, navigate, refresh, baseQuery }),
-    [isPending, pendingHref, pendingKind, navigate, refresh, baseQuery],
+    () => ({ isPending, pendingHref, pendingKind, managed: true, navigate, refresh, baseQuery, replaceInPlace }),
+    [isPending, pendingHref, pendingKind, navigate, refresh, baseQuery, replaceInPlace],
   );
 
   return (

@@ -133,3 +133,148 @@ export function formatRatio(
 export function plainDashes(text: string): string {
   return text.replace(/\u2014/g, "-");
 }
+
+// ---------------------------------------------------------------------------
+// Deltas: change against the comparison period
+// ---------------------------------------------------------------------------
+
+/**
+ * How a change is shown. One global choice (URL `delta`, cookie default),
+ * read by every chip through `useDeltaMode()` in components/ui/DeltaMode.
+ *
+ *   "pct"  relative change, "+12.4%".
+ *   "abs"  the difference in the metric's own unit, "+CZK 12,345", "+123".
+ *
+ * Rates (CTR, CVR, margin %, share) are in percentage points in both modes:
+ * a relative change of a rate ("CTR +8%") is easy to misread as points.
+ */
+export type DeltaMode = "pct" | "abs";
+export const DELTA_MODES: readonly DeltaMode[] = ["pct", "abs"];
+export const DEFAULT_DELTA_MODE: DeltaMode = "pct";
+/** Search param carrying the mode. */
+export const DELTA_PARAM = "delta";
+/** Cookie holding the user's default, so the choice sticks across pages and sessions. */
+export const DELTA_COOKIE = "oe_delta";
+
+/** A valid mode, or null for anything else (absent, stale, hand-edited). */
+export function parseDeltaMode(value: unknown): DeltaMode | null {
+  const v = Array.isArray(value) ? value[0] : value;
+  return v === "pct" || v === "abs" ? v : null;
+}
+
+/**
+ * What the metric is, which decides the absolute unit.
+ *   money  display currency ("+CZK 12,345", 2 decimals below 100)
+ *   count  plain number ("+123", optional `unit` noun)
+ *   ratio  MER, ROAS ("+0.31×")
+ *   rate   a fraction shown as a percent (CTR, CVR, margin %): always pp
+ */
+export type DeltaKind = "money" | "count" | "ratio" | "rate";
+
+/** Everything a chip needs to draw a change in either mode. */
+export interface DeltaInput {
+  current: number | null | undefined;
+  previous: number | null | undefined;
+  kind: DeltaKind;
+  /** Required for `money`. */
+  currency?: string;
+  /** Optional noun after a count or ratio in absolute mode ("orders", "MER"). */
+  unit?: string;
+  /** Overrides the default decimals of the absolute figure (count 0, ratio 2, rate 1). */
+  decimals?: number;
+  /** Compact absolute money ("CZK 1.2M"), for narrow cells. */
+  compact?: boolean;
+}
+
+export interface DeltaOptions extends Omit<DeltaInput, "current" | "previous"> {
+  mode: DeltaMode;
+}
+
+export interface DeltaParts {
+  /** Signed change in the shown unit: a fraction (pct), the difference (abs), points (rate). Drives the arrow. */
+  change: number;
+  /** True when the shown magnitude rounds to zero. */
+  flat: boolean;
+  /** Unsigned figure, for a chip whose arrow carries the direction: "12.4%", "CZK 12,345", "1.2 pp". */
+  magnitude: string;
+  /** Signed figure: "+12.4%", "−CZK 12,345", "+1.2 pp". A flat change has no sign. */
+  text: string;
+}
+
+function finite(v: number | null | undefined): v is number {
+  return v !== null && v !== undefined && Number.isFinite(v);
+}
+
+/**
+ * The change between two values, ready to draw. Null when there is nothing
+ * honest to show: either side missing, or a relative change from zero (growth
+ * from zero is undefined, not infinite). An absolute change from zero is fine.
+ */
+export function deltaParts(
+  current: number | null | undefined,
+  previous: number | null | undefined,
+  { kind, mode, currency, unit, decimals, compact }: DeltaOptions
+): DeltaParts | null {
+  if (!finite(current) || !finite(previous)) return null;
+
+  let change: number;
+  let magnitude: string;
+
+  if (kind === "rate") {
+    change = (current - previous) * 100;
+    magnitude = `${Math.abs(change).toFixed(decimals ?? 1)} pp`;
+  } else if (mode === "pct") {
+    if (previous === 0) return null;
+    change = (current - previous) / Math.abs(previous);
+    magnitude = formatPercent(Math.abs(change));
+  } else {
+    change = current - previous;
+    const size = Math.abs(change);
+    const noun = unit ? ` ${unit}` : "";
+    if (kind === "money") {
+      magnitude = currency
+        ? formatMoney(
+            size,
+            currency,
+            compact ? { compact } : decimals !== undefined ? { decimals } : { unit: true }
+          )
+        : formatNumber(size, { compact, decimals: decimals ?? 0 });
+    } else if (kind === "ratio") {
+      magnitude = `${size.toFixed(decimals ?? 2)}×${noun}`;
+    } else {
+      magnitude = `${formatNumber(size, { decimals: decimals ?? 0 })}${noun}`;
+    }
+  }
+
+  // Currency codes and units carry no digits, so a magnitude with no non-zero
+  // digit is one that rounds to zero at the precision shown.
+  const flat = !/[1-9]/.test(magnitude);
+  const sign = flat ? "" : change > 0 ? "+" : MINUS;
+  return { change, flat, magnitude, text: `${sign}${magnitude}` };
+}
+
+/**
+ * The change as one signed string: "+12.4%", "+CZK 12,345", "−123 orders",
+ * "+0.31×", "+1.2 pp". Null when `deltaParts` is null. Negatives use U+2212.
+ */
+export function formatDelta(
+  current: number | null | undefined,
+  previous: number | null | undefined,
+  options: DeltaOptions
+): string | null {
+  return deltaParts(current, previous, options)?.text ?? null;
+}
+
+/** Sort key of a delta column in each mode, for DataTable's `sort` array. */
+export interface ModeSortKey {
+  pct: number | null;
+  abs: number | null;
+}
+
+export function deltaSortKey(input: DeltaInput): ModeSortKey {
+  const opts = { kind: input.kind, currency: input.currency };
+  return {
+    pct: deltaParts(input.current, input.previous, { ...opts, mode: "pct" })?.change ?? null,
+    abs: deltaParts(input.current, input.previous, { ...opts, mode: "abs" })?.change ?? null,
+  };
+}

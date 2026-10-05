@@ -4,7 +4,8 @@
  * Client, date range, comparison mode and display currency all live in the URL.
  * That makes every view shareable and bookmarkable, lets server components read
  * state without a client round trip, and means the back button does what the
- * user expects. Nothing here is stored in a session or a cookie.
+ * user expects. One exception: the delta display mode (`delta=pct|abs`) also
+ * has a cookie default, see `resolveDeltaMode`.
  *
  * Everything is defensive: a hand-edited or stale URL must render a sensible
  * page, never throw.
@@ -22,6 +23,18 @@ import {
   type ResolvedPeriod,
 } from "@/lib/period";
 import { ROLLUP_CURRENCY } from "@/lib/currency";
+import {
+  DEFAULT_DELTA_MODE,
+  parseDeltaMode,
+  type DeltaMode,
+} from "@/lib/format";
+
+export {
+  DELTA_COOKIE,
+  DELTA_PARAM,
+  parseDeltaMode,
+  type DeltaMode,
+} from "@/lib/format";
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -112,7 +125,35 @@ export function parseViewParams(
   };
 }
 
-/** Rebuild the query string, so links between pages keep the current view. */
+/**
+ * How deltas are shown: the URL's `delta` wins (a shared link shows what its
+ * sender saw), then the user's cookie default, then "pct".
+ *
+ * Display only: no query reads it, so the toggle changes the URL in place
+ * without a server render (see `DeltaModeProvider`). The app layout passes the
+ * cookie value; the provider reads the URL on the client.
+ */
+export function resolveDeltaMode(
+  searchParams: SearchParams | undefined,
+  cookieValue: string | undefined
+): DeltaMode {
+  return (
+    parseDeltaMode(searchParams?.delta) ??
+    parseDeltaMode(cookieValue) ??
+    DEFAULT_DELTA_MODE
+  );
+}
+
+/**
+ * Rebuild the query string, so links between pages keep the current view.
+ *
+ * `delta` is deliberately not written here. These strings are built on the
+ * server and go stale when the toggle changes the URL in place; a stale
+ * explicit `delta` on a link would undo the toggle. Without it, the next page
+ * keeps the mode the provider holds (and the cookie on a fresh load). Client
+ * links (sidebar, rail, client switch) copy the live query string, `delta`
+ * included.
+ */
 export function viewQuery(params: ViewParams): string {
   const q = new URLSearchParams();
   if (params.clientId) q.set("client", params.clientId);

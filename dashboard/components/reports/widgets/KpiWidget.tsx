@@ -66,7 +66,17 @@ export function KpiWidget({ result, metrics, caveatTexts, seriesId, metricId, pe
           {ok && <NotesMark lines={cell.lowVolume ? [...notes, ...(notes.length ? ["Low volume"] : [])] : notes} />}
         </div>
 
-        {ok && cell.delta !== null && <CellDelta delta={cell.delta} kind={cell.deltaKind} goodWhen={metric.goodWhen} />}
+        {ok && (cell.delta !== null || cell.compareTotal !== null) && (
+          <CellDelta
+            delta={cell.delta}
+            kind={cell.deltaKind}
+            goodWhen={metric.goodWhen}
+            total={cell.total}
+            compareTotal={cell.compareTotal}
+            format={metric.format}
+            currency={result.currency}
+          />
+        )}
 
         {metric.benchmarkable && <BenchmarkStrip matches={matches} metric={metric} currency={result.currency} />}
       </div>

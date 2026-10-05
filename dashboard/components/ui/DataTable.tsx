@@ -42,7 +42,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { NoValue } from "@/components/ui/EmptyState";
-import { isNoValue } from "@/lib/format";
+import { isNoValue, type DeltaMode, type ModeSortKey } from "@/lib/format";
+import { useDeltaMode } from "@/components/ui/DeltaMode";
 
 export type SortDirection = "desc" | "asc" | null;
 
@@ -62,9 +63,11 @@ export interface DataTableRow {
   cells: ReactNode[];
   /**
    * Sort key per column, index-aligned with `cells`. Numbers compare
-   * numerically, strings case-insensitively, null sorts last.
+   * numerically, strings case-insensitively, null sorts last. A delta column
+   * passes `deltaSortKey(...)` from lib/format: one key per display mode, and
+   * the table sorts by the one the delta toggle shows.
    */
-  sort: Array<number | string | null>;
+  sort: Array<number | string | null | ModeSortKey>;
 }
 
 /**
@@ -106,6 +109,14 @@ export function compareSortKeys(
       ? a - b
       : String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
   return direction === "desc" ? -r : r;
+}
+
+/** The comparable key of one cell: a delta column's key for the shown mode. Pure. */
+export function sortKeyFor(
+  k: number | string | null | ModeSortKey | undefined,
+  mode: DeltaMode
+): number | string | null {
+  return k !== null && typeof k === "object" ? k[mode] : (k ?? null);
 }
 
 export function DataTable({
@@ -175,20 +186,19 @@ export function DataTable({
     ? { gridTemplateColumns: widths.map((w) => `${w}px`).join(" ") }
     : undefined;
 
+  const deltaMode = useDeltaMode();
+
   const sorted = useMemo(() => {
     if (sortIndex === null || direction === null) return rows;
+    const key = (k: number | string | null | ModeSortKey | undefined) => sortKeyFor(k, deltaMode);
     // Copy first: sorting `rows` in place would mutate a prop and leave the
     // unsorted order unrecoverable when the user cycles back to default.
     const out = [...rows];
     out.sort((x, y) => {
-      return compareSortKeys(
-        x.sort[sortIndex] ?? null,
-        y.sort[sortIndex] ?? null,
-        direction
-      );
+      return compareSortKeys(key(x.sort[sortIndex]), key(y.sort[sortIndex]), direction);
     });
     return out;
-  }, [rows, sortIndex, direction]);
+  }, [rows, sortIndex, direction, deltaMode]);
 
   // Highest first, then lowest, then back to whatever order the query returned.
   function cycle(index: number) {

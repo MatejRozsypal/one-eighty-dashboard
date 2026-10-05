@@ -133,6 +133,17 @@ export default async function PaidGooglePage({
     const v = first(value);
     if (v !== undefined) query.set(key, v);
   }
+  // Long tables render their top rows only; `more` lists the ones opened up.
+  const openTables = new Set((first(searchParams.more) ?? "").split(",").filter(Boolean));
+  const moreHrefFor = (table: "terms" | "keywords" | "products", open: boolean) => {
+    const next = new Set(openTables);
+    if (open) next.add(table);
+    else next.delete(table);
+    const q = new URLSearchParams(query);
+    if (next.size > 0) q.set("more", [...next].sort().join(","));
+    else q.delete("more");
+    return tabHref("google", q);
+  };
   const hrefFor = (campaignId: string) => {
     const q = new URLSearchParams(query);
     q.set("campaign", campaignId);
@@ -187,6 +198,9 @@ export default async function PaidGooglePage({
             keywords={keywords}
             coverage={termCoverage}
             currency={currency}
+            expanded={openTables.has(source)}
+            moreHref={moreHrefFor(source, true)}
+            lessHref={moreHrefFor(source, false)}
           />
         )}
         {showProducts && (
@@ -196,6 +210,9 @@ export default async function PaidGooglePage({
             zeroOnly={zeroOnly}
             coverage={productCoverage}
             currency={currency}
+            expanded={openTables.has("products")}
+            moreHref={moreHrefFor("products", true)}
+            lessHref={moreHrefFor("products", false)}
           />
         )}
       </main>

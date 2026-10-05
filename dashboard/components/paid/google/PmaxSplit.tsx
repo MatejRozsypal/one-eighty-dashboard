@@ -7,7 +7,7 @@
  */
 
 import { formatMoney, formatPercent, formatRatio } from "@/lib/format";
-import { ratio, sumOf } from "@/lib/paid/math";
+import { ratio, roasOf, sumOf } from "@/lib/paid/math";
 import type { GadsPmaxNetworkRow } from "@/lib/queries/paidGoogle";
 import {
   NETWORK_FILL,
@@ -58,7 +58,7 @@ function Bar({
     >
       {segments.map(({ row, amount }) => {
         const share = amount / total;
-        const roas = ratio(row.value, row.spend);
+        const roas = roasOf(row.value, row.spend);
         const label = networkLabel(row.network);
         const tip = `${label}: ${formatMoney(row.spend, currency)} spend, ${formatMoney(
           row.value,

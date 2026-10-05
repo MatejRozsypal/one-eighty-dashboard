@@ -417,19 +417,26 @@ export async function getGadsSearchTerms(
   if (isDemo(clientId)) return demoSearchTerms(range, mode);
 
   const rows = await query<Row>(
-    `SELECT s.search_term, s.campaign_id, ANY_VALUE(d.campaign_name) AS campaign_name, s.match_type,
-            LOGICAL_OR(s.is_brand) AS is_brand,
-            ARRAY_AGG(s.term_status ORDER BY s.date DESC LIMIT 1)[OFFSET(0)] AS status,
-            SUM(s.spend) AS spend, SUM(s.impressions) AS impressions, SUM(s.clicks) AS clicks,
-            SUM(s.conversions) AS conversions, SUM(s.conversions_value) AS value
-     FROM \`${MART}.mart_gads_search_terms_daily\` s
+    // Aggregate and cut to the top 200 first, then name the campaigns: the join
+    // runs over 200 rows instead of every daily row in the range.
+    `WITH t AS (
+       SELECT s.search_term, s.campaign_id, s.match_type,
+              LOGICAL_OR(s.is_brand) AS is_brand,
+              ARRAY_AGG(s.term_status ORDER BY s.date DESC LIMIT 1)[OFFSET(0)] AS status,
+              SUM(s.spend) AS spend, SUM(s.impressions) AS impressions, SUM(s.clicks) AS clicks,
+              SUM(s.conversions) AS conversions, SUM(s.conversions_value) AS value
+       FROM \`${MART}.mart_gads_search_terms_daily\` s
+       WHERE s.client_id = @clientId AND s.date BETWEEN @from AND @to
+       GROUP BY s.search_term, s.campaign_id, s.match_type
+       HAVING ${TERM_HAVING[mode]}
+       ORDER BY spend DESC
+       LIMIT 200
+     )
+     SELECT t.*, d.campaign_name
+     FROM t
      LEFT JOIN \`${MART}.mart_gads_campaign_dim\` d
-       ON d.client_id = s.client_id AND d.campaign_id = s.campaign_id
-     WHERE s.client_id = @clientId AND s.date BETWEEN @from AND @to
-     GROUP BY s.search_term, s.campaign_id, s.match_type
-     HAVING ${TERM_HAVING[mode]}
-     ORDER BY spend DESC
-     LIMIT 200`,
+       ON d.client_id = @clientId AND d.campaign_id = t.campaign_id
+     ORDER BY t.spend DESC`,
     { clientId, from: range.from, to: range.to }
   );
   return rows.map((r) => ({
@@ -451,18 +458,23 @@ export async function getGadsKeywords(
   if (isDemo(clientId)) return demoKeywords(range);
 
   const rows = await query<Row>(
-    `SELECT k.keyword_text, k.match_type, k.campaign_id, ANY_VALUE(d.campaign_name) AS campaign_name,
-            ARRAY_AGG(k.quality_score IGNORE NULLS ORDER BY k.date DESC LIMIT 1)[SAFE_OFFSET(0)] AS quality_score,
-            SUM(k.spend) AS spend, SUM(k.impressions) AS impressions, SUM(k.clicks) AS clicks,
-            SUM(k.conversions) AS conversions, SUM(k.conversions_value) AS value
-     FROM \`${MART}.mart_gads_keywords_daily\` k
+    `WITH t AS (
+       SELECT k.keyword_text, k.match_type, k.campaign_id,
+              ARRAY_AGG(k.quality_score IGNORE NULLS ORDER BY k.date DESC LIMIT 1)[SAFE_OFFSET(0)] AS quality_score,
+              SUM(k.spend) AS spend, SUM(k.impressions) AS impressions, SUM(k.clicks) AS clicks,
+              SUM(k.conversions) AS conversions, SUM(k.conversions_value) AS value
+       FROM \`${MART}.mart_gads_keywords_daily\` k
+       WHERE k.client_id = @clientId AND k.date BETWEEN @from AND @to
+       GROUP BY k.keyword_text, k.match_type, k.campaign_id
+       HAVING SUM(k.spend) > 0
+       ORDER BY spend DESC
+       LIMIT 200
+     )
+     SELECT t.*, d.campaign_name
+     FROM t
      LEFT JOIN \`${MART}.mart_gads_campaign_dim\` d
-       ON d.client_id = k.client_id AND d.campaign_id = k.campaign_id
-     WHERE k.client_id = @clientId AND k.date BETWEEN @from AND @to
-     GROUP BY k.keyword_text, k.match_type, k.campaign_id
-     HAVING SUM(k.spend) > 0
-     ORDER BY spend DESC
-     LIMIT 200`,
+       ON d.client_id = @clientId AND d.campaign_id = t.campaign_id
+     ORDER BY t.spend DESC`,
     { clientId, from: range.from, to: range.to }
   );
   return rows.map((r) => ({

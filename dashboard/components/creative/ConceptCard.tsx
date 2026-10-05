@@ -26,6 +26,7 @@ import {
   unitMoney,
 } from "@/components/creative/primitives";
 import { NO_VALUE } from "@/lib/format";
+import { humanizeConceptCode } from "@/lib/creative/display";
 import type { VerdictCode } from "@/lib/creative/verdict";
 
 export interface ConceptCardData {
@@ -133,8 +134,8 @@ export function ConceptCard({
               the ClickUp task id so the joins always resolve, and printing
               `86ca9t2h4` beside a concept name reads as a name somebody chose. */}
           {data.conceptCode && (
-            <span className="mr-1.5 font-mono text-[11.5px] font-medium text-content-muted">
-              {data.conceptCode}
+            <span className="mr-1.5 text-[11.5px] font-medium text-content-muted">
+              {humanizeConceptCode(data.conceptCode)}
             </span>
           )}
           {data.name}

@@ -13,7 +13,7 @@ import { DataTable, type DataTableRow } from "@/components/ui/DataTable";
 import { DeltaChip } from "@/components/ui/Delta";
 import { Value } from "@/components/ui/EmptyState";
 import { NO_VALUE, formatMoney, formatNumber, formatRatio } from "@/lib/format";
-import { isLowVolume, ratio, relativeChange, unlessLowVolume } from "@/lib/paid/math";
+import { isLowVolume, ratio, relativeChange, roasOf, unlessLowVolume } from "@/lib/paid/math";
 import { campaignType, type CampaignAgg } from "@/components/paid/overview/model";
 
 const GRID_PLAIN =
@@ -55,7 +55,7 @@ export function CampaignsAcross({
   ];
 
   const tableRows: DataTableRow[] = rows.map((c) => {
-    const roas = ratio(c.value, c.spend);
+    const roas = roasOf(c.value, c.spend, c.purchases);
     const cpa = ratio(c.spend, c.purchases);
     const low = isLowVolume({ spend: c.spend, purchases: c.purchases }, totalSpend);
     const dSpend = relativeChange(c.spend, c.prevSpend);

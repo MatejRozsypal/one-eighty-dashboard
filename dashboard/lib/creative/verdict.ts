@@ -375,7 +375,7 @@ export function diagnose(
     return {
       code: "insufficient-signal",
       label: "Not enough delivery",
-      say: "Too few impressions.",
+      say: "Fewer than 5,000 impressions so far.",
       iterationType: null,
     };
   }

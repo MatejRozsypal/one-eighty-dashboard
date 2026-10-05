@@ -44,6 +44,7 @@ import { InfoTip } from "@/components/ui/InfoTip";
 import { Notice } from "@/components/ui/Notice";
 import { NO_VALUE } from "@/lib/format";
 import { SEPARATION_LABELS } from "@/lib/creative/stats";
+import { conceptLabel } from "@/lib/creative/display";
 import { loadCreative, type CreativeContext } from "@/lib/creative/page";
 import { groupBy, read, sum, tagCoverage } from "@/lib/creative/model";
 import { BREAKDOWN_DIMENSIONS, FOCUS_FIELD, FORMAT_LABELS, isBreakdownKey, type BreakdownKey, type Format } from "@/lib/creative/vocabulary";
@@ -60,7 +61,7 @@ const COVERAGE_FLOOR = 0.6;
 const KEY_OF: Record<BreakdownKey, (ad: AdRow) => string | null> = {
   angle: (a) => a.tags.angle,
   persona: (a) => a.tags.personaName ?? a.tags.personaId,
-  concept: (a) => (a.tags.conceptId ? `${a.tags.conceptId} ${a.tags.conceptName ?? ""}`.trim() : null),
+  concept: (a) => (a.tags.conceptId ? conceptLabel(a.tags.conceptId, a.tags.conceptName) : null),
   offer: (a) => a.tags.offer,
   format: (a) => (a.tags.format ? (FORMAT_LABELS[a.tags.format as Format] ?? a.tags.format) : null),
   stage: (a) => a.tags.stage,

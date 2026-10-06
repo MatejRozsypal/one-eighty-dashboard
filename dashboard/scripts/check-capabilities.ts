@@ -37,7 +37,7 @@ const FIXTURES = {
 type Name = keyof typeof FIXTURES;
 
 const SHOP_PAGES = [
-  "/snapshot", "/goals", "/growth", "/orders", "/products", "/unit-economics",
+  "/snapshot", "/plan", "/goals", "/growth", "/orders", "/products", "/unit-economics",
   "/customers", "/repeat-rate", "/gaps", "/cohorts", "/repurchase", "/repurchase/timing",
 ];
 const INVENTORY = ["/inventory", "/inventory/catalogue", "/inventory/buying"];

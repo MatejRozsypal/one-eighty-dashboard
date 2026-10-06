@@ -100,6 +100,9 @@ function toPacingRow(r: Raw): PacingRow {
     merCapPct: num(r.mer_cap_pct),
     merPlanPct: num(r.mer_plan_pct),
     merActualPct: num(r.mer_actual_pct),
+    baselineTotal: num(r.baseline_total),
+    baselineToDate: num(r.baseline_to_date),
+    liftPct: num(r.lift_vs_baseline_pct),
   };
 }
 
@@ -110,7 +113,8 @@ async function fetchPacing(clientId: string): Promise<PacingRow[]> {
             is_target_partial, target_total, target_to_date, actual_to_date, pace_pct,
             gap_abs, projected_end, projected_low, projected_high, required_daily_rate,
             required_curve_mult, status, is_too_early, result, is_preliminary,
-            mer_cap_pct, mer_plan_pct, mer_actual_pct
+            mer_cap_pct, mer_plan_pct, mer_actual_pct,
+            baseline_total, baseline_to_date, lift_vs_baseline_pct
      FROM ${PLAN_TABLES.pacing}
      WHERE client_id = @clientId`,
     { clientId }

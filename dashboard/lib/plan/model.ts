@@ -170,6 +170,9 @@ export function completeRows(data: PlanData): PlanData {
         merCapPct: metric === "ad_spend" ? t.merCapPct : null,
         merPlanPct: null,
         merActualPct: metric === "ad_spend" ? merActual : null,
+        baselineTotal: null,
+        baselineToDate: null,
+        liftPct: null,
       });
     }
   }
@@ -411,6 +414,18 @@ const HEADLINE_ORDER: readonly RowMetric[] = ["units", "orders", "revenue"];
 export function headlineMetric(rows: MetricRows): RowMetric {
   const targeted = HEADLINE_ORDER.find((m) => rows[m] && rows[m]!.target !== null);
   return targeted ?? HEADLINE_ORDER.find((m) => rows[m]) ?? "orders";
+}
+
+/**
+ * The lift a promo is read on: orders when the warehouse has a baseline for
+ * them, else revenue, else null. Same metric as the "Whole store" figure.
+ */
+export function liftRow(rows: MetricRows): PacingRow | null {
+  for (const m of ["orders", "revenue"] as const) {
+    const r = rows[m];
+    if (r && (r.baselineTotal !== null || r.liftPct !== null)) return r;
+  }
+  return null;
 }
 
 export function promoPerfOf(data: PlanData, taskId: string): PromoPerf | null {

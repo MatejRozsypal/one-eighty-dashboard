@@ -1,302 +1,642 @@
 {
   "name": "wf_clickup_to_bigquery",
+  "_note": "Reconstructed 2026-10-06 (package pp3) from the LIVE n8n workflow id UHK8312UpMEEtnLm, active version 216b7f12-1778-474f-bcc0-b56fb72b9bb3. The live workflow is the source of truth; node ids and canvas positions are not reproduced. Settings: errorWorkflow lslDsvbP8jLKEgw0, executionTimeout 1500 s, saveDataSuccessExecution none, saveDataErrorExecution all.",
   "nodes": [
     {
+      "name": "Hourly :45",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
       "parameters": {
         "rule": {
           "interval": [
             {
               "field": "hours",
+              "hoursInterval": 1,
               "triggerAtMinute": 45
             }
           ]
         }
       },
-      "id": "Hourly :45",
-      "name": "Hourly :45",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
       "position": [
-        -660,
-        300
+        0,
+        0
       ]
     },
     {
+      "name": "Get ClickUp token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "parameters": {
-        "url": "=https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/clickup-api-token/versions/latest:access",
+        "method": "GET",
+        "url": "https://secretmanager.googleapis.com/v1/projects/oneeighty-warehouse/secrets/clickup-api-token/versions/latest:access",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleApi",
         "options": {}
       },
-      "id": "Get ClickUp token",
-      "name": "Get ClickUp token",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
       "position": [
-        -460,
-        300
+        224,
+        0
       ]
     },
     {
-      "parameters": {
-        "jsCode": "// One workspace-wide personal token. ClickUp personal tokens are prefixed `pk_`\n// and do not expire.\n//\n// The header is `Authorization: pk_...` with NO `Bearer` prefix. Adding one\n// returns OAUTH_019 rather than a clear 401, which reads like a scope problem\n// and sends you looking in the wrong place for an afternoon.\nconst token = Buffer.from($json.payload.data, 'base64').toString('utf8').trim();\nreturn [{ json: { clickup_token: token } }];\n"
-      },
-      "id": "Decode ClickUp token",
-      "name": "Decode ClickUp token",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -260,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "sqlQuery": "SELECT l.client_id, l.list_kind, l.list_id\nFROM `oneeighty-warehouse.ref.clickup_lists` l\nJOIN `oneeighty-warehouse.ref.clients` c USING (client_id)\nWHERE l.active AND c.status = 'active'\nORDER BY l.client_id, l.list_kind",
-        "options": {}
-      },
-      "id": "Read list registry",
       "name": "Read list registry",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [
-        -60,
-        300
-      ]
-    },
-    {
       "parameters": {
-        "options": {
-          "reset": false
-        }
-      },
-      "id": "Loop over lists",
-      "name": "Loop over lists",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [
-        140,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "url": "=https://api.clickup.com/api/v2/list/{{ $json.list_id }}/field",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ $('Decode ClickUp token').first().json.clickup_token }}"
-            }
-          ]
-        },
-        "options": {
-          "retry": {
-            "retry": {
-              "maxTries": 4,
-              "waitBetweenTries": 3000
-            }
-          }
-        }
-      },
-      "id": "Fetch field defs",
-      "name": "Fetch field defs",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        360,
-        400
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Field definitions. Landed for two reasons: dropdowns arrive as an orderindex\n// integer and need their options to become labels, and comparing what ClickUp\n// actually has against ref.clickup_field_map is the drift check that catches a\n// relationship field pointing at the wrong client's list.\nconst ctx = $('Loop over lists').first().json;\nconst INGESTED_AT = new Date().toISOString();\nconst today = INGESTED_AT.slice(0, 10);\n\nconst fields = ($input.first().json.fields) || [];\nreturn fields.map(f => {\n  const cfg = f.type_config || {};\n  return { json: {\n    client_id: ctx.client_id,\n    ingested_at: INGESTED_AT,\n    snapshot_date: today,\n    list_kind: ctx.list_kind,\n    list_id: String(ctx.list_id),\n    field_id: f.id,\n    name: f.name,\n    type: f.type,\n    // Present only on list_relationship fields. This is the column that shows\n    // Venev's `Concept` field aiming at Manami's list.\n    target_list_id: cfg.subcategory_id ? String(cfg.subcategory_id) : null,\n    options_json: JSON.stringify(cfg.options || []),\n    payload_json: JSON.stringify(f)\n  }};\n});\n"
-      },
-      "id": "Transform field defs",
-      "name": "Transform field defs",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        560,
-        400
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "insert",
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
         "projectId": {
           "__rl": true,
-          "value": "oneeighty-warehouse",
-          "mode": "list"
+          "mode": "list",
+          "value": "oneeighty-warehouse"
         },
-        "datasetId": {
-          "__rl": true,
-          "value": "raw",
-          "mode": "list"
-        },
-        "tableId": {
-          "__rl": true,
-          "value": "raw_clickup_fields",
-          "mode": "list"
-        },
-        "dataMode": "autoMapInputData",
+        "sqlQuery": "SELECT l.client_id, l.list_kind, l.list_id\nFROM `oneeighty-warehouse.ref.clickup_lists` l\nJOIN `oneeighty-warehouse.ref.clients` c USING (client_id)\nWHERE l.active AND c.status = 'active'\nORDER BY l.client_id, l.list_kind",
         "options": {}
       },
-      "id": "BQ: insert field defs",
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "executeOnce": true,
+      "onError": "continueErrorOutput",
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "name": "Read snapshot state",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse"
+        },
+        "sqlQuery": "SELECT TO_JSON_STRING(STRUCT(\n  ARRAY(\n    SELECT AS STRUCT CONCAT(client_id, '|', task_id) AS k,\n      MAX_BY(CONCAT(IFNULL(CAST(UNIX_MILLIS(date_updated) AS STRING), ''), '|', list_id), ingested_at) AS s\n    FROM `oneeighty-warehouse.raw.raw_clickup_tasks`\n    WHERE snapshot_date = CURRENT_DATE()\n    GROUP BY client_id, task_id\n  ) AS tasks,\n  ARRAY(\n    SELECT AS STRUCT CONCAT(client_id, '|', list_id, '|', field_id) AS k,\n      MAX_BY(CONCAT(IFNULL(name, ''), '|', IFNULL(type, ''), '|', IFNULL(target_list_id, ''), '|', IFNULL(options_json, '')), ingested_at) AS s\n    FROM `oneeighty-warehouse.raw.raw_clickup_fields`\n    WHERE snapshot_date = CURRENT_DATE()\n    GROUP BY client_id, list_id, field_id\n  ) AS fields\n)) AS state",
+        "options": {
+          "timeoutMs": 120000
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "executeOnce": true,
+      "onError": "continueErrorOutput",
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "name": "Fetch ClickUp lists",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Fetch every registered ClickUp list and build the raw rows in one pass.\n//\n// Snapshot policy (version history without unbounded growth):\n//   - plan lists (list_kind 'promo') are written in full on EVERY run, so the newest\n//     ingested_at of a list is a complete picture: a task deleted in ClickUp drops out\n//     of stg.stg_clickup_plan on the next hourly run (about 40 tasks, ~8 MB a day);\n//   - creative lists (ad_pipeline, concepts, personas): the first run of each UTC day\n//     writes every task and field definition (full daily snapshot), later runs that day\n//     write a task only when its date_updated or list changed, and a field definition\n//     only when its name, type, target list or options changed.\n// So raw holds at most one row per task per hour.\n//\n// Header is `Authorization: pk_...` with NO Bearer prefix (Bearer gives OAUTH_019).\nconst helpers = this.helpers;\nconst sleep = ms => new Promise(r => setTimeout(r, ms));\n\nconst RUN_STARTED_AT = new Date().toISOString();\nconst INGESTED_AT = RUN_STARTED_AT;\nconst today = INGESTED_AT.slice(0, 10);\n\nconst token = Buffer.from($('Get ClickUp token').first().json.payload.data, 'base64').toString('utf8').trim();\nif (!token) throw new Error('Secret clickup-api-token decoded to an empty string.');\n\nconst lists = $('Read list registry').all().map(i => i.json).filter(l => l && l.list_id);\nif (!lists.length) throw new Error('ref.clickup_lists returned no active list for an active client.');\n\nconst stateRaw = $('Read snapshot state').first().json.state;\nconst state = stateRaw ? JSON.parse(stateRaw) : {};\nconst taskSig = new Map((state.tasks || []).map(x => [x.k, x.s]));\nconst fieldSig = new Map((state.fields || []).map(x => [x.k, x.s]));\nconst ALWAYS_FULL = new Set(['promo']);\n\nconst get = async (url, qs) => {\n  for (let attempt = 0; attempt < 5; attempt++) {\n    const r = await helpers.httpRequest({\n      method: 'GET', url, qs,\n      headers: { Authorization: token, Accept: 'application/json' },\n      returnFullResponse: true, json: true, ignoreHttpStatusErrors: true, timeout: 60000\n    });\n    if (r.statusCode === 429 || r.statusCode >= 500) {\n      await sleep(2000 * Math.pow(2, attempt));\n      continue;\n    }\n    if (r.statusCode !== 200) {\n      const body = typeof r.body === 'string' ? r.body : JSON.stringify(r.body || {});\n      throw new Error('ClickUp HTTP ' + r.statusCode + ' on ' + url + ': ' + body.slice(0, 300));\n    }\n    return r.body;\n  }\n  throw new Error('ClickUp kept returning 429/5xx on ' + url);\n};\n\nconst ts = v => (v ? new Date(Number(v)).toISOString() : null);\nconst label = (def, value) => {\n  if (value === null || value === undefined || value === '') return null;\n  const opts = (def && def.options) || [];\n  const byIndex = opts.find(o => String(o.orderindex) === String(value));\n  const byId = opts.find(o => String(o.id) === String(value));\n  const hit = byIndex || byId;\n  return hit ? (hit.name ?? null) : null;\n};\n\nconst fieldRows = [];\nconst taskRows = [];\nconst listErrors = [];\nconst stats = [];\n\nfor (const ctx of lists) {\n  const listId = String(ctx.list_id);\n  try {\n    // Field definitions\n    const fbody = await get('https://api.clickup.com/api/v2/list/' + listId + '/field');\n    const fields = (fbody && fbody.fields) || [];\n    const defs = new Map();\n    let fieldsWritten = 0;\n    for (const f of fields) {\n      const cfg = f.type_config || {};\n      const target = cfg.subcategory_id ? String(cfg.subcategory_id) : null;\n      const optionsJson = JSON.stringify(cfg.options || []);\n      defs.set(f.id, { name: f.name, type: f.type, options: cfg.options || [] });\n      const k = ctx.client_id + '|' + listId + '|' + f.id;\n      const s = (f.name || '') + '|' + (f.type || '') + '|' + (target || '') + '|' + optionsJson;\n      if (!ALWAYS_FULL.has(ctx.list_kind) && fieldSig.get(k) === s) continue;\n      fieldsWritten++;\n      fieldRows.push({\n        client_id: ctx.client_id, ingested_at: INGESTED_AT, snapshot_date: today,\n        list_kind: ctx.list_kind, list_id: listId, field_id: f.id,\n        name: f.name ?? null, type: f.type ?? null, target_list_id: target,\n        options_json: optionsJson, payload_json: JSON.stringify(f)\n      });\n    }\n    await sleep(250);\n\n    // Tasks, paginated (100 per page)\n    const tasks = [];\n    for (let page = 0; page < 40; page++) {\n      const body = await get('https://api.clickup.com/api/v2/list/' + listId + '/task',\n        { include_closed: 'true', subtasks: 'false', page: String(page) });\n      const batch = (body && body.tasks) || [];\n      tasks.push(...batch);\n      await sleep(250);\n      if (body.last_page === true || batch.length < 100) break;\n      if (page === 39) throw new Error('List ' + listId + ' has more than 40 pages of tasks; raise the page cap.');\n    }\n\n    let tasksWritten = 0;\n    for (const t of tasks) {\n      const k = ctx.client_id + '|' + String(t.id);\n      const s = String(t.date_updated ?? '') + '|' + listId;\n      if (!ALWAYS_FULL.has(ctx.list_kind) && taskSig.get(k) === s) continue;\n      tasksWritten++;\n      const custom = (t.custom_fields || []).map(f => {\n        const def = defs.get(f.id) || { name: f.name, type: f.type, options: (f.type_config || {}).options || [] };\n        const v = f.value;\n        let value_text = null, value_num = null, value_ids = [];\n        if (f.type === 'drop_down') {\n          value_text = label(def, v);\n        } else if (f.type === 'list_relationship' || f.type === 'tasks') {\n          value_ids = Array.isArray(v) ? v.map(x => String(x.id ?? x)) : [];\n          value_text = Array.isArray(v) ? (v.map(x => x.name).filter(Boolean).join(', ') || null) : null;\n        } else if (f.type === 'number' || f.type === 'currency') {\n          const n = (v === null || v === undefined || v === '') ? null : Number(v);\n          value_num = (n === null || !Number.isFinite(n)) ? null : n;\n        } else if (f.type === 'date') {\n          value_text = v ? new Date(Number(v)).toISOString().slice(0, 10) : null;\n        } else if (f.type === 'labels') {\n          const opts = def.options || [];\n          value_text = Array.isArray(v)\n            ? (v.map(id => { const o = opts.find(x => x.id === id); return o ? (o.label ?? null) : null; }).filter(Boolean).join(', ') || null)\n            : null;\n        } else {\n          value_text = (v === null || v === undefined || v === '') ? null\n            : (typeof v === 'object' ? JSON.stringify(v) : String(v));\n        }\n        // A value identical to its own field's name is a placeholder, not data.\n        if (value_text !== null && value_text.trim() === (f.name || '').trim()) value_text = null;\n        return { field_id: f.id, name: f.name, type: f.type, value_text, value_num, value_ids };\n      });\n      taskRows.push({\n        client_id: ctx.client_id, ingested_at: INGESTED_AT, snapshot_date: today,\n        list_kind: ctx.list_kind, list_id: listId, task_id: String(t.id),\n        task_name: t.name ?? '', task_url: t.url ?? null,\n        status: (t.status && t.status.status) ?? null, status_type: (t.status && t.status.type) ?? null,\n        date_created: ts(t.date_created), date_updated: ts(t.date_updated), date_closed: ts(t.date_closed),\n        assignees: (t.assignees || []).map(a => a.username || a.email).filter(Boolean),\n        custom_fields: custom,\n        payload_json: JSON.stringify(t)\n      });\n    }\n    stats.push({ client_id: ctx.client_id, list_kind: ctx.list_kind, list_id: listId,\n      fields: fields.length, fields_written: fieldsWritten, tasks: tasks.length, tasks_written: tasksWritten });\n  } catch (e) {\n    listErrors.push(ctx.client_id + '/' + ctx.list_kind + ' (' + listId + '): ' + String(e.message || e).slice(0, 300));\n  }\n}\n\nreturn [{ json: {\n  run_started_at: RUN_STARTED_AT,\n  ingested_at: INGESTED_AT,\n  snapshot_date: today,\n  lists: lists.length,\n  tasks_seen: stats.reduce((a, s) => a + s.tasks, 0),\n  expected_task_rows: taskRows.length,\n  expected_field_rows: fieldRows.length,\n  list_errors: listErrors.join(' | '),\n  stats,\n  field_rows: fieldRows,\n  task_rows: taskRows\n} }];\n"
+      },
+      "onError": "continueErrorOutput",
+      "position": [
+        896,
+        0
+      ]
+    },
+    {
+      "name": "Field rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const s = $('Fetch ClickUp lists').first().json;\nif (!s.field_rows || !s.field_rows.length) return [{ json: { __skip: true } }];\nreturn s.field_rows.map(r => ({ json: r }));\n"
+      },
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "name": "No new field rows?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.__skip === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        1344,
+        0
+      ]
+    },
+    {
       "name": "BQ: insert field defs",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [
-        760,
-        400
-      ],
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
-    },
-    {
       "parameters": {
-        "url": "=https://api.clickup.com/api/v2/list/{{ $('Loop over lists').first().json.list_id }}/task",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ $('Decode ClickUp token').first().json.clickup_token }}"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "include_closed",
-              "value": "true"
-            },
-            {
-              "name": "subtasks",
-              "value": "false"
-            },
-            {
-              "name": "page",
-              "value": "0"
-            }
-          ]
-        },
-        "options": {
-          "retry": {
-            "retry": {
-              "maxTries": 4,
-              "waitBetweenTries": 3000
-            }
-          },
-          "pagination": {
-            "pagination": {
-              "paginationMode": "updateAParameterInEachRequest",
-              "parameters": {
-                "parameters": [
-                  {
-                    "type": "qs",
-                    "name": "page",
-                    "value": "={{ $pageCount }}"
-                  }
-                ]
-              },
-              "paginationCompleteWhen": "other",
-              "completeExpression": "={{ $response.body.last_page === true || ($response.body.tasks || []).length === 0 }}",
-              "limitPagesFetched": true,
-              "maxRequests": 40
-            }
-          }
-        }
-      },
-      "id": "Fetch tasks",
-      "name": "Fetch tasks",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        960,
-        400
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Tasks, with every custom field resolved to something a human can read six\n// months from now.\n//\n// ── Dropdowns ──────────────────────────────────────────────────────────────\n// ClickUp returns the option's ORDERINDEX, an integer. Storing 2 is storing\n// nothing: reorder the options and the meaning of every historical row changes\n// underneath you. Resolved here against the definitions fetched a moment ago.\n//\n// ── The `Creative ID` placeholder ──────────────────────────────────────────\n// That field holds the literal string \"Creative ID\" on all 65 Manami tasks. It\n// is a field name that leaked into the data. It is nulled here AND in\n// stg_clickup_tasks — twice on purpose, because a value that looks like an ad\n// id but is not would create a phantom ad joining to nothing, and it would\n// appear in every breakdown as an untagged row that no one could find.\nconst ctx = $('Loop over lists').first().json;\nconst INGESTED_AT = new Date().toISOString();\nconst today = INGESTED_AT.slice(0, 10);\n\n// `.first()`, never `.item`: paired-item resolution across a chain this wide\n// pegs a CPU core with no network activity at all.\nconst defs = new Map();\nfor (const it of $('Transform field defs').all()) {\n  const j = it.json;\n  defs.set(j.field_id, { name: j.name, type: j.type, options: JSON.parse(j.options_json || '[]') });\n}\n\nconst label = (def, value) => {\n  if (value === null || value === undefined || value === '') return null;\n  const opts = def?.options || [];\n  const byIndex = opts.find(o => String(o.orderindex) === String(value));\n  const byId = opts.find(o => String(o.id) === String(value));\n  return (byIndex || byId)?.name ?? null;\n};\n\nconst tasks = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (Array.isArray(j.tasks)) tasks.push(...j.tasks);\n  else if (j.id) tasks.push(j);\n}\n\nconst ts = v => (v ? new Date(Number(v)).toISOString() : null);\n\nreturn tasks.map(t => {\n  const custom = (t.custom_fields || []).map(f => {\n    const def = defs.get(f.id) || { name: f.name, type: f.type, options: (f.type_config || {}).options || [] };\n    const v = f.value;\n    let value_text = null, value_num = null, value_ids = [];\n\n    if (f.type === 'drop_down') {\n      value_text = label(def, v);\n    } else if (f.type === 'list_relationship' || f.type === 'tasks') {\n      value_ids = Array.isArray(v) ? v.map(x => String(x.id ?? x)) : [];\n      value_text = Array.isArray(v) ? v.map(x => x.name).filter(Boolean).join(', ') || null : null;\n    } else if (f.type === 'number' || f.type === 'currency') {\n      value_num = (v === null || v === undefined || v === '') ? null : Number(v);\n    } else if (f.type === 'date') {\n      value_text = v ? new Date(Number(v)).toISOString().slice(0, 10) : null;\n    } else if (f.type === 'labels') {\n      const opts = def.options || [];\n      value_text = Array.isArray(v)\n        ? v.map(id => opts.find(o => o.id === id)?.label ?? null).filter(Boolean).join(', ') || null\n        : null;\n    } else {\n      value_text = (v === null || v === undefined || v === '') ? null : String(v);\n    }\n\n    // A value identical to its own field's name is a placeholder somebody typed\n    // over, not data.\n    if (value_text !== null && value_text.trim() === (f.name || '').trim()) value_text = null;\n\n    return { field_id: f.id, name: f.name, type: f.type, value_text, value_num, value_ids };\n  });\n\n  return { json: {\n    client_id: ctx.client_id,\n    ingested_at: INGESTED_AT,\n    snapshot_date: today,\n    list_kind: ctx.list_kind,\n    list_id: String(ctx.list_id),\n    task_id: String(t.id),\n    task_name: t.name ?? '',\n    task_url: t.url ?? null,\n    status: t.status?.status ?? null,\n    status_type: t.status?.type ?? null,\n    date_created: ts(t.date_created),\n    date_updated: ts(t.date_updated),\n    date_closed: ts(t.date_closed),\n    assignees: (t.assignees || []).map(a => a.username || a.email).filter(Boolean),\n    custom_fields: custom,\n    payload_json: JSON.stringify(t)\n  }};\n});\n"
-      },
-      "id": "Transform tasks",
-      "name": "Transform tasks",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1160,
-        400
-      ]
-    },
-    {
-      "parameters": {
+        "authentication": "serviceAccount",
         "operation": "insert",
         "projectId": {
           "__rl": true,
-          "value": "oneeighty-warehouse",
-          "mode": "list"
+          "mode": "list",
+          "value": "oneeighty-warehouse"
         },
         "datasetId": {
           "__rl": true,
-          "value": "raw",
-          "mode": "list"
+          "mode": "list",
+          "value": "raw"
         },
         "tableId": {
           "__rl": true,
-          "value": "raw_clickup_tasks",
-          "mode": "list"
+          "mode": "list",
+          "value": "raw_clickup_fields"
         },
-        "dataMode": "autoMapInputData",
+        "dataMode": "autoMap",
         "options": {}
       },
-      "id": "BQ: insert tasks",
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "position": [
+        1568,
+        0
+      ]
+    },
+    {
+      "name": "Task rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const s = $('Fetch ClickUp lists').first().json;\nif (!s.task_rows || !s.task_rows.length) return [{ json: { __skip: true } }];\nreturn s.task_rows.map(r => ({ json: r }));\n"
+      },
+      "executeOnce": true,
+      "position": [
+        1792,
+        0
+      ]
+    },
+    {
+      "name": "No new task rows?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.__skip === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        2016,
+        0
+      ]
+    },
+    {
       "name": "BQ: insert tasks",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [
-        1360,
-        400
-      ],
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
-    },
-    {
       "parameters": {
-        "operation": "executeQuery",
-        "sqlQuery": "CALL `oneeighty-warehouse.ref.sp_rebuild_creative_tags`();",
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse"
+        },
+        "datasetId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "raw"
+        },
+        "tableId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "raw_clickup_tasks"
+        },
+        "dataMode": "autoMap",
         "options": {}
       },
-      "id": "Rebuild tag spine",
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "position": [
+        2240,
+        0
+      ]
+    },
+    {
       "name": "Rebuild tag spine",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse"
+        },
+        "sqlQuery": "CALL `oneeighty-warehouse.ref.sp_rebuild_creative_tags`();\nSELECT 1 AS ok;",
+        "options": {
+          "timeoutMs": 200000
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "executeOnce": true,
+      "onError": "continueErrorOutput",
       "position": [
-        360,
-        180
+        2464,
+        0
       ]
     },
     {
+      "name": "Verify load",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
       "parameters": {
+        "authentication": "serviceAccount",
         "operation": "executeQuery",
-        "sqlQuery": "-- Matches ops.pipeline_log exactly (008_create_ops.sql). A run that\n-- logged the wrong column names would fail here and leave the sync\n-- looking broken when the data had in fact landed.\nINSERT INTO `oneeighty-warehouse.ops.pipeline_log`\n  (run_id, workflow, source, started_at, finished_at, status, rows_loaded, error_msg, trigger)\nSELECT\n  GENERATE_UUID(), 'wf_clickup_to_bigquery', 'clickup',\n  CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(),\n  IF(COUNTIF(severity = 'error') > 0, 'partial', 'success'),\n  (SELECT COUNT(*) FROM `oneeighty-warehouse.ref.creative_tags`),\n  IF(COUNT(*) = 0, NULL,\n     CONCAT(CAST(COUNT(*) AS STRING), ' sync issues; see ops.clickup_sync_issues')),\n  'cron'\nFROM `oneeighty-warehouse.ops.clickup_sync_issues`\nWHERE DATE(synced_at) = CURRENT_DATE();",
-        "options": {}
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse"
+        },
+        "sqlQuery": "WITH t AS (\n  SELECT COUNT(*) AS n FROM `oneeighty-warehouse.raw.raw_clickup_tasks`\n  WHERE snapshot_date = DATE(@snapshot_date) AND ingested_at = TIMESTAMP(@ingested_at)\n), f AS (\n  SELECT COUNT(*) AS n FROM `oneeighty-warehouse.raw.raw_clickup_fields`\n  WHERE snapshot_date = DATE(@snapshot_date) AND ingested_at = TIMESTAMP(@ingested_at)\n), i AS (\n  SELECT COUNT(*) AS n, COUNTIF(severity = 'error') AS e\n  FROM `oneeighty-warehouse.ops.clickup_sync_issues`\n  WHERE DATE(synced_at) >= DATE(@snapshot_date) AND synced_at >= TIMESTAMP(@started_at)\n)\nSELECT\n  CASE\n    WHEN @list_errors != 'none'\n      OR t.n < CAST(@expected_tasks AS INT64)\n      OR f.n < CAST(@expected_fields AS INT64) THEN 'failure'\n    WHEN @rebuild_error != 'none' OR i.e > 0 THEN 'partial'\n    ELSE 'success'\n  END AS status,\n  t.n AS task_rows,\n  CONCAT('lists=', @lists, ' tasks_seen=', @tasks_seen,\n         ' task_rows=', CAST(t.n AS STRING), '/', @expected_tasks,\n         ' field_rows=', CAST(f.n AS STRING), '/', @expected_fields,\n         ' sync_issues=', CAST(i.n AS STRING), ' (', CAST(i.e AS STRING), ' error)',\n         IF(@rebuild_error = 'none', '', CONCAT(' | sp_rebuild_creative_tags failed, raw is loaded but ref.creative_tags was not rebuilt: ', @rebuild_error)),\n         IF(@list_errors = 'none', '', CONCAT(' | list_errors: ', @list_errors))) AS msg\nFROM t, f, i",
+        "options": {
+          "timeoutMs": 120000,
+          "queryParameters": {
+            "namedParameters": [
+              {
+                "name": "snapshot_date",
+                "value": "={{ $('Fetch ClickUp lists').first().json.snapshot_date }}"
+              },
+              {
+                "name": "ingested_at",
+                "value": "={{ $('Fetch ClickUp lists').first().json.ingested_at }}"
+              },
+              {
+                "name": "started_at",
+                "value": "={{ $('Fetch ClickUp lists').first().json.run_started_at }}"
+              },
+              {
+                "name": "expected_tasks",
+                "value": "={{ String($('Fetch ClickUp lists').first().json.expected_task_rows) }}"
+              },
+              {
+                "name": "expected_fields",
+                "value": "={{ String($('Fetch ClickUp lists').first().json.expected_field_rows) }}"
+              },
+              {
+                "name": "lists",
+                "value": "={{ String($('Fetch ClickUp lists').first().json.lists) }}"
+              },
+              {
+                "name": "tasks_seen",
+                "value": "={{ String($('Fetch ClickUp lists').first().json.tasks_seen) }}"
+              },
+              {
+                "name": "list_errors",
+                "value": "={{ $('Fetch ClickUp lists').first().json.list_errors || 'none' }}"
+              },
+              {
+                "name": "rebuild_error",
+                "value": "={{ $json.error ? String($json.error.message || $json.error).slice(0, 500) : 'none' }}"
+              }
+            ]
+          }
+        }
       },
-      "id": "Log to pipeline_log",
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "executeOnce": true,
+      "onError": "continueErrorOutput",
+      "position": [
+        2688,
+        0
+      ]
+    },
+    {
       "name": "Log to pipeline_log",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse"
+        },
+        "sqlQuery": "INSERT INTO `oneeighty-warehouse.ops.pipeline_log`\n  (run_id, workflow, client_id, source, started_at, finished_at, duration_seconds, status, rows_loaded, error_msg, trigger)\nVALUES (\n  @run_id, 'wf_clickup_to_bigquery', NULL, 'clickup',\n  TIMESTAMP(@started_at), CURRENT_TIMESTAMP(),\n  TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), TIMESTAMP(@started_at), SECOND),\n  @status, CAST(@rows AS INT64), @msg, @trigger)",
+        "options": {
+          "queryParameters": {
+            "namedParameters": [
+              {
+                "name": "run_id",
+                "value": "={{ $execution.id }}"
+              },
+              {
+                "name": "started_at",
+                "value": "={{ $('Fetch ClickUp lists').first().json.run_started_at }}"
+              },
+              {
+                "name": "status",
+                "value": "={{ $('Verify load').first().json.status }}"
+              },
+              {
+                "name": "rows",
+                "value": "={{ String($('Verify load').first().json.task_rows) }}"
+              },
+              {
+                "name": "msg",
+                "value": "={{ $('Verify load').first().json.msg }}"
+              },
+              {
+                "name": "trigger",
+                "value": "={{ $execution.mode === 'manual' ? 'manual' : 'cron' }}"
+              }
+            ]
+          }
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
       "position": [
-        560,
-        180
+        2912,
+        0
+      ]
+    },
+    {
+      "name": "Refresh plan pacing",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse"
+        },
+        "sqlQuery": "CALL `oneeighty-warehouse.mart.sp_refresh_plan_pacing`();\nSELECT 1 AS ok;",
+        "options": {
+          "timeoutMs": 300000
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "executeOnce": true,
+      "onError": "continueErrorOutput",
+      "position": [
+        3136,
+        0
+      ]
+    },
+    {
+      "name": "Log plan pacing",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse"
+        },
+        "sqlQuery": "INSERT INTO `oneeighty-warehouse.ops.pipeline_log`\n  (run_id, workflow, client_id, source, started_at, finished_at, duration_seconds, status, rows_loaded, error_msg, trigger)\nVALUES (\n  @run_id, 'wf_clickup_to_bigquery', NULL, 'plan_pacing',\n  CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), NULL,\n  @status, NULL, IF(@msg = 'none', 'CALL mart.sp_refresh_plan_pacing()', CONCAT('CALL mart.sp_refresh_plan_pacing() failed: ', @msg)), @trigger)",
+        "options": {
+          "queryParameters": {
+            "namedParameters": [
+              {
+                "name": "run_id",
+                "value": "={{ $execution.id }}"
+              },
+              {
+                "name": "status",
+                "value": "={{ $json.error ? 'failure' : 'success' }}"
+              },
+              {
+                "name": "msg",
+                "value": "={{ $json.error ? String($json.error.message || $json.error).slice(0, 900) : 'none' }}"
+              },
+              {
+                "name": "trigger",
+                "value": "={{ $execution.mode === 'manual' ? 'manual' : 'cron' }}"
+              }
+            ]
+          }
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "position": [
+        3360,
+        0
+      ]
+    },
+    {
+      "name": "Load or refresh failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Verify load').first().json.status }}",
+              "rightValue": "failure",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ $('Refresh plan pacing').all(1).length > 0 && !/permission/i.test(String($('Refresh plan pacing').all(1)[0].json.error)) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "position": [
+        3584,
+        0
+      ]
+    },
+    {
+      "name": "Fail: load or refresh",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "=ClickUp sync incomplete or plan pacing refresh failed. Load: {{ $('Verify load').first().json.msg }} | plan pacing: {{ $('Refresh plan pacing').all(1).length > 0 ? String($('Refresh plan pacing').all(1)[0].json.error).slice(0, 300) : 'ok' }}"
+      },
+      "position": [
+        3808,
+        0
+      ]
+    },
+    {
+      "name": "Log failure",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse"
+        },
+        "sqlQuery": "INSERT INTO `oneeighty-warehouse.ops.pipeline_log`\n  (run_id, workflow, client_id, source, started_at, finished_at, duration_seconds, status, rows_loaded, error_msg, trigger)\nVALUES (\n  @run_id, 'wf_clickup_to_bigquery', NULL, 'clickup',\n  TIMESTAMP(@started_at), CURRENT_TIMESTAMP(),\n  TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), TIMESTAMP(@started_at), SECOND),\n  'failure', 0, @msg, @trigger)",
+        "options": {
+          "queryParameters": {
+            "namedParameters": [
+              {
+                "name": "run_id",
+                "value": "={{ $execution.id }}"
+              },
+              {
+                "name": "started_at",
+                "value": "={{ $('Hourly :45').isExecuted ? $('Hourly :45').first().json.timestamp : $now.toISO() }}"
+              },
+              {
+                "name": "msg",
+                "value": "={{ ($prevNode.name || 'node') + ': ' + String(($json.error && ($json.error.message || $json.error)) || $json.message || 'unknown error').slice(0, 900) }}"
+              },
+              {
+                "name": "trigger",
+                "value": "={{ $execution.mode === 'manual' ? 'manual' : 'cron' }}"
+              }
+            ]
+          }
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "position": [
+        4032,
+        0
+      ]
+    },
+    {
+      "name": "Fail: node error",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "ClickUp sync failed. The failing node and message are in ops.pipeline_log (workflow wf_clickup_to_bigquery, status failure)."
+      },
+      "position": [
+        4256,
+        0
       ]
     }
   ],
-  "pinData": {},
   "connections": {
     "Hourly :45": {
       "main": [
@@ -313,18 +653,14 @@
       "main": [
         [
           {
-            "node": "Decode ClickUp token",
+            "node": "Read list registry",
             "type": "main",
             "index": 0
           }
-        ]
-      ]
-    },
-    "Decode ClickUp token": {
-      "main": [
+        ],
         [
           {
-            "node": "Read list registry",
+            "node": "Log failure",
             "type": "main",
             "index": 0
           }
@@ -335,55 +671,76 @@
       "main": [
         [
           {
-            "node": "Loop over lists",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Loop over lists": {
-      "main": [
-        [
-          {
-            "node": "Rebuild tag spine",
+            "node": "Read snapshot state",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Fetch field defs",
+            "node": "Log failure",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Rebuild tag spine": {
+    "Read snapshot state": {
       "main": [
         [
           {
-            "node": "Log to pipeline_log",
+            "node": "Fetch ClickUp lists",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log failure",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Fetch field defs": {
+    "Fetch ClickUp lists": {
       "main": [
         [
           {
-            "node": "Transform field defs",
+            "node": "Field rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log failure",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Transform field defs": {
+    "Field rows": {
       "main": [
+        [
+          {
+            "node": "No new field rows?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No new field rows?": {
+      "main": [
+        [
+          {
+            "node": "Task rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "BQ: insert field defs",
@@ -397,26 +754,40 @@
       "main": [
         [
           {
-            "node": "Fetch tasks",
+            "node": "Task rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log failure",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Fetch tasks": {
+    "Task rows": {
       "main": [
         [
           {
-            "node": "Transform tasks",
+            "node": "No new task rows?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Transform tasks": {
+    "No new task rows?": {
       "main": [
+        [
+          {
+            "node": "Rebuild tag spine",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "BQ: insert tasks",
@@ -430,7 +801,112 @@
       "main": [
         [
           {
-            "node": "Loop over lists",
+            "node": "Rebuild tag spine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rebuild tag spine": {
+      "main": [
+        [
+          {
+            "node": "Verify load",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Verify load",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify load": {
+      "main": [
+        [
+          {
+            "node": "Log to pipeline_log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to pipeline_log": {
+      "main": [
+        [
+          {
+            "node": "Refresh plan pacing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh plan pacing": {
+      "main": [
+        [
+          {
+            "node": "Log plan pacing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log plan pacing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log plan pacing": {
+      "main": [
+        [
+          {
+            "node": "Load or refresh failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load or refresh failed?": {
+      "main": [
+        [
+          {
+            "node": "Fail: load or refresh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log failure": {
+      "main": [
+        [
+          {
+            "node": "Fail: node error",
             "type": "main",
             "index": 0
           }
@@ -438,9 +914,12 @@
       ]
     }
   },
-  "active": false,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "lslDsvbP8jLKEgw0",
+    "executionTimeout": 1500,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
   },
-  "tags": []
+  "active": true
 }

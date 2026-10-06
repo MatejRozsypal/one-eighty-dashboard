@@ -1,8 +1,9 @@
 # 27. ClickUp to BigQuery, and write-back
 
 > Feeds `ref.creative_tags`, `ref.concepts`, `ref.personas` and `ref.creators`, which are the spine
-> of the Creative Engine. **Nothing in the repo does this today.** There is no ClickUp workflow, no
-> ClickUp secret, and no `raw_clickup_*` table. Everything below is new build.
+> of the Creative Engine, and the plan lists (`list_kind = 'promo'`, `stg.stg_clickup_plan`).
+> **Update 2026-10-06:** the hourly sync is live, see section 10. Sections 1 to 9 describe the
+> original build and are kept as history.
 >
 > Prerequisite reading: `CREATIVE_ENGINE_BRIEF.md` sections 3 and 4.
 
@@ -258,11 +259,29 @@ POST /api/v2/task/{task_id}/field/a80bdd5a-b4e5-4e70-81ce-0be80d57b768
 
 ## 10. Schedule
 
-Hourly at `:45`, offset from the Meta workflow's `:15` so tags land after the delivery data they
-describe. Full refresh, roughly 20 API calls, well inside the rate limit.
+**Live since 2026-10-06:** n8n workflow `wf_clickup_to_bigquery`, id `UHK8312UpMEEtnLm`, active,
+hourly at `:45` (offset from the Meta workflow's `:15`). The repo copy is
+`infra/n8n/wf_clickup_to_bigquery.json` (export of the live workflow, package pp3).
+Roughly 25 API calls per run, well inside the 100/min rate limit.
 
-Log to `ops.pipeline_log` with `source = 'clickup'` so `runbooks/26_pipeline_freshness_monitoring.md`
-picks it up without modification.
+Flow: Secret Manager token, `ref.clickup_lists` joined to active `ref.clients`, one Code node that
+fetches field definitions and paginated tasks of every list, inserts into `raw.raw_clickup_fields` and
+`raw.raw_clickup_tasks`, `CALL ref.sp_rebuild_creative_tags()`, a verify query (rows landed vs rows
+built), one `ops.pipeline_log` row (`source = 'clickup'`), then `CALL mart.sp_refresh_plan_pacing()`
+logged as its own row (`source = 'plan_pacing'`).
+
+Snapshot policy (raw keeps version history without unbounded growth):
+
+| list_kind | Written |
+|---|---|
+| `promo` (plan lists) | every task and field definition on every run, so `stg.stg_clickup_plan` drops a deleted task on the next run |
+| `ad_pipeline`, `concepts`, `personas` | everything on the first run of each UTC day, then only tasks whose `date_updated` or list changed, and field definitions whose name, type, target or options changed |
+
+Status in `ops.pipeline_log`: `success`; `partial` when raw loaded but `sp_rebuild_creative_tags`
+failed or wrote `error` issues; `failure` when a node failed, a list could not be fetched, or fewer rows
+landed than were built. A `failure` (or a failed plan pacing refresh) also stops the execution with an
+error, so the n8n error workflow fires. Successful executions do not store execution data (the Secret
+Manager response is part of it).
 
 ## 11. Verification
 

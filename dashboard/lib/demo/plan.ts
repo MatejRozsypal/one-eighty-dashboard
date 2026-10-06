@@ -374,7 +374,28 @@ export function demoPlanData(): PlanData {
     specs.push({ type: "gate", id: g.taskId, label: g.name, start: g.start, end: g.end, taskId: g.taskId, planStatus: "approved", merCap: g.merCap, thresholdOrders: threshold });
   }
 
-  const rows = specs.flatMap((s) => pace(s, days, asOf).filter((r) => !s.metrics || s.metrics.includes(r.metric)));
+  const rows = specs.flatMap((s) => pace(s, days, asOf).filter((r) => !s.metrics || s.metrics.includes(r.metric as PlanMetric)));
+
+  // G1 counts units (a unit-led checkpoint, like calendars sold): a units row
+  // scaled from its orders row, so the card leads with units.
+  const g1 = rows.find((r) => r.periodType === "gate" && r.periodId === "demo-g1" && r.metric === "orders");
+  if (g1) {
+    const k = 0.3;
+    const scale = (v: number | null) => (v === null ? null : Math.round(v * k * 10) / 10);
+    rows.push({
+      ...g1,
+      metric: "units",
+      target: Math.round((g1.target ?? 0) * k),
+      targetToDate: scale(g1.targetToDate),
+      actual: scale(g1.actual),
+      gap: scale(g1.gap),
+      projected: scale(g1.projected),
+      projectedLow: scale(g1.projectedLow),
+      projectedHigh: scale(g1.projectedHigh),
+      requiredDaily: scale(g1.requiredDaily),
+      merCapPct: null,
+    });
+  }
 
   const curve: CurveDay[] = [...days.entries()].map(([date, f]) => ({ date, promoTaskId: f.promoTaskId, isPayday: f.isPayday }));
 
@@ -394,6 +415,7 @@ export function demoPlanData(): PlanData {
       status: "approved",
       targetRevenue: Math.round((base * 1.4) / 1000) * 1000,
       targetOrders: null,
+      targetUnits: null,
       mechanic: null,
       hasKeys: false,
     },
@@ -406,6 +428,7 @@ export function demoPlanData(): PlanData {
       status: "approved",
       targetRevenue: null,
       targetOrders: p.attrShare === null ? null : Math.round(curveOrders(p.start, p.end) * p.attrShare),
+      targetUnits: null,
       mechanic: p.mechanic,
       // F2 has no code entered yet, so its attributed orders read n/a.
       hasKeys: p.taskId !== "demo-f2",
@@ -436,6 +459,7 @@ export function demoPlanData(): PlanData {
         windowEnd: p.end,
         isComplete: p.end <= asOf,
         attrOrders,
+        attrUnits: null,
         attrRevenue: storeOrders > 0 ? round((storeRevenue * attrOrders) / storeOrders) : 0,
         storeOrders,
         storeRevenue: round(storeRevenue),

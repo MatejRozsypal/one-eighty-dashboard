@@ -7,15 +7,18 @@
  *
  * Card: window, status, the whole store in the window against the window's
  * slice of the curve (the number that adds up to the month), and the orders
- * attributed to the promo against its own target, n/a until both exist.
+ * attributed to the promo against its own target, n/a until both exist. A
+ * promo with Target units adds units sold against it. A checkpoint card leads
+ * with the metric it has a target for (units, else orders, else revenue),
+ * and its chip is that row's status.
  */
 
 import { StatusChip } from "@/components/plan/StatusChip";
 import { NO_VALUE } from "@/lib/format";
 import { daysBetween, fmtDay, fmtRange, monthStart, addMonths, monthEnd } from "@/lib/plan/dates";
-import { fmtCount, fmtMer, fmtPace } from "@/lib/plan/format";
-import type { TimelineItem } from "@/lib/plan/model";
-import type { RowStatus } from "@/lib/plan/types";
+import { METRIC_LABEL, fmtCount, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
+import { headlineMetric, type TimelineItem } from "@/lib/plan/model";
+import type { PacingRow, RowStatus } from "@/lib/plan/types";
 
 const BAR: Record<RowStatus, string> = {
   ahead: "bg-info/70",
@@ -40,11 +43,13 @@ export function PromoTimeline({
   start,
   end,
   asOf,
+  currency,
 }: {
   items: TimelineItem[];
   start: string;
   end: string;
   asOf: string | null;
+  currency: string;
 }) {
   const span = daysBetween(start, end) + 1;
   const months: string[] = [];
@@ -112,16 +117,22 @@ export function PromoTimeline({
 
       <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (
-          <TimelineCard key={item.taskId} item={item} />
+          <TimelineCard key={item.taskId} item={item} currency={currency} />
         ))}
       </div>
     </div>
   );
 }
 
-function TimelineCard({ item }: { item: TimelineItem }) {
+function TimelineCard({ item, currency }: { item: TimelineItem; currency: string }) {
   const orders = item.byMetric.orders;
-  const started = orders && orders.status !== "not_started";
+  // A checkpoint is judged on the metric it has a target for (units first).
+  const lead = item.kind === "gate" ? headlineMetric(item.byMetric) : "orders";
+  const head = item.byMetric[lead];
+  const units = item.kind === "promo" && item.byMetric.units?.target != null ? item.byMetric.units : undefined;
+  const started = (row: PacingRow | undefined) => row !== undefined && row.status !== "not_started";
+  const merRow = [head, orders, ...Object.values(item.byMetric)].find((r) => r?.merCapPct != null);
+
   return (
     <article className="flex min-w-0 flex-col gap-3 rounded-card border border-hairline bg-surface-card p-[14px_16px]">
       <div className="flex items-start justify-between gap-2">
@@ -134,20 +145,29 @@ function TimelineCard({ item }: { item: TimelineItem }) {
             {item.planStatus === "planning" && " · planning"}
           </span>
         </div>
-        {orders && <StatusChip row={orders} />}
+        {head && <StatusChip row={head} />}
       </div>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-[11.5px]">
         {item.kind === "promo" ? (
           <>
             <dt className="text-content-muted">Store orders</dt>
             <dd className="text-right tabular">
-              <Muted text={started ? fmtCount(orders?.actual) : NO_VALUE} />
+              <Muted text={started(orders) ? fmtCount(orders?.actual) : NO_VALUE} />
               <span className="text-content-muted"> of {fmtCount(orders?.target)}</span>
             </dd>
             <dt className="text-content-muted">Pace</dt>
             <dd className="text-right tabular">
-              <Muted text={started ? fmtPace(orders?.pacePct) : NO_VALUE} />
+              <Muted text={started(orders) ? fmtPace(orders?.pacePct) : NO_VALUE} />
             </dd>
+            {units && (
+              <>
+                <dt className="text-content-muted">{METRIC_LABEL.units}</dt>
+                <dd className="text-right tabular">
+                  <Muted text={started(units) ? fmtCount(units.actual) : NO_VALUE} />
+                  <span className="text-content-muted"> of {fmtCount(units.target)}</span>
+                </dd>
+              </>
+            )}
             <dt className="text-content-muted">Attributed</dt>
             <dd className="text-right tabular">
               <Muted text={fmtCount(item.attributedOrders)} />
@@ -156,17 +176,25 @@ function TimelineCard({ item }: { item: TimelineItem }) {
           </>
         ) : (
           <>
-            <dt className="text-content-muted">Orders</dt>
+            <dt className="text-content-muted">{METRIC_LABEL[lead]}</dt>
             <dd className="text-right tabular">
-              <Muted text={started ? fmtCount(orders?.actual) : NO_VALUE} />
-              <span className="text-content-muted"> of {fmtCount(orders?.target)}</span>
+              <Muted text={started(head) ? fmtValue(head?.actual, lead, currency) : NO_VALUE} />
+              <span className="text-content-muted"> of {fmtValue(head?.target, lead, currency)}</span>
             </dd>
-            {orders?.merCapPct !== null && orders?.merCapPct !== undefined && (
+            {started(head) && head?.target != null && (
+              <>
+                <dt className="text-content-muted">Pace</dt>
+                <dd className="text-right tabular">
+                  <Muted text={fmtPace(head.pacePct)} />
+                </dd>
+              </>
+            )}
+            {merRow && (
               <>
                 <dt className="text-content-muted">MER</dt>
                 <dd className="text-right tabular">
-                  <Muted text={fmtMer(orders.merActualPct)} />
-                  <span className="text-content-muted"> cap {fmtMer(orders.merCapPct)}</span>
+                  <Muted text={fmtMer(merRow.merActualPct)} />
+                  <span className="text-content-muted"> cap {fmtMer(merRow.merCapPct)}</span>
                 </dd>
               </>
             )}

@@ -10,6 +10,13 @@
 export const PLAN_METRICS = ["revenue", "orders", "new_customers", "ad_spend"] as const;
 export type PlanMetric = (typeof PLAN_METRICS)[number];
 
+/**
+ * Every metric a pacing row can carry. `units` is set only where a task has a
+ * Target units (checkpoints such as calendars sold, unit-led promos); it is
+ * not one of the store metrics the tiles and charts cycle through.
+ */
+export type RowMetric = PlanMetric | "units";
+
 export type PeriodType = "day" | "week" | "month" | "quarter" | "promo" | "gate";
 
 export type PacingStatus = "ahead" | "on_track" | "behind" | "off_track" | "not_started" | "closed";
@@ -22,7 +29,7 @@ export interface PacingRow {
   periodType: PeriodType;
   periodId: string;
   label: string;
-  metric: PlanMetric;
+  metric: RowMetric;
   taskId: string | null;
   planStatus: string | null;
   asOf: string;
@@ -68,6 +75,7 @@ export interface PromoPerf {
   isComplete: boolean;
   attrOrders: number | null;
   attrRevenue: number | null;
+  attrUnits: number | null;
   storeOrders: number | null;
   storeRevenue: number | null;
   metaSpend: number | null;
@@ -85,6 +93,7 @@ export interface PlanTask {
   status: string | null;
   targetRevenue: number | null;
   targetOrders: number | null;
+  targetUnits: number | null;
   mechanic: string | null;
   /** True when the task names at least one matching key (coupon code, SKU or UTM campaign). */
   hasKeys: boolean;

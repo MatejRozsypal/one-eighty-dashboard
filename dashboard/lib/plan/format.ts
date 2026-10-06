@@ -8,16 +8,17 @@
  */
 
 import { MINUS, NO_VALUE, formatMoney, formatNumber, formatPercent } from "@/lib/format";
-import type { PlanMetric, RowStatus } from "./types";
+import type { RowMetric, RowStatus } from "./types";
 
-export const METRIC_LABEL: Record<PlanMetric, string> = {
+export const METRIC_LABEL: Record<RowMetric, string> = {
   orders: "Orders",
   revenue: "Revenue",
   new_customers: "New customers",
   ad_spend: "Ad spend",
+  units: "Units",
 };
 
-export function isMoney(metric: PlanMetric): boolean {
+export function isMoney(metric: RowMetric): boolean {
   return metric === "revenue" || metric === "ad_spend";
 }
 
@@ -29,7 +30,7 @@ export function fmtCount(value: number | null | undefined): string {
 
 export function fmtValue(
   value: number | null | undefined,
-  metric: PlanMetric,
+  metric: RowMetric,
   currency: string,
   { compact = false }: { compact?: boolean } = {}
 ): string {
@@ -38,7 +39,7 @@ export function fmtValue(
 }
 
 /** Signed difference: "+4.2", "−CZK 7,725". Zero prints unsigned. */
-export function fmtGap(value: number | null | undefined, metric: PlanMetric, currency: string): string {
+export function fmtGap(value: number | null | undefined, metric: RowMetric, currency: string): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return NO_VALUE;
   const text = fmtValue(Math.abs(value), metric, currency);
   if (text === fmtValue(0, metric, currency)) return text;

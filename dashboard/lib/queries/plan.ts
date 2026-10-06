@@ -37,7 +37,7 @@ import type {
   RowStatus,
   PeriodType,
   PlanData,
-  PlanMetric,
+  RowMetric,
   PlanTask,
   PromoPerf,
 } from "@/lib/plan/types";
@@ -73,7 +73,7 @@ function toPacingRow(r: Raw): PacingRow {
     periodType: String(r.period_type) as PeriodType,
     periodId: String(r.period_id),
     label: String(r.period_label ?? r.period_id),
-    metric: String(r.metric) as PlanMetric,
+    metric: String(r.metric) as RowMetric,
     taskId: str(r.task_id),
     planStatus: str(r.plan_status),
     asOf: date(r.as_of),
@@ -136,7 +136,7 @@ async function fetchCurve(clientId: string): Promise<CurveDay[]> {
 async function fetchTasks(clientId: string): Promise<PlanTask[]> {
   const rows = await query<Raw>(
     `SELECT task_id, level, name, start_date, end_date, status,
-            target_revenue, target_orders, mechanic,
+            target_revenue, target_orders, target_units, mechanic,
             COALESCE(TRIM(coupon_codes), '') != '' OR COALESCE(TRIM(skus), '') != ''
               OR COALESCE(TRIM(utm_campaign), '') != '' AS has_keys
      FROM ${PLAN_TABLES.planInput}
@@ -152,6 +152,7 @@ async function fetchTasks(clientId: string): Promise<PlanTask[]> {
     status: str(r.status),
     targetRevenue: num(r.target_revenue),
     targetOrders: num(r.target_orders),
+    targetUnits: num(r.target_units),
     mechanic: str(r.mechanic),
     hasKeys: r.has_keys === true,
   }));
@@ -177,7 +178,7 @@ async function fetchActuals(clientId: string): Promise<ActualDay[]> {
 async function fetchPromoPerf(clientId: string): Promise<PromoPerf[]> {
   const rows = await query<Raw>(
     `SELECT task_id, phase, mechanic, window_start, window_end, is_complete,
-            attr_orders, attr_revenue, store_orders, store_revenue, meta_spend,
+            attr_orders, attr_revenue, attr_units, store_orders, store_revenue, meta_spend,
             store_mer_pct, mer_cap_pct
      FROM ${PLAN_TABLES.promoPerf}
      WHERE client_id = @clientId AND grain = 'total' AND source = 'clickup'`,
@@ -192,6 +193,7 @@ async function fetchPromoPerf(clientId: string): Promise<PromoPerf[]> {
     isComplete: r.is_complete === true,
     attrOrders: num(r.attr_orders),
     attrRevenue: num(r.attr_revenue),
+    attrUnits: num(r.attr_units),
     storeOrders: num(r.store_orders),
     storeRevenue: num(r.store_revenue),
     metaSpend: num(r.meta_spend),

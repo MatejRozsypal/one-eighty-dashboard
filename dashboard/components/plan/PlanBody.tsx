@@ -110,7 +110,7 @@ function PeriodView({
       {view === "quarter" && (
         <section className={CARD} aria-label="Promos and checkpoints">
           <Eyebrow>Promos and checkpoints</Eyebrow>
-          {items.length > 0 ? <PromoTimeline items={items} start={period.start} end={period.end} asOf={asOf} /> : <NoData />}
+          {items.length > 0 ? <PromoTimeline items={items} start={period.start} end={period.end} asOf={asOf} currency={currency} /> : <NoData />}
         </section>
       )}
     </>

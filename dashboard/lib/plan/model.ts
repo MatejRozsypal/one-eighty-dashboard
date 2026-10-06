@@ -21,11 +21,12 @@ import {
   type PlanData,
   type PlanMetric,
   type PlanTask,
+  type RowMetric,
   type PlanView,
   type PromoPerf,
 } from "./types";
 
-export type MetricRows = Partial<Record<PlanMetric, PacingRow>>;
+export type MetricRows = Partial<Record<RowMetric, PacingRow>>;
 
 export interface PeriodOption {
   id: string;
@@ -119,7 +120,7 @@ export function completeRows(data: PlanData): PlanData {
   const asOf = asOfOf(data) ?? data.actuals[data.actuals.length - 1].date;
   const byDate = actualIndex(data.actuals);
 
-  const periods = new Map<string, { template: PacingRow; metrics: Set<PlanMetric> }>();
+  const periods = new Map<string, { template: PacingRow; metrics: Set<RowMetric> }>();
   for (const r of data.rows) {
     const key = `${r.periodType}|${r.periodId}`;
     const p = periods.get(key);
@@ -397,6 +398,19 @@ export interface TimelineItem {
   byMetric: MetricRows;
   attributedOrders: number | null;
   attributedTarget: number | null;
+}
+
+/** Checkpoints and unit-led promos are judged on these, first one with a target wins. */
+const HEADLINE_ORDER: readonly RowMetric[] = ["units", "orders", "revenue"];
+
+/**
+ * The metric a checkpoint or promo card leads with: the first of units,
+ * orders, revenue that has a target in the period, else the first that has a
+ * row at all. A calendar checkpoint is judged on calendars sold, not orders.
+ */
+export function headlineMetric(rows: MetricRows): RowMetric {
+  const targeted = HEADLINE_ORDER.find((m) => rows[m] && rows[m]!.target !== null);
+  return targeted ?? HEADLINE_ORDER.find((m) => rows[m]) ?? "orders";
 }
 
 export function promoPerfOf(data: PlanData, taskId: string): PromoPerf | null {

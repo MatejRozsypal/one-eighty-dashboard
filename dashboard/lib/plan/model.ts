@@ -1,0 +1,444 @@
+/**
+ * Plan page view model: picks a period out of the pacing rows and shapes the
+ * chart series, the breakdown rows and the quarter timeline. Pure, no I/O, so
+ * the server page and the client charts share it and the demo goes through
+ * exactly the same code as a real client.
+ *
+ * Nothing here recomputes pace, status or the projection: those come from the
+ * warehouse row of the period. The only arithmetic is drawing them:
+ *   - cumulative sums of the day rows (the curve target and the actual);
+ *   - the projection path from as of to the period end, which spreads the
+ *     warehouse's projected end along the remaining curve;
+ *   - the target trajectory (see `targetTrajectory`).
+ */
+
+import { addDays, daysBetween, fmtDay, fmtMonth, fmtMonthShort, fmtRange, monthStart, monthsBetween } from "./dates";
+import {
+  PLAN_METRICS,
+  type PacingRow,
+  type PeriodType,
+  type PlanData,
+  type PlanMetric,
+  type PlanTask,
+  type PlanView,
+  type PromoPerf,
+} from "./types";
+
+export type MetricRows = Partial<Record<PlanMetric, PacingRow>>;
+
+export interface PeriodOption {
+  id: string;
+  label: string;
+  start: string;
+  end: string;
+}
+
+const VIEW_TYPE: Record<Exclude<PlanView, "target">, PeriodType> = {
+  month: "month",
+  quarter: "quarter",
+  promo: "promo",
+};
+
+export const TARGET_STATE_LEVEL = "Target state";
+
+/** The as of date of the data, or null when there are no rows. */
+export function asOfOf(data: PlanData): string | null {
+  return data.rows.find((r) => r.asOf)?.asOf ?? null;
+}
+
+/** Periods the picker offers for a view, in calendar order. */
+export function periodOptions(data: PlanData, view: PlanView): PeriodOption[] {
+  if (view === "target") {
+    return data.tasks
+      .filter((t) => t.level === TARGET_STATE_LEVEL && t.start && t.end)
+      .sort((a, b) => (a.end ?? "").localeCompare(b.end ?? ""))
+      .map((t) => ({ id: t.taskId, label: t.name, start: t.start!, end: t.end! }));
+  }
+  const type = VIEW_TYPE[view];
+  const seen = new Map<string, PeriodOption>();
+  for (const r of data.rows) {
+    if (r.periodType !== type || seen.has(r.periodId)) continue;
+    seen.set(r.periodId, { id: r.periodId, label: r.label, start: r.start, end: r.end });
+  }
+  return [...seen.values()].sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+}
+
+/**
+ * The requested period when it exists, else the one running on `anchor`
+ * (the shortest, so a promo inside a longer window wins), else the next one
+ * to start, else the latest.
+ */
+export function selectPeriod(options: PeriodOption[], requested: string | undefined, anchor: string): PeriodOption | null {
+  if (options.length === 0) return null;
+  const hit = requested ? options.find((o) => o.id === requested) : undefined;
+  if (hit) return hit;
+  const running = options
+    .filter((o) => o.start <= anchor && anchor <= o.end)
+    .sort((a, b) => daysBetween(a.start, a.end) - daysBetween(b.start, b.end));
+  if (running.length > 0) return running[0];
+  const upcoming = options.find((o) => o.start > anchor);
+  return upcoming ?? options[options.length - 1];
+}
+
+/** The four metric rows of one period. */
+export function rowsOf(data: PlanData, type: PeriodType, id: string): MetricRows {
+  const out: MetricRows = {};
+  for (const r of data.rows) {
+    if (r.periodType === type && r.periodId === id) out[r.metric] = r;
+  }
+  return out;
+}
+
+export function hasAnyRow(rows: MetricRows): boolean {
+  return PLAN_METRICS.some((m) => rows[m] !== undefined);
+}
+
+// ── Chart series ─────────────────────────────────────────────────────────────
+
+export interface SeriesPoint {
+  date: string;
+  label: string;
+  /** Curve target of the day. */
+  target: number | null;
+  /** Actual of the day; null for days after as of. */
+  actual: number | null;
+  cumTarget: number | null;
+  cumActual: number | null;
+  /** Projection path, from as of to the period end. */
+  projection: number | null;
+  /** 80% cone around the projection, [low, high]. */
+  band: [number, number] | null;
+  /** Trailing 7-day mean of actual and of target (ratio of sums). */
+  avgActual: number | null;
+  avgTarget: number | null;
+  preliminary: boolean;
+}
+
+/** Day rows of one metric, by date. */
+function dayIndex(data: PlanData, metric: PlanMetric): Map<string, PacingRow> {
+  const out = new Map<string, PacingRow>();
+  for (const r of data.rows) if (r.periodType === "day" && r.metric === metric) out.set(r.periodId, r);
+  return out;
+}
+
+/** Fewer closed days than this in the trailing window and the 7-day mean stays empty. */
+const MIN_DAYS_FOR_AVERAGE = 3;
+
+/**
+ * Daily and cumulative series of one metric over a period.
+ *
+ * Projection path: the warehouse projects the period end as
+ * P = C + (T - CT) x pf, the remaining curve scaled by one factor. Every day
+ * after as of gets the same factor on its share of the remaining curve:
+ *   proj_d = C + (cumT_d - CT) x (P - C) / (T - CT).
+ * The cone widens with the square root of the remaining curve covered, from
+ * zero at as of to the warehouse's low / high at the period end.
+ */
+export function buildSeries(data: PlanData, metric: PlanMetric, start: string, end: string, period?: PacingRow): SeriesPoint[] {
+  const days = dayIndex(data, metric);
+  const asOf = asOfOf(data) ?? "";
+  const out: SeriesPoint[] = [];
+
+  let cumTarget = 0;
+  let cumActual = 0;
+  let anyTarget = false;
+  for (let d = start; d <= end; d = addDays(d, 1)) {
+    const row = days.get(d);
+    const target = row?.target ?? null;
+    const closed = d <= asOf;
+    const actual = closed ? (row?.actual ?? null) : null;
+    if (target !== null) {
+      cumTarget += target;
+      anyTarget = true;
+    }
+    if (actual !== null) cumActual += actual;
+
+    // Trailing 7 days, including days before the period when the table has them.
+    let sumA = 0;
+    let sumT = 0;
+    let n = 0;
+    for (let k = 0; k < 7; k++) {
+      const r = days.get(addDays(d, -k));
+      const day = addDays(d, -k);
+      if (!r || day > asOf || r.actual === null || r.target === null) continue;
+      sumA += r.actual;
+      sumT += r.target;
+      n += 1;
+    }
+    const enough = closed && n >= MIN_DAYS_FOR_AVERAGE;
+
+    out.push({
+      date: d,
+      label: fmtDay(d),
+      target,
+      actual,
+      cumTarget: anyTarget ? cumTarget : null,
+      cumActual: closed && d >= start ? cumActual : null,
+      projection: null,
+      band: null,
+      avgActual: enough ? sumA / n : null,
+      avgTarget: enough ? sumT / n : null,
+      preliminary: closed && (row?.isPreliminary ?? false),
+    });
+  }
+
+  // Projection: only for an open period with a warehouse projection.
+  if (period && period.projected !== null && period.status !== "closed" && asOf >= start && asOf < end) {
+    const idx = out.findIndex((p) => p.date === asOf);
+    const at = idx >= 0 ? out[idx] : null;
+    const C = at?.cumActual ?? null;
+    const CT = at?.cumTarget ?? null;
+    const T = out[out.length - 1]?.cumTarget ?? null;
+    if (C !== null && CT !== null && T !== null) {
+      const remaining = T - CT;
+      const scale = remaining > 0 ? (period.projected - C) / remaining : 1;
+      const up = period.projectedHigh !== null ? period.projectedHigh - period.projected : null;
+      const down = period.projectedLow !== null ? period.projected - period.projectedLow : null;
+      for (let i = Math.max(idx, 0); i < out.length; i++) {
+        const p = out[i];
+        if (p.cumTarget === null) continue;
+        const covered = remaining > 0 ? Math.min(1, Math.max(0, (p.cumTarget - CT) / remaining)) : 1;
+        const proj = C + (p.cumTarget - CT) * scale;
+        p.projection = proj;
+        if (up !== null && down !== null) {
+          const w = Math.sqrt(covered);
+          p.band = [proj - down * w, proj + up * w];
+        }
+      }
+    }
+  }
+  return out;
+}
+
+export interface PromoBand {
+  taskId: string;
+  code: string;
+  start: string;
+  end: string;
+}
+
+/** "F4" from "F4 · Black Week". */
+export function phaseCode(label: string): string {
+  const head = label.split(" · ")[0]?.trim();
+  return head && head.length <= 6 ? head : label;
+}
+
+/** Name after the phase code, "Black Week" from "F4 · Black Week". */
+export function phaseName(label: string): string {
+  const parts = label.split(" · ");
+  return parts.length > 1 ? parts.slice(1).join(" · ") : label;
+}
+
+/**
+ * Promo windows inside a period as they shape the curve: each day belongs to
+ * the window that set its target (the warehouse picks the shortest), so the
+ * bands never overlap.
+ */
+export function promoBands(data: PlanData, start: string, end: string): PromoBand[] {
+  const labels = new Map<string, string>();
+  for (const r of data.rows) if (r.periodType === "promo" && r.taskId) labels.set(r.taskId, r.label);
+
+  const bands: PromoBand[] = [];
+  for (const day of data.curve) {
+    if (day.date < start || day.date > end || !day.promoTaskId) continue;
+    const last = bands[bands.length - 1];
+    if (last && last.taskId === day.promoTaskId && addDays(last.end, 1) === day.date) {
+      last.end = day.date;
+    } else {
+      const label = labels.get(day.promoTaskId) ?? "Promo";
+      bands.push({ taskId: day.promoTaskId, code: phaseCode(label), start: day.date, end: day.date });
+    }
+  }
+  return bands;
+}
+
+// ── Breakdown ────────────────────────────────────────────────────────────────
+
+export interface BreakdownRow {
+  id: string;
+  label: string;
+  sub: string;
+  byMetric: MetricRows;
+  /** The row that contains as of. */
+  current: boolean;
+}
+
+function rowsBy(data: PlanData, type: PeriodType, keep: (r: PacingRow) => boolean): BreakdownRow[] {
+  const asOf = asOfOf(data) ?? "";
+  const map = new Map<string, BreakdownRow>();
+  for (const r of data.rows) {
+    if (r.periodType !== type || !keep(r)) continue;
+    let row = map.get(r.periodId);
+    if (!row) {
+      row = { id: r.periodId, label: r.label, sub: fmtRange(r.start, r.end), byMetric: {}, current: r.start <= asOf && asOf <= r.end };
+      map.set(r.periodId, row);
+    }
+    row.byMetric[r.metric] = r;
+  }
+  return [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Quarter by month, month by ISO week, promo and target by day / month. */
+export function breakdown(data: PlanData, view: PlanView, start: string, end: string): BreakdownRow[] {
+  const overlaps = (r: PacingRow) => r.start <= end && r.end >= start;
+  const inside = (r: PacingRow) => r.start >= start && r.end <= end;
+  switch (view) {
+    case "quarter":
+      return rowsBy(data, "month", inside);
+    case "month":
+      return rowsBy(data, "week", overlaps).map((r) => ({ ...r, label: r.label.replace(/ \d{4}$/, "") }));
+    case "promo":
+      return rowsBy(data, "day", inside).map((r) => ({ ...r, label: fmtDay(r.id), sub: "" }));
+    case "target":
+      return rowsBy(data, "month", overlaps).map((r) => ({ ...r, sub: "" }));
+  }
+}
+
+// ── Quarter timeline ─────────────────────────────────────────────────────────
+
+export interface TimelineItem {
+  kind: "promo" | "gate";
+  taskId: string;
+  code: string;
+  name: string;
+  start: string;
+  end: string;
+  planStatus: string | null;
+  byMetric: MetricRows;
+  attributedOrders: number | null;
+  attributedTarget: number | null;
+}
+
+export function promoPerfOf(data: PlanData, taskId: string): PromoPerf | null {
+  return data.promoPerf?.find((p) => p.taskId === taskId) ?? null;
+}
+
+export function taskOf(data: PlanData, taskId: string | null): PlanTask | null {
+  if (!taskId) return null;
+  return data.tasks.find((t) => t.taskId === taskId) ?? null;
+}
+
+/** Promos and checkpoints that touch the period, by start date. */
+export function timeline(data: PlanData, start: string, end: string): TimelineItem[] {
+  const items = new Map<string, TimelineItem>();
+  for (const r of data.rows) {
+    if ((r.periodType !== "promo" && r.periodType !== "gate") || !(r.start <= end && r.end >= start)) continue;
+    let item = items.get(r.periodId);
+    if (!item) {
+      const perf = promoPerfOf(data, r.taskId ?? r.periodId);
+      const task = taskOf(data, r.taskId);
+      item = {
+        kind: r.periodType === "gate" ? "gate" : "promo",
+        taskId: r.taskId ?? r.periodId,
+        code: phaseCode(r.label),
+        name: phaseName(r.label),
+        start: r.start,
+        end: r.end,
+        planStatus: r.planStatus,
+        byMetric: {},
+        attributedOrders: perf?.attrOrders ?? null,
+        attributedTarget: task?.targetOrders ?? null,
+      };
+      items.set(r.periodId, item);
+    }
+    item.byMetric[r.metric] = r;
+  }
+  return [...items.values()].sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+}
+
+// ── Target trajectory ────────────────────────────────────────────────────────
+
+export interface TrajectoryPoint {
+  month: string;
+  label: string;
+  /** Monthly run-rate on the trajectory. */
+  trajectory: number | null;
+  /** The month's own plan target. */
+  plan: number | null;
+  /** Closed months: the final figure. */
+  actual: number | null;
+  /** The month in flight: the warehouse projection. */
+  projected: number | null;
+}
+
+export interface Trajectory {
+  task: PlanTask;
+  /** Run-rate at the start: mean revenue of the closed months before it. */
+  startValue: number | null;
+  startMonths: number;
+  goal: number | null;
+  /** Constant monthly growth from start value to goal. */
+  growth: number | null;
+  points: TrajectoryPoint[];
+}
+
+/** Closed months that set the starting run-rate. */
+const START_WINDOW_MONTHS = 3;
+
+/**
+ * Trajectory to a Target state.
+ *
+ * The Target state task holds a monthly revenue run-rate (`target revenue`) to
+ * reach by its due date. The trajectory is a constant monthly growth line from
+ * the run-rate at the task's start to that goal:
+ *
+ *   S = mean revenue of the (up to) 3 closed months before the start month
+ *   n = months from the start month to the due month
+ *   g = (goal / S)^(1 / n) - 1
+ *   level(k) = S x (1 + g)^k, k = 0 (start month) .. n (due month)
+ *
+ * Revenue is the plan's own definition (month rows of the pacing table), so
+ * the line and the actuals are in the same units as every month target. With
+ * no closed month before the start there is no starting point and the line is
+ * not drawn (S, g null); actuals and month plans still are.
+ */
+export function targetTrajectory(data: PlanData, task: PlanTask): Trajectory {
+  const months = new Map<string, PacingRow>();
+  for (const r of data.rows) {
+    if (r.periodType === "month" && r.metric === "revenue") months.set(monthStart(r.start), r);
+  }
+
+  const startMonth = monthStart(task.start ?? task.end ?? "");
+  const endMonth = monthStart(task.end ?? task.start ?? "");
+  const before = [...months.entries()]
+    .filter(([m, r]) => m < startMonth && r.status === "closed" && r.actual !== null)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-START_WINDOW_MONTHS);
+  const startValue = before.length > 0 ? before.reduce((s, [, r]) => s + (r.actual ?? 0), 0) / before.length : null;
+  const goal = task.targetRevenue;
+  const n = monthsBetween(startMonth, endMonth);
+  const growth =
+    startValue !== null && startValue > 0 && goal !== null && goal > 0 && n > 0 ? Math.pow(goal / startValue, 1 / n) - 1 : null;
+
+  // From the earliest month that has data or sets the start, to the due month.
+  const first = [before[0]?.[0], startMonth, ...months.keys()].filter(Boolean).sort()[0] as string;
+  const points: TrajectoryPoint[] = [];
+  for (let k = 0, m = first; m <= endMonth && k < 120; k++, m = addMonthsIso(m, 1)) {
+    const row = months.get(m);
+    const step = monthsBetween(startMonth, m);
+    const trajectory =
+      startValue !== null && growth !== null && step >= 0 && step <= n ? startValue * Math.pow(1 + growth, step) : null;
+    const closed = row?.status === "closed";
+    const open = row && row.status !== "closed" && row.status !== "not_started";
+    points.push({
+      month: m,
+      label: fmtMonthShort(m),
+      trajectory,
+      plan: row?.target ?? null,
+      actual: closed ? row!.actual : null,
+      projected: open ? row!.projected : null,
+    });
+  }
+  return { task, startValue, startMonths: before.length, goal, growth, points };
+}
+
+function addMonthsIso(month: string, k: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const total = y * 12 + (m - 1) + k;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}-01`;
+}
+
+/** "October 2026" for a month id. */
+export function monthTitle(start: string): string {
+  return fmtMonth(start);
+}

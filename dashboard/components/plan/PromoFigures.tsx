@@ -9,15 +9,16 @@
  *   Whole store:  every order in the window, against the window's slice of
  *                 the curve. This is the number that adds up to the month.
  *   Units:        when the promo has Target units: units sold against it.
- *   Lift:         against a no-promo baseline. Not measured yet: n/a.
+ *   Lift:         store orders (else revenue) to date against the warehouse's
+ *                 no-promo baseline to date; n/a when there is no baseline.
  *   MER:          ad spend over plan revenue in the window, against its cap.
  */
 
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import { NO_VALUE } from "@/lib/format";
-import { fmtCount, fmtMer, fmtPace } from "@/lib/plan/format";
-import { attributedOrders, promoPerfOf, taskOf, type MetricRows, type PeriodOption } from "@/lib/plan/model";
+import { METRIC_LABEL, fmtCount, fmtLift, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
+import { attributedOrders, liftRow, promoPerfOf, taskOf, type MetricRows, type PeriodOption } from "@/lib/plan/model";
 import { PLAN_METRICS, type PacingRow } from "@/lib/plan/types";
 import { StatusChip } from "@/components/plan/StatusChip";
 import type { PlanData } from "@/lib/plan/types";
@@ -65,6 +66,7 @@ export function PromoFigures({
   data,
   period,
   rows,
+  currency,
 }: {
   data: PlanData;
   period: PeriodOption;
@@ -80,6 +82,7 @@ export function PromoFigures({
   const started = orders !== undefined && orders.status !== "not_started";
   const running = started && orders.status !== "closed";
   const cap = spend?.merCapPct ?? orders?.merCapPct ?? perf?.merCapPct ?? null;
+  const lift = liftRow(rows);
   const attrShare = attributed !== null && perf?.storeOrders ? attributed / perf.storeOrders : null;
 
   // Units: the plan's own units row when the promo has Target units (units
@@ -116,7 +119,17 @@ export function PromoFigures({
             chip={unitsRow}
           />
         )}
-        <Figure label="Lift vs baseline" value={NO_VALUE} />
+        <Figure
+          label="Lift vs baseline"
+          value={fmtLift(lift?.liftPct)}
+          of={
+            lift
+              ? `baseline ${fmtValue(lift.status === "not_started" || lift.status === "closed" ? lift.baselineTotal : lift.baselineToDate, lift.metric, currency)}`
+              : undefined
+          }
+          sub={lift ? `${METRIC_LABEL[lift.metric]}${lift.status === "closed" || lift.status === "not_started" ? " in window" : " to date"}` : undefined}
+          tip="Lift vs baseline"
+        />
         <Figure
           label="MER (spend / revenue)"
           value={started ? fmtMer(spend?.merActualPct) : NO_VALUE}

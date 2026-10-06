@@ -309,6 +309,9 @@ function pace(spec: PeriodSpec, days: Map<string, DayFacts>, asOf: string): Paci
       merCapPct: spec.merCap,
       merPlanPct: merPlan,
       merActualPct: merActual,
+      baselineTotal: null,
+      baselineToDate: null,
+      liftPct: null,
     };
   });
 }
@@ -375,6 +378,16 @@ export function demoPlanData(): PlanData {
   }
 
   const rows = specs.flatMap((s) => pace(s, days, asOf).filter((r) => !s.metrics || s.metrics.includes(r.metric as PlanMetric)));
+
+  // Promo baselines: the window's curve without the promo multiplier, the
+  // same reading as the warehouse's (expected store without the promo).
+  for (const r of rows) {
+    if (r.periodType !== "promo" || (r.metric !== "orders" && r.metric !== "revenue")) continue;
+    const mult = promos.find((p) => p.taskId === r.periodId)?.mult ?? 1;
+    r.baselineTotal = r.target !== null ? r.target / mult : null;
+    r.baselineToDate = r.targetToDate !== null && r.status !== "not_started" ? r.targetToDate / mult : null;
+    r.liftPct = r.actual !== null && r.baselineToDate ? 100 * (r.actual / r.baselineToDate - 1) : null;
+  }
 
   // G1 counts units (a unit-led checkpoint, like calendars sold): a units row
   // scaled from its orders row, so the card leads with units.

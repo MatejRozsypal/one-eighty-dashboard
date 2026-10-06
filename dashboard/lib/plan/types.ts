@@ -56,6 +56,11 @@ export interface PacingRow {
   merCapPct: number | null;
   merPlanPct: number | null;
   merActualPct: number | null;
+  /** Expected without the promo (promo rows): over the window, and to as of. */
+  baselineTotal: number | null;
+  baselineToDate: number | null;
+  /** Actual to date over the baseline to date, minus 1, in percent (19.8 = +19.8%). */
+  liftPct: number | null;
 }
 
 /** Which promo window set the curve on a day (shortest window wins). */

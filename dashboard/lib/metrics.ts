@@ -174,6 +174,12 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     formula: "(Target - actual) / days left",
     source: "Plan and actuals",
   },
+  "Lift vs baseline": {
+    title: "Lift vs baseline",
+    formula: "Store actual in the window / expected without the promo - 1",
+    source: "Plan and actuals",
+    note: "The baseline is the plan curve for the window without the promo's expected boost.",
+  },
   "MER (spend / revenue)": {
     title: "MER (spend / revenue)",
     formula: "Ad spend / plan revenue",

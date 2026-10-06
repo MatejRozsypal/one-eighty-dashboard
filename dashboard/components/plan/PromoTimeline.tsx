@@ -8,7 +8,8 @@
  * Card: window, status, the whole store in the window against the window's
  * slice of the curve (the number that adds up to the month), and the orders
  * attributed to the promo against its own target, n/a until both exist. A
- * promo with Target units adds units sold against it. A checkpoint card leads
+ * promo with Target units adds units sold against it, and a started promo
+ * its lift over the no-promo baseline. A checkpoint card leads
  * with the metric it has a target for (units, else orders, else revenue),
  * and its chip is that row's status.
  */
@@ -16,8 +17,8 @@
 import { StatusChip } from "@/components/plan/StatusChip";
 import { NO_VALUE } from "@/lib/format";
 import { daysBetween, fmtDay, fmtRange, monthStart, addMonths, monthEnd } from "@/lib/plan/dates";
-import { METRIC_LABEL, fmtCount, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
-import { headlineMetric, type TimelineItem } from "@/lib/plan/model";
+import { METRIC_LABEL, fmtCount, fmtLift, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
+import { headlineMetric, liftRow, type TimelineItem } from "@/lib/plan/model";
 import type { PacingRow, RowStatus } from "@/lib/plan/types";
 
 const BAR: Record<RowStatus, string> = {
@@ -131,6 +132,8 @@ function TimelineCard({ item, currency }: { item: TimelineItem; currency: string
   const head = item.byMetric[lead];
   const units = item.kind === "promo" && item.byMetric.units?.target != null ? item.byMetric.units : undefined;
   const started = (row: PacingRow | undefined) => row !== undefined && row.status !== "not_started";
+  // Lift only once there is one to read: a line of n/a on every future promo is clutter.
+  const lift = item.kind === "promo" ? liftRow(item.byMetric) : null;
   const merRow = [head, orders, ...Object.values(item.byMetric)].find((r) => r?.merCapPct != null);
 
   return (
@@ -165,6 +168,15 @@ function TimelineCard({ item, currency }: { item: TimelineItem; currency: string
                 <dd className="text-right tabular">
                   <Muted text={started(units) ? fmtCount(units.actual) : NO_VALUE} />
                   <span className="text-content-muted"> of {fmtCount(units.target)}</span>
+                </dd>
+              </>
+            )}
+            {lift?.liftPct != null && (
+              <>
+                <dt className="text-content-muted">Lift</dt>
+                <dd className="text-right tabular">
+                  <Muted text={fmtLift(lift.liftPct)} />
+                  {lift.metric !== "orders" && <span className="text-content-muted"> {METRIC_LABEL[lift.metric].toLowerCase()}</span>}
                 </dd>
               </>
             )}

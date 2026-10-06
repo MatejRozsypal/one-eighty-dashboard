@@ -151,6 +151,35 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     note:
       "n/a means no target was set. Open months are judged against an even pace, closed months on the final figure.",
   },
+  Pace: {
+    title: "Pace",
+    formula: "Actual to date / target to date",
+    source: "Plan in ClickUp, shop and Meta",
+    note: "Targets follow a daily curve (weekday, paydays, promo windows), not an even split. Data runs to yesterday; the last two days are preliminary.",
+  },
+  "Plan revenue": {
+    title: "Plan revenue",
+    formula: "Goods after discounts and refunds, ex VAT",
+    source: "Shop platform",
+    note: "Excludes shipping, the basis the targets are set in, so it is slightly below Snapshot revenue.",
+  },
+  Projected: {
+    title: "Projected end",
+    formula: "Actual + remaining curve x pace, pulled toward plan early on",
+    source: "Plan and actuals",
+    note: "The range is an 80% band. It narrows as the period runs.",
+  },
+  "Required / day": {
+    title: "Required per day",
+    formula: "(Target - actual) / days left",
+    source: "Plan and actuals",
+  },
+  "MER (spend / revenue)": {
+    title: "MER (spend / revenue)",
+    formula: "Ad spend / plan revenue",
+    source: "Meta and shop platform",
+    note: "Shown as a share of revenue, the way caps are set in the plan. Lower is better.",
+  },
   Growth: {
     title: "Growth",
     formula: "Revenue change vs previous month",

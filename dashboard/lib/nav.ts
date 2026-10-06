@@ -32,7 +32,7 @@ export const NAV: NavGroup[] = [
     label: "Profitability",
     items: [
       { label: "Snapshot", href: "/snapshot" },
-      { label: "Goals", href: "/goals" },
+      { label: "Plan", href: "/plan" },
       { label: "Growth (MoM)", href: "/growth" },
       { label: "Orders", href: "/orders" },
       { label: "Products", href: "/products" },

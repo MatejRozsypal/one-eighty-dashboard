@@ -45,6 +45,7 @@ const SHOP: Capability[] = ["shopify", "shoptet", "woocommerce"];
 export const PAGE_REQUIREMENTS: readonly PageRequirement[] = [
   // Profitability
   { prefix: "/snapshot", anyOf: SHOP, source: "Shop" },
+  { prefix: "/plan", anyOf: SHOP, source: "Shop" },
   { prefix: "/goals", anyOf: SHOP, source: "Shop" },
   { prefix: "/growth", anyOf: SHOP, source: "Shop" },
   { prefix: "/orders", anyOf: SHOP, source: "Shop" },

@@ -67,6 +67,7 @@ export function PromoFigures({
   const orders = rows.orders;
   const spend = rows.ad_spend;
   const started = orders !== undefined && orders.status !== "not_started";
+  const running = started && orders.status !== "closed";
   const cap = spend?.merCapPct ?? orders?.merCapPct ?? perf?.merCapPct ?? null;
   const attrShare =
     perf?.attrOrders !== null && perf?.attrOrders !== undefined && perf.storeOrders ? perf.attrOrders / perf.storeOrders : null;
@@ -84,8 +85,8 @@ export function PromoFigures({
         <Figure
           label="Whole store"
           value={started ? fmtCount(orders?.actual) : NO_VALUE}
-          of={started ? `of ${fmtCount(orders?.targetToDate)} to date` : `of ${fmtCount(orders?.target)}`}
-          sub={started ? `${fmtCount(orders?.target)} in window · pace ${fmtPace(orders?.pacePct)}` : undefined}
+          of={running ? `of ${fmtCount(orders?.targetToDate)} to date` : `of ${fmtCount(orders?.target)}`}
+          sub={running ? `${fmtCount(orders?.target)} in window · pace ${fmtPace(orders?.pacePct)}` : started ? `pace ${fmtPace(orders?.pacePct)}` : undefined}
           tip="Pace"
         />
         <Figure label="Lift vs baseline" value={NO_VALUE} />

@@ -4,7 +4,8 @@
  * The chart half of a plan view: burn-up, daily bars and the breakdown table,
  * all on one metric picked here. All four metrics arrive together, so the
  * switch is local state and costs no query (same pattern as the Paid spend
- * chart).
+ * chart). It opens on the first metric that has a target in the period; the
+ * parent keys it by period so a new period starts there again.
  */
 
 import { useState } from "react";
@@ -37,6 +38,7 @@ export function PlanCharts({
   breakdownTitle,
   unit,
   showStatus,
+  initialMetric,
 }: {
   series: Record<PlanMetric, SeriesPoint[]>;
   bands: PromoBand[];
@@ -47,10 +49,12 @@ export function PlanCharts({
   breakdownTitle: string;
   unit: string;
   showStatus: boolean;
+  /** The first metric with a target in the period. */
+  initialMetric: PlanMetric;
 }) {
-  const [metric, setMetric] = useState<PlanMetric>("orders");
+  const [metric, setMetric] = useState<PlanMetric>(initialMetric);
   const points = series[metric];
-  const hasCurve = points.some((p) => p.cumTarget !== null);
+  const hasCurve = points.some((p) => p.cumTarget !== null || p.cumActual !== null);
 
   const picker = (
     <SegmentPills

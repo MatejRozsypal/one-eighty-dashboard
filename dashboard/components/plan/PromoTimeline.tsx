@@ -15,15 +15,16 @@ import { NO_VALUE } from "@/lib/format";
 import { daysBetween, fmtDay, fmtRange, monthStart, addMonths, monthEnd } from "@/lib/plan/dates";
 import { fmtCount, fmtMer, fmtPace } from "@/lib/plan/format";
 import type { TimelineItem } from "@/lib/plan/model";
-import type { PacingStatus } from "@/lib/plan/types";
+import type { RowStatus } from "@/lib/plan/types";
 
-const BAR: Record<PacingStatus, string> = {
+const BAR: Record<RowStatus, string> = {
   ahead: "bg-info/70",
   on_track: "bg-growth-500/70",
   behind: "bg-warning/80",
   off_track: "bg-negative/75",
   not_started: "bg-gray-250",
   closed: "bg-gray-400",
+  no_target: "bg-gray-250",
 };
 
 function Muted({ text }: { text: string }) {

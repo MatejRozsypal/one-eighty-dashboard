@@ -3,7 +3,9 @@
  * so none is read alone.
  *
  *   Attributed:   orders that used the promo mechanic, against the promo's
- *                 own target (n/a until both exist).
+ *                 own target (n/a until both exist, and n/a while the task
+ *                 names no code, SKU or UTM its mechanic needs).
+ *   Mechanic:     the task's Mechanic field.
  *   Whole store:  every order in the window, against the window's slice of
  *                 the curve. This is the number that adds up to the month.
  *   Lift:         against a no-promo baseline. Not measured yet: n/a.
@@ -14,7 +16,8 @@ import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import { NO_VALUE } from "@/lib/format";
 import { fmtCount, fmtMer, fmtPace } from "@/lib/plan/format";
-import { promoPerfOf, taskOf, type MetricRows, type PeriodOption } from "@/lib/plan/model";
+import { attributedOrders, promoPerfOf, taskOf, type MetricRows, type PeriodOption } from "@/lib/plan/model";
+import { PLAN_METRICS } from "@/lib/plan/types";
 import type { PlanData } from "@/lib/plan/types";
 
 function Figure({
@@ -62,15 +65,16 @@ export function PromoFigures({
   rows: MetricRows;
   currency: string;
 }) {
-  const perf = promoPerfOf(data, period.id);
-  const task = taskOf(data, rows.orders?.taskId ?? period.id);
+  const taskId = PLAN_METRICS.map((m) => rows[m]?.taskId).find(Boolean) ?? period.id;
+  const perf = promoPerfOf(data, taskId);
+  const task = taskOf(data, taskId);
+  const attributed = attributedOrders(data, taskId);
   const orders = rows.orders;
   const spend = rows.ad_spend;
   const started = orders !== undefined && orders.status !== "not_started";
   const running = started && orders.status !== "closed";
   const cap = spend?.merCapPct ?? orders?.merCapPct ?? perf?.merCapPct ?? null;
-  const attrShare =
-    perf?.attrOrders !== null && perf?.attrOrders !== undefined && perf.storeOrders ? perf.attrOrders / perf.storeOrders : null;
+  const attrShare = attributed !== null && perf?.storeOrders ? attributed / perf.storeOrders : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -78,7 +82,7 @@ export function PromoFigures({
       <div className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
         <Figure
           label="Attributed orders"
-          value={started ? fmtCount(perf?.attrOrders) : NO_VALUE}
+          value={started ? fmtCount(attributed) : NO_VALUE}
           of={`of ${fmtCount(task?.targetOrders)}`}
           sub={attrShare !== null ? `${fmtPace(attrShare * 100)} of store orders` : undefined}
         />

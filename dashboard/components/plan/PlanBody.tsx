@@ -7,6 +7,7 @@
 import {
   breakdown,
   buildSeries,
+  defaultMetric,
   hasAnyRow,
   promoBands,
   rowsOf,
@@ -93,6 +94,8 @@ function PeriodView({
       )}
 
       <PlanCharts
+        key={`${view}:${period.id}`}
+        initialMetric={defaultMetric(rows)}
         series={series}
         bands={bands}
         asOf={asOf}

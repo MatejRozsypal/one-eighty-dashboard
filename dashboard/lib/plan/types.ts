@@ -6,12 +6,16 @@
  * period and lays the numbers out, so every view reads the same arithmetic.
  */
 
-export const PLAN_METRICS = ["orders", "revenue", "new_customers", "ad_spend"] as const;
+/** Display order, and the order the charts pick their default metric in. */
+export const PLAN_METRICS = ["revenue", "orders", "new_customers", "ad_spend"] as const;
 export type PlanMetric = (typeof PLAN_METRICS)[number];
 
 export type PeriodType = "day" | "week" | "month" | "quarter" | "promo" | "gate";
 
 export type PacingStatus = "ahead" | "on_track" | "behind" | "off_track" | "not_started" | "closed";
+
+/** Status of a row the page itself filled in for a metric the period has no target for. */
+export type RowStatus = PacingStatus | "no_target";
 
 /** One row of the pacing table: client x period x metric. */
 export interface PacingRow {
@@ -38,7 +42,7 @@ export interface PacingRow {
   projectedHigh: number | null;
   requiredDaily: number | null;
   requiredCurveMult: number | null;
-  status: PacingStatus;
+  status: RowStatus;
   isTooEarly: boolean;
   result: "met" | "missed" | null;
   isPreliminary: boolean;
@@ -82,6 +86,17 @@ export interface PlanTask {
   targetRevenue: number | null;
   targetOrders: number | null;
   mechanic: string | null;
+  /** True when the task names at least one matching key (coupon code, SKU or UTM campaign). */
+  hasKeys: boolean;
+}
+
+/** Store actuals of one day, the plan revenue definition. */
+export interface ActualDay {
+  date: string;
+  orders: number | null;
+  revenue: number | null;
+  new_customers: number | null;
+  ad_spend: number | null;
 }
 
 /** Everything the page needs for one client. */
@@ -91,6 +106,8 @@ export interface PlanData {
   /** Null when the attribution layer could not be read. */
   promoPerf: PromoPerf[] | null;
   tasks: PlanTask[];
+  /** Daily store actuals, the fallback for metrics a period has no target for. */
+  actuals: ActualDay[];
 }
 
 export type PlanView = "month" | "quarter" | "promo" | "target";

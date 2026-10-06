@@ -30,6 +30,7 @@ import {
   quarterStart,
 } from "@/lib/plan/dates";
 import type {
+  ActualDay,
   CurveDay,
   PacingRow,
   PacingStatus,
@@ -194,6 +195,8 @@ interface PeriodSpec {
   /** Checkpoint threshold on orders, replacing the curve total. */
   thresholdOrders?: number | null;
   isTargetPartial?: boolean;
+  /** Metrics the task sets a target for; the rest get no row (the page fills in actuals). */
+  metrics?: readonly PlanMetric[];
 }
 
 /** Pacing rows of one period, all four metrics, by the warehouse's rules. */
@@ -332,7 +335,8 @@ export function demoPlanData(): PlanData {
   for (let i = 0; i < months.length; i += 3) {
     const qs = months[i];
     const [y, n] = quarterId(qs).split("-Q");
-    specs.push({ type: "quarter", id: quarterId(qs), label: `Q${n} ${y}`, start: qs, end: monthEnd(months[i + 2]), taskId: `demo-q-${quarterId(qs)}`, planStatus: "approved", merCap: 27 });
+    // Quarter tasks set no new-customer target, so the page shows its actual-only tile.
+    specs.push({ type: "quarter", id: quarterId(qs), label: `Q${n} ${y}`, start: qs, end: monthEnd(months[i + 2]), taskId: `demo-q-${quarterId(qs)}`, planStatus: "approved", merCap: 27, metrics: ["revenue", "orders", "ad_spend"] });
   }
   const weeks = new Map<string, { start: string; end: string }>();
   for (const d of datesFrom(months[0], lastDay)) {
@@ -370,7 +374,7 @@ export function demoPlanData(): PlanData {
     specs.push({ type: "gate", id: g.taskId, label: g.name, start: g.start, end: g.end, taskId: g.taskId, planStatus: "approved", merCap: g.merCap, thresholdOrders: threshold });
   }
 
-  const rows = specs.flatMap((s) => pace(s, days, asOf));
+  const rows = specs.flatMap((s) => pace(s, days, asOf).filter((r) => !s.metrics || s.metrics.includes(r.metric)));
 
   const curve: CurveDay[] = [...days.entries()].map(([date, f]) => ({ date, promoTaskId: f.promoTaskId, isPayday: f.isPayday }));
 
@@ -391,6 +395,7 @@ export function demoPlanData(): PlanData {
       targetRevenue: Math.round((base * 1.4) / 1000) * 1000,
       targetOrders: null,
       mechanic: null,
+      hasKeys: false,
     },
     ...promos.map((p) => ({
       taskId: p.taskId,
@@ -402,6 +407,8 @@ export function demoPlanData(): PlanData {
       targetRevenue: null,
       targetOrders: p.attrShare === null ? null : Math.round(curveOrders(p.start, p.end) * p.attrShare),
       mechanic: p.mechanic,
+      // F2 has no code entered yet, so its attributed orders read n/a.
+      hasKeys: p.taskId !== "demo-f2",
     })),
   ];
 
@@ -438,7 +445,17 @@ export function demoPlanData(): PlanData {
       };
     });
 
-  const data: PlanData = { rows, curve, promoPerf, tasks };
+  const actuals: ActualDay[] = [...days.entries()]
+    .filter(([, f]) => f.actual !== null)
+    .map(([date, f]) => ({
+      date,
+      orders: f.actual!.orders,
+      revenue: f.actual!.revenue,
+      new_customers: f.actual!.new_customers,
+      ad_spend: f.actual!.ad_spend,
+    }));
+
+  const data: PlanData = { rows, curve, promoPerf, tasks, actuals };
   cache = { key: asOf, data };
   return data;
 }

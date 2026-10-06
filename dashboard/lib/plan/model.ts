@@ -15,6 +15,7 @@
 import { addDays, daysBetween, fmtDay, fmtMonth, fmtMonthShort, fmtRange, monthStart, monthsBetween } from "./dates";
 import {
   PLAN_METRICS,
+  type ActualDay,
   type PacingRow,
   type PeriodType,
   type PlanData,
@@ -93,6 +94,87 @@ export function hasAnyRow(rows: MetricRows): boolean {
   return PLAN_METRICS.some((m) => rows[m] !== undefined);
 }
 
+/** The first metric of the period that has a target (display order), for the charts. */
+export function defaultMetric(rows: MetricRows): PlanMetric {
+  return PLAN_METRICS.find((m) => rows[m] && rows[m]!.target !== null && rows[m]!.status !== "no_target") ?? PLAN_METRICS[0];
+}
+
+// ── Untargeted metrics ───────────────────────────────────────────────────────
+
+/** Store actuals by date. */
+function actualIndex(actuals: ActualDay[]): Map<string, ActualDay> {
+  return new Map(actuals.map((a) => [a.date, a]));
+}
+
+/**
+ * Fills in a row for every metric a period has no pacing row for, so a tile
+ * still shows what happened: the actual to date summed from the daily store
+ * actuals, with target, pace, gap and projection left null and the status
+ * `no_target`. A period that has not started keeps a null actual. Periods
+ * that already carry a row for a metric (targeted, or an actual-only row from
+ * the warehouse) are left as they are.
+ */
+export function completeRows(data: PlanData): PlanData {
+  if (data.actuals.length === 0) return data;
+  const asOf = asOfOf(data) ?? data.actuals[data.actuals.length - 1].date;
+  const byDate = actualIndex(data.actuals);
+
+  const periods = new Map<string, { template: PacingRow; metrics: Set<PlanMetric> }>();
+  for (const r of data.rows) {
+    const key = `${r.periodType}|${r.periodId}`;
+    const p = periods.get(key);
+    if (p) p.metrics.add(r.metric);
+    else periods.set(key, { template: r, metrics: new Set([r.metric]) });
+  }
+
+  const added: PacingRow[] = [];
+  for (const { template: t, metrics } of periods.values()) {
+    const missing = PLAN_METRICS.filter((m) => !metrics.has(m));
+    if (missing.length === 0) continue;
+
+    const started = t.start <= asOf;
+    const to = t.end < asOf ? t.end : asOf;
+    const sums: Record<PlanMetric, number | null> = { revenue: null, orders: null, new_customers: null, ad_spend: null };
+    if (started) {
+      for (let d = t.start; d <= to; d = addDays(d, 1)) {
+        const a = byDate.get(d);
+        if (!a) continue;
+        for (const m of PLAN_METRICS) {
+          const v = a[m];
+          if (v !== null) sums[m] = (sums[m] ?? 0) + v;
+        }
+      }
+    }
+    const merActual = sums.ad_spend !== null && sums.revenue ? (100 * sums.ad_spend) / sums.revenue : null;
+    const preliminary = started && (to >= addDays(asOf, -1));
+
+    for (const metric of missing) {
+      added.push({
+        ...t,
+        metric,
+        target: null,
+        targetToDate: null,
+        actual: started ? sums[metric] : null,
+        pacePct: null,
+        gap: null,
+        projected: null,
+        projectedLow: null,
+        projectedHigh: null,
+        requiredDaily: null,
+        requiredCurveMult: null,
+        status: started ? "no_target" : "not_started",
+        isTooEarly: false,
+        result: null,
+        isPreliminary: preliminary,
+        merCapPct: metric === "ad_spend" ? t.merCapPct : null,
+        merPlanPct: null,
+        merActualPct: metric === "ad_spend" ? merActual : null,
+      });
+    }
+  }
+  return added.length === 0 ? data : { ...data, rows: [...data.rows, ...added] };
+}
+
 // ── Chart series ─────────────────────────────────────────────────────────────
 
 export interface SeriesPoint {
@@ -136,8 +218,10 @@ const MIN_DAYS_FOR_AVERAGE = 3;
  */
 export function buildSeries(data: PlanData, metric: PlanMetric, start: string, end: string, period?: PacingRow): SeriesPoint[] {
   const days = dayIndex(data, metric);
+  const store = actualIndex(data.actuals);
   const asOf = asOfOf(data) ?? "";
   const out: SeriesPoint[] = [];
+  const actualOn = (d: string): number | null => days.get(d)?.actual ?? store.get(d)?.[metric] ?? null;
 
   let cumTarget = 0;
   let cumActual = 0;
@@ -146,26 +230,32 @@ export function buildSeries(data: PlanData, metric: PlanMetric, start: string, e
     const row = days.get(d);
     const target = row?.target ?? null;
     const closed = d <= asOf;
-    const actual = closed ? (row?.actual ?? null) : null;
+    const actual = closed ? actualOn(d) : null;
     if (target !== null) {
       cumTarget += target;
       anyTarget = true;
     }
     if (actual !== null) cumActual += actual;
 
-    // Trailing 7 days, including days before the period when the table has them.
+    // Trailing 7 closed days, including days before the period when the data has them.
     let sumA = 0;
+    let nA = 0;
     let sumT = 0;
-    let n = 0;
+    let nT = 0;
     for (let k = 0; k < 7; k++) {
-      const r = days.get(addDays(d, -k));
       const day = addDays(d, -k);
-      if (!r || day > asOf || r.actual === null || r.target === null) continue;
-      sumA += r.actual;
-      sumT += r.target;
-      n += 1;
+      if (day > asOf) continue;
+      const a = actualOn(day);
+      const t = days.get(day)?.target ?? null;
+      if (a !== null) {
+        sumA += a;
+        nA += 1;
+      }
+      if (t !== null) {
+        sumT += t;
+        nT += 1;
+      }
     }
-    const enough = closed && n >= MIN_DAYS_FOR_AVERAGE;
 
     out.push({
       date: d,
@@ -176,8 +266,8 @@ export function buildSeries(data: PlanData, metric: PlanMetric, start: string, e
       cumActual: closed && d >= start ? cumActual : null,
       projection: null,
       band: null,
-      avgActual: enough ? sumA / n : null,
-      avgTarget: enough ? sumT / n : null,
+      avgActual: closed && nA >= MIN_DAYS_FOR_AVERAGE ? sumA / nA : null,
+      avgTarget: closed && nT >= MIN_DAYS_FOR_AVERAGE ? sumT / nT : null,
       preliminary: closed && (row?.isPreliminary ?? false),
     });
   }
@@ -318,6 +408,23 @@ export function taskOf(data: PlanData, taskId: string | null): PlanTask | null {
   return data.tasks.find((t) => t.taskId === taskId) ?? null;
 }
 
+/** Mechanics matched on the window alone (every order in it), so they need no key. */
+const STOREWIDE = new Set(["Cart discount", "Free shipping"]);
+
+/**
+ * Attributed orders of a promo, or null when they cannot be measured: no
+ * attribution row, or a mechanic that needs a key (code, SKU, UTM) and the
+ * task names none. A zero from missing keys would read as "nobody used it".
+ */
+export function attributedOrders(data: PlanData, taskId: string): number | null {
+  const perf = promoPerfOf(data, taskId);
+  if (!perf) return null;
+  const task = taskOf(data, taskId);
+  const mechanic = task?.mechanic ?? perf.mechanic;
+  const measurable = (task?.hasKeys ?? false) || (mechanic !== null && STOREWIDE.has(mechanic));
+  return measurable ? perf.attrOrders : null;
+}
+
 /** Promos and checkpoints that touch the period, by start date. */
 export function timeline(data: PlanData, start: string, end: string): TimelineItem[] {
   const items = new Map<string, TimelineItem>();
@@ -325,7 +432,6 @@ export function timeline(data: PlanData, start: string, end: string): TimelineIt
     if ((r.periodType !== "promo" && r.periodType !== "gate") || !(r.start <= end && r.end >= start)) continue;
     let item = items.get(r.periodId);
     if (!item) {
-      const perf = promoPerfOf(data, r.taskId ?? r.periodId);
       const task = taskOf(data, r.taskId);
       item = {
         kind: r.periodType === "gate" ? "gate" : "promo",
@@ -336,7 +442,7 @@ export function timeline(data: PlanData, start: string, end: string): TimelineIt
         end: r.end,
         planStatus: r.planStatus,
         byMetric: {},
-        attributedOrders: perf?.attrOrders ?? null,
+        attributedOrders: attributedOrders(data, r.taskId ?? r.periodId),
         attributedTarget: task?.targetOrders ?? null,
       };
       items.set(r.periodId, item);

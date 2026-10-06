@@ -23,6 +23,8 @@ export interface PlanTables {
   targetsDaily: string;
   /** Promo x day attribution, plus one `total` row per promo. */
   promoPerf: string;
+  /** Client x day store actuals (plan revenue definition). */
+  actualsDaily: string;
   /** Current plan rows per task (Target state, Quarter, Month, Promo, Checkpoint). */
   planInput: string;
 }
@@ -31,6 +33,7 @@ const QA_NAMES = {
   pacing: "pp1_plan_pacing",
   targetsDaily: "pp1_plan_targets_daily",
   promoPerf: "pp2_plan_promo_perf",
+  actualsDaily: "pp1_plan_actuals_daily",
   planInput: "pp1_plan_input",
 } as const;
 
@@ -38,6 +41,7 @@ const PROD_NAMES = {
   pacing: "plan_pacing",
   targetsDaily: "plan_targets_daily",
   promoPerf: "plan_promo_perf",
+  actualsDaily: "plan_actuals_daily",
   planInput: "plan_input",
 } as const;
 
@@ -55,6 +59,7 @@ export function planTables(env: Record<string, string | undefined> = process.env
     pacing: q(names.pacing),
     targetsDaily: q(names.targetsDaily),
     promoPerf: q(names.promoPerf),
+    actualsDaily: q(names.actualsDaily),
     planInput: q(names.planInput),
   };
 }

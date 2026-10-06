@@ -6,7 +6,8 @@
  * than one figure, so it is its own component rather than a stretched KpiTile.
  *
  * Not started: the figure is the period target. Closed: actual against the
- * final target, with the result as the chip.
+ * final target, with the result as the chip. No target for the metric in this
+ * period: the actual still shows, the plan figures read n/a.
  */
 
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
@@ -49,7 +50,8 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
     );
   }
 
-  const notStarted = row.status === "not_started";
+  const untargeted = row.status === "no_target" || (row.target === null && row.status !== "not_started");
+  const notStarted = row.status === "not_started" && !untargeted;
   const closed = row.status === "closed";
   const lowHigh =
     row.projectedLow !== null && row.projectedHigh !== null
@@ -69,14 +71,45 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
       <div className="flex flex-col gap-1.5">
         <span className="font-mono text-[22px] font-semibold leading-none tracking-heading tabular text-content-strong">
           <Muted>{notStarted ? fmt(row.target) : fmt(row.actual)}</Muted>
-          {!notStarted && !closed && row.isPreliminary && <PreliminaryMark />}
+          {!notStarted && !closed && row.isPreliminary && row.actual !== null && <PreliminaryMark />}
         </span>
         <span className="text-[12px] text-content-muted">
-          {notStarted ? "Target" : closed ? `of ${fmt(row.target)}` : `of ${fmt(row.targetToDate)} to date · ${fmt(row.target)} total`}
+          {untargeted
+            ? "To date"
+            : notStarted
+              ? "Target"
+              : closed
+                ? `of ${fmt(row.target)}`
+                : `of ${fmt(row.targetToDate)} to date · ${fmt(row.target)} total`}
         </span>
       </div>
 
-      {!notStarted && (
+      {untargeted && (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-hairline pt-3 font-mono text-[11.5px]">
+          <Line label="Target">
+            <Muted>{NO_VALUE}</Muted>
+          </Line>
+          <Line label="Pace" tip="Pace">
+            <Muted>{NO_VALUE}</Muted>
+          </Line>
+          <Line label="Gap">
+            <Muted>{NO_VALUE}</Muted>
+          </Line>
+          <Line label="Projected" tip="Projected">
+            <Muted>{NO_VALUE}</Muted>
+          </Line>
+          {metric === "ad_spend" && (
+            <Line label="MER" tip="MER (spend / revenue)">
+              <Muted>{fmtMer(row.merActualPct)}</Muted>
+              {row.merCapPct !== null && (
+                <span className="block text-[10.5px] text-content-muted">cap {fmtMer(row.merCapPct)}</span>
+              )}
+            </Line>
+          )}
+        </dl>
+      )}
+
+      {!notStarted && !untargeted && (
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-hairline pt-3 font-mono text-[11.5px]">
           <Line label="Pace" tip="Pace">
             <Muted>{fmtPace(closed && row.target ? (100 * (row.actual ?? 0)) / row.target : row.pacePct)}</Muted>

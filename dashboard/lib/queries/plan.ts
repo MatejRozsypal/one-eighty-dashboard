@@ -18,6 +18,9 @@
  * Quarter and Promo views.
  *
  * Missing is not zero: an absent actual stays null and renders "n/a".
+ *
+ * A metric a period has no target for still shows its actual: the daily store
+ * actuals are read too, and `completeRows` fills in a target-less row for it.
  */
 
 import { query } from "@/lib/bigquery";
@@ -26,10 +29,12 @@ import { isDemo } from "@/lib/demo/client";
 import { demoPlanData } from "@/lib/demo/plan";
 import { isMissingObject, optional } from "@/lib/queries/errors";
 import { PLAN_TABLES } from "@/lib/plan/tables";
+import { completeRows } from "@/lib/plan/model";
 import type {
+  ActualDay,
   CurveDay,
   PacingRow,
-  PacingStatus,
+  RowStatus,
   PeriodType,
   PlanData,
   PlanMetric,
@@ -39,7 +44,7 @@ import type {
 
 type Raw = Record<string, unknown>;
 
-const STATUSES: readonly PacingStatus[] = ["ahead", "on_track", "behind", "off_track", "not_started", "closed"];
+const STATUSES: readonly RowStatus[] = ["ahead", "on_track", "behind", "off_track", "not_started", "closed", "no_target"];
 
 function str(v: unknown): string | null {
   return v === null || v === undefined ? null : String(v);
@@ -58,8 +63,12 @@ function int(v: unknown): number {
 }
 
 function toPacingRow(r: Raw): PacingRow {
-  const status = String(r.status) as PacingStatus;
+  const raw = String(r.status) as RowStatus;
   const result = str(r.result);
+  const target = num(r.target_total);
+  // An actual-only row (a metric the period has no target for) has no status to show.
+  const status: RowStatus =
+    target === null && raw !== "not_started" ? "no_target" : STATUSES.includes(raw) ? raw : "on_track";
   return {
     periodType: String(r.period_type) as PeriodType,
     periodId: String(r.period_id),
@@ -74,7 +83,7 @@ function toPacingRow(r: Raw): PacingRow {
     daysElapsed: int(r.days_elapsed),
     daysRemaining: int(r.days_remaining),
     isTargetPartial: r.is_target_partial === true,
-    target: num(r.target_total),
+    target,
     targetToDate: num(r.target_to_date),
     actual: num(r.actual_to_date),
     pacePct: num(r.pace_pct),
@@ -84,7 +93,7 @@ function toPacingRow(r: Raw): PacingRow {
     projectedHigh: num(r.projected_high),
     requiredDaily: num(r.required_daily_rate),
     requiredCurveMult: num(r.required_curve_mult),
-    status: STATUSES.includes(status) ? status : "on_track",
+    status,
     isTooEarly: r.is_too_early === true,
     result: result === "met" || result === "missed" ? result : null,
     isPreliminary: r.is_preliminary === true,
@@ -127,7 +136,9 @@ async function fetchCurve(clientId: string): Promise<CurveDay[]> {
 async function fetchTasks(clientId: string): Promise<PlanTask[]> {
   const rows = await query<Raw>(
     `SELECT task_id, level, name, start_date, end_date, status,
-            target_revenue, target_orders, mechanic
+            target_revenue, target_orders, mechanic,
+            COALESCE(TRIM(coupon_codes), '') != '' OR COALESCE(TRIM(skus), '') != ''
+              OR COALESCE(TRIM(utm_campaign), '') != '' AS has_keys
      FROM ${PLAN_TABLES.planInput}
      WHERE client_id = @clientId AND (is_valid OR status = 'planning')`,
     { clientId }
@@ -142,6 +153,24 @@ async function fetchTasks(clientId: string): Promise<PlanTask[]> {
     targetRevenue: num(r.target_revenue),
     targetOrders: num(r.target_orders),
     mechanic: str(r.mechanic),
+    hasKeys: r.has_keys === true,
+  }));
+}
+
+async function fetchActuals(clientId: string): Promise<ActualDay[]> {
+  const rows = await query<Raw>(
+    `SELECT date, orders, revenue, new_customers, meta_spend
+     FROM ${PLAN_TABLES.actualsDaily}
+     WHERE client_id = @clientId AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 800 DAY)
+     ORDER BY date`,
+    { clientId }
+  );
+  return rows.map((r) => ({
+    date: date(r.date),
+    orders: num(r.orders),
+    revenue: num(r.revenue),
+    new_customers: num(r.new_customers),
+    ad_spend: num(r.meta_spend),
   }));
 }
 
@@ -200,15 +229,16 @@ export async function getPlanData(
 ): Promise<PlanData> {
   if (isDemo(clientId)) {
     const demo = demoPlanData();
-    return withPromoPerf ? demo : { ...demo, promoPerf: null };
+    return completeRows(withPromoPerf ? demo : { ...demo, promoPerf: null });
   }
 
-  const [rows, curve, tasks, promoPerf] = await Promise.all([
+  const [rows, curve, tasks, promoPerf, actuals] = await Promise.all([
     optional(() => fetchPacing(clientId), [] as PacingRow[]),
     optional(() => fetchCurve(clientId), [] as CurveDay[]),
     optional(() => fetchTasks(clientId), [] as PlanTask[]),
     withPromoPerf ? promoPerfOrNull(clientId) : Promise.resolve(null),
+    optional(() => fetchActuals(clientId), [] as ActualDay[]),
   ]);
 
-  return { rows, curve, tasks, promoPerf };
+  return completeRows({ rows, curve, tasks, promoPerf, actuals });
 }

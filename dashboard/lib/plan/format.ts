@@ -8,7 +8,7 @@
  */
 
 import { MINUS, NO_VALUE, formatMoney, formatNumber, formatPercent } from "@/lib/format";
-import type { PacingStatus, PlanMetric } from "./types";
+import type { PlanMetric, RowStatus } from "./types";
 
 export const METRIC_LABEL: Record<PlanMetric, string> = {
   orders: "Orders",
@@ -55,11 +55,12 @@ export function fmtMer(pct: number | null | undefined): string {
   return formatPercent(pct === null || pct === undefined ? null : pct / 100);
 }
 
-export const STATUS_LABEL: Record<PacingStatus, string> = {
+export const STATUS_LABEL: Record<RowStatus, string> = {
   ahead: "Ahead",
   on_track: "On track",
   behind: "Behind",
   off_track: "Off track",
   not_started: "Not started",
   closed: "Closed",
+  no_target: "No target",
 };

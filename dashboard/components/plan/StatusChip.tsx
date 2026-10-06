@@ -3,13 +3,14 @@
  *
  * The status comes from the warehouse (pace and a noise test together), never
  * from the page. A closed period shows its result instead (met or missed).
- * For ad spend "ahead" means spending over plan, so it reads as a warning,
- * not as good news. A status held back because the period is too young to
+ * Ad spend reads "Over plan" (warning) above its band and "Under plan" below
+ * it: spending more is not being ahead. A metric with no target in the period
+ * reads "No target". A status held back because the period is too young to
  * judge is drawn faded; the hover title says so.
  */
 
 import { STATUS_LABEL } from "@/lib/plan/format";
-import type { PacingRow, PacingStatus } from "@/lib/plan/types";
+import type { PacingRow, RowStatus } from "@/lib/plan/types";
 
 const TONE = {
   info: "bg-info/10 text-info",
@@ -21,16 +22,30 @@ const TONE = {
 
 type Tone = keyof typeof TONE;
 
-function toneOf(status: PacingStatus, metric: string, result: PacingRow["result"]): Tone {
+function isSpend(metric: string): boolean {
+  return metric === "ad_spend";
+}
+
+function labelOf(row: Pick<PacingRow, "status" | "metric" | "result">): string {
+  if (row.status === "closed" && row.result) return row.result === "met" ? "Met" : "Missed";
+  if (row.status === "no_target") return "No target";
+  if (isSpend(row.metric)) {
+    if (row.status === "ahead") return "Over plan";
+    if (row.status === "behind" || row.status === "off_track") return "Under plan";
+  }
+  return STATUS_LABEL[row.status];
+}
+
+function toneOf(status: RowStatus, metric: string, result: PacingRow["result"]): Tone {
   switch (status) {
     case "ahead":
-      return metric === "ad_spend" ? "warning" : "info";
+      return isSpend(metric) ? "warning" : "info";
     case "on_track":
       return "positive";
     case "behind":
-      return "warning";
+      return isSpend(metric) ? "info" : "warning";
     case "off_track":
-      return "negative";
+      return isSpend(metric) ? "info" : "negative";
     case "closed":
       return result === "met" ? "positive" : result === "missed" ? "negative" : "neutral";
     default:
@@ -39,8 +54,7 @@ function toneOf(status: PacingStatus, metric: string, result: PacingRow["result"
 }
 
 export function StatusChip({ row, className = "" }: { row: Pick<PacingRow, "status" | "metric" | "result" | "isTooEarly">; className?: string }) {
-  const label =
-    row.status === "closed" && row.result ? (row.result === "met" ? "Met" : "Missed") : STATUS_LABEL[row.status];
+  const label = labelOf(row);
   const tone = toneOf(row.status, row.metric, row.result);
   return (
     <span

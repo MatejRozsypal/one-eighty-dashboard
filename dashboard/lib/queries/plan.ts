@@ -21,6 +21,12 @@
  *
  * A metric a period has no target for still shows its actual: the daily store
  * actuals are read too, and `completeRows` fills in a target-less row for it.
+ *
+ * CM3 and aMER are the mart definitions (the Snapshot numbers): CM3 = revenue
+ * - COGS - fulfilment - paid spend, aMER = new customer revenue / paid spend.
+ * Their columns arrive with the CM3 and aMER warehouse release; until it is
+ * deployed the reads fall back to the earlier column set and both metrics
+ * read n/a, so this page can ship before or after it.
  */
 
 import { query } from "@/lib/bigquery";
@@ -44,7 +50,7 @@ import type {
 
 type Raw = Record<string, unknown>;
 
-const STATUSES: readonly RowStatus[] = ["ahead", "on_track", "behind", "off_track", "not_started", "closed", "no_target"];
+const STATUSES: readonly RowStatus[] = ["ahead", "on_track", "behind", "off_track", "not_started", "closed", "no_target", "not_measured"];
 
 function str(v: unknown): string | null {
   return v === null || v === undefined ? null : String(v);
@@ -62,13 +68,37 @@ function int(v: unknown): number {
   return num(v) ?? 0;
 }
 
+/** BigQuery's answer to a column the deployed table does not have yet. */
+function isMissingColumn(error: unknown): boolean {
+  const message = String((error as { message?: string } | null)?.message ?? "");
+  return /unrecognized name/i.test(message);
+}
+
+/** Runs the read with the CM3 / aMER columns, else without them (older warehouse). */
+async function withFallback<T>(full: () => Promise<T>, base: () => Promise<T>): Promise<T> {
+  try {
+    return await full();
+  } catch (error) {
+    if (!isMissingColumn(error)) throw error;
+    console.warn(`[plan] CM3 / aMER columns not deployed yet: ${(error as Error)?.message ?? error}`);
+    return base();
+  }
+}
+
 function toPacingRow(r: Raw): PacingRow {
   const raw = String(r.status) as RowStatus;
   const result = str(r.result);
   const target = num(r.target_total);
-  // An actual-only row (a metric the period has no target for) has no status to show.
+  // An actual-only row (a metric the period has no target for) has no status to show;
+  // a targeted row the data cannot measure (CM3 without cost data) has none either.
   const status: RowStatus =
-    target === null && raw !== "not_started" ? "no_target" : STATUSES.includes(raw) ? raw : "on_track";
+    target === null && raw !== "not_started"
+      ? "no_target"
+      : r.is_measured === false && raw !== "not_started" && raw !== "closed"
+        ? "not_measured"
+        : STATUSES.includes(raw)
+          ? raw
+          : "on_track";
   return {
     periodType: String(r.period_type) as PeriodType,
     periodId: String(r.period_id),
@@ -103,21 +133,45 @@ function toPacingRow(r: Raw): PacingRow {
     baselineTotal: num(r.baseline_total),
     baselineToDate: num(r.baseline_to_date),
     liftPct: num(r.lift_vs_baseline_pct),
+    ratioNumActual: num(r.ratio_num_actual),
+    ratioDenActual: num(r.ratio_den_actual),
+    ratioNumTargetToDate: num(r.ratio_num_target_to_date),
+    ratioDenTargetToDate: num(r.ratio_den_target_to_date),
+    ratioNumTarget: num(r.ratio_num_target),
+    ratioDenTarget: num(r.ratio_den_target),
+    trailing7dRatio: num(r.trailing_7d_ratio),
+    requiredRatio: num(r.required_ratio),
+    measureStart: dateOrNull(r.measure_start) ?? date(r.period_start),
+    measureEnd: dateOrNull(r.measure_end) ?? date(r.period_end),
+    minSpend: num(r.min_spend),
+    conditionMet: typeof r.condition_met === "boolean" ? r.condition_met : null,
+    isMeasured: r.is_measured !== false,
   };
 }
 
-async function fetchPacing(clientId: string): Promise<PacingRow[]> {
-  const rows = await query<Raw>(
-    `SELECT period_type, period_id, period_label, metric, task_id, plan_status, as_of,
+const PACING_COLUMNS = `period_type, period_id, period_label, metric, task_id, plan_status, as_of,
             period_start, period_end, days_total, days_elapsed, days_remaining,
             is_target_partial, target_total, target_to_date, actual_to_date, pace_pct,
             gap_abs, projected_end, projected_low, projected_high, required_daily_rate,
             required_curve_mult, status, is_too_early, result, is_preliminary,
             mer_cap_pct, mer_plan_pct, mer_actual_pct,
-            baseline_total, baseline_to_date, lift_vs_baseline_pct
-     FROM ${PLAN_TABLES.pacing}
-     WHERE client_id = @clientId`,
-    { clientId }
+            baseline_total, baseline_to_date, lift_vs_baseline_pct`;
+
+const RATIO_COLUMNS = `ratio_num_actual, ratio_den_actual, ratio_num_target_to_date,
+            ratio_den_target_to_date, ratio_num_target, ratio_den_target, trailing_7d_ratio,
+            required_ratio, measure_start, measure_end, min_spend, condition_met, is_measured`;
+
+async function fetchPacing(clientId: string): Promise<PacingRow[]> {
+  const read = (columns: string) =>
+    query<Raw>(
+      `SELECT ${columns}
+       FROM ${PLAN_TABLES.pacing}
+       WHERE client_id = @clientId`,
+      { clientId }
+    );
+  const rows = await withFallback(
+    () => read(`${PACING_COLUMNS}, ${RATIO_COLUMNS}`),
+    () => read(PACING_COLUMNS)
   );
   return rows.map(toPacingRow);
 }
@@ -163,20 +217,35 @@ async function fetchTasks(clientId: string): Promise<PlanTask[]> {
 }
 
 async function fetchActuals(clientId: string): Promise<ActualDay[]> {
-  const rows = await query<Raw>(
-    `SELECT date, orders, revenue, new_customers, meta_spend
-     FROM ${PLAN_TABLES.actualsDaily}
-     WHERE client_id = @clientId AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 800 DAY)
-     ORDER BY date`,
-    { clientId }
+  const read = (columns: string) =>
+    query<Raw>(
+      `SELECT ${columns}
+       FROM ${PLAN_TABLES.actualsDaily}
+       WHERE client_id = @clientId AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 800 DAY)
+       ORDER BY date`,
+      { clientId }
+    );
+  const base = "date, orders, revenue, new_customers, meta_spend";
+  const rows = await withFallback(
+    () => read(`${base}, cm3, new_customer_revenue, paid_spend`),
+    () => read(base)
   );
-  return rows.map((r) => ({
-    date: date(r.date),
-    orders: num(r.orders),
-    revenue: num(r.revenue),
-    new_customers: num(r.new_customers),
-    ad_spend: num(r.meta_spend),
-  }));
+  return rows.map((r) => {
+    const paid = num(r.paid_spend);
+    const ncr = num(r.new_customer_revenue);
+    return {
+      date: date(r.date),
+      orders: num(r.orders),
+      revenue: num(r.revenue),
+      new_customers: num(r.new_customers),
+      ad_spend: num(r.meta_spend),
+      // Absent before the CM3 / aMER release: null, so both read n/a.
+      cm3: num(r.cm3),
+      amer: paid !== null && paid > 0 ? (ncr ?? 0) / paid : null,
+      new_customer_revenue: ncr,
+      paid_spend: paid,
+    };
+  });
 }
 
 async function fetchPromoPerf(clientId: string): Promise<PromoPerf[]> {

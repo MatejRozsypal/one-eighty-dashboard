@@ -6,7 +6,9 @@
  * Bars are the actual of each closed day, hatched while preliminary. The step
  * line is the curve target of the day. The two thin lines are the trailing
  * 7-day means of actual and target, on the bar scale: they carry the trend,
- * a single day is noise at this volume. Bars carry no status colour.
+ * a single day is noise at this volume. Bars carry no status colour. A CM3 day
+ * can be below zero (spend without orders); for aMER a bar is the day's own
+ * ratio and the 7-day lines are ratios of the summed parts.
  */
 
 import {
@@ -44,7 +46,8 @@ export function DailyChart({
   const fmt = (v: number | null | undefined) => fmtValue(v, metric, currency);
   const fmtAxis = (v: number) => fmtValue(v, metric, currency, { compact: true });
   const top = Math.max(0, ...points.map((p) => Math.max(p.actual ?? 0, p.target ?? 0)));
-  const yWidth = axisWidth([fmtAxis(top), fmtAxis(0)]);
+  const bottom = Math.min(0, ...points.map((p) => Math.min(p.actual ?? 0, p.target ?? 0)));
+  const yWidth = axisWidth([fmtAxis(top), fmtAxis(bottom)]);
   const rightMargin = edgeMargin([fmtDay(points[points.length - 1]?.date ?? "")], 8);
 
   return (
@@ -80,7 +83,7 @@ export function DailyChart({
               <ReferenceArea key={`${b.taskId}-${b.start}`} x1={b.start} x2={b.end} fill={MUTED_FILL} fillOpacity={0.9} />
             ))}
             <XAxis dataKey="date" tickFormatter={fmtDay} tickLine={false} axisLine={false} minTickGap={28} tick={AXIS_TICK} />
-            <YAxis tickLine={false} axisLine={false} width={yWidth} domain={[0, "auto"]} tickFormatter={fmtAxis} tick={AXIS_TICK} />
+            <YAxis tickLine={false} axisLine={false} width={yWidth} domain={[bottom < 0 ? "auto" : 0, "auto"]} tickFormatter={fmtAxis} tick={AXIS_TICK} />
             <Tooltip cursor={{ fill: MUTED_FILL, opacity: 0.6 }} content={<DailyTooltip fmt={fmt} />} />
             <Bar dataKey="actual" radius={[BAR_RADIUS, BAR_RADIUS, 0, 0]} isAnimationActive={false}>
               {points.map((p) => (

@@ -7,19 +7,21 @@
  * under 100 keep one decimal; whole counts print without one.
  */
 
-import { MINUS, NO_VALUE, formatMoney, formatNumber, formatPercent } from "@/lib/format";
-import type { RowMetric, RowStatus } from "./types";
+import { MINUS, NO_VALUE, formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
+import { isRatioMetric, type RowMetric, type RowStatus } from "./types";
 
 export const METRIC_LABEL: Record<RowMetric, string> = {
   orders: "Orders",
   revenue: "Revenue",
   new_customers: "New customers",
   ad_spend: "Ad spend",
+  cm3: "CM3",
+  amer: "aMER",
   units: "Units",
 };
 
 export function isMoney(metric: RowMetric): boolean {
-  return metric === "revenue" || metric === "ad_spend";
+  return metric === "revenue" || metric === "ad_spend" || metric === "cm3";
 }
 
 export function fmtCount(value: number | null | undefined): string {
@@ -35,6 +37,7 @@ export function fmtValue(
   { compact = false }: { compact?: boolean } = {}
 ): string {
   if (isMoney(metric)) return formatMoney(value, currency, { compact });
+  if (isRatioMetric(metric)) return formatRatio(value);
   return compact ? formatNumber(value, { compact: true, decimals: 1 }) : fmtCount(value);
 }
 
@@ -71,4 +74,5 @@ export const STATUS_LABEL: Record<RowStatus, string> = {
   not_started: "Not started",
   closed: "Closed",
   no_target: "No target",
+  not_measured: "n/a",
 };

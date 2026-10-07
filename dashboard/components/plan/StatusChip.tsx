@@ -5,8 +5,9 @@
  * from the page. A closed period shows its result instead (met or missed).
  * Ad spend reads "Over plan" (warning) above its band and "Under plan" below
  * it: spending more is not being ahead. A metric with no target in the period
- * reads "No target". A status held back because the period is too young to
- * judge is drawn faded; the hover title says so.
+ * reads "No target". A targeted metric the data cannot measure reads "No cost
+ * data" (CM3) or "Missing days" (aMER). A status held back because the period
+ * is too young to judge is drawn faded; the hover title says so.
  */
 
 import { STATUS_LABEL } from "@/lib/plan/format";
@@ -29,6 +30,7 @@ function isSpend(metric: string): boolean {
 function labelOf(row: Pick<PacingRow, "status" | "metric" | "result">): string {
   if (row.status === "closed" && row.result) return row.result === "met" ? "Met" : "Missed";
   if (row.status === "no_target") return "No target";
+  if (row.status === "not_measured") return row.metric === "cm3" ? "No cost data" : "Missing days";
   if (isSpend(row.metric)) {
     if (row.status === "ahead") return "Over plan";
     if (row.status === "behind" || row.status === "off_track") return "Under plan";

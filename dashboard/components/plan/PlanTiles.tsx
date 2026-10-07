@@ -8,6 +8,11 @@
  * Not started: the figure is the period target. Closed: actual against the
  * final target, with the result as the chip. No target for the metric in this
  * period: the actual still shows, the plan figures read n/a.
+ *
+ * CM3 is money. aMER is a multiple: the plan figures are ratios (pace, the gap
+ * in points of the multiple), "Required" is the aMER the spend still to come
+ * must return to end on target, and "Last 7 days" is the trailing reading the
+ * scale rule looks at.
  */
 
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
@@ -15,10 +20,17 @@ import { PreliminaryMark, StatusChip } from "@/components/plan/StatusChip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import { NO_VALUE } from "@/lib/format";
 import { METRIC_LABEL, fmtGap, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
-import { PLAN_METRICS, type PacingRow, type PlanMetric } from "@/lib/plan/types";
+import { PLAN_METRICS, isRatioMetric, type PacingRow, type PlanMetric } from "@/lib/plan/types";
 import type { MetricRows } from "@/lib/plan/model";
 
 const LABEL = "font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted";
+
+/** Tooltip per tile; metrics without an entry fall back to none. */
+const TILE_TIP: Partial<Record<PlanMetric, string>> = {
+  revenue: "Plan revenue",
+  cm3: "Plan CM3",
+  amer: "Plan aMER",
+};
 
 function Line({ label, tip, children }: { label: string; tip?: string; children: React.ReactNode }) {
   const definition = tip ? METRIC_DEFINITIONS[tip] : undefined;
@@ -39,7 +51,9 @@ function Muted({ children }: { children: string }) {
 
 function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRow | undefined; currency: string }) {
   const fmt = (v: number | null | undefined) => fmtValue(v, metric, currency);
-  const tip = metric === "revenue" ? METRIC_DEFINITIONS["Plan revenue"] : undefined;
+  const tipKey = TILE_TIP[metric];
+  const tip = tipKey ? METRIC_DEFINITIONS[tipKey] : undefined;
+  const ratio = isRatioMetric(metric);
 
   if (!row) {
     return (
@@ -50,7 +64,8 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
     );
   }
 
-  const untargeted = row.status === "no_target" || (row.target === null && row.status !== "not_started");
+  const untargeted =
+    row.status === "no_target" || row.status === "not_measured" || (row.target === null && row.status !== "not_started");
   const notStarted = row.status === "not_started" && !untargeted;
   const closed = row.status === "closed";
   const lowHigh =
@@ -75,19 +90,21 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
         </span>
         <span className="text-[12px] text-content-muted">
           {untargeted
-            ? "To date"
+            ? row.status === "not_measured" && row.target !== null
+              ? `Target ${fmt(row.target)}`
+              : "To date"
             : notStarted
               ? "Target"
               : closed
                 ? `of ${fmt(row.target)}`
-                : `of ${fmt(row.targetToDate)} to date · ${fmt(row.target)} total`}
+                : `of ${fmt(row.targetToDate)} to date · ${fmt(row.target)} ${ratio ? "period" : "total"}`}
         </span>
       </div>
 
       {untargeted && (
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-hairline pt-3 font-mono text-[11.5px]">
           <Line label="Target">
-            <Muted>{NO_VALUE}</Muted>
+            <Muted>{fmt(row.target)}</Muted>
           </Line>
           <Line label="Pace" tip="Pace">
             <Muted>{NO_VALUE}</Muted>
@@ -123,9 +140,20 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
                 <Muted>{fmt(row.projected)}</Muted>
                 {lowHigh && <span className="block text-[10.5px] text-content-muted">{lowHigh}</span>}
               </Line>
-              <Line label="Required / day" tip="Required / day">
-                <Muted>{fmt(row.requiredDaily)}</Muted>
-              </Line>
+              {ratio ? (
+                <>
+                  <Line label="Required" tip="Required aMER">
+                    <Muted>{fmt(row.requiredRatio)}</Muted>
+                  </Line>
+                  <Line label="Last 7 days">
+                    <Muted>{fmt(row.trailing7dRatio)}</Muted>
+                  </Line>
+                </>
+              ) : (
+                <Line label="Required / day" tip="Required / day">
+                  <Muted>{fmt(row.requiredDaily)}</Muted>
+                </Line>
+              )}
             </>
           )}
           {metric === "ad_spend" && (
@@ -139,7 +167,7 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
         </dl>
       )}
 
-      {notStarted && (
+      {notStarted && !ratio && (
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-hairline pt-3 font-mono text-[11.5px]">
           <Line label="Per day">
             <Muted>{fmt(row.requiredDaily)}</Muted>
@@ -160,7 +188,7 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
 
 export function PlanTiles({ rows, currency }: { rows: MetricRows; currency: string }) {
   return (
-    <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
       {PLAN_METRICS.map((m) => (
         <PlanTile key={m} metric={m} row={rows[m]} currency={currency} />
       ))}

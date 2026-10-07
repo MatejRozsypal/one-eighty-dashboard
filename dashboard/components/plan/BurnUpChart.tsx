@@ -7,7 +7,9 @@
  * phase code. A dotted line marks the period target.
  *
  * Every number arrives finished from the server (see `buildSeries`), so this
- * only draws.
+ * only draws. CM3 can run below zero early in a period (spend comes before
+ * margin), so the axis then extends below zero. For aMER the lines are the
+ * ratio to date, not a running total.
  */
 
 import {
@@ -52,7 +54,11 @@ export function BurnUpChart({
     target ?? 0,
     ...points.map((p) => Math.max(p.cumTarget ?? 0, p.cumActual ?? 0, p.band?.[1] ?? 0, p.projection ?? 0))
   );
-  const yWidth = axisWidth([fmtAxis(top), fmtAxis(0)]);
+  const bottom = Math.min(
+    0,
+    ...points.map((p) => Math.min(p.cumTarget ?? 0, p.cumActual ?? 0, p.band?.[0] ?? 0, p.projection ?? 0))
+  );
+  const yWidth = axisWidth([fmtAxis(top), fmtAxis(bottom)]);
   const rightMargin = edgeMargin([fmtDay(points[points.length - 1]?.date ?? "")], 8);
   const showAsOf = asOf !== null && points.some((p) => p.date === asOf) && points[points.length - 1]?.date !== asOf;
 
@@ -90,7 +96,7 @@ export function BurnUpChart({
               tickLine={false}
               axisLine={false}
               width={yWidth}
-              domain={[0, "auto"]}
+              domain={[bottom < 0 ? "auto" : 0, "auto"]}
               tickFormatter={fmtAxis}
               tick={AXIS_TICK}
             />

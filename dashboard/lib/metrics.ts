@@ -174,6 +174,24 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     formula: "(Target - actual) / days left",
     source: "Plan and actuals",
   },
+  "Plan CM3": {
+    title: "CM3",
+    formula: "Revenue - COGS - fulfilment - paid spend",
+    source: "Plan in ClickUp, shop, Meta and Google",
+    note: "Same figure as Snapshot. The target curve is gross margin on the revenue curve minus the spend plan, so early days can read below zero.",
+  },
+  "Plan aMER": {
+    title: "aMER",
+    formula: "New customer revenue / paid spend",
+    source: "Plan in ClickUp, shop, Meta and Google",
+    note: "A ratio of sums over the period, never an average of days. Checkpoints can look back a set number of days and require a minimum spend.",
+  },
+  "Required aMER": {
+    title: "Required aMER",
+    formula: "(Target x total spend - new customer revenue so far) / spend to come",
+    source: "Plan and actuals",
+    note: "The return the rest of the planned spend must reach to end the period on target.",
+  },
   "Lift vs baseline": {
     title: "Lift vs baseline",
     formula: "Store actual in the window / expected without the promo - 1",

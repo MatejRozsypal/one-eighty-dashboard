@@ -17,8 +17,8 @@
  * CM3 follows the warehouse's component curve (gross margin on the revenue
  * curve minus the flat spend plan). aMER is carried as numerator and
  * denominator (new customer revenue, paid spend) and every period's figure is
- * a ratio of sums. Checkpoints carry a CM3 floor and an aMER floor over a
- * trailing window with a minimum spend, like the plan in ClickUp.
+ * a ratio of sums. Checkpoints carry a CM3 floor and an aMER floor over their
+ * own window, with the qualifying spend derived from the ad budget plan.
  */
 
 import { day as spineDay, dataThrough } from "./business";
@@ -87,10 +87,6 @@ interface Gate {
   cm3FloorShare: number | null;
   /** aMER floor as a multiple of the plan aMER over the window. */
   amerFloorShare: number | null;
-  /** aMER window: the N days ending on the check day; null = Start to Due. */
-  amerWindowDays: number | null;
-  /** aMER min spend as a share of the planned spend in the window. */
-  amerMinSpendShare: number | null;
   /** Metrics the checkpoint sets a condition on. */
   metrics: readonly PlanMetric[];
 }
@@ -136,8 +132,6 @@ function gatesFor(q: string): Gate[] {
       merCap: null,
       cm3FloorShare: null,
       amerFloorShare: 1.15,
-      amerWindowDays: 7,
-      amerMinSpendShare: 0.8,
       metrics: ["orders", "amer"],
     },
     {
@@ -149,8 +143,6 @@ function gatesFor(q: string): Gate[] {
       merCap: null,
       cm3FloorShare: 0.8,
       amerFloorShare: 0.9,
-      amerWindowDays: null,
-      amerMinSpendShare: null,
       metrics: ["orders", "new_customers", "cm3", "amer"],
     },
   ];
@@ -256,11 +248,11 @@ interface PeriodSpec {
   merCap: number | null;
   /** Checkpoint threshold on orders, replacing the curve total. */
   thresholdOrders?: number | null;
-  /** Checkpoint floors (CM3 money, aMER multiple) and the aMER window and min spend. */
+  /** Checkpoint floors (CM3 money, aMER multiple). */
   cm3Floor?: number | null;
   amerFloor?: number | null;
-  amerWindowDays?: number | null;
-  amerMinSpend?: number | null;
+  /** Ad spend the plan puts in the window (sets the derived aMER qualifying spend). */
+  plannedSpend?: number;
   isTargetPartial?: boolean;
   /** Metrics the task sets a target for; the rest get no row (the page fills in actuals). */
   metrics?: readonly PlanMetric[];
@@ -284,6 +276,13 @@ const NO_RATIO = {
   minSpend: null,
   conditionMet: null,
 } as const;
+
+/**
+ * Share of the window's planned ad spend an aMER floor must carry before it is
+ * judged (same rule as the warehouse: a ratio on a fraction of the planned
+ * spend is noise, not a verdict).
+ */
+const AMER_MIN_SPEND_SHARE = 0.5;
 
 /** aMER over the 7 days ending as of (actual parts). */
 function trailingRatio(days: Map<string, DayFacts>, asOf: string): number | null {
@@ -453,8 +452,6 @@ function pace(spec: PeriodSpec, days: Map<string, DayFacts>, asOf: string): Paci
       baselineToDate: null,
       liftPct: null,
       ...NO_RATIO,
-      measureStart: spec.start,
-      measureEnd: spec.end,
       conditionMet: spec.type === "gate" && c !== null ? c >= t : null,
       isMeasured: true,
     };
@@ -474,26 +471,8 @@ function paceRatio(
   p: { tA: RatioParts; ctA: RatioParts; cA: RatioParts; started: boolean; closed: boolean; daysTotal: number; daysElapsed: number; preliminary: boolean }
 ): PacingRow {
   const gate = spec.type === "gate" && spec.amerFloor != null;
-  const mStart = gate && spec.amerWindowDays ? addDays(spec.end, -(spec.amerWindowDays - 1)) : spec.start;
-  let { tA, ctA, cA } = p;
-  if (gate) {
-    tA = { num: 0, den: 0 };
-    ctA = { num: 0, den: 0 };
-    cA = { num: 0, den: 0 };
-    for (const d of datesFrom(mStart, spec.end)) {
-      const f = days.get(d);
-      if (!f) continue;
-      tA.num += f.target.anum;
-      tA.den += f.target.aden;
-      if (d <= asOf) {
-        ctA.num += f.target.anum;
-        ctA.den += f.target.aden;
-        cA.num += f.actual?.ncr ?? 0;
-        cA.den += f.actual?.paid ?? 0;
-      }
-    }
-  }
-  const started = gate ? mStart <= asOf : p.started;
+  const { tA, ctA, cA } = p;
+  const started = p.started;
   const plan = tA.den > 0 ? tA.num / tA.den : null;
   const t = gate ? spec.amerFloor! : plan;
   const ct = gate ? spec.amerFloor! : ctA.den > 0 ? ctA.num / ctA.den : null;
@@ -513,7 +492,10 @@ function paceRatio(
         : c;
   const sd = ct && cA.den > 0 ? Math.sqrt(PHI * ((ct * cA.den) / aovNew) * (1 + CV * CV)) * aovNew : 0;
   const z = c !== null && ct && sd > 0 ? (cA.num - ct * cA.den) / sd : null;
-  const minSpend = gate && spec.amerMinSpend != null ? spec.amerMinSpend : null;
+  // Derived, never entered: a share of the ad spend the plan put in the window.
+  // Null when the plan has no budget there, and the floor is judged on the ratio alone.
+  const plannedSpend = spec.plannedSpend ?? 0;
+  const minSpend = gate && plannedSpend > 0 ? AMER_MIN_SPEND_SHARE * plannedSpend : null;
 
   let status: PacingStatus = "on_track";
   let tooEarly = false;
@@ -580,8 +562,6 @@ function paceRatio(
     trailing7dRatio: started && !p.closed && spec.type !== "day" ? trailingRatio(days, asOf) : null,
     requiredRatio:
       started && !p.closed && rest > 0 && t !== null ? (t * (cA.den + rest) - cA.num) / rest : null,
-    measureStart: mStart,
-    measureEnd: spec.end,
     minSpend,
     conditionMet: spec.type === "gate" && started ? met : null,
     isMeasured: true,
@@ -648,9 +628,9 @@ export function demoPlanData(): PlanData {
     datesFrom(s, e).reduce((sum, d) => sum + (days.has(d) ? pick(days.get(d)!) : 0), 0);
   for (const g of gates) {
     const threshold = g.thresholdOrders ?? Math.round(curveSum(g.start, g.end, (f) => f.target.orders) * 1.05);
-    const wStart = g.amerWindowDays ? addDays(g.end, -(g.amerWindowDays - 1)) : g.start;
-    const planNum = curveSum(wStart, g.end, (f) => f.target.anum);
-    const planDen = curveSum(wStart, g.end, (f) => f.target.aden);
+    const planNum = curveSum(g.start, g.end, (f) => f.target.anum);
+    const planDen = curveSum(g.start, g.end, (f) => f.target.aden);
+    const plannedSpend = curveSum(g.start, g.end, (f) => f.target.ad_spend);
     specs.push({
       type: "gate",
       id: g.taskId,
@@ -663,8 +643,7 @@ export function demoPlanData(): PlanData {
       thresholdOrders: threshold,
       cm3Floor: g.cm3FloorShare !== null ? Math.round((curveSum(g.start, g.end, (f) => f.target.cm3) * g.cm3FloorShare) / 1000) * 1000 : null,
       amerFloor: g.amerFloorShare !== null && planDen > 0 ? Math.round((planNum / planDen) * g.amerFloorShare * 10) / 10 : null,
-      amerWindowDays: g.amerWindowDays,
-      amerMinSpend: g.amerMinSpendShare !== null ? Math.round((planDen * g.amerMinSpendShare) / 500) * 500 : null,
+      plannedSpend,
       metrics: g.metrics,
     });
   }

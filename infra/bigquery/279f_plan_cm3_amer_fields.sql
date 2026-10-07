@@ -1,17 +1,19 @@
 -- =============================================================================
 -- 279f_plan_cm3_amer_fields.sql
 -- Promo pacing, package ca1 (CM3 and aMER in plans and checkpoints), part 1 of 3:
--- read the four new ClickUp fields BY NAME into staging and mart.plan_input.
+-- read the two new ClickUp fields BY NAME into staging and mart.plan_input.
 --
---   Target CM3        Number, client currency. Quarter / Month / Target state: CM3 target of
---                     the period (mart definition: revenue - cogs - fulfillment_cost -
---                     paid_spend). Checkpoint: floor, CM3 over Start..Due must reach it.
---   Target aMER       Number, multiple (2.55 = 2.55x). Quarter / Month / Target state: planned
---                     aMER of the period. Checkpoint: floor.
---   aMER window days  Number, Checkpoint only. Empty = the task window Start..Due; N = the
---                     trailing N days ending on Due.
---   aMER min spend    Number, client currency, Checkpoint only. Paid spend in the aMER window
---                     must reach it, otherwise the aMER condition is not met.
+--   Target CM3    Number, client currency. Quarter / Month / Target state: CM3 target of the
+--                 period (mart definition: revenue - cogs - fulfillment_cost - paid_spend).
+--                 Checkpoint: floor, CM3 over Start..Due must reach it.
+--   Target aMER   Number, multiple (2.55 = 2.55x). Quarter / Month / Target state: planned
+--                 aMER of the period. Checkpoint: floor over Start..Due.
+--
+-- Two fields only (owner, 2026-10-07: keep it minimalistic). A checkpoint always measures
+-- over its own Start..Due, because the task's dates already express the window and the
+-- architecture rule is one period = one task; a different window is a different checkpoint.
+-- The minimum spend that makes an aMER floor meaningful is derived in 279g from the
+-- Ad budget of the covering month, never entered.
 -- Field design and the owner steps: projects/promo-pacing/11-CLICKUP-CM3-AMER.md.
 --
 -- The fields do not exist in ClickUp yet (custom fields cannot be created through the
@@ -20,13 +22,12 @@
 -- the loader writes every field definition and value it sees and staging reads by name.
 --
 -- Change (CREATE OR REPLACE, columns APPENDED, nothing removed or moved)
---   stg.stg_clickup_plan           + target_cm3, target_amer, amer_window_days, amer_min_spend
---   stg.stg_clickup_plan_versions  + the same four; versioned (part of the fingerprint only
+--   stg.stg_clickup_plan           + target_cm3, target_amer
+--   stg.stg_clickup_plan_versions  + the same two; versioned (part of the fingerprint only
 --                                    when one of them is set, so existing fingerprints and
 --                                    version numbers are byte-identical)
---   mart.plan_input_v              + target_cm3, target_amer, amer_window_days,
---                                    amer_min_spend, orig_target_cm3, orig_target_amer.
---                                    No ref.plan_seed fallback for the new fields.
+--   mart.plan_input_v              + target_cm3, target_amer, orig_target_cm3,
+--                                    orig_target_amer. No ref.plan_seed fallback for them.
 --   then CALL mart.sp_refresh_plan_pacing() (procedure unchanged) so the mart.plan_input
 --   table carries the new columns before 279g creates views that reference them.
 --
@@ -105,8 +106,6 @@ parsed AS (
     (SELECT f.value_text FROM UNNEST(l.custom_fields) f WHERE f.name = 'UTM campaign'          LIMIT 1) AS utm_campaign_raw,
     (SELECT f.value_num  FROM UNNEST(l.custom_fields) f WHERE f.name = 'Target CM3'            LIMIT 1) AS target_cm3,
     (SELECT f.value_num  FROM UNNEST(l.custom_fields) f WHERE f.name = 'Target aMER'           LIMIT 1) AS target_amer,
-    (SELECT f.value_num  FROM UNNEST(l.custom_fields) f WHERE f.name = 'aMER window days'      LIMIT 1) AS amer_window_days,
-    (SELECT f.value_num  FROM UNNEST(l.custom_fields) f WHERE f.name = 'aMER min spend'        LIMIT 1) AS amer_min_spend,
     l.date_created,
     l.date_updated,
     l.ingested_at,
@@ -173,9 +172,7 @@ SELECT
   p.snapshot_date,
   -- 279f: CM3 and aMER fields (appended so existing column positions do not move)
   p.target_cm3,
-  p.target_amer,
-  SAFE_CAST(ROUND(p.amer_window_days) AS INT64) AS amer_window_days,
-  p.amer_min_spend
+  p.target_amer
 FROM parsed p;
 
 
@@ -216,9 +213,7 @@ WITH rows_ AS (
     (SELECT f.value_num FROM UNNEST(t.custom_fields) f WHERE f.name = 'Day multiplier'        LIMIT 1) AS day_multiplier,
     (SELECT f.value_num FROM UNNEST(t.custom_fields) f WHERE f.name = 'Target units'          LIMIT 1) AS target_units,
     (SELECT f.value_num FROM UNNEST(t.custom_fields) f WHERE f.name = 'Target CM3'            LIMIT 1) AS target_cm3,
-    (SELECT f.value_num FROM UNNEST(t.custom_fields) f WHERE f.name = 'Target aMER'           LIMIT 1) AS target_amer,
-    (SELECT f.value_num FROM UNNEST(t.custom_fields) f WHERE f.name = 'aMER window days'      LIMIT 1) AS amer_window_days,
-    (SELECT f.value_num FROM UNNEST(t.custom_fields) f WHERE f.name = 'aMER min spend'        LIMIT 1) AS amer_min_spend
+    (SELECT f.value_num FROM UNNEST(t.custom_fields) f WHERE f.name = 'Target aMER'           LIMIT 1) AS target_amer
   FROM `oneeighty-warehouse.raw.raw_clickup_tasks` t
   JOIN `oneeighty-warehouse.ref.clients` c USING (client_id)
   WHERE t.snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
@@ -226,13 +221,13 @@ WITH rows_ AS (
 ),
 fp AS (
   SELECT *,
-    -- 279f: the four new fields extend the fingerprint only when one is set, so every
+    -- 279f: the two new fields extend the fingerprint only when one is set, so every
     -- fingerprint (and every version boundary) of the history before 279f is unchanged.
     CONCAT(
       TO_JSON_STRING(STRUCT(level, status, start_date, end_date, target_revenue, target_orders,
         target_new_customers, ad_budget, mer_cap_pct, day_multiplier, target_units)),
-      IF(target_cm3 IS NULL AND target_amer IS NULL AND amer_window_days IS NULL AND amer_min_spend IS NULL, '',
-         TO_JSON_STRING(STRUCT(target_cm3, target_amer, amer_window_days, amer_min_spend)))) AS fingerprint
+      IF(target_cm3 IS NULL AND target_amer IS NULL, '',
+         TO_JSON_STRING(STRUCT(target_cm3, target_amer)))) AS fingerprint
   FROM rows_
 ),
 flagged AS (
@@ -251,7 +246,7 @@ versions AS (
     ARRAY_AGG(STRUCT(task_name, status, level, start_date, end_date, target_revenue, target_orders,
       target_new_customers, ad_budget, mer_cap_pct, day_multiplier, target_units,
       date_created, date_updated, fingerprint,
-      target_cm3, target_amer, amer_window_days, amer_min_spend) ORDER BY ingested_at LIMIT 1)[OFFSET(0)] AS v,
+      target_cm3, target_amer) ORDER BY ingested_at LIMIT 1)[OFFSET(0)] AS v,
     MIN(ingested_at) AS observed_from
   FROM numbered
   GROUP BY client_id, task_id, version_no
@@ -281,9 +276,7 @@ SELECT
   p.task_id IS NULL                                                              AS is_deleted,
   x.v.fingerprint,
   x.v.target_cm3,
-  x.v.target_amer,
-  SAFE_CAST(ROUND(x.v.amer_window_days) AS INT64)                                AS amer_window_days,
-  x.v.amer_min_spend
+  x.v.target_amer
 FROM versions x
 LEFT JOIN (SELECT client_id, task_id FROM `oneeighty-warehouse.stg.stg_clickup_plan`) p
   USING (client_id, task_id);
@@ -301,8 +294,7 @@ seed_all AS (
          version, version_at, is_seed, note,
          LOWER(TRIM(status)) AS version_status,
          -- 279f: the seed never carries the CM3 / aMER fields (ClickUp only)
-         CAST(NULL AS NUMERIC) AS target_cm3, CAST(NULL AS FLOAT64) AS target_amer,
-         CAST(NULL AS INT64) AS amer_window_days, CAST(NULL AS NUMERIC) AS amer_min_spend
+         CAST(NULL AS NUMERIC) AS target_cm3, CAST(NULL AS FLOAT64) AS target_amer
   FROM `oneeighty-warehouse.ref.plan_seed`
 ),
 seed_cur AS (
@@ -331,9 +323,7 @@ loader_raw AS (
          v.version_no                                       AS version,
          v.valid_from                                       AS version_at,
          CAST(v.target_cm3 AS NUMERIC)                      AS target_cm3,
-         CAST(v.target_amer AS FLOAT64)                     AS target_amer,
-         v.amer_window_days,
-         CAST(v.amer_min_spend AS NUMERIC)                  AS amer_min_spend
+         CAST(v.target_amer AS FLOAT64)                     AS target_amer
   FROM `oneeighty-warehouse.stg.stg_clickup_plan_versions` v
   JOIN `oneeighty-warehouse.stg.stg_clickup_plan` p USING (client_id, task_id)
 ),
@@ -367,7 +357,7 @@ loader AS (
       IF(l.utm_campaign IS NULL AND s.utm_campaign IS NOT NULL, 'utm_campaign', NULL)
     ]) f WHERE f IS NOT NULL), ', ')), 'seed: ')               AS note,
     l.version_status,
-    l.target_cm3, l.target_amer, l.amer_window_days, l.amer_min_spend   -- no seed fallback
+    l.target_cm3, l.target_amer                              -- no seed fallback
   FROM loader_raw l
   LEFT JOIN seed_cur s USING (client_id, task_id)
 ),
@@ -396,11 +386,9 @@ SELECT
   o.target_orders        AS orig_target_orders,
   o.target_new_customers AS orig_target_new_customers,
   o.ad_budget            AS orig_ad_budget,
-  -- 279f (appended): CM3 and aMER targets and checkpoint qualifiers, ClickUp only
+  -- 279f (appended): CM3 and aMER targets, ClickUp only
   c.target_cm3,
   c.target_amer,
-  c.amer_window_days,
-  c.amer_min_spend,
   o.target_cm3           AS orig_target_cm3,
   o.target_amer          AS orig_target_amer
 FROM ranked c

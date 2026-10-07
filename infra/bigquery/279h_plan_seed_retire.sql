@@ -46,9 +46,7 @@ loader AS (
          CAST(NULL AS STRING)                               AS note,
          LOWER(TRIM(v.status))                              AS version_status,
          CAST(v.target_cm3 AS NUMERIC)                      AS target_cm3,
-         CAST(v.target_amer AS FLOAT64)                     AS target_amer,
-         v.amer_window_days,
-         CAST(v.amer_min_spend AS NUMERIC)                  AS amer_min_spend
+         CAST(v.target_amer AS FLOAT64)                     AS target_amer
   FROM `oneeighty-warehouse.stg.stg_clickup_plan_versions` v
   JOIN `oneeighty-warehouse.stg.stg_clickup_plan` p USING (client_id, task_id)
 ),
@@ -73,8 +71,6 @@ SELECT
   o.ad_budget            AS orig_ad_budget,
   c.target_cm3,
   c.target_amer,
-  c.amer_window_days,
-  c.amer_min_spend,
   o.target_cm3           AS orig_target_cm3,
   o.target_amer          AS orig_target_amer
 FROM ranked c

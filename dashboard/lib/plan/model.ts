@@ -203,8 +203,6 @@ export function completeRows(data: PlanData): PlanData {
         ratioDenTarget: null,
         trailing7dRatio: null,
         requiredRatio: null,
-        measureStart: t.start,
-        measureEnd: t.end,
         minSpend: null,
         conditionMet: null,
         isMeasured: metric === "cm3" ? !cm3Gap : metric === "amer" ? !spendGap : true,

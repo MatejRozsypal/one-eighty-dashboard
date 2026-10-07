@@ -90,10 +90,11 @@ export interface PacingRow {
   trailing7dRatio: number | null;
   /** aMER needed on the spend still to come to end on target. */
   requiredRatio: number | null;
-  /** The window the row is measured over (a checkpoint's aMER can look back N days from its check day). */
-  measureStart: string;
-  measureEnd: string;
-  /** Checkpoint aMER: paid spend the window must reach for the floor to count. */
+  /**
+   * Checkpoint aMER: the paid spend the window must carry for the floor to count,
+   * derived from the ad budget the plan put in it. Null when the plan has no budget
+   * there, and the floor is then judged on the ratio alone.
+   */
   minSpend: number | null;
   /** Checkpoint rows: this row's own condition holds on the data so far. */
   conditionMet: boolean | null;

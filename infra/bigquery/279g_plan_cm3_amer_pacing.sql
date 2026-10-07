@@ -12,7 +12,7 @@
 --         never pre-divided per day: every period carries numerator and denominator.
 --         n/a when a day in the period has missing spend (mart rule 235).
 --
--- Targets (ClickUp only, fields read by 279f; no seed, no constants here)
+-- Targets (ClickUp only, two fields read by 279f; no seed, no constants here)
 --   Month / Quarter `Target CM3`, `Target aMER`. A month without a Month task gets the
 --   quarter's CM3 remainder (seasonal share, like revenue, not floored at 0) and the
 --   quarter's aMER (a ratio is inherited, never split).
@@ -32,15 +32,25 @@
 --         / (spend + spend to come), spend to come = plan, else run-rate. Quarter = own
 --         ratio (never a sum of month ratios). required_ratio = ratio needed on the spend to
 --         come. trailing_7d_ratio = aMER of the 7 days ending as_of (the scale rule).
---   Checkpoint (period_type 'gate') floors:
---     cm3   Target CM3 = floor over Start..Due; the floor gets the target's component curve,
---           status as above against it; condition_met = C >= floor.
---     amer  Target aMER = floor over the measurement window: aMER window days N = the N days
---           ending on Due (may start before Start), empty = Start..Due. measure_start /
---           measure_end carry the window. Status: below the floor = behind, significantly
---           below = off_track, a window whose actual + planned spend cannot reach aMER min
---           spend = behind; too early below 30 % of min spend (else planned spend).
---           condition_met = ratio >= floor AND window spend >= aMER min spend.
+--         ratio_den_actual is the paid spend the ratio is computed on; the page always
+--         shows it next to the figure, so "2.70x" is never read without its spend.
+--   Checkpoint (period_type 'gate') floors, both measured over the task's own Start..Due
+--   (the dates are the window; a different window is a different checkpoint task):
+--     cm3   Target CM3 = floor; the floor gets the target's component curve, status as
+--           above against it; condition_met = C >= floor.
+--     amer  Target aMER = floor. A ratio on trivial spend is noise, so the floor only
+--           counts once the window has carried AMER_MIN_SPEND_SHARE = 50 % of the Ad budget
+--           the plan put in it (plan_targets_daily ad_spend over Start..Due, so a window
+--           crossing months pro rates itself). DERIVED, never entered: the two hand-written
+--           minimums of the Ethia gates were 59 % and 95 % of their windows' planned spend,
+--           so half is below both and never stricter than the intent, while a verdict on
+--           less than half the planned spend carries about 1.4x the sampling error and is
+--           not worth acting on. No Ad budget in the window (every Manami month today):
+--           min_spend is NULL, the floor is judged on the ratio alone and plan_checks logs
+--           `amer_no_budget`. Status: below the floor = behind, significantly below =
+--           off_track, a window whose actual + planned spend cannot reach min_spend =
+--           behind; too early below 30 % of the planned spend.
+--           condition_met = ratio >= floor AND window spend >= min_spend.
 --     result (whole checkpoint, every row) adds both conditions; n/a when one of them is
 --     not measurable.
 --
@@ -57,11 +67,12 @@
 --   mart.plan_pacing_v           + metrics 'cm3', 'amer'; + columns ratio_num_actual,
 --                                  ratio_den_actual, ratio_num_target_to_date,
 --                                  ratio_den_target_to_date, ratio_num_target, ratio_den_target,
---                                  trailing_7d_ratio, required_ratio, measure_start,
---                                  measure_end, min_spend, condition_met, is_measured
+--                                  trailing_7d_ratio, required_ratio, min_spend,
+--                                  condition_met, is_measured
 --   mart.plan_checks             + quarter CM3 vs months (0.5 % tolerance), quarter aMER vs
---                                  months, aMER qualifiers without floor, CM3 target without
---                                  cost data; Checkpoint threshold check knows the new fields
+--                                  months, aMER floor without an Ad budget, CM3 target
+--                                  without cost data; Checkpoint threshold check knows the
+--                                  two new fields
 --   Procedures unchanged.
 --
 -- Based on live views read 2026-10-07 (normalised md5 equal to the repo files): 279b
@@ -613,6 +624,7 @@ hist AS (                    -- trailing 365-day AOV: noise scale when a period 
   WHERE a.d > DATE_SUB(x.as_of, INTERVAL 365 DAY)
   GROUP BY 1
 ),
+-- one row per client x day with targets, wide
 tr7 AS (                     -- 279g: aMER over the 7 days ending as_of (scale rule reading)
   SELECT a.client_id,
          IF(COUNTIF(a.is_spend_missing) > 0, NULL,
@@ -621,7 +633,6 @@ tr7 AS (                     -- 279g: aMER over the 7 days ending as_of (scale r
   WHERE a.d BETWEEN DATE_SUB(x.as_of, INTERVAL 6 DAY) AND x.as_of
   GROUP BY 1
 ),
--- one row per client x day with targets, wide
 base AS (
   SELECT t.client_id, t.date, a.as_of,
          SUM(IF(t.metric = 'orders',        t.target_daily, 0)) AS t_orders,
@@ -692,8 +703,7 @@ periods AS (
          CAST(NULL AS FLOAT64) AS attr_orders_target, CAST(NULL AS FLOAT64) AS attr_new_target,
          CAST(NULL AS FLOAT64) AS attr_revenue_target,
          CAST(NULL AS FLOAT64) AS thr_units,
-         CAST(NULL AS FLOAT64) AS thr_cm3, CAST(NULL AS FLOAT64) AS thr_amer,
-         CAST(NULL AS INT64) AS amer_win_days, CAST(NULL AS FLOAT64) AS amer_min_spend
+         CAST(NULL AS FLOAT64) AS thr_cm3, CAST(NULL AS FLOAT64) AS thr_amer
   FROM base
   UNION ALL
   SELECT DISTINCT client_id, 'week', FORMAT_DATE('%G-W%V', date), FORMAT_DATE('Week %V %G', date),
@@ -701,28 +711,28 @@ periods AS (
          CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS FLOAT64),
          CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64),
          CAST(NULL AS FLOAT64),
-         CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS INT64), CAST(NULL AS FLOAT64)
+         CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64)
   FROM base
   UNION ALL
   SELECT client_id, 'month', FORMAT_DATE('%Y-%m', month_start), ANY_VALUE(month_label),
          month_start, LAST_DAY(month_start), ANY_VALUE(month_task_id), 'approved', ANY_VALUE(month_mer_cap_pct),
          CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64),
          CAST(NULL AS FLOAT64),
-         CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS INT64), CAST(NULL AS FLOAT64)
+         CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64)
   FROM td
   GROUP BY client_id, month_start
   UNION ALL
   SELECT client_id, 'quarter', FORMAT_DATE('%Y-Q%Q', start_date), name, start_date, end_date,
          task_id, status, mer_cap_pct, CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64),
          CAST(NULL AS FLOAT64),
-         CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS INT64), CAST(NULL AS FLOAT64)
+         CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64)
   FROM plan WHERE level = 'Quarter' AND is_valid
   UNION ALL
   SELECT client_id, 'promo', task_id, name, start_date, end_date, task_id, status, mer_cap_pct,
          CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64),
          CAST(target_orders AS FLOAT64), CAST(target_new_customers AS FLOAT64), CAST(target_revenue AS FLOAT64),
          CAST(NULL AS FLOAT64),
-         CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS INT64), CAST(NULL AS FLOAT64)
+         CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64)
   FROM plan WHERE level = 'Promo' AND (is_valid OR status = 'planning') AND end_date IS NOT NULL
   UNION ALL
   SELECT client_id, 'gate', task_id, name,
@@ -732,52 +742,15 @@ periods AS (
          CAST(target_orders AS FLOAT64), CAST(target_revenue AS FLOAT64), CAST(target_new_customers AS FLOAT64),
          CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64),
          IF(skus IS NOT NULL, CAST(target_units AS FLOAT64), NULL),
-         -- 279g: CM3 floor over Start..Due; aMER floor over the window; min spend in it
-         CAST(target_cm3 AS FLOAT64), target_amer, amer_window_days, CAST(amer_min_spend AS FLOAT64)
+         -- 279g: CM3 and aMER floors, both over the task's own Start..Due
+         CAST(target_cm3 AS FLOAT64), target_amer
   FROM plan WHERE level = 'Checkpoint' AND is_valid AND end_date IS NOT NULL
-),
-gate_win AS (                 -- 279g: aMER measurement window of a Checkpoint
-  SELECT p.client_id, p.task_id,
-         IF(p.amer_win_days IS NULL, p.p_start,
-            DATE_SUB(p.p_end, INTERVAL GREATEST(p.amer_win_days, 1) - 1 DAY)) AS m_start,
-         p.p_end AS m_end
-  FROM periods p
-  WHERE p.period_type = 'gate' AND p.thr_amer IS NOT NULL
-),
-gate_amer_act AS (            -- actuals (mart) from m_start to LEAST(m_end, as_of)
-  SELECT g.client_id, g.task_id,
-         SUM(a.ncr) AS w_ncr, SUM(IFNULL(a.paid, 0)) AS w_paid, COUNTIF(a.is_spend_missing) AS w_missing
-  FROM gate_win g
-  JOIN as_of x ON x.client_id = g.client_id
-  LEFT JOIN act a ON a.client_id = g.client_id AND a.d BETWEEN g.m_start AND LEAST(g.m_end, x.as_of)
-  GROUP BY 1, 2
-),
-gate_amer_plan AS (           -- plan curve over the window and to date
-  SELECT g.client_id, g.task_id,
-         SUM(IF(t.metric = 'amer', t.target_daily, 0))                         AS w_t_anum,
-         SUM(IF(t.metric = 'amer', t.ratio_den_daily, 0))                      AS w_t_aden,
-         SUM(IF(t.metric = 'amer' AND t.date <= x.as_of, t.target_daily, 0))    AS w_ct_anum,
-         SUM(IF(t.metric = 'amer' AND t.date <= x.as_of, t.ratio_den_daily, 0)) AS w_ct_aden,
-         SUM(IF(t.metric = 'ad_spend', t.target_daily, 0))                     AS w_t_spend,
-         SUM(IF(t.metric = 'ad_spend' AND t.date <= x.as_of, t.target_daily, 0)) AS w_ct_spend
-  FROM gate_win g
-  JOIN as_of x ON x.client_id = g.client_id
-  LEFT JOIN td t ON t.client_id = g.client_id AND t.date BETWEEN g.m_start AND g.m_end
-  GROUP BY 1, 2
-),
-gate_amer AS (
-  SELECT g.client_id, g.task_id, g.m_start, g.m_end,
-         ga.w_ncr, ga.w_paid, ga.w_missing,
-         gp.w_t_anum, gp.w_t_aden, gp.w_ct_anum, gp.w_ct_aden, gp.w_t_spend, gp.w_ct_spend
-  FROM gate_win g
-  JOIN gate_amer_act ga  USING (client_id, task_id)
-  JOIN gate_amer_plan gp USING (client_id, task_id)
 ),
 agg AS (
   SELECT p.client_id, p.period_type, p.period_id, p.period_label, p.p_start, p.p_end, p.task_id,
          p.plan_status, p.mer_cap_pct, p.thr_orders, p.thr_revenue, p.thr_new,
          p.attr_orders_target, p.attr_new_target, p.attr_revenue_target, p.thr_units,
-         p.thr_cm3, p.thr_amer, p.amer_win_days, p.amer_min_spend,
+         p.thr_cm3, p.thr_amer,
          ANY_VALUE(b.as_of) AS as_of,
          COUNT(b.date) AS target_days,
          SUM(b.t_orders) AS t_orders, SUM(b.t_revenue) AS t_revenue, SUM(b.t_new) AS t_new, SUM(b.t_spend) AS t_spend,
@@ -807,7 +780,7 @@ agg AS (
   FROM periods p
   JOIN base_act b
     ON b.client_id = p.client_id AND b.date BETWEEN p.p_start AND p.p_end
-  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
 ),
 agg2 AS (
   SELECT a.*, pr.phi, pr.cv, pr.k,
@@ -831,25 +804,17 @@ agg3 AS (
   SELECT a.*, IFNULL(gu.units, 0) AS c_units,
          -- 279g. CM3 actual: n/a when any elapsed day lacks cost data (never a partial sum).
          IF(a.n_cm3_unmeasured > 0, NULL, a.c_cm3)                              AS c_cm3_eff,
-         -- aMER: numerator / denominator over the period, or the Checkpoint's aMER window.
-         IF(ga.task_id IS NULL, a.c_ncr, IFNULL(ga.w_ncr, 0))                     AS num_c,
-         IF(ga.task_id IS NULL, a.c_paid, IFNULL(ga.w_paid, 0))                   AS den_c,
-         IF(ga.task_id IS NULL, a.n_spend_missing, IFNULL(ga.w_missing, 0))       AS n_den_missing,
-         IF(ga.task_id IS NULL, a.t_anum, ga.w_t_anum)                            AS num_t,
-         IF(ga.task_id IS NULL, a.t_aden, ga.w_t_aden)                            AS den_t,
-         IF(ga.task_id IS NULL, a.ct_anum, ga.w_ct_anum)                          AS num_ct,
-         IF(ga.task_id IS NULL, a.ct_aden, ga.w_ct_aden)                          AS den_ct,
-         IF(ga.task_id IS NULL, a.t_spend, ga.w_t_spend)                          AS spend_t_w,
-         IF(ga.task_id IS NULL, a.ct_spend, ga.w_ct_spend)                        AS spend_ct_w,
-         IF(ga.task_id IS NULL, a.p_start, ga.m_start)                            AS m_start,
-         IF(ga.task_id IS NULL, a.p_end, ga.m_end)                                AS m_end,
+         -- 279g. Qualifying spend of an aMER floor, DERIVED from the Ad budget the plan put
+         -- in the window (plan_targets_daily ad_spend over Start..Due, so a window that
+         -- crosses months pro rates itself). AMER_MIN_SPEND_SHARE of it: a floor judged on a
+         -- fraction of the planned spend is noise, not a verdict. NULL when the covering
+         -- month has no Ad budget, and then the floor is judged on the ratio alone.
+         IF(a.period_type = 'gate' AND a.thr_amer IS NOT NULL AND a.t_spend > 0,
+            0.5 * a.t_spend, NULL)                                              AS min_spend,
          t7.amer_7d,
-         x.aov_new_hist, x.gm_rate_hist,
-         IFNULL(ga.w_ncr, 0)  AS num_g,
-         IFNULL(ga.w_paid, 0) AS den_g
+         x.aov_new_hist, x.gm_rate_hist
   FROM agg2b a
   LEFT JOIN gate_units gu ON a.period_type = 'gate' AND gu.client_id = a.client_id AND gu.task_id = a.task_id
-  LEFT JOIN gate_amer ga  ON a.period_type = 'gate' AND ga.client_id = a.client_id AND ga.task_id = a.task_id
   LEFT JOIN tr7 t7        ON t7.client_id = a.client_id
   LEFT JOIN hist x        ON x.client_id = a.client_id
 ),
@@ -890,12 +855,12 @@ lng AS (
            IF(a.period_type = 'gate', a.thr_cm3, a.t_cm3),
            IF(a.period_type = 'gate', (a.thr_cm3 + a.t_spend) * a.curve_share_to_date - a.ct_spend, a.ct_cm3),
            a.c_cm3_eff, a.t_cm3, CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64)),
-    -- 279g: aMER, a ratio. t / ct / c are ratios; agg3 num_* / den_* carry the parts.
+    -- 279g: aMER, a ratio. t / ct / c are ratios; agg c_ncr / c_paid carry the parts.
     STRUCT('amer', IF(a.period_type = 'gate', a.thr_amer IS NOT NULL, a.has_amer),
-           IF(a.period_type = 'gate', a.thr_amer, SAFE_DIVIDE(a.num_t, a.den_t)),
-           IF(a.period_type = 'gate', a.thr_amer, SAFE_DIVIDE(a.num_ct, a.den_ct)),
-           IF(a.n_den_missing > 0, NULL, SAFE_DIVIDE(a.num_c, NULLIF(a.den_c, 0))),
-           SAFE_DIVIDE(a.num_t, a.den_t), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64))
+           IF(a.period_type = 'gate', a.thr_amer, SAFE_DIVIDE(a.t_anum, a.t_aden)),
+           IF(a.period_type = 'gate', a.thr_amer, SAFE_DIVIDE(a.ct_anum, a.ct_aden)),
+           IF(a.n_spend_missing > 0, NULL, SAFE_DIVIDE(a.c_ncr, NULLIF(a.c_paid, 0))),
+           SAFE_DIVIDE(a.t_anum, a.t_aden), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64), CAST(NULL AS FLOAT64))
   ]) AS m
   WHERE (a.period_type != 'gate' AND m.metric != 'units')
      OR (a.period_type = 'gate' AND m.has_target
@@ -905,7 +870,7 @@ lng AS (
 ),
 calc AS (
   SELECT l.*,
-         l.as_of < IF(l.metric = 'amer', l.m_start, l.p_start) AS not_started,
+         l.as_of < l.p_start  AS not_started,
          l.as_of >= l.p_end   AS is_closed,
          l.k * SAFE_DIVIDE(l.t_curve, l.t_orders_eff) AS k_m,
          -- z noise scale (one standard deviation of C - CT)
@@ -915,7 +880,7 @@ calc AS (
            -- 279g: CM3 noise = gross margin noise of the expected orders to date
            WHEN 'cm3'  THEN SQRT(l.phi * l.ct_orders_eff * (1 + l.cv * l.cv)) * l.aov_plan * l.gm_rate_hist
            -- 279g: aMER noise on the numerator: new customer revenue expected on the actual spend
-           WHEN 'amer' THEN SQRT(l.phi * GREATEST(SAFE_DIVIDE(l.ct * l.den_c, l.aov_new_hist), 0)
+           WHEN 'amer' THEN SQRT(l.phi * GREATEST(SAFE_DIVIDE(l.ct * l.c_paid, l.aov_new_hist), 0)
                                  * (1 + l.cv * l.cv)) * l.aov_new_hist
            ELSE SQRT(l.phi * l.ct)
          END AS sd
@@ -924,7 +889,7 @@ calc AS (
 calc2 AS (
   SELECT c.*,
          IF(c.metric = 'cm3' AND NOT c.ct > 0, NULL, SAFE_DIVIDE(c.c, c.ct)) AS pace,
-         IF(c.metric = 'amer', SAFE_DIVIDE(c.num_c - c.ct * c.den_c, c.sd),
+         IF(c.metric = 'amer', SAFE_DIVIDE(c.c_ncr - c.ct * c.c_paid, c.sd),
             SAFE_DIVIDE(c.c - c.ct, c.sd)) AS z,
          CASE
            WHEN c.t IS NULL THEN NULL
@@ -934,25 +899,25 @@ calc2 AS (
            -- spend to come: C + (GM_T - GM_CT) x pf - (S_T - S_CT), GM = CM3 + spend
            WHEN c.metric = 'cm3' THEN
              c.c + ((c.t + c.t_spend) - (c.ct + c.ct_spend))
-                   * SAFE_DIVIDE(c.c + c.c_paid + c.k * c.aov_plan * c.gm_rate_hist,
+                   * SAFE_DIVIDE(c.c + c.c_spend + c.k * c.aov_plan * c.gm_rate_hist,
                                  c.ct + c.ct_spend + c.k * c.aov_plan * c.gm_rate_hist)
                  - (c.t_spend - c.ct_spend)
            -- 279g aMER: (num to date + plan ratio of the rest x shrunk pace x spend to come)
            --            / (spend to date + spend to come); spend to come = plan, else run-rate
            WHEN c.metric = 'amer' THEN
              SAFE_DIVIDE(
-               c.num_c + IFNULL(SAFE_DIVIDE(c.num_t - c.num_ct, NULLIF(c.den_t - c.den_ct, 0)), c.t_curve)
-                         * SAFE_DIVIDE(c.num_c + c.k * c.aov_new_hist, c.ct * c.den_c + c.k * c.aov_new_hist)
-                         * IF(IFNULL(c.spend_t_w, 0) > 0, c.spend_t_w - c.spend_ct_w,
-                              SAFE_DIVIDE(c.den_c, c.days_elapsed) * (c.days_total - c.days_elapsed)),
-               c.den_c + IF(IFNULL(c.spend_t_w, 0) > 0, c.spend_t_w - c.spend_ct_w,
-                            SAFE_DIVIDE(c.den_c, c.days_elapsed) * (c.days_total - c.days_elapsed)))
+               c.c_ncr + IFNULL(SAFE_DIVIDE(c.t_anum - c.ct_anum, NULLIF(c.t_aden - c.ct_aden, 0)), c.t_curve)
+                         * SAFE_DIVIDE(c.c_ncr + c.k * c.aov_new_hist, c.ct * c.c_paid + c.k * c.aov_new_hist)
+                         * IF(c.t_spend > 0, c.t_spend - c.ct_spend,
+                              SAFE_DIVIDE(c.c_paid, c.days_elapsed) * (c.days_total - c.days_elapsed)),
+               c.c_paid + IF(c.t_spend > 0, c.t_spend - c.ct_spend,
+                            SAFE_DIVIDE(c.c_paid, c.days_elapsed) * (c.days_total - c.days_elapsed)))
            ELSE c.c + (c.t - c.ct) * SAFE_DIVIDE(c.c + c.k_m, c.ct + c.k_m)
          END AS proj,
-         -- 279g: spend still to come in the period / window (plan, else run-rate)
+         -- 279g: spend still to come in the period (plan, else run-rate)
          IF(c.metric = 'amer' AND NOT c.is_closed,
-            IF(IFNULL(c.spend_t_w, 0) > 0, c.spend_t_w - c.spend_ct_w,
-               SAFE_DIVIDE(c.den_c, c.days_elapsed) * (c.days_total - c.days_elapsed)), NULL) AS spend_rest,
+            IF(c.t_spend > 0, c.t_spend - c.ct_spend,
+               SAFE_DIVIDE(c.c_paid, c.days_elapsed) * (c.days_total - c.days_elapsed)), NULL) AS spend_rest,
          -- remaining orders expected (for the cone)
          IF(c.is_closed OR c.t IS NULL, 0,
             CASE c.metric
@@ -962,9 +927,9 @@ calc2 AS (
             END) AS rem_units,
          CASE
            WHEN c.period_type IN ('month', 'quarter') THEN c.days_elapsed < 5
-           -- 279g: an aMER window is too early below 30 % of its qualifying or planned spend
+           -- 279g: an aMER or CM3 window is too early below 30 % of its planned spend / curve
            WHEN c.metric = 'amer' AND c.period_type IN ('promo', 'gate') THEN
-             c.den_c < 0.3 * COALESCE(c.amer_min_spend, NULLIF(c.spend_t_w, 0), c.den_c + 1)
+             c.c_paid < 0.3 * COALESCE(NULLIF(c.t_spend, 0), c.c_paid + 1)
            WHEN c.metric = 'cm3' AND c.period_type IN ('promo', 'gate') THEN
              c.days_total < 7 AND c.curve_share_to_date < 0.3
            WHEN c.period_type IN ('promo', 'gate') THEN c.days_total < 7 AND c.ct < 0.3 * c.t
@@ -1039,11 +1004,11 @@ SELECT
         ELSE 'on_track'
       END
     -- 279g: aMER floor of a Checkpoint: below the floor is behind, significantly below is
-    -- off track; a window that will not reach its min spend is behind
+    -- off track; a window that will not reach its derived qualifying spend is behind
     WHEN metric = 'amer' AND period_type = 'gate' AND t IS NOT NULL THEN
       CASE
         WHEN is_too_early OR c IS NULL THEN 'on_track'
-        WHEN amer_min_spend IS NOT NULL AND den_c + IFNULL(spend_rest, 0) < amer_min_spend THEN 'behind'
+        WHEN min_spend IS NOT NULL AND c_paid + IFNULL(spend_rest, 0) < min_spend THEN 'behind'
         WHEN c >= t AND pace > 1.10 AND z >= 1.645 THEN 'ahead'
         WHEN c >= t THEN 'on_track'
         WHEN z <= -1.645 THEN 'off_track'
@@ -1074,7 +1039,7 @@ SELECT
     WHEN NOT is_closed OR t IS NULL OR metric = 'ad_spend' THEN NULL
     -- 279g: a condition that cannot be measured (no cost data, missing spend) has no result
     WHEN period_type = 'gate' AND ((thr_cm3 IS NOT NULL AND c_cm3_eff IS NULL)
-                                   OR (thr_amer IS NOT NULL AND n_den_missing > 0)) THEN NULL
+                                   OR (thr_amer IS NOT NULL AND n_spend_missing > 0)) THEN NULL
     WHEN period_type = 'gate' THEN
       IF(c_orders >= IFNULL(thr_orders, 0) AND c_revenue >= IFNULL(thr_revenue, 0)
          AND c_new >= IFNULL(thr_new, 0)
@@ -1082,8 +1047,8 @@ SELECT
          AND (mer_cap_pct IS NULL OR 100 * SAFE_DIVIDE(c_spend, c_revenue) <= mer_cap_pct)
          -- 279g
          AND (thr_cm3 IS NULL OR c_cm3_eff >= thr_cm3)
-         AND (thr_amer IS NULL OR (IFNULL(SAFE_DIVIDE(num_g, NULLIF(den_g, 0)), 0) >= thr_amer
-                                   AND den_g >= IFNULL(amer_min_spend, 0))), 'met', 'missed')
+         AND (thr_amer IS NULL OR (IFNULL(SAFE_DIVIDE(c_ncr, NULLIF(c_paid, 0)), 0) >= thr_amer
+                                   AND c_paid >= IFNULL(min_spend, 0))), 'met', 'missed')
     WHEN metric IN ('cm3', 'amer') AND c IS NULL THEN NULL
     WHEN c >= t THEN 'met' ELSE 'missed'
   END                                                        AS result,
@@ -1099,24 +1064,23 @@ SELECT
   IF(period_type = 'promo' AND NOT not_started,
      ROUND(100 * (SAFE_DIVIDE(c, bct) - 1), 2), NULL)        AS lift_vs_baseline_pct,
   -- 279g (appended; NULL on the rows of the other metrics)
-  IF(metric = 'amer' AND NOT not_started, num_c, NULL)       AS ratio_num_actual,
-  IF(metric = 'amer' AND NOT not_started, den_c, NULL)       AS ratio_den_actual,
-  IF(metric = 'amer', num_ct, NULL)                          AS ratio_num_target_to_date,
-  IF(metric = 'amer', den_ct, NULL)                          AS ratio_den_target_to_date,
-  IF(metric = 'amer', num_t, NULL)                           AS ratio_num_target,
-  IF(metric = 'amer', den_t, NULL)                           AS ratio_den_target,
+  IF(metric = 'amer' AND NOT not_started, c_ncr, NULL)       AS ratio_num_actual,
+  -- the paid spend the ratio is computed on: always shown next to an aMER figure
+  IF(metric = 'amer' AND NOT not_started, c_paid, NULL)      AS ratio_den_actual,
+  IF(metric = 'amer', ct_anum, NULL)                         AS ratio_num_target_to_date,
+  IF(metric = 'amer', ct_aden, NULL)                         AS ratio_den_target_to_date,
+  IF(metric = 'amer', t_anum, NULL)                          AS ratio_num_target,
+  IF(metric = 'amer', t_aden, NULL)                          AS ratio_den_target,
   IF(metric = 'amer' AND period_type != 'day' AND NOT not_started AND NOT is_closed,
      amer_7d, NULL)                                          AS trailing_7d_ratio,
   IF(metric = 'amer' AND t IS NOT NULL AND NOT is_closed AND NOT not_started AND spend_rest > 0,
-     SAFE_DIVIDE(t * (den_c + spend_rest) - num_c, spend_rest), NULL) AS required_ratio,
-  IF(metric = 'amer', m_start, p_start)                      AS measure_start,
-  IF(metric = 'amer', m_end, p_end)                          AS measure_end,
-  IF(period_type = 'gate' AND metric = 'amer', amer_min_spend, NULL) AS min_spend,
+     SAFE_DIVIDE(t * (c_paid + spend_rest) - c_ncr, spend_rest), NULL) AS required_ratio,
+  IF(metric = 'amer', min_spend, NULL)                       AS min_spend,
   IF(period_type = 'gate' AND t IS NOT NULL AND NOT not_started AND c IS NOT NULL,
-     c >= t AND (metric != 'amer' OR den_c >= IFNULL(amer_min_spend, 0)), NULL) AS condition_met,
+     c >= t AND (metric != 'amer' OR min_spend IS NULL OR c_paid >= min_spend), NULL) AS condition_met,
   CASE metric
     WHEN 'cm3'  THEN n_cm3_unmeasured = 0
-    WHEN 'amer' THEN n_den_missing = 0
+    WHEN 'amer' THEN n_spend_missing = 0
     ELSE TRUE
   END                                                        AS is_measured
 FROM final;
@@ -1181,12 +1145,15 @@ amer_q_vs_m AS (             -- 279g: quarter aMER vs the spend-weighted aMER of
     ON m.quarter_task_id = q.task_id AND m.client_id = q.client_id
   WHERE q.level = 'Quarter' AND q.target_amer IS NOT NULL AND ABS(q.target_amer - m.w_amer) > 0.05
 ),
-amer_qualifier_without_floor AS (   -- 279g
-  SELECT client_id, 'warning', 'missing_field', task_id,
-         FORMAT('%s: aMER window days or aMER min spend without Target aMER (not used)', name)
+amer_without_budget AS (     -- 279g: an aMER floor the plan cannot qualify on spend
+  SELECT p.client_id, 'info', 'amer_no_budget', p.task_id,
+         FORMAT('%s: aMER floor without an Ad budget in the window, judged on the ratio alone', p.name)
   FROM p
-  WHERE status NOT IN ('rejected', 'on hold') AND target_amer IS NULL
-    AND (amer_window_days IS NOT NULL OR amer_min_spend IS NOT NULL)
+  WHERE p.level = 'Checkpoint' AND p.target_amer IS NOT NULL
+    AND p.status NOT IN ('rejected', 'on hold')
+    AND NOT EXISTS (SELECT 1 FROM `oneeighty-warehouse.mart.plan_targets_daily` t
+                    WHERE t.client_id = p.client_id AND t.metric = 'ad_spend'
+                      AND t.date BETWEEN p.start_date AND p.end_date AND t.target_daily > 0)
 ),
 cm3_without_cost_data AS (   -- 279g: a CM3 target the data cannot measure (shows n/a)
   SELECT p.client_id, 'warning', 'not_measured', p.task_id,
@@ -1293,7 +1260,7 @@ UNION ALL SELECT * FROM field_gaps
 UNION ALL SELECT * FROM name_check
 UNION ALL SELECT * FROM gate_above_curve
 UNION ALL SELECT * FROM amer_q_vs_m
-UNION ALL SELECT * FROM amer_qualifier_without_floor
+UNION ALL SELECT * FROM amer_without_budget
 UNION ALL SELECT * FROM cm3_without_cost_data;
 
 CALL `oneeighty-warehouse.mart.sp_refresh_plan_pacing`();

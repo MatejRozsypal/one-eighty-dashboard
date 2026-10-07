@@ -1,162 +1,41 @@
 /**
- * Goals: targets against what actually happened.
+ * Goals: the plan's targets against what is happening, by month, quarter,
+ * promo window or target state.
  *
- * Targets are set per client in Settings; this page only reads them. The split
- * matters: a page that both sets and reports a target invites editing the plan
- * to match the result.
+ * Targets are set in ClickUp and expanded in the warehouse into a daily curve
+ * (weekday, paydays, promo windows); pace, projection and status are computed
+ * there too. This page reads those rows and never edits a plan: a page that
+ * both sets and reports a target invites editing the plan to match the result.
  *
- * Actuals come from the same daily rows and the same per-order costs as the
- * Snapshot, so a month here and the headline figure for that month are the same
- * number, CM3 included.
+ * Every view has the same skeleton: tiles per metric, the cumulative burn-up,
+ * daily bars, and the period one level down. Quarter adds the promo and
+ * checkpoint timeline, Promo the attribution figures, Target the trajectory.
  */
 
 import type { Metadata } from "next";
 import { getClients, resolveClient } from "@/lib/clients";
 import { parseViewParams, type SearchParams } from "@/lib/params";
-import { PageControls } from "@/components/controls/PageControls";
-import { getGoalActuals, getGoals } from "@/lib/queries/goals";
-import { GOAL_METRICS, GOAL_METRIC_KEYS, type GoalMetric } from "@/lib/goals/store";
-import {
-  monthsOfQuarter,
-  monthsOfYear,
-  quarterOf,
-  rollUp,
-  type Attainment,
-} from "@/lib/goals/progress";
-import { formatMoney, formatNumber, formatPercent } from "@/lib/currency";
-import { NO_VALUE } from "@/lib/format";
-import { optional } from "@/lib/queries/errors";
-import { getClientSettings } from "@/lib/users/settings";
 import { pageAvailability, missingSource } from "@/lib/capabilities";
-import { METRIC_DEFINITIONS } from "@/lib/metrics";
+import { getPlanData } from "@/lib/queries/plan";
+import { asOfOf, periodOptions, selectPeriod } from "@/lib/plan/model";
+import { PLAN_VIEWS, type PlanView } from "@/lib/plan/types";
 import { Header } from "@/components/shell/Header";
-import { Eyebrow } from "@/components/ui/Eyebrow";
 import { NotConnected } from "@/components/ui/EmptyState";
-import { Notice } from "@/components/ui/Notice";
-import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
+import { PlanControls } from "@/components/plan/PlanControls";
+import { PlanBody } from "@/components/plan/PlanBody";
 
 export const metadata: Metadata = { title: "Goals" };
 export const dynamic = "force-dynamic";
 
-function monthLabel(month: string): string {
-  const [y, m] = month.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", {
-    month: "short",
-    timeZone: "UTC",
-  });
+function first(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
 }
 
-function formatValue(
-  value: number | null,
-  metric: GoalMetric,
-  currency: string
-): string {
-  if (value === null) return NO_VALUE;
-  const spec = GOAL_METRICS.find((m) => m.key === metric)!;
-  // Money may abbreviate ("CZK 1.8M"); counts never do. "1K of 1K" cannot be
-  // read, and an order count is small enough to print whole.
-  return spec.format === "money"
-    ? formatMoney(value, currency, { compact: true })
-    : formatNumber(value);
+function parseView(v: string | undefined): PlanView {
+  return PLAN_VIEWS.includes(v as PlanView) ? (v as PlanView) : "month";
 }
 
-/** "Target covers 2 of 12 months", or null when every month has a target. */
-function coverageLine(a: Attainment): string | null {
-  const { targeted, of } = a.coverage;
-  if (targeted === 0 || targeted >= of) return null;
-  return `Target covers ${targeted} of ${of} months`;
-}
-
-/**
- * One line per period when every targeted metric has the same coverage (the
- * usual case: targets are set per month for all four metrics at once), else
- * null and each tile says its own.
- */
-function periodCoverage(
-  byMetric: Record<GoalMetric, Attainment>,
-  metrics: GoalMetric[]
-): string | null {
-  const lines = metrics.map((m) => coverageLine(byMetric[m]));
-  const present = lines.filter((l): l is string => l !== null);
-  if (present.length === 0) return null;
-  const withTarget = metrics.filter((m) => byMetric[m].target !== null);
-  if (present.length === withTarget.length && present.every((l) => l === present[0])) {
-    return present[0];
-  }
-  return null;
-}
-
-/**
- * Colour follows pace while a period is open and attainment once it closes.
- *
- * Judging an in-flight month on attainment alone paints everything red on the
- * 3rd; judging a closed month on pace is meaningless, since there is no time
- * left to pace against.
- */
-function toneOf(a: Attainment): string {
-  if (a.target === null) return "text-content-muted";
-  if (a.isOpen) {
-    if (a.pace === "ahead") return "text-positive";
-    if (a.pace === "behind") return "text-negative";
-    return "text-content-strong";
-  }
-  if (a.ratio === null) return "text-content-muted";
-  if (a.ratio >= 1) return "text-positive";
-  if (a.ratio >= 0.9) return "text-warning";
-  return "text-negative";
-}
-
-function AttainmentBar({ a, showCoverage }: { a: Attainment; showCoverage: boolean }) {
-  if (a.target === null) {
-    return <span className="text-[12px] text-content-muted">No target set</span>;
-  }
-
-  const pct = a.ratio === null ? 0 : Math.min(1.25, a.ratio);
-  const width = `${Math.round((pct / 1.25) * 100)}%`;
-  // Where an even pace would have reached by now, the line to beat.
-  const markAt = `${Math.round((Math.min(1.25, a.elapsed) / 1.25) * 100)}%`;
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="relative h-[7px] w-full overflow-hidden rounded-full bg-gray-100">
-        <div
-          className={`h-full rounded-full ${
-            a.isOpen
-              ? a.pace === "behind"
-                ? "bg-negative"
-                : "bg-growth-500"
-              : (a.ratio ?? 0) >= 1
-                ? "bg-positive"
-                : "bg-negative"
-          }`}
-          style={{ width }}
-        />
-        {a.isOpen && (
-          <span
-            aria-hidden="true"
-            className="absolute top-0 h-full w-px bg-content-strong/45"
-            style={{ left: markAt }}
-          />
-        )}
-      </div>
-      <span className="font-mono text-[10.5px] text-content-muted">
-        {formatPercent(a.ratio, { decimals: 0 })} of target
-        {a.isOpen && a.expected !== null && (
-          <> · {formatPercent(a.elapsed, { decimals: 0 })} of period elapsed</>
-        )}
-      </span>
-      {showCoverage && coverageLine(a) && (
-        <span className="font-mono text-[10.5px] text-content-muted">{coverageLine(a)}</span>
-      )}
-    </div>
-  );
-}
-
-export default async function GoalsPage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
+export default async function GoalsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = parseViewParams(searchParams);
   const clients = await getClients();
   const client = await resolveClient(params.clientId, clients);
@@ -172,161 +51,19 @@ export default async function GoalsPage({
     );
   }
 
-  // Anchored on today rather than the page's date range: a target belongs to a
-  // calendar month, and letting the range picker move it would let someone read
-  // "March's goal" against April's numbers.
-  const today = new Date().toISOString().slice(0, 10);
-  // The year the selected range ends in, so the picker reaches this screen
-  // too, goals are annual, so a range is read as "which year", not as a
-  // window. Picking any range inside 2025 shows the 2025 goals.
-  const year = Number(params.range.to.slice(0, 4));
-  const thisMonth = `${today.slice(0, 7)}-01`;
-
-  // The same stated per-order costs the Snapshot deducts, so CM3 agrees.
-  const settings = await optional(() => getClientSettings(client.clientId), null);
-  const costs = {
-    fulfilmentPerOrder: settings?.fulfilmentPerOrder ?? null,
-    otherCm1PerOrder: settings?.otherCm1PerOrder ?? null,
-  };
-
-  const [goals, actuals] = await Promise.all([
-    getGoals(client.clientId, year),
-    getGoalActuals(client.clientId, client.currency, year, costs),
-  ]);
-
-  const metrics = GOAL_METRIC_KEYS;
-  const quarter = quarterOf(thisMonth);
-
-  const periods = [
-    rollUp("This month", [thisMonth], goals, actuals, metrics, today),
-    rollUp(`Q${quarter}`, monthsOfQuarter(year, quarter), goals, actuals, metrics, today),
-    rollUp(String(year), monthsOfYear(year), goals, actuals, metrics, today),
-  ];
-
-  const anyTarget = periods.some((p) =>
-    metrics.some((m) => p.byMetric[m].target !== null)
-  );
+  const view = parseView(first(searchParams.view));
+  const data = await getPlanData(client.clientId, { withPromoPerf: view === "quarter" || view === "promo" });
+  const asOf = asOfOf(data);
+  const anchor = asOf ?? new Date().toISOString().slice(0, 10);
+  const options = periodOptions(data, view);
+  const period = selectPeriod(options, first(searchParams.period), anchor);
 
   return (
     <>
       <Header title="Goals" />
-      <PageControls client={client} params={params} />
-
+      <PlanControls view={view} options={options} period={period?.id ?? null} />
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-        {!anyTarget && <Notice>No targets set.</Notice>}
-
-        {periods.map((period) => {
-          const sharedCoverage = periodCoverage(period.byMetric, metrics);
-          return (
-          <section
-            key={period.label}
-            className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]"
-          >
-            <div className="flex items-baseline justify-between gap-3">
-              <Eyebrow>{period.label}</Eyebrow>
-              <span className="text-[12px] text-content-muted">
-                {period.months.length === 1
-                  ? monthLabel(period.months[0])
-                  : `${monthLabel(period.months[0])} to ${monthLabel(
-                      period.months[period.months.length - 1]
-                    )}`}
-                {sharedCoverage && <> · {sharedCoverage}</>}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
-              {metrics.map((metric) => {
-                const a = period.byMetric[metric];
-                const spec = GOAL_METRICS.find((m) => m.key === metric)!;
-                return (
-                  <div key={metric} className="flex flex-col gap-2">
-                    <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                      {spec.label}
-                    </span>
-                    <div className="flex items-baseline gap-2">
-                      <span
-                        className={`text-[22px] font-bold tracking-heading ${toneOf(a)}`}
-                      >
-                        {formatValue(a.actual, metric, client.currency)}
-                      </span>
-                      <span className="text-[12px] text-content-muted">
-                        {a.target === null
-                          ? ""
-                          : `of ${formatValue(a.target, metric, client.currency)}`}
-                      </span>
-                    </div>
-                    <AttainmentBar a={a} showCoverage={sharedCoverage === null} />
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-          );
-        })}
-
-        <section className="flex flex-col gap-4 rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[22px_26px]">
-          <span className="inline-flex items-center gap-1.5">
-            <Eyebrow>Month by month, {year}</Eyebrow>
-            <MetricTooltip definition={METRIC_DEFINITIONS.Attainment} />
-          </span>
-
-          <div className="overflow-x-auto">
-            <div className="min-w-[720px]">
-              <div className="grid grid-cols-[1.4fr_repeat(4,1fr)] gap-2 border-b border-hairline bg-gray-50 px-5 py-3">
-                <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                  Month
-                </span>
-                {GOAL_METRICS.map((m) => (
-                  <span
-                    key={m.key}
-                    className="text-right font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
-                  >
-                    {m.label}
-                  </span>
-                ))}
-              </div>
-
-              {monthsOfYear(year).map((month) => {
-                const row = rollUp(month, [month], goals, actuals, metrics, today);
-                const future = month > thisMonth;
-                return (
-                  <div
-                    key={month}
-                    className={`grid grid-cols-[1.4fr_repeat(4,1fr)] items-center gap-2 border-b border-hairline px-5 py-3 ${
-                      month === thisMonth ? "bg-gray-50" : ""
-                    }`}
-                  >
-                    <span className="text-[13px] text-content-strong">
-                      {monthLabel(month)}
-                      {month === thisMonth && (
-                        <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.08em] text-content-muted">
-                          in flight
-                        </span>
-                      )}
-                    </span>
-                    {metrics.map((metric) => {
-                      const a = row.byMetric[metric];
-                      return (
-                        <span
-                          key={metric}
-                          className={`text-right text-[13px] tabular-nums ${
-                            future ? "text-content-muted" : toneOf(a)
-                          }`}
-                        >
-                          {a.target === null ? (
-                            <span className="text-content-muted">{NO_VALUE}</span>
-                          ) : (
-                            formatPercent(a.ratio, { decimals: 0 })
-                          )}
-                        </span>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
+        <PlanBody data={data} view={view} period={period} asOf={asOf} currency={client.currency} />
       </main>
     </>
   );

@@ -144,7 +144,7 @@ export function CampaignDetail({
   return (
     <section
       id="campaign-detail"
-      className="scroll-mt-[calc(var(--header-h)+var(--paid-tabs-h)+64px)] overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm"
+      className="scroll-mt-[calc(var(--header-h)+64px)] overflow-hidden rounded-card border border-hairline bg-surface-card shadow-sm"
     >
       <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
         <h2 className="min-w-0 truncate text-[14px] font-semibold text-content-strong" title={campaignName}>

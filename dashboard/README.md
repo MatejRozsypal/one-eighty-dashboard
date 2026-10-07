@@ -85,5 +85,5 @@ UI text is minimal. Page headers are the title only, empty states are one line f
 | `ALLOWED_EMAIL_DOMAIN` | `oneeighty.cz` |
 | `GCP_PROJECT_ID` | `oneeighty-warehouse` |
 | `GCP_SERVICE_ACCOUNT_KEY_BASE64` | base64 of the `sa-frontend-reader` JSON key |
-| `DATABASE_URL` | Postgres for users, settings, goals and the access log (`POSTGRES_URL` also works) |
+| `DATABASE_URL` | Postgres for users, settings and the access log (`POSTGRES_URL` also works) |
 | `CLICKUP_API_TOKEN` | Creative Engine tasks and notes (optional, the feature reports "ClickUp not connected." without it) |

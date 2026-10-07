@@ -11,12 +11,12 @@
  * promo with Target units adds units sold against it, and a costed promo the
  * margin its attributed orders earned after COGS. A promo that counts every
  * order in its window has no attributed line: the store line is the promo.
- * A checkpoint card leads
- * with the metric it has a target for (units, else orders, else revenue),
- * and its chip is that row's status. Every other condition the checkpoint
- * sets follows on its own line: orders, new customers, the CM3 floor and the
- * aMER floor with its window (trailing days ending on the check day) and its
- * minimum spend.
+ * A checkpoint card leads with the metric it has a target for (units, else
+ * orders, else revenue), and its chip is that row's status. Every other
+ * condition the checkpoint sets follows on its own line: orders, new
+ * customers, the CM3 floor and the aMER floor. An aMER line always names the
+ * paid spend it is computed on, so a multiple is never read without knowing
+ * how much bought it.
  */
 
 import { StatusChip } from "@/components/plan/StatusChip";
@@ -131,22 +131,29 @@ export function PromoTimeline({
   );
 }
 
-/** One checkpoint condition: actual (or n/a) of its threshold, and for aMER the window and minimum spend. */
+/**
+ * One checkpoint condition: actual (or n/a) of its threshold. An aMER line adds
+ * the spend the ratio is computed on, and the spend the window must carry for
+ * the floor to count (derived from the ad budget, absent when there is none).
+ */
 function ConditionLine({ row, currency }: { row: PacingRow; currency: string }) {
   const started = row.status !== "not_started";
-  const window =
-    row.metric === "amer" && (row.measureStart !== row.start || row.minSpend !== null)
-      ? [fmtRange(row.measureStart, row.measureEnd), row.minSpend !== null ? `min ${formatMoney(row.minSpend, currency)}` : null]
+  const spendNote =
+    row.metric === "amer"
+      ? [
+          started && row.ratioDenActual !== null ? `on ${formatMoney(row.ratioDenActual, currency)}` : null,
+          row.minSpend !== null ? `needs ${formatMoney(row.minSpend, currency)}` : null,
+        ]
           .filter(Boolean)
           .join(" · ")
-      : null;
+      : "";
   return (
     <>
       <dt className="text-content-muted">{METRIC_LABEL[row.metric]}</dt>
       <dd className="text-right tabular">
         <Muted text={started ? fmtValue(row.actual, row.metric, currency) : NO_VALUE} />
         <span className="text-content-muted"> of {fmtValue(row.target, row.metric, currency)}</span>
-        {window && <span className="block text-[10.5px] text-content-muted">{window}</span>}
+        {spendNote && <span className="block text-[10.5px] text-content-muted">{spendNote}</span>}
       </dd>
     </>
   );

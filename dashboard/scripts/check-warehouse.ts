@@ -45,13 +45,13 @@ import { getCohorts } from "@/lib/queries/cohorts";
 import { getDataThrough, getDiscounts, getExcludedCurrencies } from "@/lib/queries/context";
 import { getEmailSummary, getFlows } from "@/lib/queries/email";
 import { getGapStats } from "@/lib/queries/gaps";
-import { getGoalActuals, getGoals } from "@/lib/queries/goals";
 import { getGrowth } from "@/lib/queries/growth";
 import { getPipelineRuns, getSourceFreshness } from "@/lib/queries/health";
 import { getInventory } from "@/lib/queries/inventory";
 import { getFirstProductRepeat, getProductJourney } from "@/lib/queries/journey";
 import { getLifetimeSummary, getPayback, getTopCustomers } from "@/lib/queries/lifetime";
 import { getOrdersSummary, getRecentOrders } from "@/lib/queries/orders";
+import { getPlanData } from "@/lib/queries/plan";
 import { getChannelTotals, getMetaTotals, getTopAds } from "@/lib/queries/paid";
 import {
   getGadsAdGroups,
@@ -149,7 +149,6 @@ async function main() {
 
   const id = client.clientId;
   const cur = client.currency;
-  const year = Number(range.to.slice(0, 4));
 
   console.log(`\nclient ${id} (${cur})   range ${range.from} → ${range.to}`);
   console.log(`comparison ${period.comparison?.from} → ${period.comparison?.to}\n`);
@@ -254,8 +253,7 @@ async function main() {
 
   await probe("inventory", "getInventory", () => getInventory(id));
   await probe("gaps", "getGapStats", () => getGapStats(id, cur));
-  await probe("goals", "getGoals", () => getGoals(id, year));
-  await probe("goals", "getGoalActuals", () => getGoalActuals(id, cur, year));
+  await probe("goals", "getPlanData", () => getPlanData(id, { withPromoPerf: true }));
 
   await probe("health", "getSourceFreshness", () => getSourceFreshness(clients));
   await probe("health", "getPipelineRuns", () => getPipelineRuns(12));

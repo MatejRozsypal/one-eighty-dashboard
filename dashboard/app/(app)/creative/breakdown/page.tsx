@@ -1,7 +1,7 @@
 /**
  * Screen 3, Breakdown.
  *
- * Pick a dimension, see what earned the spend. Lifetime to date, because
+ * Pick a dimension in the sidebar, see what earned the spend. Lifetime to date, because
  * accumulation is how a small account buys statistical power.
  *
  * ── The coverage gate ──────────────────────────────────────────────────────
@@ -20,9 +20,7 @@
 import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
-import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { PageControls } from "@/components/controls/PageControls";
-import { DimensionPicker } from "@/components/creative/DimensionPicker";
 import {
   IntervalChart,
   ShareOverTime,
@@ -100,7 +98,7 @@ export default async function BreakdownPage({
 
   if (!data.available || data.ads.length === 0) {
     return (
-      <Shell ctx={ctx} dimension={dimension}>
+      <Shell ctx={ctx}>
         {data.available ? <NoData /> : <NotConnected source="Creative data" />}
       </Shell>
     );
@@ -188,7 +186,7 @@ export default async function BreakdownPage({
   };
 
   return (
-    <Shell ctx={ctx} dimension={dimension}>
+    <Shell ctx={ctx}>
       {!judged && <Notice tone="warning">No verdicts. Set thresholds in Settings.</Notice>}
 
       {coverage !== null && coverage < COVERAGE_FLOOR && (
@@ -391,11 +389,9 @@ export default async function BreakdownPage({
 
 function Shell({
   ctx,
-  dimension,
   children,
 }: {
   ctx: CreativeContext;
-  dimension: BreakdownKey;
   children: React.ReactNode;
 }) {
   return (
@@ -403,14 +399,12 @@ function Shell({
       <Header title="Breakdown" />
       <PageControls client={ctx.client} params={ctx.params} />
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-4 lg:px-8">
-        <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
         <CreativeBar
-          unmapped={0}
+          unmapped={ctx.unmappedCount}
           through={ctx.data.through}
           currency={ctx.currency}
           href="/creative#unmapped"
         />
-        <DimensionPicker current={dimension} />
         {children}
       </main>
     </>

@@ -10,14 +10,18 @@
   --ink-600: #26262B;
   --ink-500: #34343A;
 
-  /* ---- Neutral grays ---- */
+  /* ---- Neutral grays ----
+     Re-pointed at the Shopify admin (Polaris) neutrals: plain grey, no green
+     or yellow cast. 50 is the subdued surface (table headers, muted fills),
+     100 the page background, 150 the border. Subdued text is --text-muted
+     below. 400 and up stay as they were: the dark sidebar draws on them. */
   --gray-400: #6A6A72;
   --gray-300: #9797A0;
   --gray-250: #B8B8BF;
-  --gray-200: #D2D2D0;
-  --gray-150: #E4E4E1;
-  --gray-100: #EFEFEC;
-  --gray-50:  #F6F6F3;
+  --gray-200: #D2D2D2;
+  --gray-150: #E3E3E3;
+  --gray-100: #F1F1F1;
+  --gray-50:  #FAFAFA;
   --paper:    #FFFFFF;
 
   /* ---- Signature growth green ---- */
@@ -58,7 +62,7 @@
 
   /* ================= Semantic aliases ================= */
   --bg:              var(--paper);
-  --bg-subtle:       var(--gray-50);
+  --bg-subtle:       var(--gray-100);   /* page background */
   --bg-inverse:      var(--ink-900);
   --bg-inverse-2:    var(--ink-800);
 
@@ -66,9 +70,9 @@
   --surface-card-subtle:   var(--gray-50);
   --surface-card-inverse:  var(--ink-800);
 
-  --text-strong:        var(--ink-900);
-  --text-body:          var(--ink-600);
-  --text-muted:         var(--gray-400);
+  --text-strong:        #1A1A1A;
+  --text-body:          #303030;
+  --text-muted:         #616161;
   --text-inverse:       var(--paper);
   --text-inverse-muted: var(--gray-300);
   --text-accent:        var(--growth-600);

@@ -12,13 +12,14 @@
  * CM3 is money. aMER is a multiple: the plan figures are ratios (pace, the gap
  * in points of the multiple), "Required" is the aMER the spend still to come
  * must return to end on target, and "Last 7 days" is the trailing reading the
- * scale rule looks at.
+ * scale rule looks at. The aMER tile always names the paid spend the ratio is
+ * computed on, so a multiple is never read without knowing how much bought it.
  */
 
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
 import { PreliminaryMark, StatusChip } from "@/components/plan/StatusChip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
-import { NO_VALUE } from "@/lib/format";
+import { NO_VALUE, formatMoney } from "@/lib/format";
 import { METRIC_LABEL, fmtGap, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
 import { PLAN_METRICS, isRatioMetric, type PacingRow, type PlanMetric } from "@/lib/plan/types";
 import type { MetricRows } from "@/lib/plan/model";
@@ -99,6 +100,12 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
                 ? `of ${fmt(row.target)}`
                 : `of ${fmt(row.targetToDate)} to date · ${fmt(row.target)} ${ratio ? "period" : "total"}`}
         </span>
+        {ratio && !notStarted && row.ratioDenActual !== null && (
+          <span className="text-[11.5px] text-content-muted">
+            on {formatMoney(row.ratioDenActual, currency)} spend
+            {row.minSpend !== null && ` · needs ${formatMoney(row.minSpend, currency)}`}
+          </span>
+        )}
       </div>
 
       {untargeted && (

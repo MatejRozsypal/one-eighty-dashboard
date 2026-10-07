@@ -35,7 +35,7 @@ export function SettingsTabs() {
             : pathname === "/settings" && currentTab === t.tab;
 
         // The client selection is carried across tabs, so switching from a
-        // client's goals to their people does not silently change who you are
+        // client's costs to their people does not silently change who you are
         // looking at.
         const client = search.get("client");
         const query = new URLSearchParams();

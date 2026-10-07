@@ -11,8 +11,7 @@
  * `SkeletonPage` mirrors a page's own frame: the header, the control strip and
  * a `<main>` of blocks. The header and control strip are siblings of `<main>`
  * on purpose, exactly as the pages render them, so layouts that order their
- * children (Paid slots its tab bar between header and controls) work the same
- * on a skeleton. The `<main>` is `aria-busy`, which keeps the pending-region
+ * children work the same on a skeleton. The `<main>` is `aria-busy`, which keeps the pending-region
  * pulse off it (it already pulses through its blocks).
  */
 
@@ -103,7 +102,7 @@ export function SkeletonCards({ count = 8 }: { count?: number }) {
   );
 }
 
-/** Stacked bars: goals, attainment, ranked lists. */
+/** Stacked bars: attainment, ranked lists. */
 export function SkeletonList({ rows = 5 }: { rows?: number }) {
   return (
     <Frame className="flex flex-col gap-5">
@@ -171,7 +170,7 @@ export function SkeletonHeader() {
   );
 }
 
-/** A tab bar (Creative, Settings): a row of labels under the header. */
+/** A tab bar (Settings): a row of labels under the header. */
 export function SkeletonTabs({ count = 4 }: { count?: number }) {
   return (
     <div className="flex items-center gap-6 border-b border-hairline bg-paper px-5 py-4 lg:px-8">

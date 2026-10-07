@@ -6,17 +6,18 @@
 --   pm1_plan_orders_v / pm1_plan_orders        279i against prod stg
 --   pm1_plan_promo_orders_v / ..._orders       279j, reading pm1_plan_orders
 --   pm1_plan_promo_perf_v  / ..._perf          279j, reading pm1_plan_promo_orders
---                                              and mart_qa.ca1_plan_actuals_daily
---                                              (279g is not deployed yet)
---   pm1_plan_pacing                            279k, which is 279g's plan_pacing_v
---                                              minus 3 output columns (the file
---                                              diff is those 4 lines and nothing
---                                              else), so it is materialised here
---                                              as ca1_plan_pacing_v without them
--- Run date: 2026-10-07, as of 2026-10-06.
+--                                              and the deployed mart.plan_actuals_daily
+--   pm1_plan_pacing                            279k, which is the deployed
+--                                              plan_pacing_v minus 3 output
+--                                              columns (the file diff against
+--                                              279g is those 4 lines and nothing
+--                                              else), materialised here as
+--                                              mart.plan_pacing_v without them
+-- Re-run 2026-10-07 after merging origin/main b406c9a, with 279f to 279h
+-- deployed. as of 2026-10-06.
 -- =============================================================================
 
--- 1. plan_orders: every pre-existing column identical to prod (137 349 / 137 349, 0 / 0)
+-- 1. plan_orders: every pre-existing column identical to prod (137 362 / 137 362, 0 / 0)
 WITH q AS (
   SELECT client_id, platform, order_id, order_date, customer_key, is_new_customer, goods_net,
          refund_net, net_revenue, total_discounts, fee_discounts, fx_rate, units,
@@ -79,7 +80,7 @@ SELECT
 
 -- 4. plan_promo_perf: every column that is NOT one of the three fixed ones
 --    (810 / 810, 6 / 6). The 6 are the three Manami promos still running, on
---    2026-10-07 (the day after as of) and their total rows: fix 3.
+--    the day after as of, and their total rows: fix 3.
 WITH q AS (
   SELECT client_id, task_id, phase, mechanic, source, clickup_status, grain, date, day_index,
     window_start, window_end, window_days, is_complete,
@@ -153,22 +154,22 @@ SELECT
   (SELECT COUNT(*) FROM `oneeighty-warehouse.mart_qa.pm1_plan_promo_perf`
     WHERE grain = 'total' AND is_storewide AND attr_orders != store_orders) storewide_not_store;
 
--- 8. plan_pacing after 279k: 4 309 / 4 309 rows, 0 / 0 differences on every
---    remaining column (ca1_plan_pacing is the CM3 and aMER QA copy).
+-- 8. plan_pacing after 279k: 4 303 / 4 303 rows, 0 / 0 differences on every
+--    remaining column, against the deployed table.
 WITH q AS (SELECT * EXCEPT (refreshed_at) FROM `oneeighty-warehouse.mart_qa.pm1_plan_pacing`),
      c AS (SELECT * EXCEPT (refreshed_at, baseline_total, baseline_to_date, lift_vs_baseline_pct)
-           FROM `oneeighty-warehouse.mart_qa.ca1_plan_pacing`)
+           FROM `oneeighty-warehouse.mart.plan_pacing`)
 SELECT
   (SELECT COUNT(*) FROM q) pm1_rows,
-  (SELECT COUNT(*) FROM c) ca1_rows,
-  (SELECT COUNT(*) FROM (SELECT * FROM q EXCEPT DISTINCT SELECT * FROM c)) pm1_not_ca1,
-  (SELECT COUNT(*) FROM (SELECT * FROM c EXCEPT DISTINCT SELECT * FROM q)) ca1_not_pm1;
+  (SELECT COUNT(*) FROM c) prod_rows,
+  (SELECT COUNT(*) FROM (SELECT * FROM q EXCEPT DISTINCT SELECT * FROM c)) pm1_not_prod,
+  (SELECT COUNT(*) FROM (SELECT * FROM c EXCEPT DISTINCT SELECT * FROM q)) prod_not_pm1;
 
 -- 9. What the removed lift actually said: on every row that carried one, the
 --    baseline equals the target to date, so the lift is pace minus 1.
 SELECT client_id, period_id, period_label, metric, ROUND(actual_to_date, 0) actual,
   ROUND(target_to_date, 1) target_to_date, ROUND(baseline_to_date, 1) baseline_to_date,
   lift_vs_baseline_pct, ROUND(pace_pct, 1) pace_pct
-FROM `oneeighty-warehouse.mart_qa.ca1_plan_pacing`
+FROM `oneeighty-warehouse.mart.plan_pacing`
 WHERE lift_vs_baseline_pct IS NOT NULL
 ORDER BY 1, 2, 4;

@@ -71,15 +71,20 @@ export function CreativeBar({
         </span>
       )}
 
-      {unmapped > 0 && (
-        <AppLink
-          href={href}
-          className="inline-flex items-center gap-2 rounded-pill border border-warning/25 bg-warning/10 px-3 py-1 text-[12.5px] font-medium text-warning transition-colors duration-fast hover:bg-warning/20"
-        >
-          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
-          {unmapped} {unmapped === 1 ? "ad" : "ads"} unmapped
-        </AppLink>
-      )}
+      {unmapped > 0 && <UnmappedPill count={unmapped} href={href} />}
     </div>
+  );
+}
+
+/** The count of ads with no concept mapped, linking to the queue that clears it. */
+export function UnmappedPill({ count, href }: { count: number; href: string }) {
+  return (
+    <AppLink
+      href={href}
+      className="inline-flex items-center gap-2 rounded-pill border border-warning/25 bg-warning/10 px-3 py-1 text-[12.5px] font-medium text-warning transition-colors duration-fast hover:bg-warning/20"
+    >
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+      {count} {count === 1 ? "ad" : "ads"} unmapped
+    </AppLink>
   );
 }

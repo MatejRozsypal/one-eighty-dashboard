@@ -144,8 +144,6 @@ function toPacingRow(r: Raw): PacingRow {
     ratioDenTarget: num(r.ratio_den_target),
     trailing7dRatio: num(r.trailing_7d_ratio),
     requiredRatio: num(r.required_ratio),
-    measureStart: dateOrNull(r.measure_start) ?? date(r.period_start),
-    measureEnd: dateOrNull(r.measure_end) ?? date(r.period_end),
     minSpend: num(r.min_spend),
     conditionMet: typeof r.condition_met === "boolean" ? r.condition_met : null,
     isMeasured: r.is_measured !== false,
@@ -161,7 +159,7 @@ const PACING_COLUMNS = `period_type, period_id, period_label, metric, task_id, p
 
 const RATIO_COLUMNS = `ratio_num_actual, ratio_den_actual, ratio_num_target_to_date,
             ratio_den_target_to_date, ratio_num_target, ratio_den_target, trailing_7d_ratio,
-            required_ratio, measure_start, measure_end, min_spend, condition_met, is_measured`;
+            required_ratio, min_spend, condition_met, is_measured`;
 
 async function fetchPacing(clientId: string): Promise<PacingRow[]> {
   const read = (columns: string) =>

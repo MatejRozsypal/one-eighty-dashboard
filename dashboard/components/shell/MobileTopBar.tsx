@@ -31,8 +31,9 @@
 import { AppLink } from "@/components/ui/AppLink";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { activeNavHref, navFor, pageTitle, railProducts, selectedClient } from "@/lib/nav";
+import { navForProduct, navHref, pageTitle, railProducts, resolveActive, selectedClient } from "@/lib/nav";
 import { productFor } from "@/lib/products";
+import { NavIcon } from "@/components/shell/NavIcon";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import type { Client } from "@/lib/clients";
 import type { Role } from "@/lib/users/store";
@@ -61,7 +62,6 @@ export function MobileTopBar({
   const qs = searchParams.toString();
   const title = pageTitle(pathname);
   const activeProduct = productFor(pathname);
-  const activeHref = activeNavHref(pathname);
 
   // Same resolution the sidebar uses: the selection lives in the URL, so both
   // switchers agree without any shared state.
@@ -79,8 +79,16 @@ export function MobileTopBar({
   const showClientSwitcher = activeProduct !== "reports";
 
   // Pages and products the selected client has no source for are hidden.
-  const nav = navFor(isAdmin, shownClient, isInternal);
+  const nav = navForProduct(activeProduct, isAdmin, shownClient, isInternal);
   const products = railProducts(role, shownClient);
+
+  // The section you are in: its children are listed under it in the sheet, the
+  // same as in the sidebar, and the bar names the page you are on inside it.
+  const active = resolveActive(pathname, searchParams, nav.flatMap((g) => g.items));
+  const subpage =
+    active.child && active.child.href !== active.item?.href && title === active.item?.label
+      ? active.child.label
+      : null;
 
   function selectClient(client: Client) {
     setMenu(null);
@@ -131,7 +139,10 @@ export function MobileTopBar({
           aria-haspopup="menu"
           className="flex min-w-0 items-center gap-1.5 text-[21px] font-bold tracking-heading text-content-inverse"
         >
-          <span className="truncate">{title}</span>
+          <span className="truncate">
+            {title}
+            {subpage && <span className="font-medium text-gray-300"> / {subpage}</span>}
+          </span>
           <span
             aria-hidden="true"
             className={`flex-none text-[13px] leading-none transition-transform duration-fast ${
@@ -282,32 +293,58 @@ export function MobileTopBar({
               </div>
             </div>
 
-            {activeProduct === "analytics" &&
-              nav.map((group) => (
+            {nav.map((group) => (
               <div key={group.label} className="flex flex-col">
                 <span className="px-3 pb-1 pt-3 font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
                   {group.label}
                 </span>
 
                 {group.items.map((item) => {
-                  const isActive = item.href === activeHref;
+                  const isSection = active.item?.href === item.href;
+                  const activeChild = isSection ? active.child : null;
+                  const current = isSection ? (activeChild ? "true" : "page") : undefined;
                   return (
-                    <AppLink
-                      key={item.href}
-                      href={qs ? `${item.href}?${qs}` : item.href}
-                      aria-current={isActive ? "page" : undefined}
-                      className={`rounded-sm px-3 py-2.5 text-[15px] transition-colors duration-fast ${
-                        isActive
-                          ? "bg-gray-100 font-semibold text-content-strong"
-                          : "text-content-body"
-                      }`}
-                    >
-                      {item.label}
-                    </AppLink>
+                    <div key={item.href} className="flex flex-col">
+                      <AppLink
+                        href={navHref(item.href, qs)}
+                        aria-current={current}
+                        className={`flex items-center gap-2.5 rounded-sm px-3 py-2.5 text-[15px] transition-colors duration-fast ${
+                          isSection
+                            ? "bg-gray-100 font-semibold text-content-strong"
+                            : "text-content-body"
+                        }`}
+                      >
+                        <span className={isSection ? "text-growth-700" : "text-content-muted"}>
+                          <NavIcon name={item.icon} size={18} />
+                        </span>
+                        {item.label}
+                      </AppLink>
+
+                      {isSection &&
+                        item.children?.map((child) => {
+                          const isActive = activeChild !== null && child.href === activeChild.href;
+                          return (
+                            <AppLink
+                              key={child.href}
+                              href={navHref(child.href, qs)}
+                              aria-current={isActive ? "page" : undefined}
+                              className={`rounded-sm py-2 pl-[42px] pr-3 text-[14px] transition-colors duration-fast ${
+                                isActive
+                                  ? "font-semibold text-content-strong"
+                                  : child.muted
+                                    ? "text-content-muted/70"
+                                    : "text-content-muted"
+                              }`}
+                            >
+                              {child.label}
+                            </AppLink>
+                          );
+                        })}
+                    </div>
                   );
                 })}
               </div>
-              ))}
+            ))}
           </nav>
         </>
       )}

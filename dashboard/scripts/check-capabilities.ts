@@ -37,7 +37,7 @@ const FIXTURES = {
 type Name = keyof typeof FIXTURES;
 
 const SHOP_PAGES = [
-  "/snapshot", "/plan", "/goals", "/growth", "/orders", "/products", "/unit-economics",
+  "/snapshot", "/goals", "/growth", "/orders", "/products", "/unit-economics",
   "/customers", "/repeat-rate", "/gaps", "/cohorts", "/repurchase", "/repurchase/timing",
 ];
 const INVENTORY = ["/inventory", "/inventory/catalogue", "/inventory/buying"];
@@ -119,8 +119,8 @@ eq("rawbark /paid/google", pageAvailability(FIXTURES.rawbark, "/paid/google"), "
 eq("ethia /paid/google source", missingSource(FIXTURES.ethia, "/paid/google"), "Google Ads");
 eq("manami /paid/ga4", pageAvailability(FIXTURES.manami, "/paid/ga4"), "not-connected");
 eq("query string ignored", pageAvailability(FIXTURES.rawbark, "/email?client=rawbark"), "not-connected");
-eq("no client: internal nav unfiltered except Channels", navFor(true).flatMap((g) => g.items).length, 18);
-eq("no client: client-role nav has no Paid", navFor(false).flatMap((g) => g.items).length, 17);
+eq("no client: internal nav unfiltered except Channels", navFor(true).flatMap((g) => g.items).length, 17);
+eq("no client: client-role nav has no Paid", navFor(false).flatMap((g) => g.items).length, 16);
 
 // A shopless client keeps Analytics in the rail but loses the shop pages.
 const adsOnly = caps({ meta: true });

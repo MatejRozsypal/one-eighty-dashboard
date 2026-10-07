@@ -3,7 +3,7 @@ import "server-only";
 /**
  * Report persistence (Postgres, lazy DDL). Design 4.1, work package RS4.
  *
- * Follows lib/goals/store.ts: its own ensureTable(), never added to the shared
+ * Has its own ensureTable(), never added to the shared
  * ensureSchema (a DDL mistake there locks everyone out of sign-in), and the
  * race errors 23505, 42P07 and 42710 count as success. Emails are stored
  * lower-cased.

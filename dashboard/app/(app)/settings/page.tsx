@@ -2,7 +2,7 @@
  * Settings: everything configurable, organised by client.
  *
  * A client is picked once and everything about them (who can see them, what
- * their costs are assumed to be, what they are aiming at) is on one screen.
+ * their costs are assumed to be) is on one screen.
  * Internal staff get their own tab: an admin or agency account belongs to no
  * single client, so filing them under one would be a lie.
  */
@@ -15,17 +15,13 @@ import { getClients, type Client } from "@/lib/clients";
 import { listUsers, type AppUser } from "@/lib/users/store";
 import { listClientSettings } from "@/lib/users/settings";
 import { listAccessLog, countRecentRefusals } from "@/lib/users/accessLog";
-import { getGoals } from "@/lib/queries/goals";
-import { GOAL_METRICS } from "@/lib/goals/store";
-import { monthsOfYear } from "@/lib/goals/progress";
 import { isDemo } from "@/lib/demo/client";
 import { NO_VALUE } from "@/lib/format";
 import { Notice } from "@/components/ui/Notice";
-import { InfoTip } from "@/components/ui/InfoTip";
 import { saveSettingsAction } from "@/app/(app)/admin/actions";
 import { CreateUserForm } from "@/app/(app)/admin/UserForms";
 import { PeopleList } from "@/components/settings/PeopleList";
-import { saveGoalsAction, saveCreativeSettingsAction } from "./actions";
+import { saveCreativeSettingsAction } from "./actions";
 import { Header } from "@/components/shell/Header";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { SettingsSection } from "@/components/settings/SettingsSection";
@@ -38,14 +34,6 @@ export const dynamic = "force-dynamic";
 
 const FIELD =
   "w-[120px] rounded-control border border-hairline-strong bg-paper px-2.5 py-1.5 text-right font-mono text-[12.5px]";
-
-function monthName(month: string): string {
-  const [y, m] = month.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", {
-    month: "long",
-    timeZone: "UTC",
-  });
-}
 
 export default async function SettingsPage({
   searchParams,
@@ -230,8 +218,6 @@ export default async function SettingsPage({
   // ── Clients (default) ───────────────────────────────────────────────────
   const settings = await listClientSettings().catch(() => []);
   const current = settings.find((s) => s.clientId === selected.clientId);
-  const year = new Date().getUTCFullYear();
-  const goals = await getGoals(selected.clientId, year).catch(() => []);
   const creative = await getCreativeSettings(selected.clientId);
   const people = users.filter(
     (u) => u.role === "client" && u.clientId === selected.clientId
@@ -267,12 +253,6 @@ export default async function SettingsPage({
     if (missing.length > 0) return `Missing ${missing.join(", ")}`;
     return `Kill ${creative.killRoas!.toFixed(2)} · target ${creative.targetRoas!.toFixed(2)} · CPA ${creative.targetCpa} ${selected.metaCurrency ?? selected.currency}`;
   })();
-
-  const monthsWithGoals = new Set(goals.map((g) => g.month)).size;
-  const goalSummary =
-    monthsWithGoals === 0
-      ? `No targets for ${year}`
-      : `${monthsWithGoals} of 12 months set`;
 
   const activePeople = people.filter((u) => u.isActive).length;
   const peopleSummary =
@@ -380,65 +360,6 @@ export default async function SettingsPage({
             settings={creative}
             action={saveCreativeSettingsAction}
           />
-        </SettingsSection>
-
-        <SettingsSection
-          title={`Goals ${year}`}
-          summary={goalSummary}
-          description="Monthly targets. Quarters and the year are summed from them. An empty box is no target, shown as unset, not as a miss."
-        >
-          <div className="overflow-x-auto">
-            <div className="min-w-[680px] pb-1">
-              <div className="grid grid-cols-[110px_repeat(4,1fr)_90px] gap-2 border-b border-hairline bg-gray-50 px-3 py-2.5">
-                <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-                  Month
-                </span>
-                {GOAL_METRICS.map((m) => (
-                  <span
-                    key={m.key}
-                    className="text-right font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
-                  >
-                    {m.label}{" "}
-                    <InfoTip text={m.blurb} label={`About ${m.label}`} />
-                  </span>
-                ))}
-                <span />
-              </div>
-
-              {monthsOfYear(year).map((month) => (
-                <form
-                  key={month}
-                  action={saveGoalsAction}
-                  className="grid grid-cols-[110px_repeat(4,1fr)_90px] items-center gap-2 border-b border-hairline px-3 py-2"
-                >
-                  <input type="hidden" name="clientId" value={selected.clientId} />
-                  <input type="hidden" name="month" value={month} />
-                  <span className="text-[13px] text-content-strong">
-                    {monthName(month)}
-                  </span>
-                  {GOAL_METRICS.map((m) => {
-                    const g = goals.find(
-                      (x) => x.month === month && x.metric === m.key
-                    );
-                    return (
-                      <input
-                        key={m.key}
-                        name={`target_${m.key}`}
-                        type="text"
-                        inputMode="decimal"
-                        placeholder={NO_VALUE}
-                        disabled={demo}
-                        defaultValue={g ? String(g.target) : ""}
-                        aria-label={`${m.label} target for ${monthName(month)}`}
-                        className="w-full rounded-control border border-hairline-strong bg-paper px-2 py-1.5 text-right font-mono text-[12.5px] disabled:bg-gray-50 disabled:text-content-muted"
-                      />
-                    );
-                  })}
-                  <SaveButton disabled={demo} />
-                </form>
-              ))}
-            </div>
-          </div>
         </SettingsSection>
 
         <SettingsSection

@@ -32,7 +32,6 @@ export const NAV: NavGroup[] = [
     label: "Profitability",
     items: [
       { label: "Snapshot", href: "/snapshot" },
-      { label: "Plan", href: "/plan" },
       { label: "Goals", href: "/goals" },
       { label: "Growth (MoM)", href: "/growth" },
       { label: "Orders", href: "/orders" },

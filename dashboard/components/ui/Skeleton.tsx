@@ -103,7 +103,7 @@ export function SkeletonCards({ count = 8 }: { count?: number }) {
   );
 }
 
-/** Stacked bars: goals, attainment, ranked lists. */
+/** Stacked bars: attainment, ranked lists. */
 export function SkeletonList({ rows = 5 }: { rows?: number }) {
   return (
     <Frame className="flex flex-col gap-5">

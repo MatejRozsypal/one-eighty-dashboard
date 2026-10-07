@@ -85,6 +85,7 @@ export function SegmentPills({
   onSelect,
   ariaLabel,
   pending = false,
+  size = "default",
 }: {
   segments: Segment[];
   shown: string;
@@ -92,13 +93,22 @@ export function SegmentPills({
   ariaLabel: string;
   /** Pulse the selected segment while its change is in flight. */
   pending?: boolean;
+  /** "bar": the control bar's pill height and corners (see `Pill`). */
+  size?: "default" | "bar";
 }) {
+  const bar = size === "bar";
   return (
     <div
       role="group"
       aria-label={ariaLabel}
       aria-busy={pending}
-      className="flex gap-0.5 rounded-pill bg-gray-100 p-[3px]"
+      className={`flex gap-0.5 bg-gray-100 p-[3px] ${
+        // On the control bar it carries the pills' ring for the same reason
+        // they do: below `lg` the bar sits straight on a `--gray-100` page.
+        bar
+          ? "h-8 items-stretch rounded-sm shadow-[inset_0_0_0_1px_var(--gray-150)]"
+          : "rounded-pill"
+      }`}
     >
       {segments.map((seg) => {
         const isActive = seg.value === shown;
@@ -128,7 +138,9 @@ export function SegmentPills({
             aria-pressed={isActive}
             title={seg.title}
             aria-label={seg.title}
-            className={`whitespace-nowrap rounded-pill px-2.5 py-1.5 font-mono text-[11px] transition-colors duration-fast ${
+            className={`whitespace-nowrap font-mono transition-colors duration-fast ${
+              bar ? "rounded-[7px] px-2 text-[12px]" : "rounded-pill px-2.5 py-1.5 text-[11px]"
+            } ${
               isActive
                 ? `bg-paper text-content-strong shadow-sm ${pending ? "oe-pulse" : ""}`
                 : "text-content-muted hover:text-content-body"

@@ -1,11 +1,15 @@
 "use client";
 
 /**
- * Date range control: preset menu plus a two-month calendar for custom ranges.
+ * The period pill: preset menu plus a two-month calendar for custom ranges.
  *
- * Every range ends **yesterday** at the latest (locked rule). Today is always
- * partial: shops report same-day but ad platforms are a day behind, so there is
- * no "Today" preset and today cannot be picked in the calendar.
+ * Every range ends **yesterday** at the latest (locked rule), with one named
+ * exception: the "Today" preset, offered where the page asks for it
+ * (`withToday`). Today is always partial, shops report same-day but ad
+ * platforms are a day behind, so the calendar never offers today or later.
+ *
+ * A preset applies on click. A custom range is picked on the calendar and
+ * applied with Apply.
  *
  * State lives in the URL so the view is shareable and server components can read
  * it without a round trip.
@@ -16,137 +20,87 @@
  * below the fold (QA C-13).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useNavigation } from "@/components/shell/NavigationPending";
+import { ArrowIcon, CalendarIcon, Pill, Popover, PopoverFooter, usePopover } from "@/components/controls/Pill";
+import { RangeCalendar, nextSelection } from "@/components/controls/RangeCalendar";
+import { formatRange } from "@/components/controls/rangeText";
 import {
   PRESET_LABELS,
   presetRange,
+  todayUtc,
   type DateRange,
   type PresetKey,
-  daysInRange,
-  todayUtc,
 } from "@/lib/period";
 
-const PRESETS: PresetKey[] = ["7d", "28d", "30d", "90d", "mtd", "ytd", "12m", "all"];
+/** The presets in menu order, grouped by the rail's dividers. */
+const GROUPS: PresetKey[][] = [
+  ["today"],
+  ["7d", "28d", "30d", "90d"],
+  ["mtd", "ytd"],
+  ["12m", "all"],
+];
 
-function fmt(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-/** Calendar grid for a month, padded to whole weeks (Sunday-first). */
-function monthGrid(year: number, month: number): Array<Array<string | null>> {
-  const first = new Date(Date.UTC(year, month, 1));
-  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const lead = first.getUTCDay();
-
-  const cells: Array<string | null> = Array(lead).fill(null);
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push(
-      `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
-    );
-  }
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  const weeks: Array<Array<string | null>> = [];
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-  return weeks;
-}
+const RAIL_ITEM =
+  "flex w-full items-center rounded-sm px-3 py-2 text-left text-[14px] text-content-strong transition-colors duration-fast";
 
 export function DateRangeControl({
   range,
   presetKey,
+  withToday = false,
 }: {
   range: DateRange;
   presetKey: PresetKey | "custom";
+  /** Offer the "Today" preset. Only where the page's params accept it. */
+  withToday?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, wrapRef } = usePopover();
   const [customMode, setCustomMode] = useState(false);
-  const [draft, setDraft] = useState<{ from: string; to: string | null }>({
+  const [draft, setDraft] = useState<{ from: string | null; to: string | null }>({
     from: range.from,
     to: range.to,
   });
-  // ── The calendar opens on the recent end of the range, not its start ────
-  // It used to anchor on `range.from`, which is fine for "Last 30 days" and
-  // actively harmful for anything long: on "All time" the popover opened on
-  // September 2021 and the two months on screen were five years ago. Picking a
-  // range there is the obvious next click, and it produces a custom range in
-  // 2021, which then follows you to every other screen, because the sidebar
-  // appends the current query string to every link. That is how a whole
-  // dashboard came to read August 2021 and show nothing but dashes.
-  //
-  // Anchoring on the month BEFORE `range.to` puts the two most recent months
-  // side by side with today on the right, which is what a date picker is
-  // expected to do and what makes a long range safe to open.
-  const [anchorMonth, setAnchorMonth] = useState(() => {
-    const [y, m] = range.to.split("-").map(Number);
-    return m === 1 ? { year: y - 1, month: 11 } : { year: y, month: m - 2 };
-  });
 
-  const wrapRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // The popover closes and the trigger relabels the instant you choose, while
+  // The popover closes and the pill relabels the instant you choose, while
   // the query runs behind the progress bar. Holding the popover open until
   // BigQuery answers would leave the calendar sitting there for seconds
   // looking like the click was dropped.
   const { isPending, navigate, baseQuery } = useNavigation();
 
-  // While a range is in flight the trigger and its chip show the range you
-  // asked for, not the one still on screen, and both pulse until the page
-  // commits. The chip used to keep the old preset name, so the two disagreed
-  // for the length of the query (QA A-21).
+  // While a range is in flight the pill shows the range you asked for, not
+  // the one still on screen, and pulses until the page commits (QA A-21).
   const [pending, setPending] = useState<{ range: DateRange; label: string } | null>(null);
   useEffect(() => {
     if (!isPending) setPending(null);
   }, [isPending]);
 
   const shownRange = pending?.range ?? range;
+  const label =
+    pending?.label ??
+    (presetKey === "custom" ? formatRange(range) : PRESET_LABELS[presetKey]);
 
-  // A tall sheet over a scrollable page invites scrolling the page behind it.
-  // Phones only: on wider screens it is a popover and the page may scroll.
-  useEffect(() => {
-    if (!open || typeof window === "undefined") return;
-    if (!window.matchMedia("(max-width: 639.98px)").matches) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [open]);
-
-  // Close on outside click / Escape, a popover this large is easy to strand open.
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+  function toggle() {
+    // Every opening starts on the presets and on what is on screen; on a
+    // phone the calendar is a second step behind "Custom range".
+    if (!open) {
+      setCustomMode(false);
+      setDraft({ from: range.from, to: range.to });
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+    setOpen((v) => !v);
+  }
 
   // Merged onto the URL a still-loading change is heading to (compare,
   // currency, client), not the committed one, so neither change is lost.
-  function apply(params: Record<string, string>) {
+  function applyCustom(from: string, to: string) {
     const next = new URLSearchParams(baseQuery(pathname, searchParams.toString()));
-    for (const [k, v] of Object.entries(params)) next.set(k, v);
-    if (params.from && params.to) {
-      setPending({ range: { from: params.from, to: params.to }, label: "Custom" });
-    }
+    next.set("preset", "custom");
+    next.set("from", from);
+    next.set("to", to);
+    setPending({ range: { from, to }, label: formatRange({ from, to }) });
     setOpen(false);
     setCustomMode(false);
     navigate(`${pathname}?${next.toString()}`);
@@ -162,264 +116,102 @@ export function DateRangeControl({
     navigate(`${pathname}?${next.toString()}`);
   }
 
-  function pickDay(day: string) {
-    // First click starts a new range; second click closes it. Clicking a day
-    // before the open end swaps the two rather than rejecting the input.
-    if (draft.to !== null) {
-      setDraft({ from: day, to: null });
-    } else if (day < draft.from) {
-      setDraft({ from: day, to: draft.from });
-    } else {
-      setDraft({ from: draft.from, to: day });
-    }
-  }
-
-  const label =
-    pending?.label ??
-    (presetKey === "custom" ? "Custom" : PRESET_LABELS[presetKey as PresetKey]);
-  const draftDays =
-    draft.to !== null ? daysInRange({ from: draft.from, to: draft.to }) : null;
-
-  const months = [
-    anchorMonth,
-    anchorMonth.month === 11
-      ? { year: anchorMonth.year + 1, month: 0 }
-      : { year: anchorMonth.year, month: anchorMonth.month + 1 },
-  ];
+  const groups = GROUPS.map((g) => g.filter((k) => withToday || k !== "today")).filter(
+    (g) => g.length > 0
+  );
+  const today = todayUtc();
 
   return (
-    <div ref={wrapRef} className="relative flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => {
-          // Every opening starts on the presets; on a phone the calendar is a
-          // second step behind "Custom range".
-          if (!open) setCustomMode(false);
-          setOpen((v) => !v);
-        }}
-        aria-expanded={open}
-        aria-busy={isPending}
-        className={`inline-flex items-center gap-2.5 rounded-control border border-hairline-strong bg-paper px-3 py-2 text-content-strong transition-colors duration-fast hover:bg-gray-50 ${
-          isPending ? "oe-pulse" : ""
-        }`}
-      >
-        <span aria-hidden="true" className="text-[13px]">
-          🗓
-        </span>
-        <span className="font-mono text-[12px] tracking-[-0.01em] tabular">
-          {fmt(shownRange.from)} to {fmt(shownRange.to)}
-        </span>
-        <span aria-hidden="true" className="text-[9px] text-content-muted">
-          {open ? "▴" : "▾"}
-        </span>
-      </button>
-      <span
-        className={`hidden font-mono text-[11px] uppercase tracking-[0.06em] text-content-muted sm:inline ${
-          isPending ? "oe-pulse" : ""
-        }`}
-      >
-        {label}
-      </span>
+    <div ref={wrapRef} className="relative">
+      <Pill
+        icon={<CalendarIcon />}
+        label={label}
+        open={open}
+        onClick={toggle}
+        pending={isPending}
+        title={formatRange(shownRange)}
+      />
 
       {open && (
-        <>
-        {/* Phone only: dims the page behind the sheet and closes it on tap. */}
-        <button
-          type="button"
-          aria-label="Close date range"
-          onClick={() => setOpen(false)}
-          className="fixed inset-0 z-[89] block w-full cursor-default bg-ink-950/45 sm:hidden"
-        />
-        <div
-          role="dialog"
-          aria-label="Date range"
-          className="fixed inset-x-0 bottom-0 z-[90] flex max-h-[88dvh] flex-col overflow-hidden rounded-t-2xl border-t border-hairline bg-paper pb-[var(--safe-bottom)] shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-[46px] sm:grid sm:max-h-none sm:w-[min(760px,calc(100vw-2rem))] sm:grid-cols-[212px_minmax(0,1fr)] sm:rounded-lg sm:border sm:pb-0"
+        <Popover
+          label="Date range"
+          onClose={() => setOpen(false)}
+          className="sm:grid sm:w-[min(800px,calc(100vw-2rem))] sm:grid-cols-[200px_minmax(0,1fr)]"
         >
           <div
-            className={`min-h-0 flex-col gap-0.5 overflow-y-auto border-hairline bg-gray-50 p-2.5 sm:flex sm:overflow-visible sm:border-r ${
+            className={`min-h-0 flex-col overflow-y-auto border-hairline p-2.5 sm:flex sm:overflow-visible sm:border-r ${
               customMode ? "hidden" : "flex"
             }`}
           >
-            {PRESETS.map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => choosePreset(key)}
-                className={`flex w-full items-center justify-between rounded-sm px-3 py-[9px] text-left text-[13.5px] text-content-strong transition-colors duration-fast hover:bg-gray-100 ${
-                  presetKey === key ? "font-semibold" : "font-normal"
-                }`}
-              >
-                {PRESET_LABELS[key]}
-                <span className="font-mono text-[10px] text-content-muted">
-                  {daysInRange(presetRange(key))}d
-                </span>
-              </button>
+            {groups.map((group, gi) => (
+              <div key={gi} className="flex flex-col gap-0.5">
+                {gi > 0 && <span aria-hidden="true" className="my-1.5 block h-px bg-hairline" />}
+                {group.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={presetKey === key}
+                    onClick={() => choosePreset(key)}
+                    className={`${RAIL_ITEM} ${
+                      presetKey === key ? "bg-gray-100 font-semibold" : "hover:bg-gray-50"
+                    }`}
+                  >
+                    {PRESET_LABELS[key]}
+                  </button>
+                ))}
+              </div>
             ))}
-            <span className="my-[7px] block h-px bg-hairline" />
+            <span aria-hidden="true" className="my-1.5 block h-px bg-hairline" />
             <button
               type="button"
+              aria-pressed={presetKey === "custom"}
               onClick={() => setCustomMode(true)}
-              className={`flex w-full items-center justify-between rounded-sm px-3 py-[9px] text-left text-[13.5px] text-content-strong transition-colors duration-fast hover:bg-gray-100 ${
-                customMode || presetKey === "custom" ? "font-semibold" : ""
+              className={`${RAIL_ITEM} justify-between ${
+                customMode || presetKey === "custom" ? "bg-gray-100 font-semibold" : "hover:bg-gray-50"
               }`}
             >
               Custom range
-              <span className="text-content-muted">→</span>
+              <span className="text-content-muted sm:hidden">
+                <ArrowIcon dir="right" />
+              </span>
             </button>
           </div>
 
-          <div
-            className={`min-h-0 flex-1 flex-col sm:flex ${customMode ? "flex" : "hidden"}`}
-          >
-            <div className="min-h-0 flex-1 overflow-y-auto sm:overflow-visible">
-            <button
-              type="button"
-              onClick={() => setCustomMode(false)}
-              className="px-5 pt-3.5 text-left text-[13px] text-content-muted sm:hidden"
-            >
-              ← Presets
-            </button>
-            <div className="flex items-center gap-3 px-5 pb-3 pt-[18px]">
-              <span className="flex-1 rounded-sm border border-hairline-strong px-3 py-[9px] font-mono text-[12.5px] tabular text-content-strong">
-                {fmt(draft.from)}
-              </span>
-              <span aria-hidden="true" className="text-content-muted">
-                →
-              </span>
-              <span className="flex-1 rounded-sm border border-hairline-strong px-3 py-[9px] font-mono text-[12.5px] tabular text-content-strong">
-                {draft.to ? fmt(draft.to) : "Pick end date"}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between px-5 pb-1">
+          <div className={`min-h-0 flex-1 flex-col sm:flex ${customMode ? "flex" : "hidden"}`}>
+            <div className="min-h-0 flex-1 overflow-y-auto pt-2 sm:overflow-visible">
               <button
                 type="button"
-                aria-label="Previous month"
-                onClick={() =>
-                  setAnchorMonth((m) =>
-                    m.month === 0
-                      ? { year: m.year - 1, month: 11 }
-                      : { year: m.year, month: m.month - 1 }
-                  )
-                }
-                className="rounded-sm px-2 py-1 text-content-muted hover:bg-gray-100"
+                onClick={() => setCustomMode(false)}
+                className="flex items-center gap-1 px-4 pb-1 pt-1 text-[14px] text-content-strong sm:hidden"
               >
-                ←
+                <ArrowIcon dir="left" />
+                Presets
               </button>
-              <button
-                type="button"
-                aria-label="Next month"
-                onClick={() =>
-                  setAnchorMonth((m) =>
-                    m.month === 11
-                      ? { year: m.year + 1, month: 0 }
-                      : { year: m.year, month: m.month + 1 }
-                  )
-                }
-                className="rounded-sm px-2 py-1 text-content-muted hover:bg-gray-100"
-              >
-                →
-              </button>
+              <RangeCalendar
+                from={draft.from}
+                to={draft.to}
+                focus={range.to}
+                // Today and later are not selectable: ranges end yesterday.
+                isDisabled={(day) => day >= today}
+                onPick={(day) => setDraft(nextSelection(draft, day))}
+              />
             </div>
-
-            <div className="grid gap-[22px] px-5 pb-3.5 pt-1.5 sm:grid-cols-2">
-              {months.map(({ year, month }, mi) => (
-                <div
-                  key={`${year}-${month}`}
-                  // One month on a phone: the more recent one, which holds the
-                  // likely end of the range.
-                  className={`min-w-0 flex-col gap-2 ${mi === 0 ? "hidden sm:flex" : "flex"}`}
-                >
-                  <span className="pb-1 pt-0.5 text-center text-[14px] font-semibold text-content-strong">
-                    {new Date(Date.UTC(year, month, 1)).toLocaleDateString("en-US", {
-                      month: "long",
-                      year: "numeric",
-                      timeZone: "UTC",
-                    })}
-                  </span>
-                  <div className="flex">
-                    {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                      <span
-                        key={d}
-                        className="flex-1 text-center font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted"
-                      >
-                        {d}
-                      </span>
-                    ))}
-                  </div>
-                  {monthGrid(year, month).map((week, wi) => (
-                    <div key={wi} className="flex">
-                      {week.map((day, di) => {
-                        if (!day)
-                          return <span key={di} className="h-8 flex-1" aria-hidden="true" />;
-
-                        const inRange =
-                          draft.to !== null && day >= draft.from && day <= draft.to;
-                        const isEdge = day === draft.from || day === draft.to;
-                        // Today and later are not selectable: ranges end yesterday.
-                        const disabled = day >= todayUtc();
-
-                        return (
-                          <button
-                            key={di}
-                            type="button"
-                            disabled={disabled}
-                            onClick={() => pickDay(day)}
-                            className={`h-8 flex-1 font-mono text-[12px] tabular transition-colors duration-fast ${
-                              isEdge
-                                ? "rounded-sm bg-accent font-semibold text-accent-contrast"
-                                : inRange
-                                  ? "bg-accent-soft text-growth-700"
-                                  : disabled
-                                    ? "cursor-not-allowed text-gray-200"
-                                    : "text-content-body hover:bg-gray-100"
-                            }`}
-                          >
-                            {Number(day.slice(8))}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-            </div>
-
-            <div className="flex flex-none items-center justify-between gap-3 border-t border-hairline bg-paper px-5 py-3.5">
-              <span className="font-mono text-[11.5px] tabular text-content-muted">
-                {draft.to
-                  ? `${fmt(draft.from)} to ${fmt(draft.to)} · ${draftDays} days`
-                  : "Pick an end date"}
-              </span>
-              <span className="flex gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDraft({ from: range.from, to: range.to });
-                    setCustomMode(false);
-                    setOpen(false);
-                  }}
-                  className="rounded-control border border-hairline-strong px-3.5 py-2 text-[13px] text-content-body transition-colors duration-fast hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={!draft.to}
-                  onClick={() =>
-                    draft.to &&
-                    apply({ preset: "custom", from: draft.from, to: draft.to })
-                  }
-                  className="rounded-control bg-ink-900 px-3.5 py-2 text-[13px] font-medium text-content-inverse transition-colors duration-fast hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Apply
-                </button>
-              </span>
-            </div>
+            <PopoverFooter
+              summary={
+                draft.from
+                  ? formatRange({ from: draft.from, to: draft.to ?? draft.from })
+                  : null
+              }
+              canApply={draft.to !== null}
+              onCancel={() => {
+                setDraft({ from: range.from, to: range.to });
+                setCustomMode(false);
+                setOpen(false);
+              }}
+              onApply={() => draft.from && draft.to && applyCustom(draft.from, draft.to)}
+            />
           </div>
-        </div>
-        </>
+        </Popover>
       )}
     </div>
   );

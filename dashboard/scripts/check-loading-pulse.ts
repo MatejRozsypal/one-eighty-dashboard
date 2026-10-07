@@ -202,13 +202,17 @@ check(
 }
 
 {
+  // The period pill draws its trigger, sheet and calendar through Pill and
+  // RangeCalendar, so the pins follow the markup there.
   const date = read(join(ROOT, "components", "controls", "DateRangeControl.tsx"));
+  const pill = read(join(ROOT, "components", "controls", "Pill.tsx"));
+  const cal = read(join(ROOT, "components", "controls", "RangeCalendar.tsx"));
   check("range chip shows the pending preset label", date.includes("pending?.label ??") && date.includes("label: PRESET_LABELS[key]"));
   check("range trigger shows the pending range", date.includes("const shownRange = pending?.range ?? range;"));
-  check("range trigger and chip both pulse while pending", (date.match(/isPending \? "oe-pulse" : ""/g) ?? []).length >= 2);
-  check("date control is a bottom sheet below sm", date.includes("fixed inset-x-0 bottom-0") && date.includes("sm:absolute"));
-  check("date sheet: one month below sm", date.includes('mi === 0 ? "hidden sm:flex" : "flex"'));
-  check("date sheet: Cancel/Apply foot does not scroll away", /flex flex-none items-center justify-between[^"]*border-t/.test(date));
+  check("range pill pulses while pending", date.includes("pending={isPending}") && pill.includes('pending ? "oe-pulse" : ""'));
+  check("date control is a bottom sheet below sm", pill.includes("fixed inset-x-0 bottom-0") && pill.includes("sm:absolute"));
+  check("date sheet: one month below sm", cal.includes('mi === 0 ? "hidden sm:flex" : "flex"'));
+  check("date sheet: Cancel/Apply foot does not scroll away", /flex flex-none[^"]*items-center justify-between[^"]*border-t/.test(pill));
 
   const bar = read(join(ROOT, "components", "shell", "MobileTopBar.tsx"));
   check("mobile menus: one state for both (never open together)", bar.includes('useState<"pages" | "client" | null>(null)') && !/useState\(false\)/.test(bar));

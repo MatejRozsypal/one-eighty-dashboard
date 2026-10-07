@@ -29,7 +29,8 @@
     "check:delta-paid": "tsx --tsconfig scripts/tsconfig.json scripts/check-delta-paid.ts",
     "check:delta-cmpc": "tsx --tsconfig scripts/tsconfig.json scripts/check-delta-cmpc.ts",
     "check:hitrate": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-hitrate.ts",
-    "check:retention": "tsx --tsconfig scripts/tsconfig.json scripts/check-retention.ts"
+    "check:retention": "tsx --tsconfig scripts/tsconfig.json scripts/check-retention.ts",
+    "check:period": "tsx --tsconfig scripts/tsconfig.json scripts/check-period.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.0",

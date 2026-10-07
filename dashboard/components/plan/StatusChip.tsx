@@ -2,68 +2,39 @@
  * Pacing status as a small pill.
  *
  * The status comes from the warehouse (pace and a noise test together), never
- * from the page. A closed period shows its result instead (met or missed).
- * Ad spend reads "Over plan" (warning) above its band and "Under plan" below
- * it: spending more is not being ahead. A metric with no target in the period
- * reads "No target". A targeted metric the data cannot measure reads "No cost
- * data" (CM3) or "Missing days" (aMER). A status held back because the period
- * is too young to judge is drawn faded; the hover title says so.
+ * from the page, and the word and the colour come from `lib/plan/health.ts`,
+ * so the chip, the tile's ring and the charts cannot disagree.
+ *
+ * A status held back because the period is too young to judge is drawn faded;
+ * the hover title says so. The word is always present, so the status never
+ * rests on colour alone.
+ *
+ * It is a coloured word rather than a tinted pill. The skin's status colours
+ * are tuned to clear 4.5:1 on white, and on their own tints the darker ones
+ * land in the low fours; the choice was a second, darker set of reds and
+ * greens for pills alone, or no pill. The mock has no pills either, and the
+ * tile's own footer already says the status as a word, so the table and the
+ * timeline now say it the same way.
  */
 
-import { STATUS_LABEL } from "@/lib/plan/format";
-import type { PacingRow, RowStatus } from "@/lib/plan/types";
+import { planStatusLabel, toneOfRow, toneVars } from "@/lib/plan/health";
+import type { PacingRow } from "@/lib/plan/types";
 
-const TONE = {
-  info: "bg-info/10 text-info",
-  positive: "bg-growth-50 text-growth-700",
-  warning: "bg-warning/15 text-warning-700",
-  negative: "bg-negative/10 text-negative",
-  neutral: "bg-gray-100 text-content-muted",
-} as const;
-
-type Tone = keyof typeof TONE;
-
-function isSpend(metric: string): boolean {
-  return metric === "ad_spend";
-}
-
-function labelOf(row: Pick<PacingRow, "status" | "metric" | "result">): string {
-  if (row.status === "closed" && row.result) return row.result === "met" ? "Met" : "Missed";
-  if (row.status === "no_target") return "No target";
-  if (row.status === "not_measured") return row.metric === "cm3" ? "No cost data" : "Missing days";
-  if (isSpend(row.metric)) {
-    if (row.status === "ahead") return "Over plan";
-    if (row.status === "behind" || row.status === "off_track") return "Under plan";
-  }
-  return STATUS_LABEL[row.status];
-}
-
-function toneOf(status: RowStatus, metric: string, result: PacingRow["result"]): Tone {
-  switch (status) {
-    case "ahead":
-      return isSpend(metric) ? "warning" : "info";
-    case "on_track":
-      return "positive";
-    case "behind":
-      return isSpend(metric) ? "info" : "warning";
-    case "off_track":
-      return isSpend(metric) ? "info" : "negative";
-    case "closed":
-      return result === "met" ? "positive" : result === "missed" ? "negative" : "neutral";
-    default:
-      return "neutral";
-  }
-}
-
-export function StatusChip({ row, className = "" }: { row: Pick<PacingRow, "status" | "metric" | "result" | "isTooEarly">; className?: string }) {
-  const label = labelOf(row);
-  const tone = toneOf(row.status, row.metric, row.result);
+export function StatusChip({
+  row,
+  className = "",
+}: {
+  row: Pick<PacingRow, "status" | "metric" | "result" | "isTooEarly">;
+  className?: string;
+}) {
+  const label = planStatusLabel(row);
+  const colour = toneVars(toneOfRow(row));
   return (
     <span
       title={row.isTooEarly ? "Too early to call" : undefined}
+      style={{ color: colour.text }}
       className={[
-        "inline-flex items-center whitespace-nowrap rounded-pill px-2 py-[3px] font-mono text-[10.5px] font-medium uppercase leading-none tracking-[0.04em]",
-        TONE[tone],
+        "inline-flex items-center whitespace-nowrap text-[12.5px] font-semibold leading-[1.35]",
         row.isTooEarly ? "opacity-60" : "",
         className,
       ]

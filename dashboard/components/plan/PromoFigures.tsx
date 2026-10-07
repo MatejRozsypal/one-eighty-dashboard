@@ -28,7 +28,7 @@
  */
 
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
-import { Eyebrow } from "@/components/ui/Eyebrow";
+import { SectionTitle } from "@/components/plan/SectionTitle";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import { NO_VALUE, formatMoney } from "@/lib/format";
 import { fmtCount, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
@@ -56,14 +56,14 @@ function Figure({
   const definition = tip ? METRIC_DEFINITIONS[tip] : undefined;
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <span className="relative inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+      <span className="relative inline-flex items-center gap-1.5 text-[13px] font-semibold leading-[1.35] text-content-muted">
         {label}
         {definition && <MetricTooltip definition={definition} />}
         {chip && <StatusChip row={chip} className="ml-1" />}
       </span>
       <span className="flex flex-wrap items-baseline gap-x-2">
         <span
-          className={`font-mono text-[20px] font-semibold leading-none tracking-heading tabular ${
+          className={`text-[24px] font-bold leading-[1.1] tracking-heading tabular ${
             value === NO_VALUE ? "text-content-muted" : "text-content-strong"
           }`}
         >
@@ -71,7 +71,7 @@ function Figure({
         </span>
         {of && <span className="text-[12px] text-content-muted">{of}</span>}
       </span>
-      {sub && <span className="font-mono text-[11px] text-content-muted">{sub}</span>}
+      {sub && <span className="text-[12px] text-content-muted">{sub}</span>}
     </div>
   );
 }
@@ -81,18 +81,18 @@ function Detail({ label, value, sub, tip }: { label: string; value: string; sub?
   const definition = tip ? METRIC_DEFINITIONS[tip] : undefined;
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <span className="relative inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+      <span className="relative inline-flex items-center gap-1.5 text-[12.5px] font-semibold leading-[1.35] text-content-muted">
         {label}
         {definition && <MetricTooltip definition={definition} />}
       </span>
       <span
-        className={`font-mono text-[15px] font-semibold leading-none tabular ${
+        className={`text-[17px] font-semibold leading-[1.2] tabular ${
           value === NO_VALUE ? "text-content-muted" : "text-content-strong"
         }`}
       >
         {value}
       </span>
-      {sub && <span className="font-mono text-[10.5px] text-content-muted">{sub}</span>}
+      {sub && <span className="text-[11.5px] text-content-muted">{sub}</span>}
     </div>
   );
 }
@@ -141,9 +141,9 @@ export function PromoFigures({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        {task?.mechanic && <span className="font-mono text-[11.5px] text-content-muted">{task.mechanic}</span>}
+        {task?.mechanic && <span className="text-[13px] text-content-muted">{task.mechanic}</span>}
         {wholeStore && (
-          <span className="rounded-pill bg-gray-100 px-2 py-[3px] font-mono text-[10.5px] uppercase tracking-[0.04em] text-content-muted">
+          <span className="rounded-pill bg-gray-100 px-2.5 py-[3px] text-[11.5px] font-semibold text-content-muted">
             Whole store in the window
           </span>
         )}
@@ -190,7 +190,7 @@ export function PromoFigures({
 
       {detail && (
         <div className="flex flex-col gap-3 border-t border-hairline pt-5">
-          <Eyebrow>Who bought</Eyebrow>
+          <SectionTitle>Who bought</SectionTitle>
           <div className={DETAIL_GRID}>
             <Detail
               label="New customers"
@@ -219,7 +219,7 @@ export function PromoFigures({
 
       {detail && (
         <div className="flex flex-col gap-3 border-t border-hairline pt-5">
-          <Eyebrow>What it earned</Eyebrow>
+          <SectionTitle>What it earned</SectionTitle>
           <div className={DETAIL_GRID}>
             <Detail
               label={revenueLabel}
@@ -251,7 +251,7 @@ export function PromoFigures({
             />
           </div>
           {!wholeStore && impact.matched.length > 0 && (
-            <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+            <span className="text-[12px] text-content-muted">
               {`Matched on ${impact.matched.map((m) => `${fmtCount(m.count)} ${m.label}`).join(" · ")}`}
             </span>
           )}

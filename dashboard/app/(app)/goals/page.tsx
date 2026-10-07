@@ -10,6 +10,17 @@
  * Every view has the same skeleton: tiles per metric, the cumulative burn-up,
  * daily bars, and the period one level down. Quarter adds the promo and
  * checkpoint timeline, Promo the attribution figures, Target the trajectory.
+ *
+ * ── The Health skin ────────────────────────────────────────────────────────
+ * This page is a pilot of a different visual language: white page, white
+ * cards, a pace ring per metric, and a sans in place of the dashboard's
+ * monospace. It is expected to look unlike the rest of the product.
+ *
+ * It is carried entirely by the `oe-health` class on the wrapper below, which
+ * is where `styles/skins/health.css` scopes its token overrides. Taking the
+ * decision either way is cheap: delete the wrapper and the file, or move the
+ * scope up to `:root` and delete the wrapper. Nothing in `components/plan` or
+ * `lib/plan` holds a colour, a radius or a font of its own.
  */
 
 import type { Metadata } from "next";
@@ -44,9 +55,11 @@ export default async function GoalsPage({ searchParams }: { searchParams: Search
     return (
       <>
         <Header title="Goals" />
-        <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
-          <NotConnected source={missingSource(client, "/goals") ?? "Shop"} />
-        </main>
+        <div className="oe-health flex min-w-0 flex-1 flex-col">
+          <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
+            <NotConnected source={missingSource(client, "/goals") ?? "Shop"} />
+          </main>
+        </div>
       </>
     );
   }
@@ -60,11 +73,22 @@ export default async function GoalsPage({ searchParams }: { searchParams: Search
 
   return (
     <>
+      {/* The skin's one font, fetched as the page streams rather than after the
+          stylesheet has been parsed. */}
+      <link
+        rel="preload"
+        as="font"
+        type="font/woff2"
+        href="/fonts/InterVariable-subset.woff2"
+        crossOrigin="anonymous"
+      />
       <Header title="Goals" />
-      <PlanControls view={view} options={options} period={period?.id ?? null} />
-      <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-6 lg:px-8">
-        <PlanBody data={data} view={view} period={period} asOf={asOf} currency={client.currency} />
-      </main>
+      <div className="oe-health flex min-w-0 flex-1 flex-col">
+        <PlanControls view={view} options={options} period={period?.id ?? null} />
+        <main className="page-frame flex flex-col gap-[22px] px-5 pb-14 pt-6 lg:px-8">
+          <PlanBody data={data} view={view} period={period} asOf={asOf} currency={client.currency} />
+        </main>
+      </div>
     </>
   );
 }

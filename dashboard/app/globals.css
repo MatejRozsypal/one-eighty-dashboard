@@ -15,6 +15,12 @@
 @import "../styles/tokens/shadows.css";
 @import "../styles/tokens/motion.css";
 
+/* Scoped skins: token overrides that re-dress a part of the app without
+   touching its components. `.oe-health` is the Apple Health pilot on Goals.
+   Imported after the tokens so it can override them, before Tailwind so
+   utilities still win over it. */
+@import "../styles/skins/health.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

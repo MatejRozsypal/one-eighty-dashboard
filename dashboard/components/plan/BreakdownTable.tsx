@@ -13,7 +13,7 @@ import type { BreakdownRow } from "@/lib/plan/model";
 import type { PlanMetric } from "@/lib/plan/types";
 import { PreliminaryMark, StatusChip } from "@/components/plan/StatusChip";
 
-const TH = "px-3 py-2.5 font-mono text-[10.5px] font-normal uppercase tracking-[0.08em] text-content-muted";
+const TH = "px-3 py-3 text-[12.5px] font-semibold text-content-muted";
 
 function Cell({ text, strong = false }: { text: string; strong?: boolean }) {
   return (
@@ -41,7 +41,7 @@ export function BreakdownTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] border-collapse text-[13px]">
+      <table className="w-full min-w-[560px] border-collapse text-[13px] tabular">
         <thead>
           <tr className="border-b border-hairline bg-gray-50">
             <th scope="col" className={`${TH} text-left`}>{unit}</th>
@@ -60,7 +60,7 @@ export function BreakdownTable({
               <tr key={r.id} className={`border-b border-hairline last:border-b-0 ${r.current ? "bg-gray-50" : ""}`}>
                 <th scope="row" className="px-3 py-2.5 text-left font-normal">
                   <span className="text-content-strong">{r.label}</span>
-                  {r.sub && <span className="ml-2 font-mono text-[11px] text-content-muted">{r.sub}</span>}
+                  {r.sub && <span className="ml-2 text-[12px] text-content-muted">{r.sub}</span>}
                 </th>
                 <td className="px-3 py-2.5 text-right tabular">
                   <Cell text={fmt(row?.target)} />

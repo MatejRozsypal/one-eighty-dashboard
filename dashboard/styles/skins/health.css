@@ -1,0 +1,233 @@
+/*
+ * Health: the Apple Health visual language, as a scoped skin.
+ *
+ * This is a pilot on the Goals page. Everything it changes is a design token,
+ * and almost every token it changes is one the app already had, so the
+ * components inside the scope pick up the new look without knowing about it.
+ *
+ * ── How a rollout works ────────────────────────────────────────────────────
+ * One line. The scope below is `.oe-health`, carried by the wrapper around the
+ * Goals control bar and main (app/(app)/goals/page.tsx). To take the whole
+ * dashboard over, change that selector to `:root` and drop the wrapper; to
+ * take one more section over, add its wrapper. No component changes either
+ * way, because no component holds a colour, a radius or a family of its own.
+ *
+ * What a rollout still has to look at, and nothing else:
+ *   - the chrome outside the scope (the sticky Header, the sidebar, the mobile
+ *     top bar), which keeps the house look until the scope widens past it;
+ *   - the three pieces of Goals-only presentation that are genuinely new
+ *     rather than retuned: the pace ring (components/plan/PaceRing.tsx), the
+ *     status pairs below, and the section titles in components/plan;
+ *   - pages whose components assume a monospace for column alignment. This
+ *     skin replaces the mono with the sans and buys the alignment back with
+ *     tabular numerals on the scope itself (see the type block).
+ *
+ * ── Why the existing token names are overridden rather than shadowed ───────
+ * A parallel set of `--h-card`, `--h-text` names would have meant editing
+ * every component to read them, which is the cost this file exists to avoid.
+ * Tokens that are genuinely new (the status triples, the ring) are prefixed
+ * `--h-` and are the only names a component had to learn.
+ *
+ * Not part of the design system handoff. styles/tokens/* stay untouched, so a
+ * future handoff can overwrite them without touching this.
+ */
+
+/*
+ * Inter, self-hosted, variable.
+ *
+ * The mock asks for `-apple-system, "SF Pro Display"`, which resolves on Apple
+ * devices and nowhere else; SF Pro cannot be served as a webfont, so on Windows
+ * that stack lands on Segoe UI and the page changes character. Inter is shipped
+ * from this repo instead, so every platform renders the same page.
+ *
+ * Built from the Google Fonts release of Inter (ofl/inter/Inter[opsz,wght].ttf)
+ * with fontTools, Latin-1 plus Latin Extended A (Czech and Slovak diacritics
+ * included) plus the punctuation, currency and math signs the figures use:
+ *
+ *   python3 -m fontTools.subset Inter.ttf \
+ *     --output-file=InterVariable-subset.woff2 --flavor=woff2 \
+ *     --layout-features+=tnum,case \
+ *     --unicodes="U+0000-00FF,U+0100-017F,U+02C6-02DD,U+2000-207F,\
+ * U+20A0-20BF,U+2113,U+2116,U+2122,U+2190-2193,U+2212,U+2215,U+2248,U+2260,\
+ * U+2264-2265,U+FEFF,U+FFFD"
+ *
+ * 474 glyphs, 87.6 KB. Both axes are kept: `opsz` is what gives the large
+ * numerals a display cut rather than a scaled-up text cut, which is the
+ * distinction the mock's "SF Pro Display" was reaching for. `font-display:
+ * swap` means the page paints immediately in the fallback.
+ */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/InterVariable-subset.woff2") format("woff2-variations");
+}
+
+.oe-health {
+  /* ================= Type =================
+   * One token. Swapping the family is this line and nothing else.
+   *
+   * The fallback chain ends in system-ui so the page is legible while the
+   * woff2 is in flight and if it never arrives. */
+  --h-font: "Inter Variable", system-ui, sans-serif;
+
+  /*
+   * The mono is pointed at the same family on purpose: the mock has no
+   * monospace, and the dashboard's labels and figures ask for `font-mono` in
+   * roughly a hundred places inside this scope. Repointing the token changes
+   * all of them at once.
+   *
+   * The mono was also doing real work: it aligned digits in a column for free.
+   * `tabular-nums` on the scope buys that back for every figure in it, not
+   * only the ones tagged `.tabular`, which is stricter than what it replaces.
+   */
+  --font-sans: var(--h-font);
+  --font-mono: var(--h-font);
+  --font-display: var(--h-font);
+
+  font-family: var(--h-font);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "case" 1;
+
+  /* ================= Surfaces =================
+   * White page, white cards, told apart by a hairline, a soft layered shadow
+   * and an inset top highlight. */
+  --h-bg: #ffffff;
+
+  --paper: #ffffff;
+  --bg: var(--h-bg);
+  --bg-subtle: var(--h-bg);
+  --surface-card: #ffffff;
+  --surface-card-subtle: rgba(17, 24, 28, 0.025);
+
+  --border: rgba(17, 24, 28, 0.07);
+  --border-strong: rgba(17, 24, 28, 0.13);
+
+  /* Neutral fills. The segmented controls and muted rows read these. */
+  --gray-50: rgba(17, 24, 28, 0.025);
+  --gray-100: rgba(17, 24, 28, 0.06);
+  --gray-150: rgba(17, 24, 28, 0.09);
+  --gray-200: rgba(17, 24, 28, 0.14);
+  /* The faintest step that still reads on white: timeline bars for a period
+     that has not started, and the label of a locked control. */
+  --gray-250: #8e8e93;
+
+  --radius-card: 22px;
+  --radius-control: 999px;
+
+  /* The card. `shadow-sm` is what every card in the app already asks for. */
+  --shadow-xs: 0 1px 2px rgba(17, 24, 28, 0.05);
+  --shadow-sm: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(17, 24, 28, 0.05),
+    0 14px 32px rgba(17, 24, 28, 0.07);
+  --shadow-md: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(17, 24, 28, 0.05),
+    0 18px 40px rgba(17, 24, 28, 0.09);
+  --shadow-lg: 0 2px 6px rgba(17, 24, 28, 0.06), 0 24px 56px rgba(17, 24, 28, 0.13);
+
+  /* ================= Text =================
+   * The mock sets secondary text in #8E8E93, which is 3.3:1 on white and fails
+   * at the 13px it is used at. Every secondary figure on this page is small
+   * text, so the step is darkened to #6C6C70 (5.2:1) and the lighter grey is
+   * not used for type at all. Nothing else about the hierarchy changes: it is
+   * still one near-black and one grey. */
+  --text-strong: #1c1c1e;
+  --text-body: #1c1c1e;
+  --text-muted: #6c6c70;
+
+  --tracking-heading: -0.02em;
+  --tracking-display: -0.03em;
+
+  /* ================= Status =================
+   * Three per status: the text step (labels and the status word, 4.5:1 or
+   * better on white), the graphic step (the ring arc, 3:1 or better), and the
+   * tint behind the arc.
+   *
+   * The owner approved #E0352B for off track. It measures 4.46:1, just under
+   * the 4.5:1 the status word needs at 13px, so the approved hex stays on the
+   * ring, where 3:1 is the bar, and the word takes a step darker that reads as
+   * the same red. Blue and green pass as approved and use one value for both.
+   *
+   * Over plan (ad spend above its band) and the holding states are not in the
+   * mock. They are built here in the same family rather than borrowed from the
+   * house palette, which is tuned for a grey page. */
+  --h-negative-text: #d8332a;
+  --h-negative: #e0352b;
+  --h-negative-tint: #fbdfdd;
+
+  --h-info-text: #0a6cd8;
+  --h-info: #0a6cd8;
+  --h-info-tint: #d9e7fa;
+
+  --h-positive-text: #1c7f45;
+  --h-positive: #1c7f45;
+  --h-positive-tint: #d9efe1;
+
+  --h-warning-text: #8a5b0a;
+  --h-warning: #8a5b0a;
+  --h-warning-tint: #f8e8cd;
+
+  --h-neutral-text: #6c6c70;
+  --h-neutral: #8e8e93;
+  --h-neutral-tint: #ebebed;
+
+  /* The dot on the ring, and the one series colour the charts draw actual in. */
+  --h-mark: #1c1c1e;
+
+  /* Charts keep one accent for "actual" so the burn-up and the daily bars read
+     as the same series. It follows the page's own status language rather than
+     the reporting suite's six client slots. */
+  --series-1: var(--h-info);
+
+  --focus-ring: #0a6cd8;
+}
+
+/* The page itself. The scope wrapper paints white across the full width, so the
+   gutters beside the content column are white too, not the shell's grey. */
+.oe-health {
+  background: var(--h-bg);
+}
+
+/*
+ * The metric tooltip's glyph.
+ *
+ * It is an icon-only control drawn as a character, so it is held to the 4.5:1
+ * text bar rather than the 3:1 one a pure graphic would get. The shared
+ * component sets it from the faintest grey, which does not clear that on a
+ * white card; it is addressed here by the accessible name it already carries,
+ * so the control itself is untouched and every other page keeps its own.
+ */
+.oe-health button[aria-label^="About "] {
+  color: var(--text-muted);
+}
+
+.oe-health button[aria-label^="About "]:hover {
+  color: var(--text-strong);
+}
+
+/*
+ * The segmented controls.
+ *
+ * `SegmentPills` is shared with the rest of the app and is sized for the
+ * monospace it was built around; set in the sans it reads small. Rather than
+ * fork the control for one page, the two groups on Goals are addressed here by
+ * the aria-label they already carry. The view switch gets the mock's size; the
+ * six-metric chart picker gets a smaller nudge, because at 375px it has to
+ * stay on one line.
+ */
+.oe-health [role="group"][aria-label="Goals view"] > button {
+  font-size: 13px;
+  padding: 7px 18px;
+}
+
+.oe-health [role="group"][aria-label="Chart metric"] > button {
+  font-size: 12px;
+  padding-inline: 8px;
+}
+
+/* Six metrics on a 375px phone: the labels stay, the padding goes. */
+@media (max-width: 420px) {
+  .oe-health [role="group"][aria-label="Chart metric"] > button {
+    font-size: 11.5px;
+    padding-inline: 5px;
+  }
+}

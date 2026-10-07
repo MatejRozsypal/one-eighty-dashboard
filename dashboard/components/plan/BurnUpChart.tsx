@@ -81,7 +81,7 @@ export function BurnUpChart({
                 fill={MUTED_FILL}
                 fillOpacity={0.9}
                 ifOverflow="extendDomain"
-                label={{ value: b.code, position: "insideTop", fontSize: 10, fill: TEXT_MUTED, fontFamily: "var(--font-mono)" }}
+                label={{ value: b.code, position: "insideTop", fontSize: 11, fill: TEXT_MUTED, fontFamily: "var(--font-sans)" }}
               />
             ))}
             <XAxis
@@ -153,7 +153,7 @@ export function BurnUpChart({
 
 function Legend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-content-body">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-content-body">
       <span className="inline-flex items-center gap-[7px]">
         <span aria-hidden="true" className="h-[3px] w-4 rounded-full" style={{ background: ACTUAL }} />
         Actual

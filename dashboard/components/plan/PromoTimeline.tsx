@@ -74,7 +74,7 @@ export function PromoTimeline({
               return (
                 <span
                   key={m}
-                  className="absolute top-0 border-l border-hairline pl-1.5 font-mono text-[10.5px] text-content-muted"
+                  className="absolute top-0 border-l border-hairline pl-1.5 text-[11.5px] text-content-muted"
                   style={{ left: `${pct(from, start, span)}%`, width: `${((daysBetween(from, to) + 1) / span) * 100}%` }}
                 >
                   {new Date(`${m}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}
@@ -98,7 +98,7 @@ export function PromoTimeline({
               const width = Math.max(1.2, ((daysBetween(s, e) + 1) / span) * 100);
               return (
                 <li key={item.taskId} className="flex h-6 items-center">
-                  <span className="w-[56px] flex-none truncate font-mono text-[11px] text-content-strong">{item.code}</span>
+                  <span className="w-[56px] flex-none truncate text-[12px] font-semibold text-content-strong">{item.code}</span>
                   <span className="relative h-full flex-1">
                     <span
                       title={`${item.code} · ${item.name}, ${fmtRange(item.start, item.end)}`}
@@ -153,7 +153,7 @@ function ConditionLine({ row, currency }: { row: PacingRow; currency: string }) 
       <dd className="text-right tabular">
         <Muted text={started ? fmtValue(row.actual, row.metric, currency) : NO_VALUE} />
         <span className="text-content-muted"> of {fmtValue(row.target, row.metric, currency)}</span>
-        {spendNote && <span className="block text-[10.5px] text-content-muted">{spendNote}</span>}
+        {spendNote && <span className="block text-[11.5px] text-content-muted">{spendNote}</span>}
       </dd>
     </>
   );
@@ -171,20 +171,20 @@ function TimelineCard({ item, currency }: { item: TimelineItem; currency: string
   const merRow = [head, orders, ...Object.values(item.byMetric)].find((r) => r?.merCapPct != null);
 
   return (
-    <article className="flex min-w-0 flex-col gap-3 rounded-card border border-hairline bg-surface-card p-[14px_16px]">
+    <article className="flex min-w-0 flex-col gap-3 rounded-card border border-hairline bg-surface-card p-[16px_18px] shadow-xs">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-[13.5px] font-semibold text-content-strong">
-            <span className="font-mono">{item.code}</span> · {item.name}
+          <span className="truncate text-[14px] font-semibold text-content-strong">
+            <span>{item.code}</span> · {item.name}
           </span>
-          <span className="font-mono text-[11px] text-content-muted">
+          <span className="text-[12.5px] text-content-muted">
             {item.kind === "gate" ? `Check ${fmtDay(item.end)}` : fmtRange(item.start, item.end)}
             {item.planStatus === "planning" && " · planning"}
           </span>
         </div>
         {head && <StatusChip row={head} />}
       </div>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-[11.5px]">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12.5px]">
         {item.kind === "promo" ? (
           <>
             <dt className="text-content-muted">Store orders</dt>

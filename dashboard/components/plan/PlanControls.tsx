@@ -74,7 +74,7 @@ export function PlanControls({
               <select
                 value={period ?? ""}
                 onChange={(e) => go((q) => q.set("period", e.target.value))}
-                className={`h-[34px] max-w-[300px] cursor-pointer truncate rounded-control border border-hairline-strong bg-surface-card px-3 pr-8 font-mono text-[12px] text-content-strong shadow-sm transition-colors duration-fast hover:border-content-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] ${
+                className={`h-[34px] max-w-[300px] cursor-pointer truncate rounded-control border border-hairline bg-surface-card px-4 pr-8 text-[13px] text-content-strong shadow-xs transition-colors duration-fast hover:border-hairline-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] ${
                   isPending ? "oe-pulse" : ""
                 }`}
               >

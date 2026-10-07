@@ -54,13 +54,6 @@ export function fmtPace(pct: number | null | undefined): string {
   return formatPercent(pct === null || pct === undefined ? null : pct / 100);
 }
 
-/** Lift arrives as a percentage (19.8), renders "+19.8%"; zero and n/a unsigned. */
-export function fmtLift(pct: number | null | undefined): string {
-  if (pct === null || pct === undefined || !Number.isFinite(pct)) return NO_VALUE;
-  const text = formatPercent(pct / 100);
-  return pct > 0 && /[1-9]/.test(text) ? `+${text}` : text;
-}
-
 /** MER arrives as a percentage of revenue (27.6), renders "27.6%". */
 export function fmtMer(pct: number | null | undefined): string {
   return formatPercent(pct === null || pct === undefined ? null : pct / 100);

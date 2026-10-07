@@ -27,6 +27,12 @@
  * Their columns arrive with the CM3 and aMER warehouse release; until it is
  * deployed the reads fall back to the earlier column set and both metrics
  * read n/a, so this page can ship before or after it.
+ *
+ * The promo detail and the promo margin fall back the same way: before the
+ * promo impact release the attribution read drops them, nothing is relabelled
+ * as the whole store, and the code split and the margin read n/a. This page
+ * must ship BEFORE that release, because it also stops reading the three
+ * baseline and lift columns the release removes.
  */
 
 import { query } from "@/lib/bigquery";
@@ -74,13 +80,13 @@ function isMissingColumn(error: unknown): boolean {
   return /unrecognized name/i.test(message);
 }
 
-/** Runs the read with the CM3 / aMER columns, else without them (older warehouse). */
+/** Runs the read with the newer columns, else without them (older warehouse). */
 async function withFallback<T>(full: () => Promise<T>, base: () => Promise<T>): Promise<T> {
   try {
     return await full();
   } catch (error) {
     if (!isMissingColumn(error)) throw error;
-    console.warn(`[plan] CM3 / aMER columns not deployed yet: ${(error as Error)?.message ?? error}`);
+    console.warn(`[plan] warehouse columns not deployed yet: ${(error as Error)?.message ?? error}`);
     return base();
   }
 }
@@ -130,9 +136,6 @@ function toPacingRow(r: Raw): PacingRow {
     merCapPct: num(r.mer_cap_pct),
     merPlanPct: num(r.mer_plan_pct),
     merActualPct: num(r.mer_actual_pct),
-    baselineTotal: num(r.baseline_total),
-    baselineToDate: num(r.baseline_to_date),
-    liftPct: num(r.lift_vs_baseline_pct),
     ratioNumActual: num(r.ratio_num_actual),
     ratioDenActual: num(r.ratio_den_actual),
     ratioNumTargetToDate: num(r.ratio_num_target_to_date),
@@ -154,8 +157,7 @@ const PACING_COLUMNS = `period_type, period_id, period_label, metric, task_id, p
             is_target_partial, target_total, target_to_date, actual_to_date, pace_pct,
             gap_abs, projected_end, projected_low, projected_high, required_daily_rate,
             required_curve_mult, status, is_too_early, result, is_preliminary,
-            mer_cap_pct, mer_plan_pct, mer_actual_pct,
-            baseline_total, baseline_to_date, lift_vs_baseline_pct`;
+            mer_cap_pct, mer_plan_pct, mer_actual_pct`;
 
 const RATIO_COLUMNS = `ratio_num_actual, ratio_den_actual, ratio_num_target_to_date,
             ratio_den_target_to_date, ratio_num_target, ratio_den_target, trailing_7d_ratio,
@@ -248,14 +250,30 @@ async function fetchActuals(clientId: string): Promise<ActualDay[]> {
   });
 }
 
+const PERF_COLUMNS = `task_id, phase, mechanic, window_start, window_end, window_days, is_complete,
+            attr_orders, attr_revenue, attr_units, attr_gift_units, attr_new_customers,
+            attr_code_orders, attr_no_code_orders, attr_discounted_orders,
+            store_orders, store_revenue, store_new_customers, meta_spend,
+            store_mer_pct, mer_cap_pct`;
+
+/** The promo impact columns; absent until the promo impact release is deployed. */
+const PERF_IMPACT_COLUMNS = `is_storewide, has_coupon_data, days_elapsed,
+            attr_returning_customers, attr_discount_given, attr_cogs, attr_orders_costed,
+            attr_cm1, attr_cm1_pct, attr_meta_spend, attr_cm3,
+            attr_orders_coupon, attr_orders_sku, attr_orders_gift_sku, attr_orders_utm,
+            attr_orders_window, store_units, store_cm3`;
+
 async function fetchPromoPerf(clientId: string): Promise<PromoPerf[]> {
-  const rows = await query<Raw>(
-    `SELECT task_id, phase, mechanic, window_start, window_end, is_complete,
-            attr_orders, attr_revenue, attr_units, store_orders, store_revenue, meta_spend,
-            store_mer_pct, mer_cap_pct
-     FROM ${PLAN_TABLES.promoPerf}
-     WHERE client_id = @clientId AND grain = 'total' AND source = 'clickup'`,
-    { clientId }
+  const read = (columns: string) =>
+    query<Raw>(
+      `SELECT ${columns}
+       FROM ${PLAN_TABLES.promoPerf}
+       WHERE client_id = @clientId AND grain = 'total' AND source = 'clickup'`,
+      { clientId }
+    );
+  const rows = await withFallback(
+    () => read(`${PERF_COLUMNS}, ${PERF_IMPACT_COLUMNS}`),
+    () => read(PERF_COLUMNS)
   );
   return rows.map((r) => ({
     taskId: String(r.task_id),
@@ -263,12 +281,39 @@ async function fetchPromoPerf(clientId: string): Promise<PromoPerf[]> {
     mechanic: str(r.mechanic),
     windowStart: date(r.window_start),
     windowEnd: date(r.window_end),
+    windowDays: num(r.window_days),
     isComplete: r.is_complete === true,
+    // Before the promo impact release: no flag, so nothing is relabelled and
+    // the code split and the margin read n/a.
+    isStorewide: r.is_storewide === true,
+    hasCouponData: r.has_coupon_data === true,
+    daysElapsed: num(r.days_elapsed),
     attrOrders: num(r.attr_orders),
     attrRevenue: num(r.attr_revenue),
     attrUnits: num(r.attr_units),
+    attrGiftUnits: num(r.attr_gift_units),
+    attrNewCustomers: num(r.attr_new_customers),
+    attrReturningCustomers: num(r.attr_returning_customers),
+    attrCodeOrders: num(r.attr_code_orders),
+    attrNoCodeOrders: num(r.attr_no_code_orders),
+    attrDiscountedOrders: num(r.attr_discounted_orders),
+    attrDiscountGiven: num(r.attr_discount_given),
+    attrCogs: num(r.attr_cogs),
+    attrOrdersCosted: num(r.attr_orders_costed),
+    attrCm1: num(r.attr_cm1),
+    attrCm1Pct: num(r.attr_cm1_pct),
+    attrMetaSpend: num(r.attr_meta_spend),
+    attrCm3: num(r.attr_cm3),
+    matchCoupon: num(r.attr_orders_coupon),
+    matchSku: num(r.attr_orders_sku),
+    matchGiftSku: num(r.attr_orders_gift_sku),
+    matchUtm: num(r.attr_orders_utm),
+    matchWindow: num(r.attr_orders_window),
     storeOrders: num(r.store_orders),
     storeRevenue: num(r.store_revenue),
+    storeNewCustomers: num(r.store_new_customers),
+    storeUnits: num(r.store_units),
+    storeCm3: num(r.store_cm3),
     metaSpend: num(r.meta_spend),
     storeMerPct: num(r.store_mer_pct),
     merCapPct: num(r.mer_cap_pct),

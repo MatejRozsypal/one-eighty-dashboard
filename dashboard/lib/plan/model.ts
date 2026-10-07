@@ -192,9 +192,6 @@ export function completeRows(data: PlanData): PlanData {
         merCapPct: metric === "ad_spend" ? t.merCapPct : null,
         merPlanPct: null,
         merActualPct: metric === "ad_spend" ? merActual : null,
-        baselineTotal: null,
-        baselineToDate: null,
-        liftPct: null,
         ratioNumActual: metric === "amer" && started ? ncr : null,
         ratioDenActual: metric === "amer" && started && !spendGap ? paid : null,
         ratioNumTargetToDate: null,
@@ -500,6 +497,10 @@ export interface TimelineItem {
   byMetric: MetricRows;
   attributedOrders: number | null;
   attributedTarget: number | null;
+  /** The promo counts every order in its window, so there is no matched subset. */
+  wholeStore: boolean;
+  /** Attributed revenue minus COGS of those orders; null without cost data. */
+  cm1: number | null;
 }
 
 /** Checkpoints and unit-led promos are judged on these, first one with a target wins. */
@@ -523,18 +524,6 @@ export function gateConditions(rows: MetricRows, lead: RowMetric): PacingRow[] {
   return HEADLINE_ORDER.filter((m) => m !== lead && rows[m] && rows[m]!.target !== null).map((m) => rows[m]!);
 }
 
-/**
- * The lift a promo is read on: orders when the warehouse has a baseline for
- * them, else revenue, else null. Same metric as the "Whole store" figure.
- */
-export function liftRow(rows: MetricRows): PacingRow | null {
-  for (const m of ["orders", "revenue"] as const) {
-    const r = rows[m];
-    if (r && (r.baselineTotal !== null || r.liftPct !== null)) return r;
-  }
-  return null;
-}
-
 export function promoPerfOf(data: PlanData, taskId: string): PromoPerf | null {
   return data.promoPerf?.find((p) => p.taskId === taskId) ?? null;
 }
@@ -544,21 +533,73 @@ export function taskOf(data: PlanData, taskId: string | null): PlanTask | null {
   return data.tasks.find((t) => t.taskId === taskId) ?? null;
 }
 
-/** Mechanics matched on the window alone (every order in it), so they need no key. */
-const STOREWIDE = new Set(["Cart discount", "Free shipping"]);
-
 /**
- * Attributed orders of a promo, or null when they cannot be measured: no
- * attribution row, or a mechanic that needs a key (code, SKU, UTM) and the
- * task names none. A zero from missing keys would read as "nobody used it".
+ * Attributed orders of a promo, or null when there is no such figure:
+ *
+ *  - no attribution row at all, or
+ *  - the promo counts every order in the window (nothing to match on, or a
+ *    store wide mechanic), so the figure is the whole store and is read as the
+ *    whole store instead, or
+ *  - the task names no code, SKU or campaign, so a count would read as
+ *    "nobody used it" when nothing was ever matched on.
  */
 export function attributedOrders(data: PlanData, taskId: string): number | null {
   const perf = promoPerfOf(data, taskId);
-  if (!perf) return null;
+  if (!perf || perf.isStorewide) return null;
   const task = taskOf(data, taskId);
-  const mechanic = task?.mechanic ?? perf.mechanic;
-  const measurable = (task?.hasKeys ?? false) || (mechanic !== null && STOREWIDE.has(mechanic));
-  return measurable ? perf.attrOrders : null;
+  return task?.hasKeys ? perf.attrOrders : null;
+}
+
+/** One entry of the match mix, in rule order, non zero only. */
+export interface MatchSlice {
+  label: string;
+  count: number;
+}
+
+/** Everything the Promo view reads about one promo, with the n/a rules applied. */
+export interface PromoImpact {
+  perf: PromoPerf | null;
+  task: PlanTask | null;
+  /** The figures cover every order in the window, not a matched subset. */
+  wholeStore: boolean;
+  attributed: number | null;
+  /** Attributed orders over store orders, null unless both sides exist. */
+  share: number | null;
+  /** Code split; null when the shop platform carries no discount codes. */
+  codeOrders: number | null;
+  noCodeOrders: number | null;
+  matched: MatchSlice[];
+}
+
+const MATCH_LABELS: readonly [keyof PromoPerf, string][] = [
+  ["matchCoupon", "code"],
+  ["matchSku", "SKU"],
+  ["matchGiftSku", "gift"],
+  ["matchUtm", "campaign"],
+  ["matchWindow", "window"],
+];
+
+export function promoImpact(data: PlanData, taskId: string): PromoImpact {
+  const perf = promoPerfOf(data, taskId);
+  const task = taskOf(data, taskId);
+  const wholeStore = perf?.isStorewide ?? false;
+  const attributed = attributedOrders(data, taskId);
+  const matched: MatchSlice[] = perf
+    ? MATCH_LABELS.flatMap(([key, label]) => {
+        const count = perf[key];
+        return typeof count === "number" && count > 0 ? [{ label, count }] : [];
+      })
+    : [];
+  return {
+    perf,
+    task,
+    wholeStore,
+    attributed,
+    share: attributed !== null && perf?.storeOrders ? attributed / perf.storeOrders : null,
+    codeOrders: perf?.hasCouponData ? perf.attrCodeOrders : null,
+    noCodeOrders: perf?.hasCouponData ? perf.attrNoCodeOrders : null,
+    matched,
+  };
 }
 
 /** Promos and checkpoints that touch the period, by start date. */
@@ -568,18 +609,22 @@ export function timeline(data: PlanData, start: string, end: string): TimelineIt
     if ((r.periodType !== "promo" && r.periodType !== "gate") || !(r.start <= end && r.end >= start)) continue;
     let item = items.get(r.periodId);
     if (!item) {
+      const id = r.taskId ?? r.periodId;
       const task = taskOf(data, r.taskId);
+      const perf = promoPerfOf(data, id);
       item = {
         kind: r.periodType === "gate" ? "gate" : "promo",
-        taskId: r.taskId ?? r.periodId,
+        taskId: id,
         code: phaseCode(r.label),
         name: phaseName(r.label),
         start: r.start,
         end: r.end,
         planStatus: r.planStatus,
         byMetric: {},
-        attributedOrders: attributedOrders(data, r.taskId ?? r.periodId),
+        attributedOrders: attributedOrders(data, id),
         attributedTarget: task?.targetOrders ?? null,
+        wholeStore: perf?.isStorewide ?? false,
+        cm1: perf?.attrCm1 ?? null,
       };
       items.set(r.periodId, item);
     }

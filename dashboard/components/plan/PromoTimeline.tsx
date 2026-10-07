@@ -8,8 +8,10 @@
  * Card: window, status, the whole store in the window against the window's
  * slice of the curve (the number that adds up to the month), and the orders
  * attributed to the promo against its own target, n/a until both exist. A
- * promo with Target units adds units sold against it, and a started promo
- * its lift over the no-promo baseline. A checkpoint card leads
+ * promo with Target units adds units sold against it, and a costed promo the
+ * margin its attributed orders earned after COGS. A promo that counts every
+ * order in its window has no attributed line: the store line is the promo.
+ * A checkpoint card leads
  * with the metric it has a target for (units, else orders, else revenue),
  * and its chip is that row's status. Every other condition the checkpoint
  * sets follows on its own line: orders, new customers, the CM3 floor and the
@@ -20,8 +22,8 @@
 import { StatusChip } from "@/components/plan/StatusChip";
 import { NO_VALUE, formatMoney } from "@/lib/format";
 import { daysBetween, fmtDay, fmtRange, monthStart, addMonths, monthEnd } from "@/lib/plan/dates";
-import { METRIC_LABEL, fmtCount, fmtLift, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
-import { gateConditions, headlineMetric, liftRow, type TimelineItem } from "@/lib/plan/model";
+import { METRIC_LABEL, fmtCount, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
+import { gateConditions, headlineMetric, type TimelineItem } from "@/lib/plan/model";
 import type { PacingRow, RowStatus } from "@/lib/plan/types";
 
 const BAR: Record<RowStatus, string> = {
@@ -157,8 +159,8 @@ function TimelineCard({ item, currency }: { item: TimelineItem; currency: string
   const head = item.byMetric[lead];
   const units = item.kind === "promo" && item.byMetric.units?.target != null ? item.byMetric.units : undefined;
   const started = (row: PacingRow | undefined) => row !== undefined && row.status !== "not_started";
-  // Lift only once there is one to read: a line of n/a on every future promo is clutter.
-  const lift = item.kind === "promo" ? liftRow(item.byMetric) : null;
+  // Margin only once there is one to read: a line of n/a on every future promo is clutter.
+  const margin = item.kind === "promo" ? item.cm1 : null;
   const merRow = [head, orders, ...Object.values(item.byMetric)].find((r) => r?.merCapPct != null);
 
   return (
@@ -196,20 +198,23 @@ function TimelineCard({ item, currency }: { item: TimelineItem; currency: string
                 </dd>
               </>
             )}
-            {lift?.liftPct != null && (
+            {margin !== null && (
               <>
-                <dt className="text-content-muted">Lift</dt>
+                <dt className="text-content-muted">Margin after COGS</dt>
                 <dd className="text-right tabular">
-                  <Muted text={fmtLift(lift.liftPct)} />
-                  {lift.metric !== "orders" && <span className="text-content-muted"> {METRIC_LABEL[lift.metric].toLowerCase()}</span>}
+                  <Muted text={formatMoney(margin, currency)} />
                 </dd>
               </>
             )}
-            <dt className="text-content-muted">Attributed</dt>
-            <dd className="text-right tabular">
-              <Muted text={fmtCount(item.attributedOrders)} />
-              <span className="text-content-muted"> of {fmtCount(item.attributedTarget)}</span>
-            </dd>
+            {!item.wholeStore && (
+              <>
+                <dt className="text-content-muted">Attributed</dt>
+                <dd className="text-right tabular">
+                  <Muted text={fmtCount(item.attributedOrders)} />
+                  <span className="text-content-muted"> of {fmtCount(item.attributedTarget)}</span>
+                </dd>
+              </>
+            )}
           </>
         ) : (
           <>

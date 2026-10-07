@@ -24,7 +24,6 @@
 import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
-import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { PageControls } from "@/components/controls/PageControls";
 import { CreativeGrid } from "@/components/creative/CreativeGrid";
 import { UnmappedQueue } from "@/components/creative/UnmappedQueue";
@@ -280,11 +279,10 @@ export default async function CreativesPage({
       <PageControls client={client} params={ctx.params} compare />
 
       <main className="page-frame flex flex-col gap-5 px-5 pb-14 pt-4 lg:px-8">
-        <CreativeTabs unmapped={ctx.unmappedCount} href="#unmapped" />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CreativeBar
-            unmapped={0}
+            unmapped={ctx.unmappedCount}
             through={data.through}
             updated={updated}
             currency={currency}

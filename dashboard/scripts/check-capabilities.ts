@@ -11,7 +11,7 @@
 
 import { pageAvailability, missingSource, hasShop } from "@/lib/capabilities";
 import { productFor } from "@/lib/products";
-import { navFor, railProducts, pageTitle, activeNavHref, selectedClient } from "@/lib/nav";
+import { navFor, navForProduct, navHref, railProducts, pageTitle, activeNavHref, resolveActive, selectedClient, CREATIVE_NAV, NAV } from "@/lib/nav";
 import { formatMoney, formatNumber, formatPercent, formatRatio, NO_VALUE } from "@/lib/format";
 import { tickLabels } from "@/components/dashboard/RevenueMix";
 import { aggregate, spendGapNotice, paidSpendDelta, type PnlDay, type PnlSnapshot } from "@/lib/queries/pnl";
@@ -119,8 +119,8 @@ eq("rawbark /paid/google", pageAvailability(FIXTURES.rawbark, "/paid/google"), "
 eq("ethia /paid/google source", missingSource(FIXTURES.ethia, "/paid/google"), "Google Ads");
 eq("manami /paid/ga4", pageAvailability(FIXTURES.manami, "/paid/ga4"), "not-connected");
 eq("query string ignored", pageAvailability(FIXTURES.rawbark, "/email?client=rawbark"), "not-connected");
-eq("no client: internal nav unfiltered except Channels", navFor(true).flatMap((g) => g.items).length, 17);
-eq("no client: client-role nav has no Paid", navFor(false).flatMap((g) => g.items).length, 16);
+eq("no client: internal nav unfiltered except Channels", navFor(true).flatMap((g) => g.items).length, 16);
+eq("no client: client-role nav has no Paid", navFor(false).flatMap((g) => g.items).length, 15);
 
 // A shopless client keeps Analytics in the rail but loses the shop pages.
 const adsOnly = caps({ meta: true });
@@ -128,7 +128,7 @@ eq("ads-only /snapshot", pageAvailability(adsOnly, "/snapshot"), "not-connected"
 eq("ads-only /snapshot source", missingSource(adsOnly, "/snapshot"), "Shop");
 
 // Active state and titles are prefix based.
-eq("active /repurchase/timing", activeNavHref("/repurchase/timing"), "/repurchase/timing");
+eq("active /repurchase/timing", activeNavHref("/repurchase/timing"), "/repurchase");
 eq("active /repurchase", activeNavHref("/repurchase"), "/repurchase");
 eq("active /paid/meta", activeNavHref("/paid/meta"), "/paid");
 eq("active /inventory/catalogue", activeNavHref("/inventory/catalogue"), "/inventory/catalogue");
@@ -141,6 +141,50 @@ eq("title /health", pageTitle("/health"), "Data health");
 eq("title /channels", pageTitle("/channels"), "Channels");
 eq("selectedClient fallback", selectedClient([{ clientId: "a" }, { clientId: "b" }], "zzz")?.clientId, "a");
 eq("selectedClient pick", selectedClient([{ clientId: "a" }, { clientId: "b" }], "b")?.clientId, "b");
+
+// Sidebar tree (NAV1): every top-level item has an icon, children are one level,
+// and the current item and child follow the path and, for siblings sharing a path, the query.
+{
+  const all = [...NAV, ...CREATIVE_NAV].flatMap((g) => g.items);
+  eq("every top-level item has an icon", all.every((i) => typeof i.icon === "string" && i.icon.length > 0), true);
+  eq("icons are unique", new Set(all.map((i) => i.icon)).size, all.length);
+  eq("items with children", all.filter((i) => i.children).map((i) => i.label), ["Paid", "Repurchase", "Breakdown"]);
+  eq("Paid children", NAV.flatMap((g) => g.items).find((i) => i.href === "/paid")?.children?.map((c) => c.label), ["Overview", "Meta", "Google", "GA4"]);
+  eq("Breakdown has ten dimension children", CREATIVE_NAV[0].items.find((i) => i.label === "Breakdown")?.children?.length, 10);
+  eq("creative nav is the same for every client", navForProduct("creative", false, FIXTURES.rawbark), CREATIVE_NAV);
+  eq("chat and reports list nothing", [navForProduct("chat", true), navForProduct("reports", true)], [[], []]);
+
+  // A platform the client lacks stays under Paid, muted; Overview never mutes.
+  const paid = (c: Parameters<typeof navFor>[1]) => navFor(true, c).flatMap((g) => g.items).find((i) => i.href === "/paid")?.children?.map((x) => `${x.label}${x.muted ? ":muted" : ""}`);
+  eq("Paid children for Meta + Google (Manami)", paid(FIXTURES.manami), ["Overview", "Meta", "Google", "GA4:muted"]);
+  eq("Paid children for Meta only (Ethia)", paid(FIXTURES.ethia), ["Overview", "Meta", "Google:muted", "GA4:muted"]);
+  eq("Paid children for Google only (RawBark)", paid(FIXTURES.rawbark), ["Overview", "Meta:muted", "Google", "GA4:muted"]);
+  eq("Paid children without a client", paid(undefined), ["Overview", "Meta", "Google", "GA4"]);
+
+  const q = (s: string) => new URLSearchParams(s);
+  const on = (path: string, query = "") => {
+    const a = resolveActive(path, q(query));
+    return [a.item?.label ?? null, a.child?.label ?? null];
+  };
+  eq("active /paid", on("/paid"), ["Paid", "Overview"]);
+  eq("active /paid/ga4", on("/paid/ga4"), ["Paid", "GA4"]);
+  eq("active /repurchase", on("/repurchase"), ["Repurchase", null]);
+  eq("active /repurchase/timing", on("/repurchase/timing"), ["Repurchase", "Repeat timing"]);
+  eq("active /snapshot", on("/snapshot"), ["Snapshot", null]);
+  eq("active /creative", on("/creative"), ["Creatives", null]);
+  eq("active /creative/breakdown defaults to Angle", on("/creative/breakdown"), ["Breakdown", "Angle"]);
+  eq("active /creative/breakdown?by=persona", on("/creative/breakdown", "client=a&by=persona"), ["Breakdown", "Persona"]);
+  eq("active /creative/breakdown?by=nonsense falls back", on("/creative/breakdown", "by=nonsense"), ["Breakdown", "Angle"]);
+  eq("active /creative/velocity", on("/creative/velocity"), ["Velocity", null]);
+  eq("active /paidx", on("/paidx"), [null, null]);
+
+  // Links keep the view (client, range) and let a child's own query win.
+  eq("navHref carries the query", navHref("/paid/meta", "client=a&preset=30d"), "/paid/meta?client=a&preset=30d");
+  eq("navHref without a query", navHref("/paid", ""), "/paid");
+  eq("navHref child query wins", navHref("/creative/breakdown?by=offer", "client=a&by=angle"), "/creative/breakdown?client=a&by=offer");
+  eq("title /repurchase/timing", pageTitle("/repurchase/timing"), "Repeat timing");
+  eq("title /creative/breakdown", pageTitle("/creative/breakdown"), "Breakdown");
+}
 
 // Formatters.
 eq("NO_VALUE", NO_VALUE, "n/a");

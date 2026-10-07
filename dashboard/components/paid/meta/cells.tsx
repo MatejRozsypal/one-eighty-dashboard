@@ -80,7 +80,7 @@ export function Section({
   return (
     <section
       id={id}
-      className="flex scroll-mt-[calc(var(--header-h)+var(--paid-tabs-h)+64px)] flex-col gap-[18px] rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[24px_28px]"
+      className="flex scroll-mt-[calc(var(--header-h)+64px)] flex-col gap-[18px] rounded-card border border-hairline bg-surface-card p-[22px_20px] shadow-sm lg:p-[24px_28px]"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-content-muted">

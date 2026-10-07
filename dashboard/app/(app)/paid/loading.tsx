@@ -1,7 +1,6 @@
 /**
  * Loading state. Paid group. It holds the overview, Meta, Google and GA4, which share one
- * boundary (the layout keeps the tab bar). Their shapes are close enough that
- * one skeleton serves all four.
+ * boundary. Their shapes are close enough that one skeleton serves all four.
  *
  * The frame is drawn here rather than by `SkeletonPage`: the real header and
  * control bar centre their content in `page-frame`, and the shared page

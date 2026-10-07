@@ -12,7 +12,6 @@
 
 import type { Metadata } from "next";
 import { Header } from "@/components/shell/Header";
-import { CreativeTabs } from "@/components/creative/CreativeTabs";
 import { PageControls } from "@/components/controls/PageControls";
 import { AngleCoverage } from "@/components/creative/AngleCoverage";
 import { ConceptList } from "@/components/creative/ConceptList";
@@ -35,6 +34,7 @@ import { groupBy, read, sum, UNTAGGED } from "@/lib/creative/model";
 import { conceptLabel, humanizeConceptCode } from "@/lib/creative/display";
 import { moneyVerdict, unjudgedVerdict } from "@/lib/creative/verdict";
 import { toAdsetView, toVerdictView, type AdView } from "@/lib/creative/view";
+import { UnmappedPill } from "@/components/creative/CreativeBar";
 import { listDecisions } from "@/lib/creative/store";
 import { ANGLES } from "@/lib/creative/vocabulary";
 import { daysInRange } from "@/lib/period";
@@ -435,7 +435,11 @@ function Shell({
       <Header title="Concepts" />
       <PageControls client={ctx.client} params={ctx.params} />
       <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-4 lg:px-8">
-        <CreativeTabs unmapped={ctx.unmappedCount} href="/creative#unmapped" />
+        {ctx.unmappedCount > 0 && (
+          <div className="flex">
+            <UnmappedPill count={ctx.unmappedCount} href="/creative#unmapped" />
+          </div>
+        )}
         {children}
       </main>
     </>

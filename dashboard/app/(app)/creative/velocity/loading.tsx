@@ -5,5 +5,5 @@
 import { SkeletonPage } from "@/components/ui/Skeleton";
 
 export default function Loading() {
-  return <SkeletonPage blocks={["kpi", "chart"]} tabs />;
+  return <SkeletonPage blocks={["kpi", "chart"]} />;
 }

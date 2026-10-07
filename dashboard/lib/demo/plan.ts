@@ -13,6 +13,12 @@
  * days, with revenue as net sales (goods ex shipping) to match the plan's own
  * revenue definition. Targets sit a little above what happens, so some
  * periods are behind and the page has something to say.
+ *
+ * CM3 follows the warehouse's component curve (gross margin on the revenue
+ * curve minus the flat spend plan). aMER is carried as numerator and
+ * denominator (new customer revenue, paid spend) and every period's figure is
+ * a ratio of sums. Checkpoints carry a CM3 floor and an aMER floor over their
+ * own window, with the qualifying spend derived from the ad budget plan.
  */
 
 import { day as spineDay, dataThrough } from "./business";
@@ -40,7 +46,13 @@ import type {
   PlanTask,
   PromoPerf,
 } from "@/lib/plan/types";
-import { PLAN_METRICS } from "@/lib/plan/types";
+
+/** Metrics that add up day by day; aMER (a ratio) is built from its parts. */
+const ADDITIVE = ["revenue", "orders", "new_customers", "ad_spend", "cm3"] as const;
+type Additive = (typeof ADDITIVE)[number];
+type Sums = Record<Additive, number>;
+
+const zero = (): Sums => ({ revenue: 0, orders: 0, new_customers: 0, ad_spend: 0, cm3: 0 });
 
 // Pacing parameters (same placeholders the warehouse uses).
 const PHI = 1.48;
@@ -71,11 +83,17 @@ interface Gate {
   end: string;
   thresholdOrders: number | null;
   merCap: number | null;
+  /** CM3 floor as a share of the window's CM3 curve. */
+  cm3FloorShare: number | null;
+  /** aMER floor as a multiple of the plan aMER over the window. */
+  amerFloorShare: number | null;
+  /** Metrics the checkpoint sets a condition on. */
+  metrics: readonly PlanMetric[];
 }
 
 interface DayFacts {
-  target: Record<PlanMetric, number>;
-  actual: Record<PlanMetric, number> | null;
+  target: Sums & { anum: number; aden: number };
+  actual: (Sums & { ncr: number; paid: number }) | null;
   promoTaskId: string | null;
   isPayday: boolean;
 }
@@ -105,8 +123,28 @@ function gatesFor(q: string): Gate[] {
   const m0 = q;
   const m1 = addMonths(q, 1);
   return [
-    { taskId: "demo-g1", name: "G1 · Winning ad", start: addDays(m0, 6), end: addDays(m0, 16), thresholdOrders: null, merCap: null },
-    { taskId: "demo-g2", name: "G2 · Second month on plan", start: m1, end: monthEnd(m1), thresholdOrders: null, merCap: 27 },
+    {
+      taskId: "demo-g1",
+      name: "G1 · Winning ad",
+      start: addDays(m0, 6),
+      end: addDays(m0, 16),
+      thresholdOrders: null,
+      merCap: null,
+      cm3FloorShare: null,
+      amerFloorShare: 1.15,
+      metrics: ["orders", "amer"],
+    },
+    {
+      taskId: "demo-g2",
+      name: "G2 · Second month on plan",
+      start: m1,
+      end: monthEnd(m1),
+      thresholdOrders: null,
+      merCap: null,
+      cm3FloorShare: 0.8,
+      amerFloorShare: 0.9,
+      metrics: ["orders", "new_customers", "cm3", "amer"],
+    },
   ];
 }
 
@@ -121,9 +159,11 @@ function isPayday(date: string): boolean {
   return dom >= 10 && dom <= 16;
 }
 
-/** The demo's month plan, one entry per metric. */
-function monthPlan(month: string, promos: Promo[]): Record<PlanMetric, number> {
-  const out: Record<PlanMetric, number> = { orders: 0, revenue: 0, new_customers: 0, ad_spend: 0 };
+/** The demo's month plan: one entry per additive metric, plus the month's aMER. */
+function monthPlan(month: string, promos: Promo[]): Sums & { amer: number } {
+  const out = zero();
+  let gm = 0;
+  let ncr = 0;
   for (const d of datesFrom(month, monthEnd(month))) {
     const s = spineDay(d);
     const mult = shortestPromo(promos, d)?.mult ?? 1;
@@ -131,13 +171,18 @@ function monthPlan(month: string, promos: Promo[]): Record<PlanMetric, number> {
     out.revenue += s.netSales * mult;
     out.new_customers += s.newCustomerOrders * mult;
     out.ad_spend += s.paidSpend;
+    gm += (s.cm3 + s.paidSpend) * mult;
+    ncr += s.newCustomerRevenue * mult;
   }
   const lift = 1.05 * jitter(`plan:${month}`, 0.07);
+  const spend = Math.round((out.ad_spend * 0.97) / 100) * 100;
   return {
     orders: Math.round(out.orders * lift),
     revenue: Math.round((out.revenue * lift) / 100) * 100,
     new_customers: Math.round(out.new_customers * lift),
-    ad_spend: Math.round((out.ad_spend * 0.97) / 100) * 100,
+    ad_spend: spend,
+    cm3: Math.round((gm * lift - spend) / 1000) * 1000,
+    amer: spend > 0 ? Math.round(((ncr * lift) / spend) * 100) / 100 : 0,
   };
 }
 
@@ -154,17 +199,22 @@ function buildDays(months: string[], promos: Promo[], asOf: string): Map<string,
     dates.forEach((d, i) => {
       const share = weights[i] / sumW;
       const promo = shortestPromo(promos, d);
-      let actual: Record<PlanMetric, number> | null = null;
+      const spendDay = plan.ad_spend / dates.length;
+      let actual: DayFacts["actual"] = null;
       if (d <= asOf) {
         const s = spineDay(d);
         const mult = (promo?.mult ?? 1) * jitter(`plan-act:${d}`, 0.12);
         const orders = Math.max(0, Math.round(s.orders * mult));
         const ratio = s.orders > 0 ? orders / s.orders : 0;
+        const spend = round(s.paidSpend * (promo ? 1.15 : 1));
         actual = {
           orders,
           revenue: round(s.netSales * ratio),
           new_customers: Math.min(orders, Math.round(s.newCustomerOrders * ratio)),
-          ad_spend: round(s.paidSpend * (promo ? 1.15 : 1)),
+          ad_spend: spend,
+          cm3: round((s.cm3 + s.paidSpend) * ratio - spend),
+          ncr: round(s.newCustomerRevenue * ratio),
+          paid: spend,
         };
       }
       out.set(d, {
@@ -172,7 +222,11 @@ function buildDays(months: string[], promos: Promo[], asOf: string): Map<string,
           orders: plan.orders * share,
           revenue: plan.revenue * share,
           new_customers: plan.new_customers * share,
-          ad_spend: plan.ad_spend / dates.length,
+          ad_spend: spendDay,
+          // Gross margin on the revenue curve minus the flat spend plan (sums to the month's CM3).
+          cm3: (plan.cm3 + plan.ad_spend) * share - spendDay,
+          anum: plan.amer * spendDay,
+          aden: spendDay,
         },
         actual,
         promoTaskId: promo?.taskId ?? null,
@@ -194,25 +248,80 @@ interface PeriodSpec {
   merCap: number | null;
   /** Checkpoint threshold on orders, replacing the curve total. */
   thresholdOrders?: number | null;
+  /** Checkpoint floors (CM3 money, aMER multiple). */
+  cm3Floor?: number | null;
+  amerFloor?: number | null;
+  /** Ad spend the plan puts in the window (sets the derived aMER qualifying spend). */
+  plannedSpend?: number;
   isTargetPartial?: boolean;
   /** Metrics the task sets a target for; the rest get no row (the page fills in actuals). */
   metrics?: readonly PlanMetric[];
 }
 
-/** Pacing rows of one period, all four metrics, by the warehouse's rules. */
+/** Ratio parts of the aMER rows. */
+interface RatioParts {
+  num: number;
+  den: number;
+}
+
+const NO_RATIO = {
+  ratioNumActual: null,
+  ratioDenActual: null,
+  ratioNumTargetToDate: null,
+  ratioDenTargetToDate: null,
+  ratioNumTarget: null,
+  ratioDenTarget: null,
+  trailing7dRatio: null,
+  requiredRatio: null,
+  minSpend: null,
+  conditionMet: null,
+} as const;
+
+/**
+ * Share of the window's planned ad spend an aMER floor must carry before it is
+ * judged (same rule as the warehouse: a ratio on a fraction of the planned
+ * spend is noise, not a verdict).
+ */
+const AMER_MIN_SPEND_SHARE = 0.5;
+
+/** aMER over the 7 days ending as of (actual parts). */
+function trailingRatio(days: Map<string, DayFacts>, asOf: string): number | null {
+  let num = 0;
+  let den = 0;
+  for (let k = 0; k < 7; k++) {
+    const a = days.get(addDays(asOf, -k))?.actual;
+    if (!a) continue;
+    num += a.ncr;
+    den += a.paid;
+  }
+  return den > 0 ? num / den : null;
+}
+
+/** Pacing rows of one period, every metric, by the warehouse's rules. */
 function pace(spec: PeriodSpec, days: Map<string, DayFacts>, asOf: string): PacingRow[] {
   const dates = datesFrom(spec.start, spec.end).filter((d) => days.has(d));
-  const T = { orders: 0, revenue: 0, new_customers: 0, ad_spend: 0 } as Record<PlanMetric, number>;
-  const CT = { ...T };
-  const C = { ...T };
+  const T = zero();
+  const CT = zero();
+  const C = zero();
+  const tA: RatioParts = { num: 0, den: 0 };
+  const ctA: RatioParts = { num: 0, den: 0 };
+  const cA: RatioParts = { num: 0, den: 0 };
   for (const d of dates) {
     const f = days.get(d)!;
-    for (const m of PLAN_METRICS) {
+    for (const m of ADDITIVE) {
       T[m] += f.target[m];
       if (d <= asOf) {
         CT[m] += f.target[m];
         C[m] += f.actual?.[m] ?? 0;
       }
+    }
+    tA.num += f.target.anum;
+    tA.den += f.target.aden;
+    if (d <= asOf) {
+      ctA.num += f.target.anum;
+      ctA.den += f.target.aden;
+      cA.num += f.actual?.ncr ?? 0;
+      cA.den += f.actual?.paid ?? 0;
     }
   }
 
@@ -227,21 +336,42 @@ function pace(spec: PeriodSpec, days: Map<string, DayFacts>, asOf: string): Paci
   const aov = T.orders > 0 ? T.revenue / T.orders : null;
   const pfOrders = (C.orders + K_ORDERS) / (CT.orders + K_ORDERS);
   const remOrders = (T.orders - CT.orders) * pfOrders;
+  const curveShare = T.orders > 0 ? CT.orders / T.orders : 0;
+  const gmRate = T.revenue > 0 ? (T.cm3 + T.ad_spend) / T.revenue : 0.6;
 
-  return PLAN_METRICS.map((metric): PacingRow => {
+  const merPlan = T.revenue > 0 ? (100 * T.ad_spend) / T.revenue : null;
+  const merActual = started && C.revenue > 0 ? (100 * C.ad_spend) / C.revenue : null;
+
+  const tooEarlyFor = (ct: number, t: number) =>
+    ((spec.type === "month" || spec.type === "quarter") && daysElapsed < 5) ||
+    ((spec.type === "promo" || spec.type === "gate") && daysTotal < 7 && ct < 0.3 * t);
+
+  const additive = ADDITIVE.map((metric): PacingRow => {
     let t = T[metric];
     let ct = CT[metric];
     if (metric === "orders" && spec.thresholdOrders != null && T.orders > 0) {
-      ct = spec.thresholdOrders * (CT.orders / T.orders);
+      ct = spec.thresholdOrders * curveShare;
       t = spec.thresholdOrders;
     }
+    if (metric === "cm3" && spec.cm3Floor != null) {
+      // The floor gets the target's component curve.
+      t = spec.cm3Floor;
+      ct = (spec.cm3Floor + T.ad_spend) * curveShare - CT.ad_spend;
+    }
     const c = started ? C[metric] : null;
-    const k = metric === "orders" ? K_ORDERS : T.orders > 0 ? (K_ORDERS * T[metric]) / T.orders : K_ORDERS;
+    const k = metric === "orders" ? K_ORDERS : T.orders > 0 ? (K_ORDERS * Math.abs(T[metric])) / T.orders : K_ORDERS;
     const pf = c !== null ? (c + k) / (ct + k) : 1;
-    const projected = !started ? t : closed ? c : c! + (t - ct) * pf;
+    let projected = !started ? t : closed ? c : c! + (t - ct) * pf;
+    if (metric === "cm3" && started && !closed) {
+      const gmT = t + T.ad_spend;
+      const gmCT = ct + CT.ad_spend;
+      const kk = K_ORDERS * (aov ?? 0) * gmRate;
+      const pfGm = (c! + C.ad_spend + kk) / (gmCT + kk);
+      projected = c! + (gmT - gmCT) * pfGm - (T.ad_spend - CT.ad_spend);
+    }
 
     let half: number | null = null;
-    if (started && !closed && metric !== "ad_spend") {
+    if (started && !closed && metric !== "ad_spend" && metric !== "cm3") {
       const R = (t - ct) * pf;
       if (metric === "revenue" && aov !== null) half = Z90 * Math.sqrt(PHI * Math.max(0, remOrders) * (1 + CV * CV)) * aov;
       else half = Z90 * Math.sqrt(PHI * Math.max(0, R));
@@ -249,8 +379,15 @@ function pace(spec: PeriodSpec, days: Map<string, DayFacts>, asOf: string): Paci
 
     const pacePct = c !== null && ct > 0 ? (100 * c) / ct : null;
     let z: number | null = null;
-    if (c !== null && ct > 0 && metric !== "ad_spend") {
-      const sd = metric === "revenue" && aov !== null ? Math.sqrt(PHI * CT.orders * (1 + CV * CV)) * aov : Math.sqrt(PHI * ct);
+    if (c !== null && metric !== "ad_spend") {
+      const sd =
+        metric === "cm3" && aov !== null
+          ? Math.sqrt(PHI * CT.orders * (1 + CV * CV)) * aov * gmRate
+          : metric === "revenue" && aov !== null
+            ? Math.sqrt(PHI * CT.orders * (1 + CV * CV)) * aov
+            : ct > 0
+              ? Math.sqrt(PHI * ct)
+              : 0;
       z = sd > 0 ? (c - ct) / sd : null;
     }
 
@@ -258,25 +395,27 @@ function pace(spec: PeriodSpec, days: Map<string, DayFacts>, asOf: string): Paci
     let tooEarly = false;
     if (!started) status = "not_started";
     else if (closed) status = "closed";
-    else if (pacePct !== null) {
+    else if (metric === "cm3") {
+      const rel = t !== 0 && c !== null ? (c - ct) / Math.abs(t) : 0;
+      if (z !== null && z <= -1.645 && rel < -0.1) status = "off_track";
+      else if (z !== null && z <= -1 && rel < -0.03) status = "behind";
+      else if (z !== null && z >= 1.645 && rel > 0.1) status = "ahead";
+      tooEarly = (spec.type === "month" || spec.type === "quarter") && daysElapsed < 5;
+      if (tooEarly) status = "on_track";
+    } else if (pacePct !== null) {
       if (metric === "ad_spend") status = pacePct < 80 ? "off_track" : pacePct < 90 ? "behind" : pacePct > 110 ? "ahead" : "on_track";
       else if (z !== null) {
         if (pacePct < 90 && z <= -1.645) status = "off_track";
         else if (pacePct < 97 && z <= -1) status = "behind";
         else if (pacePct > 110 && z >= 1.645) status = "ahead";
       }
-      const short = daysTotal < 7;
-      if ((spec.type === "month" || spec.type === "quarter") && daysElapsed < 5) tooEarly = true;
-      if ((spec.type === "promo" || spec.type === "gate") && short && ct < 0.3 * t) tooEarly = true;
+      tooEarly = tooEarlyFor(ct, t);
       if (tooEarly) status = "on_track";
     }
     if (spec.type === "day") {
       status = started ? "closed" : "not_started";
       tooEarly = false;
     }
-
-    const merPlan = T.revenue > 0 ? (100 * T.ad_spend) / T.revenue : null;
-    const merActual = started && C.revenue > 0 ? (100 * C.ad_spend) / C.revenue : null;
 
     return {
       periodType: spec.type,
@@ -312,8 +451,121 @@ function pace(spec: PeriodSpec, days: Map<string, DayFacts>, asOf: string): Paci
       baselineTotal: null,
       baselineToDate: null,
       liftPct: null,
+      ...NO_RATIO,
+      conditionMet: spec.type === "gate" && c !== null ? c >= t : null,
+      isMeasured: true,
     };
   });
+
+  return [...additive, paceRatio(spec, days, asOf, { tA, ctA, cA, started, closed, daysTotal, daysElapsed, preliminary })];
+}
+
+/**
+ * The aMER row: ratios of summed parts. A checkpoint judges its floor over its
+ * own window (the N days ending on Due) and needs the window's min spend.
+ */
+function paceRatio(
+  spec: PeriodSpec,
+  days: Map<string, DayFacts>,
+  asOf: string,
+  p: { tA: RatioParts; ctA: RatioParts; cA: RatioParts; started: boolean; closed: boolean; daysTotal: number; daysElapsed: number; preliminary: boolean }
+): PacingRow {
+  const gate = spec.type === "gate" && spec.amerFloor != null;
+  const { tA, ctA, cA } = p;
+  const started = p.started;
+  const plan = tA.den > 0 ? tA.num / tA.den : null;
+  const t = gate ? spec.amerFloor! : plan;
+  const ct = gate ? spec.amerFloor! : ctA.den > 0 ? ctA.num / ctA.den : null;
+  const c = started && cA.den > 0 ? cA.num / cA.den : null;
+  const pacePct = c !== null && ct ? (100 * c) / ct : null;
+  const rest = Math.max(0, tA.den - ctA.den);
+  const restRatio = rest > 0 ? (tA.num - ctA.num) / rest : plan;
+  const aovNew = 900;
+  const k = K_ORDERS * aovNew;
+  const pf = c !== null && ct ? (cA.num + k) / (ct * cA.den + k) : 1;
+  const projected = !started
+    ? plan
+    : p.closed
+      ? c
+      : cA.den + rest > 0
+        ? (cA.num + (restRatio ?? 0) * pf * rest) / (cA.den + rest)
+        : c;
+  const sd = ct && cA.den > 0 ? Math.sqrt(PHI * ((ct * cA.den) / aovNew) * (1 + CV * CV)) * aovNew : 0;
+  const z = c !== null && ct && sd > 0 ? (cA.num - ct * cA.den) / sd : null;
+  // Derived, never entered: a share of the ad spend the plan put in the window.
+  // Null when the plan has no budget there, and the floor is judged on the ratio alone.
+  const plannedSpend = spec.plannedSpend ?? 0;
+  const minSpend = gate && plannedSpend > 0 ? AMER_MIN_SPEND_SHARE * plannedSpend : null;
+
+  let status: PacingStatus = "on_track";
+  let tooEarly = false;
+  if (!started) status = "not_started";
+  else if (p.closed) status = "closed";
+  else if (spec.type !== "day" && c !== null && pacePct !== null) {
+    if (gate) {
+      tooEarly = cA.den < 0.3 * (minSpend ?? (tA.den || cA.den + 1));
+      if (tooEarly) status = "on_track";
+      else if (minSpend !== null && cA.den + rest < minSpend) status = "behind";
+      else if (c >= t!) status = pacePct > 110 && z !== null && z >= 1.645 ? "ahead" : "on_track";
+      else status = z !== null && z <= -1.645 ? "off_track" : "behind";
+    } else {
+      if (pacePct < 90 && z !== null && z <= -1.645) status = "off_track";
+      else if (pacePct < 97 && z !== null && z <= -1) status = "behind";
+      else if (pacePct > 110 && z !== null && z >= 1.645) status = "ahead";
+      tooEarly = (spec.type === "month" || spec.type === "quarter") && p.daysElapsed < 5;
+      if (tooEarly) status = "on_track";
+    }
+  }
+  if (spec.type === "day") status = started ? "closed" : "not_started";
+  const met = c !== null && t !== null ? c >= t && (minSpend === null || cA.den >= minSpend) : null;
+
+  return {
+    periodType: spec.type,
+    periodId: spec.id,
+    label: spec.label,
+    metric: "amer",
+    taskId: spec.taskId,
+    planStatus: spec.planStatus,
+    asOf,
+    start: spec.start,
+    end: spec.end,
+    daysTotal: p.daysTotal,
+    daysElapsed: p.daysElapsed,
+    daysRemaining: p.daysTotal - p.daysElapsed,
+    isTargetPartial: spec.isTargetPartial ?? false,
+    target: t,
+    targetToDate: ct,
+    actual: c,
+    pacePct,
+    gap: c !== null && ct !== null ? c - ct : null,
+    projected,
+    projectedLow: null,
+    projectedHigh: null,
+    requiredDaily: null,
+    requiredCurveMult: null,
+    status,
+    isTooEarly: tooEarly && !p.closed,
+    result: p.closed && met !== null ? (met ? "met" : "missed") : null,
+    isPreliminary: spec.type === "day" ? spec.start >= addDays(asOf, -1) && spec.start <= asOf : p.preliminary,
+    merCapPct: null,
+    merPlanPct: null,
+    merActualPct: null,
+    baselineTotal: null,
+    baselineToDate: null,
+    liftPct: null,
+    ratioNumActual: started ? cA.num : null,
+    ratioDenActual: started ? cA.den : null,
+    ratioNumTargetToDate: ctA.num,
+    ratioDenTargetToDate: ctA.den,
+    ratioNumTarget: tA.num,
+    ratioDenTarget: tA.den,
+    trailing7dRatio: started && !p.closed && spec.type !== "day" ? trailingRatio(days, asOf) : null,
+    requiredRatio:
+      started && !p.closed && rest > 0 && t !== null ? (t * (cA.den + rest) - cA.num) / rest : null,
+    minSpend,
+    conditionMet: spec.type === "gate" && started ? met : null,
+    isMeasured: true,
+  };
 }
 
 let cache: { key: string; data: PlanData } | null = null;
@@ -339,7 +591,7 @@ export function demoPlanData(): PlanData {
     const qs = months[i];
     const [y, n] = quarterId(qs).split("-Q");
     // Quarter tasks set no new-customer target, so the page shows its actual-only tile.
-    specs.push({ type: "quarter", id: quarterId(qs), label: `Q${n} ${y}`, start: qs, end: monthEnd(months[i + 2]), taskId: `demo-q-${quarterId(qs)}`, planStatus: "approved", merCap: 27, metrics: ["revenue", "orders", "ad_spend"] });
+    specs.push({ type: "quarter", id: quarterId(qs), label: `Q${n} ${y}`, start: qs, end: monthEnd(months[i + 2]), taskId: `demo-q-${quarterId(qs)}`, planStatus: "approved", merCap: 27, metrics: ["revenue", "orders", "ad_spend", "cm3", "amer"] });
   }
   const weeks = new Map<string, { start: string; end: string }>();
   for (const d of datesFrom(months[0], lastDay)) {
@@ -369,12 +621,31 @@ export function demoPlanData(): PlanData {
     specs.push({ type: "promo", id: p.taskId, label: p.name, start: p.start, end: p.end, taskId: p.taskId, planStatus: "approved", merCap: p.merCap });
   }
 
-  // Checkpoint thresholds: a touch above the curve, as a stretch bar.
-  const curveOrders = (s: string, e: string) =>
-    datesFrom(s, e).reduce((sum, d) => sum + (days.get(d)?.target.orders ?? 0), 0);
+  // Checkpoint thresholds: a touch above the curve, as a stretch bar; floors
+  // a little below plan (CM3) or above it (a winning-ad aMER), rounded the way
+  // they are typed into the plan.
+  const curveSum = (s: string, e: string, pick: (f: DayFacts) => number) =>
+    datesFrom(s, e).reduce((sum, d) => sum + (days.has(d) ? pick(days.get(d)!) : 0), 0);
   for (const g of gates) {
-    const threshold = g.thresholdOrders ?? Math.round(curveOrders(g.start, g.end) * 1.05);
-    specs.push({ type: "gate", id: g.taskId, label: g.name, start: g.start, end: g.end, taskId: g.taskId, planStatus: "approved", merCap: g.merCap, thresholdOrders: threshold });
+    const threshold = g.thresholdOrders ?? Math.round(curveSum(g.start, g.end, (f) => f.target.orders) * 1.05);
+    const planNum = curveSum(g.start, g.end, (f) => f.target.anum);
+    const planDen = curveSum(g.start, g.end, (f) => f.target.aden);
+    const plannedSpend = curveSum(g.start, g.end, (f) => f.target.ad_spend);
+    specs.push({
+      type: "gate",
+      id: g.taskId,
+      label: g.name,
+      start: g.start,
+      end: g.end,
+      taskId: g.taskId,
+      planStatus: "approved",
+      merCap: g.merCap,
+      thresholdOrders: threshold,
+      cm3Floor: g.cm3FloorShare !== null ? Math.round((curveSum(g.start, g.end, (f) => f.target.cm3) * g.cm3FloorShare) / 1000) * 1000 : null,
+      amerFloor: g.amerFloorShare !== null && planDen > 0 ? Math.round((planNum / planDen) * g.amerFloorShare * 10) / 10 : null,
+      plannedSpend,
+      metrics: g.metrics,
+    });
   }
 
   const rows = specs.flatMap((s) => pace(s, days, asOf).filter((r) => !s.metrics || s.metrics.includes(r.metric as PlanMetric)));
@@ -410,6 +681,7 @@ export function demoPlanData(): PlanData {
     });
   }
 
+  const curveOrders = (s: string, e: string) => curveSum(s, e, (f) => f.target.orders);
   const curve: CurveDay[] = [...days.entries()].map(([date, f]) => ({ date, promoTaskId: f.promoTaskId, isPayday: f.isPayday }));
 
   // Target state: from the current quarter's start, a 40% higher monthly
@@ -490,6 +762,10 @@ export function demoPlanData(): PlanData {
       revenue: f.actual!.revenue,
       new_customers: f.actual!.new_customers,
       ad_spend: f.actual!.ad_spend,
+      cm3: f.actual!.cm3,
+      amer: f.actual!.paid > 0 ? f.actual!.ncr / f.actual!.paid : null,
+      new_customer_revenue: f.actual!.ncr,
+      paid_spend: f.actual!.paid,
     }));
 
   const data: PlanData = { rows, curve, promoPerf, tasks, actuals };

@@ -7,8 +7,19 @@
  */
 
 /** Display order, and the order the charts pick their default metric in. */
-export const PLAN_METRICS = ["revenue", "orders", "new_customers", "ad_spend"] as const;
+export const PLAN_METRICS = ["revenue", "orders", "new_customers", "ad_spend", "cm3", "amer"] as const;
 export type PlanMetric = (typeof PLAN_METRICS)[number];
+
+/**
+ * aMER is a ratio (new customer revenue / paid spend): never summed, never
+ * averaged per day. Every period carries its numerator and denominator, and
+ * any cumulative or trailing figure is a ratio of sums.
+ */
+export const RATIO_METRICS: ReadonlySet<PlanMetric> = new Set(["amer"]);
+
+export function isRatioMetric(metric: string): boolean {
+  return RATIO_METRICS.has(metric as PlanMetric);
+}
 
 /**
  * Every metric a pacing row can carry. `units` is set only where a task has a
@@ -21,8 +32,12 @@ export type PeriodType = "day" | "week" | "month" | "quarter" | "promo" | "gate"
 
 export type PacingStatus = "ahead" | "on_track" | "behind" | "off_track" | "not_started" | "closed";
 
-/** Status of a row the page itself filled in for a metric the period has no target for. */
-export type RowStatus = PacingStatus | "no_target";
+/**
+ * Status of a row the page itself filled in for a metric the period has no
+ * target for, or of a targeted row the data cannot measure (CM3 without cost
+ * data, aMER with missing spend days).
+ */
+export type RowStatus = PacingStatus | "no_target" | "not_measured";
 
 /** One row of the pacing table: client x period x metric. */
 export interface PacingRow {
@@ -61,6 +76,30 @@ export interface PacingRow {
   baselineToDate: number | null;
   /** Actual to date over the baseline to date, minus 1, in percent (19.8 = +19.8%). */
   liftPct: number | null;
+  /**
+   * aMER parts (null on every other metric): actual and plan numerator (new
+   * customer revenue) and denominator (paid spend), to date and in total.
+   */
+  ratioNumActual: number | null;
+  ratioDenActual: number | null;
+  ratioNumTargetToDate: number | null;
+  ratioDenTargetToDate: number | null;
+  ratioNumTarget: number | null;
+  ratioDenTarget: number | null;
+  /** aMER over the 7 days ending as of, while the period runs. */
+  trailing7dRatio: number | null;
+  /** aMER needed on the spend still to come to end on target. */
+  requiredRatio: number | null;
+  /**
+   * Checkpoint aMER: the paid spend the window must carry for the floor to count,
+   * derived from the ad budget the plan put in it. Null when the plan has no budget
+   * there, and the floor is then judged on the ratio alone.
+   */
+  minSpend: number | null;
+  /** Checkpoint rows: this row's own condition holds on the data so far. */
+  conditionMet: boolean | null;
+  /** False when the data cannot measure the row (no cost data for CM3, missing spend for aMER). */
+  isMeasured: boolean;
 }
 
 /** Which promo window set the curve on a day (shortest window wins). */
@@ -104,13 +143,22 @@ export interface PlanTask {
   hasKeys: boolean;
 }
 
-/** Store actuals of one day, the plan revenue definition. */
+/**
+ * Store actuals of one day, the plan revenue definition. CM3, new customer
+ * revenue and paid spend are the mart definitions (same as Snapshot); `cm3`
+ * is null on a day without cost data, `paid_spend` null when spend is missing.
+ * `amer` is that day's own ratio, for display only: never sum it.
+ */
 export interface ActualDay {
   date: string;
   orders: number | null;
   revenue: number | null;
   new_customers: number | null;
   ad_spend: number | null;
+  cm3: number | null;
+  amer: number | null;
+  new_customer_revenue: number | null;
+  paid_spend: number | null;
 }
 
 /** Everything the page needs for one client. */

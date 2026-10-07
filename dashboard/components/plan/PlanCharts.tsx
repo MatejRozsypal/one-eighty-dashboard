@@ -26,6 +26,8 @@ const SHORT: Record<PlanMetric, string> = {
   revenue: "Revenue",
   new_customers: "New",
   ad_spend: "Spend",
+  cm3: "CM3",
+  amer: "aMER",
 };
 
 export function PlanCharts({

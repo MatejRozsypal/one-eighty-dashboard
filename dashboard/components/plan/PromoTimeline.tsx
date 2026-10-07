@@ -11,14 +11,17 @@
  * promo with Target units adds units sold against it, and a started promo
  * its lift over the no-promo baseline. A checkpoint card leads
  * with the metric it has a target for (units, else orders, else revenue),
- * and its chip is that row's status.
+ * and its chip is that row's status. Every other condition the checkpoint
+ * sets follows on its own line: orders, new customers, the CM3 floor and the
+ * aMER floor. An aMER line always names the paid spend it is computed on, so
+ * a multiple is never read without knowing how much bought it.
  */
 
 import { StatusChip } from "@/components/plan/StatusChip";
-import { NO_VALUE } from "@/lib/format";
+import { NO_VALUE, formatMoney } from "@/lib/format";
 import { daysBetween, fmtDay, fmtRange, monthStart, addMonths, monthEnd } from "@/lib/plan/dates";
 import { METRIC_LABEL, fmtCount, fmtLift, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
-import { headlineMetric, liftRow, type TimelineItem } from "@/lib/plan/model";
+import { gateConditions, headlineMetric, liftRow, type TimelineItem } from "@/lib/plan/model";
 import type { PacingRow, RowStatus } from "@/lib/plan/types";
 
 const BAR: Record<RowStatus, string> = {
@@ -29,6 +32,7 @@ const BAR: Record<RowStatus, string> = {
   not_started: "bg-gray-250",
   closed: "bg-gray-400",
   no_target: "bg-gray-250",
+  not_measured: "bg-gray-250",
 };
 
 function Muted({ text }: { text: string }) {
@@ -125,6 +129,34 @@ export function PromoTimeline({
   );
 }
 
+/**
+ * One checkpoint condition: actual (or n/a) of its threshold. An aMER line adds
+ * the spend the ratio is computed on, and the spend the window must carry for
+ * the floor to count (derived from the ad budget, absent when there is none).
+ */
+function ConditionLine({ row, currency }: { row: PacingRow; currency: string }) {
+  const started = row.status !== "not_started";
+  const spendNote =
+    row.metric === "amer"
+      ? [
+          started && row.ratioDenActual !== null ? `on ${formatMoney(row.ratioDenActual, currency)}` : null,
+          row.minSpend !== null ? `needs ${formatMoney(row.minSpend, currency)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "";
+  return (
+    <>
+      <dt className="text-content-muted">{METRIC_LABEL[row.metric]}</dt>
+      <dd className="text-right tabular">
+        <Muted text={started ? fmtValue(row.actual, row.metric, currency) : NO_VALUE} />
+        <span className="text-content-muted"> of {fmtValue(row.target, row.metric, currency)}</span>
+        {spendNote && <span className="block text-[10.5px] text-content-muted">{spendNote}</span>}
+      </dd>
+    </>
+  );
+}
+
 function TimelineCard({ item, currency }: { item: TimelineItem; currency: string }) {
   const orders = item.byMetric.orders;
   // A checkpoint is judged on the metric it has a target for (units first).
@@ -188,12 +220,17 @@ function TimelineCard({ item, currency }: { item: TimelineItem; currency: string
           </>
         ) : (
           <>
-            <dt className="text-content-muted">{METRIC_LABEL[lead]}</dt>
-            <dd className="text-right tabular">
-              <Muted text={started(head) ? fmtValue(head?.actual, lead, currency) : NO_VALUE} />
-              <span className="text-content-muted"> of {fmtValue(head?.target, lead, currency)}</span>
-            </dd>
-            {started(head) && head?.target != null && (
+            {head ? (
+              <ConditionLine row={head} currency={currency} />
+            ) : (
+              <>
+                <dt className="text-content-muted">{METRIC_LABEL[lead]}</dt>
+                <dd className="text-right tabular">
+                  <Muted text={NO_VALUE} />
+                </dd>
+              </>
+            )}
+            {started(head) && head?.target != null && head.metric !== "amer" && (
               <>
                 <dt className="text-content-muted">Pace</dt>
                 <dd className="text-right tabular">
@@ -201,6 +238,9 @@ function TimelineCard({ item, currency }: { item: TimelineItem; currency: string
                 </dd>
               </>
             )}
+            {gateConditions(item.byMetric, lead).map((row) => (
+              <ConditionLine key={row.metric} row={row} currency={currency} />
+            ))}
             {merRow && (
               <>
                 <dt className="text-content-muted">MER</dt>

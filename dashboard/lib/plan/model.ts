@@ -6,7 +6,8 @@
  *
  * Nothing here recomputes pace, status or the projection: those come from the
  * warehouse row of the period. The only arithmetic is drawing them:
- *   - cumulative sums of the day rows (the curve target and the actual);
+ *   - cumulative sums of the day rows (the curve target and the actual); for
+ *     aMER, a ratio, the cumulative figure is a ratio of the summed parts;
  *   - the projection path from as of to the period end, which spreads the
  *     warehouse's projected end along the remaining curve;
  *   - the target trajectory (see `targetTrajectory`).
@@ -15,6 +16,7 @@
 import { addDays, daysBetween, fmtDay, fmtMonth, fmtMonthShort, fmtRange, monthStart, monthsBetween } from "./dates";
 import {
   PLAN_METRICS,
+  isRatioMetric,
   type ActualDay,
   type PacingRow,
   type PeriodType,
@@ -135,16 +137,36 @@ export function completeRows(data: PlanData): PlanData {
 
     const started = t.start <= asOf;
     const to = t.end < asOf ? t.end : asOf;
-    const sums: Record<PlanMetric, number | null> = { revenue: null, orders: null, new_customers: null, ad_spend: null };
+    const sums: Record<PlanMetric, number | null> = {
+      revenue: null,
+      orders: null,
+      new_customers: null,
+      ad_spend: null,
+      cm3: null,
+      amer: null,
+    };
+    // CM3 is n/a when any day lacks cost data, aMER when any day lacks spend:
+    // a partial sum would read as a real figure.
+    let cm3Gap = false;
+    let spendGap = false;
+    let ncr = 0;
+    let paid = 0;
     if (started) {
       for (let d = t.start; d <= to; d = addDays(d, 1)) {
         const a = byDate.get(d);
         if (!a) continue;
-        for (const m of PLAN_METRICS) {
+        for (const m of ["revenue", "orders", "new_customers", "ad_spend"] as const) {
           const v = a[m];
           if (v !== null) sums[m] = (sums[m] ?? 0) + v;
         }
+        if (a.cm3 === null) cm3Gap = true;
+        else sums.cm3 = (sums.cm3 ?? 0) + a.cm3;
+        if (a.paid_spend === null) spendGap = true;
+        else paid += a.paid_spend;
+        ncr += a.new_customer_revenue ?? 0;
       }
+      if (cm3Gap) sums.cm3 = null;
+      sums.amer = !spendGap && paid > 0 ? ncr / paid : null;
     }
     const merActual = sums.ad_spend !== null && sums.revenue ? (100 * sums.ad_spend) / sums.revenue : null;
     const preliminary = started && (to >= addDays(asOf, -1));
@@ -173,6 +195,17 @@ export function completeRows(data: PlanData): PlanData {
         baselineTotal: null,
         baselineToDate: null,
         liftPct: null,
+        ratioNumActual: metric === "amer" && started ? ncr : null,
+        ratioDenActual: metric === "amer" && started && !spendGap ? paid : null,
+        ratioNumTargetToDate: null,
+        ratioDenTargetToDate: null,
+        ratioNumTarget: null,
+        ratioDenTarget: null,
+        trailing7dRatio: null,
+        requiredRatio: null,
+        minSpend: null,
+        conditionMet: null,
+        isMeasured: metric === "cm3" ? !cm3Gap : metric === "amer" ? !spendGap : true,
       });
     }
   }
@@ -210,26 +243,57 @@ function dayIndex(data: PlanData, metric: PlanMetric): Map<string, PacingRow> {
 /** Fewer closed days than this in the trailing window and the 7-day mean stays empty. */
 const MIN_DAYS_FOR_AVERAGE = 3;
 
+/** One day's ratio parts: numerator and denominator (aMER: new customer revenue, paid spend). */
+interface Parts {
+  num: number;
+  den: number;
+}
+
+const ratio = (p: Parts): number | null => (p.den > 0 ? p.num / p.den : null);
+
 /**
  * Daily and cumulative series of one metric over a period.
+ *
+ * Additive metrics (orders, revenue, new customers, spend, CM3) sum: the
+ * cumulative figure is a running total. aMER is a ratio: the daily point is
+ * the day's own ratio, the cumulative and the 7-day figures are ratios of the
+ * summed parts, never sums or averages of daily ratios.
  *
  * Projection path: the warehouse projects the period end as
  * P = C + (T - CT) x pf, the remaining curve scaled by one factor. Every day
  * after as of gets the same factor on its share of the remaining curve:
  *   proj_d = C + (cumT_d - CT) x (P - C) / (T - CT).
- * The cone widens with the square root of the remaining curve covered, from
- * zero at as of to the warehouse's low / high at the period end.
+ * When the remaining curve is not positive (CM3 that the spend still to come
+ * pulls down, or a ratio), the path runs straight in calendar days from C to
+ * P. The cone widens with the square root of the remaining curve covered,
+ * from zero at as of to the warehouse's low / high at the period end.
  */
 export function buildSeries(data: PlanData, metric: PlanMetric, start: string, end: string, period?: PacingRow): SeriesPoint[] {
   const days = dayIndex(data, metric);
   const store = actualIndex(data.actuals);
   const asOf = asOfOf(data) ?? "";
+  const isRatio = isRatioMetric(metric);
   const out: SeriesPoint[] = [];
   const actualOn = (d: string): number | null => days.get(d)?.actual ?? store.get(d)?.[metric] ?? null;
+  /** Actual parts of a ratio metric on a day; null when the day has none or misses spend. */
+  const actualParts = (d: string): Parts | null => {
+    const row = days.get(d);
+    if (row && row.ratioDenActual !== null) return { num: row.ratioNumActual ?? 0, den: row.ratioDenActual };
+    const a = store.get(d);
+    if (a && a.paid_spend !== null) return { num: a.new_customer_revenue ?? 0, den: a.paid_spend };
+    return null;
+  };
+  const targetParts = (d: string): Parts | null => {
+    const row = days.get(d);
+    if (!row || row.ratioDenTarget === null || row.target === null) return null;
+    return { num: row.ratioNumTarget ?? 0, den: row.ratioDenTarget };
+  };
 
   let cumTarget = 0;
   let cumActual = 0;
   let anyTarget = false;
+  const cumT: Parts = { num: 0, den: 0 };
+  const cumA: Parts = { num: 0, den: 0 };
   for (let d = start; d <= end; d = addDays(d, 1)) {
     const row = days.get(d);
     const target = row?.target ?? null;
@@ -240,15 +304,44 @@ export function buildSeries(data: PlanData, metric: PlanMetric, start: string, e
       anyTarget = true;
     }
     if (actual !== null) cumActual += actual;
+    if (isRatio) {
+      const tp = targetParts(d);
+      if (tp) {
+        cumT.num += tp.num;
+        cumT.den += tp.den;
+      }
+      const ap = closed ? actualParts(d) : null;
+      if (ap) {
+        cumA.num += ap.num;
+        cumA.den += ap.den;
+      }
+    }
 
     // Trailing 7 closed days, including days before the period when the data has them.
     let sumA = 0;
     let nA = 0;
     let sumT = 0;
     let nT = 0;
+    const winA: Parts = { num: 0, den: 0 };
+    const winT: Parts = { num: 0, den: 0 };
     for (let k = 0; k < 7; k++) {
       const day = addDays(d, -k);
       if (day > asOf) continue;
+      if (isRatio) {
+        const ap = actualParts(day);
+        if (ap) {
+          winA.num += ap.num;
+          winA.den += ap.den;
+          nA += 1;
+        }
+        const tp = targetParts(day);
+        if (tp) {
+          winT.num += tp.num;
+          winT.den += tp.den;
+          nT += 1;
+        }
+        continue;
+      }
       const a = actualOn(day);
       const t = days.get(day)?.target ?? null;
       if (a !== null) {
@@ -266,12 +359,12 @@ export function buildSeries(data: PlanData, metric: PlanMetric, start: string, e
       label: fmtDay(d),
       target,
       actual,
-      cumTarget: anyTarget ? cumTarget : null,
-      cumActual: closed && d >= start ? cumActual : null,
+      cumTarget: isRatio ? (anyTarget ? ratio(cumT) : null) : anyTarget ? cumTarget : null,
+      cumActual: closed && d >= start ? (isRatio ? ratio(cumA) : cumActual) : null,
       projection: null,
       band: null,
-      avgActual: closed && nA >= MIN_DAYS_FOR_AVERAGE ? sumA / nA : null,
-      avgTarget: closed && nT >= MIN_DAYS_FOR_AVERAGE ? sumT / nT : null,
+      avgActual: closed && nA >= MIN_DAYS_FOR_AVERAGE ? (isRatio ? ratio(winA) : sumA / nA) : null,
+      avgTarget: closed && nT >= MIN_DAYS_FOR_AVERAGE ? (isRatio ? ratio(winT) : sumT / nT) : null,
       preliminary: closed && (row?.isPreliminary ?? false),
     });
   }
@@ -285,14 +378,18 @@ export function buildSeries(data: PlanData, metric: PlanMetric, start: string, e
     const T = out[out.length - 1]?.cumTarget ?? null;
     if (C !== null && CT !== null && T !== null) {
       const remaining = T - CT;
-      const scale = remaining > 0 ? (period.projected - C) / remaining : 1;
+      const byCurve = !isRatio && remaining > 0;
+      const scale = byCurve ? (period.projected - C) / remaining : 1;
+      const span = Math.max(1, out.length - 1 - Math.max(idx, 0));
       const up = period.projectedHigh !== null ? period.projectedHigh - period.projected : null;
       const down = period.projectedLow !== null ? period.projected - period.projectedLow : null;
       for (let i = Math.max(idx, 0); i < out.length; i++) {
         const p = out[i];
         if (p.cumTarget === null) continue;
-        const covered = remaining > 0 ? Math.min(1, Math.max(0, (p.cumTarget - CT) / remaining)) : 1;
-        const proj = C + (p.cumTarget - CT) * scale;
+        const covered = byCurve
+          ? Math.min(1, Math.max(0, (p.cumTarget - CT) / remaining))
+          : (i - Math.max(idx, 0)) / span;
+        const proj = byCurve ? C + (p.cumTarget - CT) * scale : C + (period.projected - C) * covered;
         p.projection = proj;
         if (up !== null && down !== null) {
           const w = Math.sqrt(covered);
@@ -404,7 +501,7 @@ export interface TimelineItem {
 }
 
 /** Checkpoints and unit-led promos are judged on these, first one with a target wins. */
-const HEADLINE_ORDER: readonly RowMetric[] = ["units", "orders", "revenue"];
+const HEADLINE_ORDER: readonly RowMetric[] = ["units", "orders", "revenue", "new_customers", "cm3", "amer"];
 
 /**
  * The metric a checkpoint or promo card leads with: the first of units,
@@ -414,6 +511,14 @@ const HEADLINE_ORDER: readonly RowMetric[] = ["units", "orders", "revenue"];
 export function headlineMetric(rows: MetricRows): RowMetric {
   const targeted = HEADLINE_ORDER.find((m) => rows[m] && rows[m]!.target !== null);
   return targeted ?? HEADLINE_ORDER.find((m) => rows[m]) ?? "orders";
+}
+
+/**
+ * Every condition a checkpoint sets, in display order, except the one the card
+ * leads with: the rows that carry a target (a floor or a threshold).
+ */
+export function gateConditions(rows: MetricRows, lead: RowMetric): PacingRow[] {
+  return HEADLINE_ORDER.filter((m) => m !== lead && rows[m] && rows[m]!.target !== null).map((m) => rows[m]!);
 }
 
 /**

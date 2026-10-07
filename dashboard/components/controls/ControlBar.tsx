@@ -1,5 +1,6 @@
 /**
- * The control bar: date range, plus Compare and Currency where the page uses them.
+ * The control bar: the period pill, plus Compare and Currency where the page
+ * uses them. One row of soft grey pills, no labels (see `Pill`).
  *
  * Sticks directly beneath the header so the numbers below always carry the
  * period they cover.
@@ -11,27 +12,18 @@
  * Creative; Currency: Snapshot, Paid). Beside Compare sits the "% | 123" delta
  * toggle, hidden when Compare is None.
  *
- * It is deliberately not an overflow-scroll container: the date picker's
- * popover is absolutely positioned inside this element, and any `overflow`
- * other than visible would clip the calendar.
+ * It is deliberately not an overflow-scroll container: the popovers are
+ * absolutely positioned inside this element, and any `overflow` other than
+ * visible would clip the calendar.
  */
 
 import { DateRangeControl } from "@/components/controls/DateRangeControl";
-import { SegmentedControl } from "@/components/controls/SegmentedControl";
+import { ComparisonControl } from "@/components/controls/ComparisonControl";
+import { CurrencyControl } from "@/components/controls/CurrencyControl";
 import { DeltaModeToggle } from "@/components/controls/DeltaModeToggle";
 import type { ComparisonMode, DateRange, PresetKey } from "@/lib/period";
 import type { ConversionCoverage } from "@/lib/currency";
 import { ROLLUP_CURRENCY } from "@/lib/currency";
-
-function fmtShort(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 export function ControlBar({
   range,
@@ -83,65 +75,30 @@ export function ControlBar({
     // Sticky bar spans the viewport; its controls ride the shared column so
     // they line up with the header above and the cards below.
     <div className="z-20 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline lg:bg-paper">
-      <div className="page-frame flex flex-wrap items-center gap-x-4 gap-y-2 px-5 lg:px-8">
-      <DateRangeControl range={range} presetKey={presetKey} />
+      <div className="page-frame flex flex-wrap items-center gap-2 px-5 lg:px-8">
+        <DateRangeControl range={range} presetKey={presetKey} withToday />
 
-      {compare && (
-        <>
-          <span aria-hidden="true" className="hidden h-5 w-px bg-hairline lg:block" />
-
-          <div className="flex items-center gap-2">
-            <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted sm:inline">
-              Compare
-            </span>
-            <SegmentedControl
-              param="compare"
-              ariaLabel="Comparison period"
-              active={comparisonMode}
-              segments={[
-                { value: "previous_period", label: "Prev period" },
-                { value: "previous_year", label: "Prev year" },
-                { value: "none", label: "None" },
-              ]}
+        {compare && (
+          <>
+            <ComparisonControl
+              range={range}
+              mode={comparisonMode}
+              comparison={comparison}
             />
             {/* Percent or absolute change. Nothing to show with Compare off. */}
             {comparisonMode !== "none" && <DeltaModeToggle />}
-            {comparison && (
-              <span className="hidden font-mono text-[11.5px] tabular text-content-muted xl:inline">
-                vs {fmtShort(comparison.from)} to {fmtShort(comparison.to)}
-              </span>
-            )}
-          </div>
-        </>
-      )}
+          </>
+        )}
 
-      {showCurrency && (
-        <>
-          <span
-            aria-hidden="true"
-            className="hidden h-5 w-px bg-hairline lg:block"
+        {showCurrency && (
+          <CurrencyControl
+            nativeCurrency={nativeCurrency}
+            rollupCurrency={ROLLUP_CURRENCY}
+            displayCurrency={displayCurrency}
+            canConvert={canConvert}
+            convertReason={convertReason}
           />
-          <div className="flex items-center gap-2">
-            <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] text-content-muted sm:inline">
-              Currency
-            </span>
-            <SegmentedControl
-              param="currency"
-              ariaLabel="Display currency"
-              active={displayCurrency}
-              segments={[
-                { value: "native", label: `Native (${nativeCurrency})` },
-                {
-                  value: ROLLUP_CURRENCY,
-                  label: `${nativeCurrency} → ${ROLLUP_CURRENCY}`,
-                  disabled: !canConvert,
-                  disabledReason: convertReason,
-                },
-              ]}
-            />
-          </div>
-        </>
-      )}
+        )}
       </div>
     </div>
   );

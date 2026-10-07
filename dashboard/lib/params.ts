@@ -38,8 +38,11 @@ export {
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
-/** No "today": every range ends yesterday at the latest (locked rule). */
-const PRESETS: PresetKey[] = ["7d", "28d", "30d", "90d", "mtd", "ytd", "12m", "all"];
+/**
+ * Every range ends yesterday at the latest (locked rule), except "today", the
+ * one preset that asks for the partial day by name (see `presetRange`).
+ */
+const PRESETS: PresetKey[] = ["today", "7d", "28d", "30d", "90d", "mtd", "ytd", "12m", "all"];
 const MODES: ComparisonMode[] = ["previous_period", "previous_year", "none"];
 
 const DEFAULT_PRESET: PresetKey = "30d";

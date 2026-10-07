@@ -192,11 +192,18 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     source: "Plan and actuals",
     note: "The return the rest of the planned spend must reach to end the period on target.",
   },
-  "Lift vs baseline": {
-    title: "Lift vs baseline",
-    formula: "Store actual in the window / expected without the promo - 1",
-    source: "Plan and actuals",
-    note: "The baseline is the plan curve for the window without the promo's expected boost.",
+  "Margin after COGS": {
+    title: "Margin after COGS",
+    formula: "Attributed revenue - COGS of those orders",
+    source: "Shop platform and product costs",
+    note:
+      "Revenue here is goods ex VAT after discounts and refunds, so the discount given is already out of it. n/a unless every one of those orders carries a cost.",
+  },
+  "Promo discount given": {
+    title: "Discount given",
+    formula: "Order discounts + discount fee lines on the attributed orders",
+    source: "Shop platform",
+    note: "Already deducted from the revenue beside it, shown so the price given away is visible.",
   },
   "MER (spend / revenue)": {
     title: "MER (spend / revenue)",

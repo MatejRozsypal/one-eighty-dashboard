@@ -71,11 +71,6 @@ export interface PacingRow {
   merCapPct: number | null;
   merPlanPct: number | null;
   merActualPct: number | null;
-  /** Expected without the promo (promo rows): over the window, and to as of. */
-  baselineTotal: number | null;
-  baselineToDate: number | null;
-  /** Actual to date over the baseline to date, minus 1, in percent (19.8 = +19.8%). */
-  liftPct: number | null;
   /**
    * aMER parts (null on every other metric): actual and plan numerator (new
    * customer revenue) and denominator (paid spend), to date and in total.
@@ -109,7 +104,14 @@ export interface CurveDay {
   isPayday: boolean;
 }
 
-/** One promo's totals from the attribution layer. */
+/**
+ * One promo's totals from the attribution layer, over the window days up to
+ * the client's as of (the same days the store figures beside them cover).
+ *
+ * `isStorewide` is the one flag that changes how the rest reads: the promo had
+ * nothing to match on beyond the window, or ran store wide, so its attributed
+ * orders ARE every order in the window.
+ */
 export interface PromoPerf {
   taskId: string;
   phase: string | null;
@@ -117,11 +119,43 @@ export interface PromoPerf {
   windowStart: string;
   windowEnd: string;
   isComplete: boolean;
+  /** Every order in the window counts, so "attributed" means the whole store. */
+  isStorewide: boolean;
+  /** The platform exposes discount codes at all (WooCommerce yes, Shoptet no). */
+  hasCouponData: boolean;
+  daysElapsed: number | null;
+  windowDays: number | null;
   attrOrders: number | null;
   attrRevenue: number | null;
   attrUnits: number | null;
+  attrGiftUnits: number | null;
+  attrNewCustomers: number | null;
+  attrReturningCustomers: number | null;
+  attrCodeOrders: number | null;
+  attrNoCodeOrders: number | null;
+  attrDiscountedOrders: number | null;
+  attrDiscountGiven: number | null;
+  /** COGS of the attributed orders, and how many of them carry a cost at all. */
+  attrCogs: number | null;
+  attrOrdersCosted: number | null;
+  /** Attributed revenue minus COGS; null unless every attributed order is costed. */
+  attrCm1: number | null;
+  attrCm1Pct: number | null;
+  /** Spend of the Meta campaigns the task names; null when none are named. */
+  attrMetaSpend: number | null;
+  attrCm3: number | null;
+  /** How the attributed orders matched. */
+  matchCoupon: number | null;
+  matchSku: number | null;
+  matchGiftSku: number | null;
+  matchUtm: number | null;
+  matchWindow: number | null;
   storeOrders: number | null;
   storeRevenue: number | null;
+  storeNewCustomers: number | null;
+  storeUnits: number | null;
+  /** The mart CM3 of the whole store over the window; null without cost data. */
+  storeCm3: number | null;
   metaSpend: number | null;
   storeMerPct: number | null;
   merCapPct: number | null;

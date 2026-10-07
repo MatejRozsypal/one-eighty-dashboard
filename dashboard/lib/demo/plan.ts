@@ -112,6 +112,9 @@ function promosFor(q: string): Promo[] {
   const prev = addMonths(q, -2);
   return [
     { taskId: "demo-f0", name: "F0 · Summer reset", start: addDays(prev, 9), end: addDays(prev, 19), mult: 1.3, mechanic: "Discount code", attrShare: 0.5, merCap: null },
+    // Store wide and without cost data, so the Promo view shows both the whole
+    // store labelling and the n/a margin on a closed window.
+    { taskId: "demo-f9", name: "F9 · Free shipping week", start: addDays(prev, 23), end: addDays(prev, 27), mult: 1.15, mechanic: "Free shipping", attrShare: null, merCap: null },
     { taskId: "demo-f1", name: "F1 · Starter set", start: addDays(m0, 6), end: addDays(m0, 24), mult: 1.22, mechanic: "Bundle", attrShare: 0.4, merCap: null },
     { taskId: "demo-f2", name: "F2 · Loyalty credit", start: addDays(m1, 0), end: addDays(m1, 11), mult: 1.12, mechanic: "Personal credit", attrShare: null, merCap: null },
     { taskId: "demo-f3", name: "F3 · Week of offers", start: addDays(m1, 20), end: addDays(m1, 27), mult: 1.65, mechanic: "Cart discount", attrShare: 0.6, merCap: 25 },
@@ -448,9 +451,6 @@ function pace(spec: PeriodSpec, days: Map<string, DayFacts>, asOf: string): Paci
       merCapPct: spec.merCap,
       merPlanPct: merPlan,
       merActualPct: merActual,
-      baselineTotal: null,
-      baselineToDate: null,
-      liftPct: null,
       ...NO_RATIO,
       conditionMet: spec.type === "gate" && c !== null ? c >= t : null,
       isMeasured: true,
@@ -550,9 +550,6 @@ function paceRatio(
     merCapPct: null,
     merPlanPct: null,
     merActualPct: null,
-    baselineTotal: null,
-    baselineToDate: null,
-    liftPct: null,
     ratioNumActual: started ? cA.num : null,
     ratioDenActual: started ? cA.den : null,
     ratioNumTargetToDate: ctA.num,
@@ -650,16 +647,6 @@ export function demoPlanData(): PlanData {
 
   const rows = specs.flatMap((s) => pace(s, days, asOf).filter((r) => !s.metrics || s.metrics.includes(r.metric as PlanMetric)));
 
-  // Promo baselines: the window's curve without the promo multiplier, the
-  // same reading as the warehouse's (expected store without the promo).
-  for (const r of rows) {
-    if (r.periodType !== "promo" || (r.metric !== "orders" && r.metric !== "revenue")) continue;
-    const mult = promos.find((p) => p.taskId === r.periodId)?.mult ?? 1;
-    r.baselineTotal = r.target !== null ? r.target / mult : null;
-    r.baselineToDate = r.targetToDate !== null && r.status !== "not_started" ? r.targetToDate / mult : null;
-    r.liftPct = r.actual !== null && r.baselineToDate ? 100 * (r.actual / r.baselineToDate - 1) : null;
-  }
-
   // G1 counts units (a unit-led checkpoint, like calendars sold): a units row
   // scaled from its orders row, so the card leads with units.
   const g1 = rows.find((r) => r.periodType === "gate" && r.periodId === "demo-g1" && r.metric === "orders");
@@ -734,20 +721,61 @@ export function demoPlanData(): PlanData {
         storeRevenue += a.revenue;
         spend += a.ad_spend;
       }
+      // A store wide mechanic counts every order in the window, so there is no
+      // matched subset: the demo exercises that branch on F3.
+      const wholeStore = p.mechanic === "Cart discount" || p.mechanic === "Free shipping";
       const share = 0.42 * jitter(`attr:${p.taskId}`, 0.3);
-      const attrOrders = Math.round(storeOrders * Math.min(0.8, Math.max(0.2, share)));
+      const attrOrders = wholeStore
+        ? storeOrders
+        : Math.round(storeOrders * Math.min(0.8, Math.max(0.2, share)));
+      const attrRevenue = storeOrders > 0 ? round((storeRevenue * attrOrders) / storeOrders) : 0;
+      // Costs: a gross margin rate on the attributed revenue, so the demo shows
+      // a margin after COGS. F9 is left uncosted, so that card reads n/a.
+      const costed = p.taskId !== "demo-f9";
+      const cogs = costed ? round(attrRevenue * 0.33) : null;
+      const cm1 = cogs === null ? null : round(attrRevenue - cogs);
+      const codeMechanic = p.mechanic === "Discount code" || p.mechanic === "Personal credit";
+      const codeOrders = codeMechanic ? attrOrders : Math.round(attrOrders * 0.2);
+      const newCustomers = Math.round(attrOrders * 0.55);
+      // The store can never have fewer new customers than the promo inside it.
+      const storeNew = wholeStore ? newCustomers : Math.max(newCustomers, Math.round(storeOrders * 0.45));
       return {
         taskId: p.taskId,
         phase: p.name.split(" · ")[0],
         mechanic: p.mechanic,
         windowStart: p.start,
         windowEnd: p.end,
+        windowDays: daysBetween(p.start, p.end) + 1,
         isComplete: p.end <= asOf,
+        isStorewide: wholeStore,
+        hasCouponData: true,
+        daysElapsed: daysBetween(p.start, p.end < asOf ? p.end : asOf) + 1,
         attrOrders,
         attrUnits: null,
-        attrRevenue: storeOrders > 0 ? round((storeRevenue * attrOrders) / storeOrders) : 0,
+        attrGiftUnits: p.mechanic === "Bundle" ? attrOrders : 0,
+        attrRevenue,
+        attrNewCustomers: newCustomers,
+        attrReturningCustomers: attrOrders - newCustomers,
+        attrCodeOrders: codeOrders,
+        attrNoCodeOrders: attrOrders - codeOrders,
+        attrDiscountedOrders: codeOrders,
+        attrDiscountGiven: round(attrRevenue * 0.08),
+        attrCogs: cogs,
+        attrOrdersCosted: costed ? attrOrders : 0,
+        attrCm1: cm1,
+        attrCm1Pct: cm1 === null || attrRevenue === 0 ? null : Math.round((1000 * cm1) / attrRevenue) / 10,
+        attrMetaSpend: null,
+        attrCm3: null,
+        matchCoupon: codeMechanic ? attrOrders : 0,
+        matchSku: wholeStore || codeMechanic ? 0 : attrOrders,
+        matchGiftSku: 0,
+        matchUtm: 0,
+        matchWindow: wholeStore ? attrOrders : 0,
         storeOrders,
         storeRevenue: round(storeRevenue),
+        storeNewCustomers: storeNew,
+        storeUnits: null,
+        storeCm3: round(storeRevenue * 0.67 - spend),
         metaSpend: round(spend),
         storeMerPct: storeRevenue > 0 ? (100 * spend) / storeRevenue : null,
         merCapPct: p.merCap,

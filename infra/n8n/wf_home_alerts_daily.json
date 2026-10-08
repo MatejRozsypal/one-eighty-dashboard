@@ -1,8 +1,10 @@
 {
-  "name": "BQ: refresh home alerts",
+  "id": "Pmp7pH20TqlW8fqS",
+  "name": "wf_home_alerts_daily",
+  "active": true,
   "nodes": [
     {
-      "id": "6f1c2a0e-3b7d-4c1e-9a52-1d8e0b7f4a10",
+      "id": "7aa3af6a-5c23-43a1-9902-a6ca7e4f3977",
       "name": "Daily at 05:10",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.4,
@@ -24,7 +26,7 @@
       }
     },
     {
-      "id": "a3d9e4b2-7c51-4f08-8e6a-2b4c9d1f7e33",
+      "id": "d5dea604-0675-4442-b45d-5928524a7bd9",
       "name": "BQ: CALL sp_refresh_home_alerts",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
@@ -58,7 +60,7 @@
       }
     },
     {
-      "id": "c8e2f6a1-4d93-4b7a-b0c5-5e7a3f2d9b41",
+      "id": "a535bf6b-e09f-4d37-9b98-620c2d700d06",
       "name": "Sticky Note home alerts",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -72,7 +74,6 @@
       }
     }
   ],
-  "pinData": {},
   "connections": {
     "Daily at 05:10": {
       "main": [
@@ -86,11 +87,13 @@
       ]
     }
   },
-  "active": false,
+  "pinData": {},
   "settings": {
     "executionOrder": "v1",
+    "availableInMCP": true,
     "errorWorkflow": "lslDsvbP8jLKEgw0",
     "timezone": "Europe/Prague"
   },
-  "tags": []
+  "tags": [],
+  "versionId": "dd9fd5f2-26ea-426f-b175-fcc16e439318"
 }

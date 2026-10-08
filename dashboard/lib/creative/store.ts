@@ -12,6 +12,7 @@ import "server-only";
  *   production_rates    per-asset cost estimates by method and format
  *   creator_rates       pay model and terms per creator
  *   decisions           the accountability log
+ *   velocity_inputs     the Velocity calculator's saved inputs
  *
  * ── Why the DDL is here and not in lib/users/db.ts ─────────────────────────
  * That module's schema is applied before every single Postgres query, including
@@ -26,6 +27,7 @@ import "server-only";
 import { sql } from "@/lib/users/db";
 import type { CreativeThresholds } from "@/lib/creative/stats";
 import type { PayModel } from "@/lib/creative/vocabulary";
+import type { VelocityInputs } from "@/lib/creative/capacity";
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS creative_settings (
@@ -145,6 +147,21 @@ CREATE TABLE IF NOT EXISTS creative_mappings (
   confirmed_by    TEXT NOT NULL,
   confirmed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (client_id, ad_id)
+);
+
+-- The Velocity calculator's saved inputs, one row per client. Every input is
+-- nullable: NULL means "use the measured value", which is what a reset saves.
+CREATE TABLE IF NOT EXISTS velocity_inputs (
+  client_id      TEXT PRIMARY KEY,
+  monthly_spend  NUMERIC,
+  new_share      NUMERIC,
+  cpa            NUMERIC,
+  verdict_n      INT,
+  ads_per_pack   INT,
+  hit_rate       NUMERIC,
+  target_new_ads NUMERIC,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by     TEXT
 );
 
 CREATE INDEX IF NOT EXISTS decisions_client_idx ON decisions (client_id, decided_at DESC);
@@ -692,5 +709,66 @@ export async function recordMapping(
        confirmed_by = EXCLUDED.confirmed_by,
        confirmed_at = NOW()`,
     [clientId, input.adId, input.clickupTaskId, input.method, input.confidence, confirmedBy]
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Velocity inputs
+// ---------------------------------------------------------------------------
+
+export interface StoredVelocityInputs extends VelocityInputs {
+  clientId: string;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+function toVelocityInputs(r: Record<string, unknown>): StoredVelocityInputs {
+  return {
+    clientId: String(r.client_id),
+    monthlySpend: dec(r.monthly_spend),
+    newShare: dec(r.new_share),
+    cpa: dec(r.cpa),
+    verdictN: dec(r.verdict_n),
+    adsPerPack: dec(r.ads_per_pack),
+    hitRate: dec(r.hit_rate),
+    targetNewAds: dec(r.target_new_ads),
+    updatedAt: (r.updated_at as Date | null)?.toISOString() ?? null,
+    updatedBy: (r.updated_by as string) ?? null,
+  };
+}
+
+/** Null when nothing was ever saved for the client. */
+export async function getVelocityInputs(clientId: string): Promise<StoredVelocityInputs | null> {
+  const rows = await q(`SELECT * FROM velocity_inputs WHERE client_id = $1`, [clientId]);
+  return rows[0] ? toVelocityInputs(rows[0]) : null;
+}
+
+/** Every client's saved inputs, by client id, for the cross-client Overview. */
+export async function listVelocityInputs(): Promise<Map<string, StoredVelocityInputs>> {
+  const rows = await q(`SELECT * FROM velocity_inputs`);
+  return new Map(rows.map((r) => [String(r.client_id), toVelocityInputs(r)]));
+}
+
+/** Saves the whole set: a null clears that input back to measured. */
+export async function saveVelocityInputs(
+  clientId: string,
+  input: VelocityInputs,
+  updatedBy: string
+): Promise<void> {
+  await q(
+    `INSERT INTO velocity_inputs
+       (client_id, monthly_spend, new_share, cpa, verdict_n, ads_per_pack,
+        hit_rate, target_new_ads, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (client_id) DO UPDATE SET
+       monthly_spend = EXCLUDED.monthly_spend, new_share = EXCLUDED.new_share,
+       cpa = EXCLUDED.cpa, verdict_n = EXCLUDED.verdict_n,
+       ads_per_pack = EXCLUDED.ads_per_pack, hit_rate = EXCLUDED.hit_rate,
+       target_new_ads = EXCLUDED.target_new_ads,
+       updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+    [
+      clientId, input.monthlySpend, input.newShare, input.cpa, input.verdictN,
+      input.adsPerPack, input.hitRate, input.targetNewAds, updatedBy,
+    ]
   );
 }

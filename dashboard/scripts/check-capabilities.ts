@@ -41,7 +41,7 @@ const SHOP_PAGES = [
   "/customers", "/repeat-rate", "/gaps", "/cohorts", "/repurchase", "/repurchase/timing",
 ];
 const INVENTORY = ["/inventory", "/inventory/catalogue", "/inventory/buying"];
-const CREATIVE = ["/creative", "/creative/concepts", "/creative/breakdown", "/creative/velocity", "/creative/production"];
+const CREATIVE = ["/creative", "/creative/concepts", "/creative/breakdown", "/creative/velocity", "/creative/velocity/plan", "/creative/production"];
 
 // Expected availability per client: true = available.
 const EXPECT: Record<Name, { shop: boolean; inventory: boolean; paid: boolean; email: boolean; creative: boolean }> = {
@@ -135,6 +135,7 @@ eq("active /inventory/catalogue", activeNavHref("/inventory/catalogue"), "/inven
 eq("active /paidx", activeNavHref("/paidx"), null);
 eq("title /paid/google", pageTitle("/paid/google"), "Paid");
 eq("title /creative/velocity", pageTitle("/creative/velocity"), "Velocity");
+eq("title /creative/velocity/plan", pageTitle("/creative/velocity/plan"), "Velocity plan");
 eq("title /creative/unknown", pageTitle("/creative/unknown"), "Creatives");
 eq("title /chat/abc", pageTitle("/chat/abc"), "Assistant");
 eq("title /health", pageTitle("/health"), "Data health");
@@ -148,7 +149,7 @@ eq("selectedClient pick", selectedClient([{ clientId: "a" }, { clientId: "b" }],
   const all = [...NAV, ...CREATIVE_NAV].flatMap((g) => g.items);
   eq("every top-level item has an icon", all.every((i) => typeof i.icon === "string" && i.icon.length > 0), true);
   eq("icons are unique", new Set(all.map((i) => i.icon)).size, all.length);
-  eq("items with children", all.filter((i) => i.children).map((i) => i.label), ["Paid", "Repurchase", "Breakdown"]);
+  eq("items with children", all.filter((i) => i.children).map((i) => i.label), ["Paid", "Repurchase", "Breakdown", "Velocity"]);
   eq("Paid children", NAV.flatMap((g) => g.items).find((i) => i.href === "/paid")?.children?.map((c) => c.label), ["Overview", "Meta", "Google", "GA4"]);
   eq("Breakdown has ten dimension children", CREATIVE_NAV[0].items.find((i) => i.label === "Breakdown")?.children?.length, 10);
   eq("creative nav is the same for every client", navForProduct("creative", false, FIXTURES.rawbark), CREATIVE_NAV);
@@ -175,7 +176,9 @@ eq("selectedClient pick", selectedClient([{ clientId: "a" }, { clientId: "b" }],
   eq("active /creative/breakdown defaults to Angle", on("/creative/breakdown"), ["Breakdown", "Angle"]);
   eq("active /creative/breakdown?by=persona", on("/creative/breakdown", "client=a&by=persona"), ["Breakdown", "Persona"]);
   eq("active /creative/breakdown?by=nonsense falls back", on("/creative/breakdown", "by=nonsense"), ["Breakdown", "Angle"]);
-  eq("active /creative/velocity", on("/creative/velocity"), ["Velocity", null]);
+  eq("active /creative/velocity", on("/creative/velocity"), ["Velocity", "Overview"]);
+  eq("active /creative/velocity/plan", on("/creative/velocity/plan"), ["Velocity", "Plan"]);
+  eq("active /creative/velocity/track", on("/creative/velocity/track"), ["Velocity", "Track record"]);
   eq("active /paidx", on("/paidx"), [null, null]);
 
   // Links keep the view (client, range) and let a child's own query win.

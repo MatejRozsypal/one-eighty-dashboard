@@ -157,7 +157,7 @@ export const NAV: NavGroup[] = [
  * the rail, not a category of Analytics pages. The order is the reading order:
  * what ran, what it belonged to, how it compares, whether enough of it is being
  * made, and what it cost. Breakdown's children are its dimensions, which used
- * to sit in a select above the table.
+ * to sit in a select above the table; Velocity's are its four screens.
  */
 export const CREATIVE_NAV: NavGroup[] = [
   {
@@ -175,7 +175,18 @@ export const CREATIVE_NAV: NavGroup[] = [
           param: { key: "by", value: d.key, fallback: i === 0 },
         })),
       },
-      { label: "Velocity", href: "/creative/velocity", icon: "velocity" },
+      {
+        label: "Velocity",
+        href: "/creative/velocity",
+        icon: "velocity",
+        // Overview is cross-client; the other three follow the client switcher.
+        children: [
+          { label: "Overview", href: "/creative/velocity" },
+          { label: "This month", href: "/creative/velocity/month", title: "This month" },
+          { label: "Plan", href: "/creative/velocity/plan", title: "Velocity plan" },
+          { label: "Track record", href: "/creative/velocity/track", title: "Track record" },
+        ],
+      },
       { label: "Production ROI", href: "/creative/production", icon: "production" },
     ],
   },

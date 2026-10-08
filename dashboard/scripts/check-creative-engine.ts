@@ -24,7 +24,7 @@ import { propose, tokenise, type Candidate } from "@/lib/creative/matching";
 import { ANGLES } from "@/lib/creative/vocabulary";
 import { presetRange, comparisonRange, daysInRange, addDays } from "@/lib/period";
 import { demoCreative } from "@/lib/demo/creative";
-import { packSpec, horizons, personaCapacity, launchCadence } from "@/lib/creative/velocity";
+import { personaCapacity, launchCadence } from "@/lib/creative/velocity";
 import { moneyVerdict, diagnose, unjudgedVerdict } from "@/lib/creative/verdict";
 import { ZERO, derive, add, fillNames, tagCoverage, type Components } from "@/lib/creative/model";
 import { cleanPersona, conceptLabel, humanizeConceptCode, isConceptCode, noEmDash } from "@/lib/creative/display";
@@ -86,29 +86,6 @@ console.log(`   half-width at 173 purchases: +/-${f(2.29/Math.sqrt(173)*100,0)}%
 console.log("\n=== spend to decide ===");
 console.log("   an ad set at 2.15 with 20 purchases needs",
   `${spendToDecide(2.15, 20, 1.8, 527)?.toFixed(0)} Kc more to clear the kill line`);
-
-console.log("\n=== pack arithmetic, brief section 6b ===");
-const spec = packSpec({
-  testPurchases: 25, targetCpa: 527, perAdFloorDaily: 215, minPackDaily: 860,
-  noTouchDays: 14, monthlyBudget: 91000, packsPerMonthTarget: 2,
-  hooksPerBodyTarget: 6, netNewShareTarget: 0.2,
-});
-eq("ads per pack (= what PACK6 launched with)", spec.adsPerPack, 4);
-eq("verdict spend", Math.round(spec.verdictSpend), 13175);
-eq("14-day pack reaches", spec.purchasesReached, 23);
-eq("does a 14-day pack close?", spec.closes, false);
-eq("daily budget that would close it (brief rounds to 941; we ceil)", spec.dailyToClose, 942);
-eq("days it needs at 860/day", spec.daysToClose, 16);
-
-console.log("\n=== the horizon planner, against the brief's table ===");
-for (const h of horizons({
-  testPurchases: 25, targetCpa: 527, perAdFloorDaily: 215, minPackDaily: 860,
-  noTouchDays: 14, monthlyBudget: 91000, packsPerMonthTarget: 2,
-  hooksPerBodyTarget: 6, netNewShareTarget: 0.2,
-})) {
-  console.log(`   ${String(h.days).padStart(2)}d  ${String(h.dailyBudget).padStart(5)} Kc/day  ${h.adsPerPack} ads  ${h.packsPerMonth.toFixed(1)} packs/mo  ${h.newAdsPerMonth} new ads  ${Math.round(h.shareOfBudget*100)}% of budget`);
-}
-console.log("   brief says: 7d=1882/8/4.3/34/62%, 10d=1318/6/3.0/18/43%, 14d=941/4/2.1/9/31%, 21d=627/2/1.4/3/21%");
 
 console.log("\n=== persona capacity, brief section 8 ===");
 const cap = personaCapacity(84, 527, 273000, 12, 5);

@@ -1,9 +1,9 @@
 /**
- * Loading state. Creative velocity: scorecard and launch cadence.
+ * Loading state. Velocity overview: one table of clients.
  */
 
 import { SkeletonPage } from "@/components/ui/Skeleton";
 
 export default function Loading() {
-  return <SkeletonPage blocks={["kpi", "chart"]} />;
+  return <SkeletonPage blocks={["table"]} controls={false} />;
 }

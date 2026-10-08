@@ -80,8 +80,12 @@ function isMissingColumn(error: unknown): boolean {
   return /unrecognized name/i.test(message);
 }
 
-/** Runs the read with the newer columns, else without them (older warehouse). */
-async function withFallback<T>(full: () => Promise<T>, base: () => Promise<T>): Promise<T> {
+/**
+ * Runs the read with the newer columns, else without them (older warehouse).
+ * Exported with the row mapper and the column lists for Home, which reads the
+ * same pacing rows for every client at once.
+ */
+export async function withFallback<T>(full: () => Promise<T>, base: () => Promise<T>): Promise<T> {
   try {
     return await full();
   } catch (error) {
@@ -91,7 +95,7 @@ async function withFallback<T>(full: () => Promise<T>, base: () => Promise<T>): 
   }
 }
 
-function toPacingRow(r: Raw): PacingRow {
+export function toPacingRow(r: Raw): PacingRow {
   const raw = String(r.status) as RowStatus;
   const result = str(r.result);
   const target = num(r.target_total);
@@ -150,14 +154,14 @@ function toPacingRow(r: Raw): PacingRow {
   };
 }
 
-const PACING_COLUMNS = `period_type, period_id, period_label, metric, task_id, plan_status, as_of,
+export const PACING_COLUMNS = `period_type, period_id, period_label, metric, task_id, plan_status, as_of,
             period_start, period_end, days_total, days_elapsed, days_remaining,
             is_target_partial, target_total, target_to_date, actual_to_date, pace_pct,
             gap_abs, projected_end, projected_low, projected_high, required_daily_rate,
             required_curve_mult, status, is_too_early, result, is_preliminary,
             mer_cap_pct, mer_plan_pct, mer_actual_pct`;
 
-const RATIO_COLUMNS = `ratio_num_actual, ratio_den_actual, ratio_num_target_to_date,
+export const RATIO_COLUMNS = `ratio_num_actual, ratio_den_actual, ratio_num_target_to_date,
             ratio_den_target_to_date, ratio_num_target, ratio_den_target, trailing_7d_ratio,
             required_ratio, min_spend, condition_met, is_measured`;
 

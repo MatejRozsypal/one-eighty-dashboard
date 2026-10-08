@@ -9,6 +9,7 @@
  * to close them against.
  */
 
+import type { ReactNode } from "react";
 import { AppLink } from "@/components/ui/AppLink";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { NO_VALUE } from "@/lib/format";
@@ -43,7 +44,8 @@ function Figure({ f, ringFamily, small = false }: { f: RingFigure; ringFamily: F
 
 const PLAN_FAMILIES: Family[] = ["revenue", "cm3", "amer"];
 
-export function PinnedCard({ card }: { card: Card }) {
+/** `footer`: optional row under the figures (Home adds the ClickUp status and the retainer). */
+export function PinnedCard({ card, footer }: { card: Card; footer?: ReactNode }) {
   const plan = card.mode === "plan";
   const ringFamilies: Family[] = plan ? PLAN_FAMILIES : ["neutral"];
   const title = plan ? family("revenue").text : "var(--text-strong)";
@@ -85,6 +87,7 @@ export function PinnedCard({ card }: { card: Card }) {
           ))}
         </div>
       )}
+      {footer}
       <span className="sr-only">{description}</span>
     </article>
   );

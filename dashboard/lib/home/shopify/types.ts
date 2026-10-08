@@ -11,7 +11,7 @@
 
 import type { ClientHealth, HomeSummary } from "@/lib/home/types";
 
-export type KpiKey = "revenue" | "meta_spend" | "cm3" | "amer" | "new_ads";
+export type KpiKey = "revenue" | "meta_spend" | "cm3" | "amer" | "new_ads" | "new_concepts" | "cm3_vs_ly";
 
 export interface Kpi {
   key: KpiKey;
@@ -34,6 +34,8 @@ export interface Kpi {
   clients: { included: number; total: number };
   /** Last day in the window, `YYYY-MM-DD`. */
   through: string | null;
+  /** Short line under the value naming the comparison ("vs last year"). */
+  caption?: string | null;
 }
 
 export interface ActionChip {

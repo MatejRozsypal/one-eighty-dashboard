@@ -37,7 +37,7 @@ import type { SidekickHome } from "./types";
 type Raw = Record<string, unknown>;
 
 /** Logged, then turned into a note for the figures that needed the source. */
-async function guarded<T>(label: string, run: () => Promise<T>): Promise<{ value: T | null; note: string | null }> {
+export async function guarded<T>(label: string, run: () => Promise<T>): Promise<{ value: T | null; note: string | null }> {
   try {
     return { value: await run(), note: null };
   } catch (error) {
@@ -81,7 +81,7 @@ async function fetchDaily(): Promise<DailyRow[]> {
 }
 
 /** CZK per unit, latest month per currency. */
-async function fetchCzkRates(): Promise<Map<string, number>> {
+export async function fetchCzkRates(): Promise<Map<string, number>> {
   const rows = await query<Raw>(
     `SELECT from_currency, rate
      FROM \`${PROJECT_ID}.ref.fx_rates\`
@@ -96,7 +96,7 @@ async function fetchCzkRates(): Promise<Map<string, number>> {
   return out;
 }
 
-async function fetchUnmapped(clients: Client[]): Promise<UnmappedFact[]> {
+export async function fetchUnmapped(clients: Client[]): Promise<UnmappedFact[]> {
   const rows = await query<Raw>(
     `SELECT client_id, ad_id, spend
      FROM \`${PROJECT_ID}.mart.mart_creative_unmapped\`
@@ -130,7 +130,7 @@ async function fetchUnmapped(clients: Client[]): Promise<UnmappedFact[]> {
   return out;
 }
 
-async function fetchVelocity(): Promise<{ facts: VelocityFact[]; launches: LaunchDates[] }> {
+export async function fetchVelocity(): Promise<{ facts: VelocityFact[]; launches: LaunchDates[] }> {
   const overview = await loadVelocityOverview();
   const facts: VelocityFact[] = [];
   const launches: LaunchDates[] = [];

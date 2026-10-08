@@ -408,6 +408,7 @@ function buildClient(client: Client, crm: CrmClient | undefined, s: Sources): Cl
     registryStatus: client.status,
     crmStatus: crm?.status ?? null,
     crmUrl: crm?.url ?? null,
+    crmNote: crmGap,
     asOf: rows[0]?.asOf || act?.asOf || null,
     monthLabel: rows[0]?.label ?? monthName(act?.asOf ? `${act.asOf.slice(0, 7)}-01` : null),
     focus,

@@ -1,0 +1,203 @@
+import "server-only";
+
+/**
+ * Read-only ClickUp lookups for Home: the Clients list in Client Success and
+ * the Invoice Tracker in Billing & Finance.
+ *
+ * Two plain GETs with the same server-side token Creative uses
+ * (`CLICKUP_API_TOKEN`); nothing here writes. ClickUp is where the owners keep
+ * each client's relationship status, billing type and agreed retainer, and the
+ * warehouse holds none of the three, so this is the only source for them.
+ *
+ * A failed read never takes the page down and never reads as zero: the state
+ * comes back with the rows and every affected figure renders n/a with the
+ * reason. The status code and body go to the server log.
+ */
+
+import type { InvoiceLine, SourceState } from "./types";
+
+/** Client Success > Clients. */
+export const CLIENTS_LIST_ID = "901522365067";
+/** Billing & Finance > Invoice Tracker. */
+export const INVOICE_LIST_ID = "901522370596";
+
+const FIELD = {
+  retainer: "b56121ed-65ad-481e-9534-b8705ba1e7c6",
+  billingType: "bbe536ee-a0d8-488e-9475-6a868a645f32",
+  /** On the tracker this relationship is named "Client" and points at the Clients list. */
+  invoiceClient: "ca57d1be-9564-4fbf-95a9-0f591180e37a",
+  invoiceAmount: "332bf772-991e-4e70-bea6-b6513c612432",
+  profitShare: "bb57aac7-f661-422e-9d2e-869c91af4644",
+} as const;
+
+const API = "https://api.clickup.com/api/v2";
+const TIMEOUT_MS = 5000;
+
+interface RawField {
+  id: string;
+  value?: unknown;
+  type_config?: { options?: Array<{ id?: string; name?: string; orderindex?: number | string }> };
+}
+
+interface RawTask {
+  id: string;
+  name: string;
+  url?: string;
+  status?: { status?: string } | string;
+  date_created?: string;
+  custom_fields?: RawField[];
+}
+
+export interface CrmClient {
+  taskId: string;
+  name: string;
+  url: string | null;
+  status: string | null;
+  retainerCzk: number | null;
+  billingType: string | null;
+  lastInvoice: InvoiceLine | null;
+}
+
+export interface CrmRead {
+  state: SourceState;
+  /** Invoice Tracker state, separate: the token may reach one list and not the other. */
+  invoiceState: SourceState;
+  clients: CrmClient[];
+}
+
+function token(): string | null {
+  const t = process.env.CLICKUP_API_TOKEN;
+  // Same cleaning as lib/creative/clickup.ts: a pasted value often carries a
+  // newline or quotes, which turns every call into a 401.
+  return t ? t.trim().replace(/^["']|["']$/g, "") : null;
+}
+
+function stateOf(status: number): SourceState {
+  if (status === 401 || status === 403) return "denied";
+  if (status === 404) return "missing";
+  return "error";
+}
+
+async function listTasks(listId: string, auth: string): Promise<{ state: SourceState; tasks: RawTask[] }> {
+  const tasks: RawTask[] = [];
+  // A list of clients or monthly invoices is far below one page; the loop is a
+  // guard, capped so a misbehaving API cannot hold the page.
+  for (let page = 0; page < 5; page++) {
+    try {
+      const res = await fetch(
+        `${API}/list/${listId}/task?include_closed=true&subtasks=false&page=${page}`,
+        { headers: { Authorization: auth }, cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) }
+      );
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        console.error(`[home] ClickUp list ${listId} failed: ${res.status} ${body.slice(0, 300)}`);
+        return { state: stateOf(res.status), tasks: [] };
+      }
+      const json = (await res.json()) as { tasks?: RawTask[]; last_page?: boolean };
+      tasks.push(...(json.tasks ?? []));
+      if (json.last_page !== false || (json.tasks ?? []).length === 0) break;
+    } catch (error) {
+      console.error(`[home] ClickUp list ${listId} unreachable: ${(error as Error)?.message ?? error}`);
+      return { state: "error", tasks: [] };
+    }
+  }
+  return { state: "ok", tasks };
+}
+
+function field(task: RawTask, id: string): RawField | undefined {
+  return task.custom_fields?.find((f) => f.id === id);
+}
+
+function money(task: RawTask, id: string): number | null {
+  const v = field(task, id)?.value;
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Drop-down value: ClickUp sends the option's orderindex (older lists) or its id. */
+function dropDown(task: RawTask, id: string): string | null {
+  const f = field(task, id);
+  if (f?.value === null || f?.value === undefined || f.value === "") return null;
+  const option = f.type_config?.options?.find(
+    (o) => o.id === f.value || (o.orderindex !== undefined && Number(o.orderindex) === Number(f.value))
+  );
+  return option?.name ?? null;
+}
+
+function relatedIds(task: RawTask, id: string): string[] {
+  const v = field(task, id)?.value;
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((item) =>
+    item && typeof item === "object" && "id" in item ? [String((item as { id: unknown }).id)] : []
+  );
+}
+
+function statusOf(task: RawTask): string | null {
+  const s = typeof task.status === "string" ? task.status : task.status?.status;
+  return s ? s.toLowerCase() : null;
+}
+
+/** "Manami | 04/26" names its period after the bar; else the creation month. */
+function periodOf(task: RawTask): string {
+  const named = task.name.split("|")[1]?.trim();
+  if (named) return named;
+  const created = Number(task.date_created);
+  if (!Number.isFinite(created)) return task.name;
+  const d = new Date(created);
+  return `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCFullYear()).slice(2)}`;
+}
+
+export async function readCrm(): Promise<CrmRead> {
+  const auth = token();
+  if (!auth) return { state: "not_configured", invoiceState: "not_configured", clients: [] };
+
+  const [clients, invoices] = await Promise.all([
+    listTasks(CLIENTS_LIST_ID, auth),
+    listTasks(INVOICE_LIST_ID, auth),
+  ]);
+
+  // Latest invoice per client task, by creation time.
+  const latest = new Map<string, RawTask>();
+  for (const inv of invoices.tasks) {
+    for (const clientTaskId of relatedIds(inv, FIELD.invoiceClient)) {
+      const seen = latest.get(clientTaskId);
+      if (!seen || Number(inv.date_created ?? 0) > Number(seen.date_created ?? 0)) latest.set(clientTaskId, inv);
+    }
+  }
+
+  return {
+    state: clients.state,
+    invoiceState: invoices.state,
+    clients: clients.tasks.map((t) => {
+      const inv = latest.get(t.id);
+      return {
+        taskId: t.id,
+        name: t.name,
+        url: t.url ?? null,
+        status: statusOf(t),
+        retainerCzk: money(t, FIELD.retainer),
+        billingType: dropDown(t, FIELD.billingType),
+        lastInvoice: inv
+          ? {
+              period: periodOf(inv),
+              amountCzk: money(inv, FIELD.invoiceAmount),
+              profitShareCzk: money(inv, FIELD.profitShare),
+              status: statusOf(inv),
+            }
+          : null,
+      };
+    }),
+  };
+}
+
+/** Lowercase, no diacritics, first word: "Dobias Healing Solutions" -> "dobias". */
+export function matchKey(name: string): string {
+  return (
+    name
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .match(/[a-z0-9]+/)?.[0] ?? ""
+  );
+}

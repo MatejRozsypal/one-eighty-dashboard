@@ -1,5 +1,5 @@
 /**
- * The four products behind the icon rail.
+ * The products behind the icon rail.
  *
  * Each rail icon opens a different instance of the app. They share exactly two
  * things: the sign-in session and the shell chrome, and nothing else. In
@@ -15,7 +15,7 @@
 import { REPORTS_ROLES } from "@/lib/reports/contracts";
 import type { Role } from "@/lib/users/store";
 
-export type ProductId = "chat" | "analytics" | "creative" | "reports";
+export type ProductId = "home" | "chat" | "analytics" | "creative" | "reports";
 
 export interface Product {
   id: ProductId;
@@ -35,6 +35,15 @@ export interface Product {
 }
 
 export const PRODUCTS: Product[] = [
+  {
+    // Every client's results and money side by side, so internal only. The page
+    // gates itself with `requireInternalRole`; hiding the icon is a courtesy.
+    id: "home",
+    label: "Home",
+    href: "/home",
+    hint: "Your day and every client at a glance",
+    internalOnly: true,
+  },
   {
     id: "chat",
     label: "Assistant",
@@ -75,6 +84,7 @@ export const PRODUCTS: Product[] = [
  * rail rather than fail loudly.
  */
 export function productFor(pathname: string): ProductId {
+  if (pathname === "/home" || pathname.startsWith("/home/")) return "home";
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return "chat";
   if (pathname === "/creative" || pathname.startsWith("/creative/")) return "creative";
   if (pathname === "/reports" || pathname.startsWith("/reports/")) return "reports";

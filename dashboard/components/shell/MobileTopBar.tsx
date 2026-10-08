@@ -78,8 +78,9 @@ export function MobileTopBar({
 
   const shownClient = optimisticClient ?? activeClient;
 
-  // Reports picks its clients per report, so the bar's switcher is hidden there.
-  const showClientSwitcher = activeProduct !== "reports";
+  // Reports picks its clients per report and Home shows them all, so the bar's
+  // switcher is hidden on both.
+  const showClientSwitcher = activeProduct !== "reports" && activeProduct !== "home";
 
   // Pages and products the selected client has no source for are hidden.
   const nav = navForProduct(activeProduct, isAdmin, shownClient, isInternal);

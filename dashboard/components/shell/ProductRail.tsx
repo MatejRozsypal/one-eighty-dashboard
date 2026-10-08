@@ -32,6 +32,13 @@ function Icon({ id }: { id: ProductId }) {
     strokeLinejoin: "round" as const,
     "aria-hidden": true,
   };
+  if (id === "home")
+    return (
+      <svg {...common}>
+        <path d="M4 10.5L12 4l8 6.5" />
+        <path d="M6 9v10.5h4.5V15h3v4.5H18V9" />
+      </svg>
+    );
   if (id === "chat")
     // A spark, not a speech bubble: the section is an agent, and a bubble would
     // read as team chat, which this is not.

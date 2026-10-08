@@ -61,7 +61,7 @@ export function ActivityRings({ rings, size = 128 }: { rings: RingSpec[]; size?:
                   cy={end.y}
                   r={stroke / 2}
                   fill={colour.graphic}
-                  style={{ filter: "drop-shadow(0 0 2px rgba(0, 0, 0, 0.45))" }}
+                  style={{ filter: "drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.35))" }}
                 />
                 <circle
                   cx={centre}

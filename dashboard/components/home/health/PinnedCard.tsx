@@ -74,7 +74,7 @@ export function PinnedCard({ card }: { card: Card }) {
         </div>
         <ActivityRings
           rings={card.rings.map((f, i) => ({ family: ringFamilies[i], fraction: f.fraction }))}
-          size={plan ? 132 : 112}
+          size={plan ? 132 : 100}
         />
       </div>
 

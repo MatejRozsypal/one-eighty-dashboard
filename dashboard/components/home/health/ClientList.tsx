@@ -22,6 +22,7 @@ const CHIP: Record<ChipTone, { text: string; bg: string }> = {
 function initials(name: string): string {
   return name
     .split(/\s+/)
+    .filter((w) => /^[\p{L}\p{N}]/u.test(w))
     .slice(0, 2)
     .map((w) => w.charAt(0).toUpperCase())
     .join("");

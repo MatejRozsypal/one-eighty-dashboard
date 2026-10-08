@@ -29,8 +29,8 @@
  * ── Which ones show ────────────────────────────────────────────────────────
  * At most six. Every plan_pace card (the plan is what the agency is measured
  * on), then creative_share, then one card per remaining rule in the order
- * above, each the client with the largest relative change, preferring a client
- * no earlier card has named so the cards spread over the book.
+ * above: of the clients the earlier cards named least, the one with the
+ * largest relative change, so the cards spread over the book.
  */
 
 import { formatMoney, formatPercent, formatRatio } from "@/lib/format";
@@ -346,11 +346,11 @@ const ONE_PER_RULE: HighlightRule[] = ["revenue_vs_ly", "revenue_7d", "amer_7d",
 export function buildHighlights({ clients, series, creative }: Pick<SummaryInput, "clients" | "series" | "creative">): Highlight[] {
   const seriesOf = (id: string | null) => (id ? series.find((s) => s.clientId === id) : undefined);
   const picked: Highlight[] = [];
-  const named = new Set<string>();
+  const uses = new Map<string, number>();
   const take = (h: Highlight) => {
     if (picked.length >= MAX_HIGHLIGHTS) return;
     picked.push(h);
-    named.add(h.clientId);
+    uses.set(h.clientId, (uses.get(h.clientId) ?? 0) + 1);
   };
 
   clients
@@ -369,9 +369,9 @@ export function buildHighlights({ clients, series, creative }: Pick<SummaryInput
     for (const x of found) if (x) (byRule[x.highlight.rule] ??= []).push(x);
   }
   for (const rule of ONE_PER_RULE) {
-    const ranked = (byRule[rule] ?? []).sort((a, b) => b.score - a.score);
-    const fresh = ranked.find((x) => !named.has(x.highlight.clientId));
-    const choice = fresh ?? ranked[0];
+    // The client named least so far, then the largest change.
+    const used = (x: Candidate) => uses.get(x.highlight.clientId) ?? 0;
+    const choice = (byRule[rule] ?? []).sort((a, b) => used(a) - used(b) || b.score - a.score)[0];
     if (choice) take(choice.highlight);
   }
   return picked;

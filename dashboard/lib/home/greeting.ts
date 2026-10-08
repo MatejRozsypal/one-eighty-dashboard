@@ -24,10 +24,21 @@ export function partOfDay(hour: number): string {
  */
 export function firstName(name: string | null | undefined, email: string | null | undefined): string | null {
   const fromName = name?.trim().split(/\s+/)[0];
-  if (fromName && !fromName.includes("@")) return fromName;
+  if (fromName && !fromName.includes("@")) return callName(fromName);
   const local = email?.split("@")[0]?.split(/[._-]/)[0];
   if (!local) return null;
-  return local.charAt(0).toUpperCase() + local.slice(1);
+  return callName(local.charAt(0).toUpperCase() + local.slice(1));
+}
+
+/** The names the founders go by, whatever the account stores. */
+const CALL_NAMES: Record<string, string> = {
+  matej: "Matt",
+  lukas: "Lukas",
+};
+
+function callName(first: string): string {
+  const key = first.normalize("NFD").replace(/\p{Mn}/gu, "").toLowerCase();
+  return CALL_NAMES[key] ?? first;
 }
 
 /** "Thursday, 8 October". */

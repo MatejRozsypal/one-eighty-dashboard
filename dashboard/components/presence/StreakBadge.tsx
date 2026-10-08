@@ -1,5 +1,5 @@
 /**
- * The viewer's streak as a pill: "12 day streak". Green once today counts,
+ * The viewer's streak as a pill: "12 day streak · 45 XP today". Green once today counts,
  * grey while the streak is still waiting on today (it stays alive until the
  * day ends). No ring: a streak has no goal for one rotation to stand for.
  *
@@ -7,6 +7,8 @@
  */
 
 import { InfoTip } from "@/components/ui/InfoTip";
+import { formatNumber } from "@/lib/format";
+import { XP_RULES } from "@/lib/presence/xp";
 import type { PresenceRow } from "@/lib/presence/types";
 
 export function streakLabel(days: number): string {
@@ -18,14 +20,15 @@ export function StreakBadge({
   row,
   countsWeekends = true,
 }: {
-  row: Pick<PresenceRow, "currentStreak" | "bestStreak" | "todayCounted">;
+  row: Pick<PresenceRow, "currentStreak" | "bestStreak" | "todayCounted"> & Partial<Pick<PresenceRow, "xp">>;
   countsWeekends?: boolean;
 }) {
   const live = row.todayCounted && row.currentStreak > 0;
   const tone = live ? "positive" : "neutral";
   const tip =
     `Days in a row on the dashboard${countsWeekends ? ", weekends included" : ", weekdays only"}. ` +
-    `Today counts once you visit; a full day away resets it. Best: ${row.bestStreak}.`;
+    `A full day away resets it. Best: ${row.bestStreak}. ${XP_RULES}`;
+  const xpToday = row.todayCounted && row.xp ? row.xp.today : null;
 
   return (
     <span
@@ -40,6 +43,7 @@ export function StreakBadge({
       <span>
         {streakLabel(row.currentStreak)}
         {!row.todayCounted && row.currentStreak > 0 && <span className="font-medium"> · not yet today</span>}
+        {xpToday !== null && <span> · {formatNumber(xpToday)} XP today</span>}
       </span>
       <InfoTip text={tip} label="About the streak" />
     </span>

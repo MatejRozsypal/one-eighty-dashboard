@@ -3,6 +3,8 @@
  * only display names and a stable key.
  */
 
+import type { XpWindow } from "@/lib/presence/xp";
+
 export type PresencePeriod = "today" | "week" | "month";
 
 export interface PresenceRow {
@@ -15,6 +17,8 @@ export interface PresenceRow {
   /** Today already has a visit, so the current streak includes it. */
   todayCounted: boolean;
   minutes: Record<PresencePeriod, number>;
+  /** XP per window, by the rules in lib/presence/xp.ts. `all` sets the level. */
+  xp: Record<XpWindow, number>;
   /** First heartbeat today, "HH:MM" Prague. Null before the first visit. */
   startedToday: string | null;
 }

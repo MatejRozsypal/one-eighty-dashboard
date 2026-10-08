@@ -27,6 +27,7 @@ import {
   pragueDay,
   weekStart,
 } from "@/lib/presence/streak";
+import { xpWindows } from "@/lib/presence/xp";
 import type { PresenceBoard, PresencePeriod, PresenceRow } from "@/lib/presence/types";
 
 const perRequest: <F extends (...args: never[]) => unknown>(fn: F) => F =
@@ -75,6 +76,7 @@ async function load(): Promise<PresenceBoard | null> {
         bestStreak: streak.best,
         todayCounted: streak.todayCounted,
         minutes,
+        xp: xpWindows(own, today, STREAK_COUNTS_WEEKENDS),
         startedToday: todayRow ? pragueClock(new Date(todayRow.firstSeen)) : null,
       };
     });

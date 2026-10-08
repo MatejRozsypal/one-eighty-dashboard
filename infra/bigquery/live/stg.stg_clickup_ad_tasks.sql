@@ -44,4 +44,6 @@ LEFT JOIN `oneeighty-warehouse.ref.clickup_field_map` m
   ON  m.client_id = t.client_id
   AND m.list_kind = 'ad_pipeline'
   AND m.logical   = 'concept_rel'
+  -- 280: a derived row with two candidates is recorded, never used.
+  AND m.ambiguous_with IS NULL
 WHERE t.list_kind = 'ad_pipeline';

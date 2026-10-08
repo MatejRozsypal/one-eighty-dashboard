@@ -684,7 +684,7 @@ BEGIN
   -- Two relationship fields on one list both pointing at the client's own
   -- concept (or persona) list. Nothing is derived until one is removed.
   SELECT run_at, client_id, 'error', 'ambiguous_relationship_field', field_id,
-         CONCAT('Two ', list_kind, ' fields point at this client''s own ',
+         CONCAT('Two ', list_kind, " fields point at this client's own ",
                 IF(logical = 'concept_rel', 'concept', 'persona'), ' list (', ambiguous_with,
                 '). Neither is used until one is deleted.')
   FROM `oneeighty-warehouse.ref.clickup_field_map`

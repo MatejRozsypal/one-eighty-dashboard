@@ -6,7 +6,8 @@ CREATE TABLE `oneeighty-warehouse.ref.clickup_field_map`
   field_id STRING NOT NULL,
   field_type STRING NOT NULL,
   ambiguous_with STRING,
-  synced_at TIMESTAMP
+  synced_at TIMESTAMP,
+  source STRING OPTIONS(description="curated: set by hand, wins. target_list: derived each sync from the field that points at the client's own list.")
 )
 OPTIONS(
   description="Logical field name to ClickUp custom-field UUID. Refreshed every sync; ambiguity is recorded, never resolved by guessing."

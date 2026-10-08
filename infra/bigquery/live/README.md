@@ -36,6 +36,8 @@ Every new migration (228 and up) must cite the `live/` file it changes in its he
 Not covered: stored procedures and functions, except `mart.sp_refresh_rpt_kpis` (253) and `mart.sp_refresh_rpt_customer_entry` (258) (others: `ops.sp_load_ga4_sessions`, `ops.sp_load_ga4_sessions_for` live in `../243_ga4_sessions.sql`; `ref.sp_rebuild_creative_tags`, `ref.creative_name_key`), `raw`, `raw_google_ads`, `raw_meta_*`, `analytics_*`, `mart_qa` and other datasets, and view definitions
 that reference views from those datasets are exported as they are.
 
+Amended 2026-10-08 for migration 280 and 280c (deployed 2026-10-08 13:35 to 13:40 UTC): `stg.stg_clickup_ad_tasks`, `mart.mart_creative_unmapped`, `mart.mart_creative_adset_perf` taken from the deployed files (view text equals `INFORMATION_SCHEMA.VIEWS` minus the wrapper), `ref.clickup_field_map` from its live DDL (new column `source`). `ref.sp_rebuild_creative_tags` and the `ref.creative_name_*` functions now live in `../280_creative_mapping.sql`.
+
 ## Normalisation (so that a re-export produces no diff)
 
 1. `view_definition` is written verbatim after the line ``CREATE OR REPLACE VIEW `oneeighty-warehouse.<dataset>.<view>` AS``,

@@ -20,7 +20,8 @@
  *                                      "skip permissions" cannot remove that.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const read = (rel: string) =>
@@ -28,3 +29,47 @@ const read = (rel: string) =>
 
 export const ALLOWED: string[] = read("../workspace/.claude/settings.json").permissions.allow;
 export const DASHBOARD_DENIED: string[] = read("../policy/dashboard-readonly.json").deny;
+
+/**
+ * Built-in tools the dashboard keeps: reading and searching files, so the
+ * agent can use the Second Brain (workspace/brain, a clone of
+ * MatejRozsypal/oneeighty-second-brain pulled every 10 minutes). Confined to
+ * the workspace by `fileArgsInsideWorkspace`, which keeps the server's own
+ * secrets (/etc/oe-agent, ~/.claude) out of reach of the chat.
+ */
+export const FILE_TOOLS = ["Read", "Glob", "Grep"];
+
+const WORKDIR = (() => {
+  const dir = process.env.AGENT_WORKDIR ?? process.cwd();
+  try {
+    return realpathSync(dir);
+  } catch {
+    return resolve(dir);
+  }
+})();
+
+function inside(p: unknown): boolean {
+  // Glob and Grep default to the working directory, which is the workspace.
+  if (p === undefined || p === null || p === "") return true;
+  if (typeof p !== "string" || p.startsWith("~")) return false;
+  const abs = resolve(WORKDIR, p);
+  let real = abs;
+  try {
+    real = realpathSync(abs); // a symlink inside the repo must not lead out of it
+  } catch {
+    // Not on disk: judge the path as written.
+  }
+  return real === WORKDIR || real.startsWith(WORKDIR + sep);
+}
+
+/** A glob pattern that could reach outside the search root. */
+const escapes = (g: unknown) =>
+  typeof g === "string" && (g.startsWith("/") || g.startsWith("~") || g.split(/[\\/]/).includes(".."));
+
+export function fileArgsInsideWorkspace(tool: string, input: unknown): boolean {
+  const args = (input ?? {}) as Record<string, unknown>;
+  if (tool === "Read") return typeof args.file_path === "string" && inside(args.file_path);
+  if (tool === "Glob") return inside(args.path) && !escapes(args.pattern);
+  if (tool === "Grep") return inside(args.path) && !escapes(args.glob);
+  return false;
+}

@@ -9,17 +9,17 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { ALLOWED, DASHBOARD_DENIED } from "./tools.js";
+import { ALLOWED, DASHBOARD_DENIED, FILE_TOOLS } from "./tools.js";
 
 const q = query({
   prompt: "Reply with OK.",
   options: {
     model: "claude-sonnet-5-5",
     cwd: process.env.AGENT_WORKDIR ?? process.cwd(),
-    tools: [],
+    tools: FILE_TOOLS,
     skills: [],
     settingSources: ["user"],
-    allowedTools: ALLOWED,
+    allowedTools: [...ALLOWED, ...FILE_TOOLS],
     disallowedTools: DASHBOARD_DENIED,
     permissionMode: "dontAsk",
     maxTurns: 1,
@@ -40,7 +40,7 @@ for await (const m of q) {
     }
     const builtins = m.tools.filter((t) => !t.startsWith("mcp__"));
     console.log(`built-in tools: ${builtins.length ? builtins.join(", ") : "none"}`);
-    if (builtins.length) ok = false;
+    if (builtins.some((t) => !FILE_TOOLS.includes(t))) ok = false;
   }
   if (m.type === "result") console.log(`model reply: ${m.subtype === "success" ? m.result : m.subtype}`);
 }

@@ -23,6 +23,7 @@ import { Greeting } from "@/components/home/Greeting";
 import { WeatherCard } from "@/components/home/WeatherCard";
 import { HomeSummary } from "@/components/home/HomeSummary";
 import { ClientCard } from "@/components/home/ClientCard";
+import { TeamStreak, TeamLeaderboard } from "@/components/presence/Presence";
 
 export const metadata: Metadata = { title: "Home" };
 export const dynamic = "force-dynamic";
@@ -37,7 +38,10 @@ export default async function HomePage() {
       <Header title="Home" />
       <main className="page-frame flex flex-col gap-[26px] px-5 pb-14 pt-6 lg:px-8">
         <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <Greeting name={name} now={new Date().toISOString()} />
+          <div className="flex min-w-0 flex-col gap-2.5">
+            <Greeting name={name} now={new Date().toISOString()} />
+            <TeamStreak />
+          </div>
           <WeatherCard />
         </section>
 
@@ -50,6 +54,8 @@ export default async function HomePage() {
             ))}
           </div>
         </section>
+
+        <TeamLeaderboard />
       </main>
     </>
   );

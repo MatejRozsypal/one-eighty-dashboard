@@ -36,6 +36,7 @@ import {
 } from "@/components/shell/NavigationPending";
 import { DeltaModeProvider } from "@/components/ui/DeltaMode";
 import { WhatsNew } from "@/components/whatsnew/WhatsNew";
+import { Heartbeat } from "@/components/presence/Heartbeat";
 import { DELTA_COOKIE, resolveDeltaMode } from "@/lib/params";
 
 export default async function AppLayout({
@@ -172,6 +173,9 @@ export default async function AppLayout({
 
       {/* Once per person, after the page is interactive. Renders null until then. */}
       <WhatsNew />
+
+      {/* Presence for streaks and the Home leaderboard. Internal roles only: clients are never tracked. */}
+      {isInternal && <Heartbeat />}
     </div>
     </HistoryProvider>
     </DeltaModeProvider>

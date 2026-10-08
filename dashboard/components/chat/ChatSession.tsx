@@ -46,7 +46,9 @@ import {
 } from "@/lib/chat/models";
 
 /** Shared by Home and the Assistant, so a choice made in one holds in the other. */
-const MODEL_KEY = "one-eighty:chat-model";
+// v2: Sonnet became the default (2026-10-08); a new key resets earlier picks
+// of Opus once, so nobody stays on the priciest model by accident.
+const MODEL_KEY = "one-eighty:chat-model:v2";
 
 function storedModel(): string {
   try {

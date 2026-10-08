@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Which model answers: Opus or Sonnet, as a pair of pills under the box.
+ * Which model answers: Sonnet (default), Haiku or Opus, as pills under the box.
  *
  * One component for the Assistant composer and the Home box, reading and
  * writing the one choice in `ChatSession`, so picking Sonnet on Home is still

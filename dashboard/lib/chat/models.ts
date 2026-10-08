@@ -12,12 +12,18 @@ export interface ChatModel {
   hint: string;
 }
 
+/**
+ * Cheapest first after the default. Sonnet is the default: about a quarter of
+ * Opus per answer and enough for most questions. Haiku is for quick lookups
+ * (one number, one fact) at a fraction of Sonnet. Opus for the hard ones.
+ */
 export const CHAT_MODELS: readonly ChatModel[] = [
-  { id: "claude-opus-5-5", label: "Opus 5.5", hint: "Deeper analysis" },
-  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", hint: "Faster, cheaper" },
+  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", hint: "Most questions" },
+  { id: "claude-haiku-5-5", label: "Haiku 5.5", hint: "Quick lookups, cheapest" },
+  { id: "claude-opus-5-5", label: "Opus 5.5", hint: "Deeper analysis, priciest" },
 ];
 
-export const DEFAULT_CHAT_MODEL = CHAT_MODELS[0].id;
+export const DEFAULT_CHAT_MODEL = "claude-sonnet-5-5";
 
 export function isChatModel(id: unknown): id is string {
   return typeof id === "string" && CHAT_MODELS.some((m) => m.id === id);

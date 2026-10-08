@@ -8,9 +8,10 @@ Type=simple
 User=oeagent
 Group=oeagent
 WorkingDirectory=/var/lib/oe-agent/work
-# ANTHROPIC_API_KEY (and the rest) for the Claude Code runs it starts.
-EnvironmentFile=/etc/oe-agent/agent.env
-# JWT_SECRET for CloudCLI's own login.
+# cloudcli.env only, NOT agent.env: CloudCLI is Matěj's personal Claude Code,
+# so it runs on his subscription (CLAUDE_CODE_OAUTH_TOKEN from `claude
+# setup-token`). An ANTHROPIC_API_KEY in its environment would take precedence
+# and bill the API instead. Also holds JWT_SECRET for CloudCLI's own login.
 EnvironmentFile=/etc/oe-agent/cloudcli.env
 Environment=HOME=/home/oeagent
 # CloudCLI binds 0.0.0.0 by default; only Caddy may reach it.

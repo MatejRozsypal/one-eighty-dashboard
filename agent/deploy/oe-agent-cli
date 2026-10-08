@@ -6,7 +6,9 @@
 # cloudcli.env), and every write asks for approval. Extra arguments go to `claude`.
 set -euo pipefail
 exec sudo -u oeagent -H bash -c '
-  set -a; . /etc/oe-agent/agent.env; . /etc/oe-agent/cloudcli.env; set +a
+  # cloudcli.env only: the terminal runs on Matěj'"'"'s subscription, like CloudCLI.
+  set -a; . /etc/oe-agent/cloudcli.env; set +a
+  unset ANTHROPIC_API_KEY
   cd /var/lib/oe-agent/work
   exec claude "$@"
 ' oe-agent-cli "$@"

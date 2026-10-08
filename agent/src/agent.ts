@@ -35,8 +35,17 @@ export interface Turn {
   user: string;
 }
 
-const MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5"]);
-export const isModel = (m: unknown): m is string => typeof m === "string" && MODELS.has(m);
+/**
+ * Effort per model, the main cost lever after the model itself. Chat questions
+ * rarely need deep thinking: Sonnet and Haiku at medium, Opus (picked for hard
+ * questions) at high.
+ */
+const EFFORT: Record<string, "medium" | "high"> = {
+  "claude-sonnet-5-5": "medium",
+  "claude-haiku-5-5": "medium",
+  "claude-opus-5-5": "high",
+};
+export const isModel = (m: unknown): m is string => typeof m === "string" && m in EFFORT;
 
 const SERVER_LABEL: Record<string, string> = {
   bigquery: "BigQuery",
@@ -101,7 +110,7 @@ export async function runTurn(
     prompt: single(turn),
     options: {
       model: turn.model,
-      effort: "high",
+      effort: EFFORT[turn.model],
       systemPrompt: systemPrompt("dashboard"),
       cwd: process.env.AGENT_WORKDIR ?? process.cwd(),
       tools: FILE_TOOLS,
@@ -116,7 +125,7 @@ export async function runTurn(
       hooks: { PreToolUse: [{ hooks: [readOnlyGuard] }] },
       includePartialMessages: true,
       maxTurns: Number(process.env.AGENT_MAX_TURNS ?? 40),
-      maxBudgetUsd: Number(process.env.AGENT_MAX_BUDGET_USD ?? 3),
+      maxBudgetUsd: Number(process.env.AGENT_MAX_BUDGET_USD ?? 1),
       ...(turn.sessionId ? { resume: turn.sessionId } : {}),
       abortController: abort,
       env: {

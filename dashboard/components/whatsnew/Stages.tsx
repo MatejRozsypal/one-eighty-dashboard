@@ -61,27 +61,25 @@ const OLD_MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 export interface Beat {
   title: string;
   body: string;
-  /** How long this beat holds before the sequence advances, in ms. */
-  ms: number;
   /** The before and after of this change, for the reduced-motion summary. */
   before: string;
   after: string;
 }
 
 /**
- * Timings. With the closing card they sum to 9.7 seconds.
+ * The beats, in order.
  *
- * The weighting is uneven, which is the difference between a tour and a
- * slideshow. The period controls get 2.2s because the popover has to open,
- * show its presets and fill a range, and the range picker is the piece a
- * person is most likely to need on their first day. The surface change gets
- * 1.1s because it is one crossfade and reads instantly.
+ * There are no durations here any more. Each beat's transition plays in
+ * roughly 0.6 to 1.3 seconds when it is entered and then the beat simply
+ * stays, because the person steps it. The ordering is still deliberate: the
+ * sidebar first because it is the change somebody notices before they have
+ * clicked anything, then the two Goals changes together, then the controls,
+ * then the surface, which is the one that needs no explaining at all.
  */
 export const BEATS: Beat[] = [
   {
     title: "The sidebar carries the whole app",
     body: "Every section has an icon now, with its pages indented underneath it. The Paid and Creative views moved out of the tab row above the page and into the menu, and Reports is new.",
-    ms: 1700,
     before:
       "A flat list of text links. Paid's views sat in a tab row above the page, and there was no Reports.",
     after:
@@ -90,7 +88,6 @@ export const BEATS: Beat[] = [
   {
     title: "Goals is one page",
     body: "Targets lived in a Settings form, and pacing lived on a separate Plan page. It is one Goals page now, carrying CM3 and aMER beside revenue, orders, new customers and ad spend.",
-    ms: 1500,
     before:
       "Targets typed into a Settings form and read on one page, with pacing on a separate Plan page.",
     after:
@@ -99,7 +96,6 @@ export const BEATS: Beat[] = [
   {
     title: "Status became a ring",
     body: "One full turn of the ring is the goal for the period, and the dot marks where the plan says you should be today. The gap between them is what is missing.",
-    ms: 1800,
     before:
       "A small uppercase pill, which named the status but gave no sense of how far through the goal you were.",
     after:
@@ -108,7 +104,6 @@ export const BEATS: Beat[] = [
   {
     title: "Pick a period properly",
     body: "Period, comparison, delta and currency are pills with icons now. The presets run from today to all time, and the calendar takes any range you like.",
-    ms: 2200,
     before:
       "A bordered button with the dates on it, and grey segmented groups beside it. Today was not offered as a preset.",
     after:
@@ -117,7 +112,6 @@ export const BEATS: Beat[] = [
   {
     title: "A calmer page",
     body: "The page lost its green cast for a plain neutral, the cards softened, and labels and figures are set in Inter instead of a monospace.",
-    ms: 1100,
     before:
       "A green tinted off white page, with labels and figures in a monospace.",
     after: "A neutral page, softer cards, and Inter in place of the monospace.",
@@ -127,7 +121,6 @@ export const BEATS: Beat[] = [
 export const CLOSING = {
   title: "That is the new dashboard",
   body: "Nothing moved out of reach. The same numbers, easier to read.",
-  ms: 1400,
 };
 
 /* ====================================================================== */
@@ -157,6 +150,17 @@ function StateLabel({ children }: { children: React.ReactNode }) {
  * cell so they swap in place. Both are absolutely positioned and centred, so
  * neither one's height decides where the other sits.
  */
+/**
+ * The stage box is one fixed height for every beat, so the panel does not
+ * resize as somebody steps through it.
+ *
+ * 262px is the tallest mock (the new sidebar, at 258) plus a little. The two
+ * layers are absolutely positioned, so a mock taller than this box does not
+ * push it open, it simply gets cut off by the stage's `overflow-hidden`, which
+ * is how the sidebar's Reports row was being shaved. If a future beat is
+ * taller than this, raise the number here and in the two stages below that set
+ * their own height.
+ */
 function Swap({
   before,
   after,
@@ -168,7 +172,7 @@ function Swap({
   afterDelay?: number;
 }) {
   return (
-    <div className="relative flex h-[228px] w-full items-center justify-center">
+    <div className="relative flex h-[262px] w-full items-center justify-center">
       <div className="wn-before absolute inset-0 flex items-center justify-center">
         {before}
       </div>
@@ -888,7 +892,7 @@ const OLD_BORDER = "#E4E4E1";
 function SurfaceStage() {
   return (
     <div
-      className="wn-surface flex h-[228px] w-full flex-col items-center justify-center gap-3 rounded-[16px]"
+      className="wn-surface flex h-[262px] w-full flex-col items-center justify-center gap-3 rounded-[16px]"
       style={
         {
           "--wn-old-page": OLD_PAGE,
@@ -951,7 +955,7 @@ function SurfaceStage() {
 
 function ClosingStage() {
   return (
-    <div className="flex h-[228px] w-full flex-col items-center justify-center gap-3">
+    <div className="flex h-[262px] w-full flex-col items-center justify-center gap-3">
       <svg width="66" height="66" viewBox="0 0 68 68" aria-hidden="true">
         <circle
           className="wn-check-ring"
@@ -1015,10 +1019,19 @@ export function Stage({ index }: { index: number | "closing" }) {
 /**
  * What somebody with `prefers-reduced-motion` set sees instead.
  *
- * The same five changes and the same closing line, as a static before and
- * after list. Nothing animates, nothing advances on a timer, and there is no
- * progress bar, because there is no sequence to be partway through. It is
- * taller than the panel on a phone, so it scrolls.
+ * The same five changes and the same closing line, as one static before and
+ * after list. Nothing animates and nothing is stepped.
+ *
+ * ── Why this is not stepped, now that the main path is ────────────────────
+ * Stepping exists to let a person control the pace of motion. There is no
+ * motion here, so there is nothing to pace, and splitting the list across six
+ * clicks would add work without adding anything: it would make the five
+ * changes harder to compare, impossible to scan, and it would mean pressing
+ * Next five times to reach a Close that is already on screen. Reading order is
+ * the reader's either way. The consistency worth keeping is that both paths
+ * carry the same content and the same ways out, and they do.
+ *
+ * It is taller than the panel on a phone, so it scrolls.
  */
 export function StaticSummary({
   titleId,

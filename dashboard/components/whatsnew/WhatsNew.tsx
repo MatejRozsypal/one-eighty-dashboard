@@ -3,9 +3,11 @@
 /**
  * "What's new": a short, once per person tour of the redesign.
  *
- * Five beats and a closing card, 9.7 seconds end to end, auto-advancing. Each
- * beat shows one thing that changed, as the old state turning into the new
- * one. The visuals are DOM and CSS drawn with the app's own design tokens, so
+ * Five beats and a closing card, stepped by the person rather than by a timer.
+ * Each beat shows one thing that changed, as the old state turning into the new
+ * one, and then waits. The motion is still brisk inside a beat, because the
+ * before-to-after transition is the whole point; what is gone is the clock that
+ * used to drag somebody off a sentence they were still reading. The visuals are DOM and CSS drawn with the app's own design tokens, so
  * the mock sidebar in beat one is the real sidebar's colours and the mock ring
  * in beat three is the real ring's geometry. There is no video, no image and
  * no network request anywhere in it.
@@ -20,9 +22,9 @@
  *  2. It waits for `load`, then for an idle callback, before it appears. By
  *     then the shell has painted and the page's own figures are on screen or
  *     visibly loading. It never covers a blank app.
- *  3. It is dismissible by four separate gestures: the Skip control, the
- *     close control on the final card, Escape, and a click on the backdrop.
- *     Nobody is held for ten seconds.
+ *  3. It is dismissible by three separate gestures at any point: the Skip
+ *     control, Escape, and a click on the backdrop. Nothing has to be stepped
+ *     through to get out of it.
  *
  * ── Where it shows ────────────────────────────────────────────────────────
  * On whichever dashboard page the person lands on, including a deep link into
@@ -123,9 +125,21 @@ function whenIdle(fn: () => void): () => void {
 export function WhatsNew() {
   const [mode, setMode] = useState<Mode | null>(null);
   const [beat, setBeat] = useState(0);
+  /**
+   * The furthest beat anybody has actually arrived at in this run.
+   *
+   * It is what tells Back-then-Next from a first viewing: a beat at or below
+   * this mark has already been watched, so it is rendered in its settled state
+   * instead of replaying its transition. See `settled`.
+   */
+  const [furthest, setFurthest] = useState(0);
+  /** True when the beat on screen is one the person has already watched. */
+  const [settled, setSettled] = useState(false);
   const [recall, setRecall] = useState(false);
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  /** The primary control. Focus lands here on open so Enter works at once. */
+  const nextRef = useRef<HTMLButtonElement>(null);
   /** Where focus was before we took it, so it can be handed back exactly. */
   const returnTo = useRef<Element | null>(null);
 
@@ -179,6 +193,8 @@ export function WhatsNew() {
       markSeen();
       setMode(null);
       setBeat(0);
+      setFurthest(0);
+      setSettled(false);
       // The chip is only worth offering to somebody who cut the sequence
       // short, and only until they have taken it up or waved it away once.
       if (offerRecall && recallOffered()) setRecall(true);
@@ -194,15 +210,40 @@ export function WhatsNew() {
   );
 
   /* ------------------------------------------------------------------ */
-  /* The beat timer                                                     */
+  /* Stepping                                                           */
   /* ------------------------------------------------------------------ */
 
-  useEffect(() => {
-    if (mode !== "auto" && mode !== "replay") return;
-    if (beat >= CLOSING_INDEX) return; // the closing card waits for a person
-    const id = window.setTimeout(() => setBeat((b) => b + 1), BEATS[beat].ms);
-    return () => clearTimeout(id);
-  }, [mode, beat]);
+  /**
+   * Moves to `target`, and decides whether that beat should play or simply be
+   * there.
+   *
+   * A beat at or below `furthest` is one the person has already watched, so
+   * going Back and then forward again does not make them sit through the same
+   * transition a second time; the beat appears already resolved. Only a beat
+   * being reached for the first time animates. That is the difference between
+   * stepping back to check something and being re-shown a performance.
+   */
+  const goTo = useCallback(
+    (target: number) => {
+      if (target < 0 || target > CLOSING_INDEX) return;
+      setSettled(target <= furthest);
+      setFurthest((f) => Math.max(f, target));
+      setBeat(target);
+    },
+    [furthest]
+  );
+
+  const atClosing = beat >= CLOSING_INDEX;
+
+  /** The primary action: forward, or out when there is nowhere further. */
+  const advance = useCallback(() => {
+    if (atClosing) close(false);
+    else goTo(beat + 1);
+  }, [atClosing, beat, goTo, close]);
+
+  const goBack = useCallback(() => {
+    if (beat > 0) goTo(beat - 1);
+  }, [beat, goTo]);
 
   /* ------------------------------------------------------------------ */
   /* Focus: take it, trap it, give it back                              */
@@ -211,10 +252,12 @@ export function WhatsNew() {
   useEffect(() => {
     if (!mode) return;
     returnTo.current = document.activeElement;
-    // The panel itself is the focus target rather than the Skip button: a
-    // screen reader should hear the dialog's name and its first beat, not land
-    // on "Skip" with no idea what it would be skipping.
-    panelRef.current?.focus({ preventScroll: true });
+    // Focus goes to Next, so Enter and Space work the moment the dialog opens
+    // without anybody having to find the control first. The dialog is named by
+    // the beat's heading, so a screen reader still hears what it is before it
+    // hears the button. The static summary has no Next, and falls back to the
+    // panel.
+    (nextRef.current ?? panelRef.current)?.focus({ preventScroll: true });
 
     // A tall overlay over a scrollable dashboard invites scrolling the page
     // behind it, which is disorienting while the thing on top is moving.
@@ -233,6 +276,28 @@ export function WhatsNew() {
         close(true);
         return;
       }
+
+      // Stepping. The arrows are unconditional; Enter and Space are not,
+      // because a focused button activates itself on both, and handling them
+      // here as well would fire the action twice. Whatever has focus is
+      // already the right thing to activate, so this only picks up the keys
+      // when focus is somewhere inert, such as the panel itself.
+      if (mode !== "still") {
+        const target = e.target as HTMLElement | null;
+        const onControl =
+          target?.tagName === "BUTTON" || target?.tagName === "A";
+        if (e.key === "ArrowRight" || ((e.key === "Enter" || e.key === " ") && !onControl)) {
+          e.preventDefault();
+          advance();
+          return;
+        }
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          goBack();
+          return;
+        }
+      }
+
       if (e.key !== "Tab") return;
       const panel = panelRef.current;
       if (!panel) return;
@@ -261,7 +326,7 @@ export function WhatsNew() {
     }
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [mode, close]);
+  }, [mode, close, advance, goBack]);
 
   /* ------------------------------------------------------------------ */
   /* Render                                                             */
@@ -285,8 +350,8 @@ export function WhatsNew() {
   }
 
   const isStill = mode === "still";
-  const atClosing = beat >= CLOSING_INDEX;
   const current = atClosing ? CLOSING : BEATS[beat];
+  const steps = BEATS.length + 1;
 
   return (
     <div className="wn-root fixed inset-0 z-[200] flex items-end justify-center sm:items-center">
@@ -303,10 +368,12 @@ export function WhatsNew() {
       />
 
       {/*
-        `oe-health` is the redesign's token scope. Carrying it here means the
-        overlay is drawn in the new language (white cards, Inter, the status
-        colours the rings use) whether or not the scope has reached the rest of
-        the app yet, and it keeps looking right once it has.
+        No `oe-health` class here any more. It used to carry the redesign's
+        token scope onto this panel while the rest of the app was still on the
+        house look. The rollout has since moved that scope to <html>, where it
+        is written `:root.oe-health`, so a copy of the class on this element
+        matches nothing and the tokens arrive by inheritance instead. Leaving
+        the class on would have been a comment that claimed to be code.
       */}
       <div
         ref={panelRef}
@@ -314,22 +381,13 @@ export function WhatsNew() {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="oe-health wn-panel relative z-10 flex max-h-[94dvh] w-full max-w-[640px] flex-col overflow-hidden rounded-t-[22px] bg-paper pb-[var(--safe-bottom)] shadow-lg outline-none sm:rounded-[22px] sm:pb-0"
+        className="wn-panel relative z-10 flex max-h-[94dvh] w-full max-w-[640px] flex-col overflow-hidden rounded-t-[22px] bg-paper pb-[var(--safe-bottom)] shadow-lg outline-none sm:rounded-[22px] sm:pb-0"
       >
-        {/* ---- Head: label, progress, Skip ---- */}
-        <div className="flex flex-none items-start justify-between gap-3 px-5 pt-4 sm:px-7 sm:pt-5">
-          <div className="flex min-w-0 flex-col gap-2.5">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-content-muted">
-              What&rsquo;s new
-            </span>
-            {!isStill && (
-              <ProgressRail
-                count={BEATS.length + 1}
-                index={Math.min(beat, CLOSING_INDEX)}
-                ms={atClosing ? CLOSING.ms : BEATS[beat].ms}
-              />
-            )}
-          </div>
+        {/* ---- Head: label and Skip ---- */}
+        <div className="flex flex-none items-center justify-between gap-3 px-5 pt-4 sm:px-7 sm:pt-5">
+          <span className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-content-muted">
+            What&rsquo;s new
+          </span>
 
           {/* 44px minimum touch target, per the brief, which is why the label
               is padded rather than merely sized. */}
@@ -350,12 +408,33 @@ export function WhatsNew() {
                 Keyed by beat, so each beat's subtree mounts fresh and its
                 animations start from their first frame. No animation is ever
                 asked to restart, which is the class of bug that makes a
-                sequence like this look broken on the second viewing. */}
+                sequence like this look broken on the second viewing.
+
+                `wn-settled` is how a revisited beat is shown already resolved:
+                it pushes every animation in the subtree past its own end, and
+                they all fill both ways, so the end state is what paints. It is
+                a stylesheet rule rather than a pass over `getAnimations()`,
+                which means it is applied before the first paint and cannot
+                flash the "before" state on the way through. */}
             <div
               key={beat}
-              className="flex min-h-0 flex-auto flex-col gap-4 overflow-hidden px-5 pb-5 pt-4 sm:gap-5 sm:px-7 sm:pb-7 sm:pt-5"
+              className={`flex min-h-0 flex-auto flex-col gap-4 overflow-hidden px-5 pt-4 sm:gap-5 sm:px-7 sm:pt-5 ${
+                settled ? "wn-settled" : ""
+              }`}
             >
-              <div className="flex flex-none flex-col gap-1.5">
+              {/*
+                The copy is a live region so a screen reader hears each beat as
+                it arrives. Focus stays on Next between beats, deliberately, so
+                without this the heading and the body would change in silence.
+              */}
+              <div
+                aria-live="polite"
+                aria-atomic="true"
+                className="flex flex-none flex-col gap-1.5"
+              >
+                <span className="sr-only">
+                  Step {Math.min(beat, CLOSING_INDEX) + 1} of {steps}
+                </span>
                 <h2
                   id={titleId}
                   className="wn-copy text-[19px] font-semibold leading-[1.25] tracking-heading text-content-strong sm:text-[22px]"
@@ -376,16 +455,54 @@ export function WhatsNew() {
               <div className="flex min-h-0 flex-auto items-center justify-center">
                 <Stage index={atClosing ? "closing" : beat} />
               </div>
+            </div>
 
-              {atClosing && (
-                <button
-                  type="button"
-                  onClick={() => close(false)}
-                  className="wn-copy-body flex h-11 flex-none items-center justify-center rounded-[999px] bg-ink-900 px-6 text-[14.5px] font-semibold text-content-inverse transition-colors duration-fast hover:bg-ink-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
-                >
-                  Start looking around
-                </button>
-              )}
+            {/* ---- Controls ----
+                Outside the keyed stage, so the row is one set of elements for
+                the whole sequence rather than a new one per beat. That is what
+                keeps focus on Next as the beats change: remounting the button
+                would drop focus back to the body and Enter would stop working
+                halfway through. */}
+            <div className="flex flex-none items-center justify-between gap-3 px-5 pb-5 pt-1 sm:px-7 sm:pb-7">
+              {/*
+                Back is rendered on the first beat too, disabled and invisible,
+                so the row does not reflow and the dots do not jump sideways
+                the moment somebody presses Next. Disabled keeps it out of the
+                tab order and out of the focus trap's list.
+              */}
+              <button
+                type="button"
+                onClick={goBack}
+                disabled={beat === 0}
+                aria-hidden={beat === 0}
+                className={`flex h-11 flex-none items-center justify-center rounded-[999px] px-4 text-[14px] font-medium text-content-body transition-colors duration-fast hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] ${
+                  beat === 0 ? "invisible" : ""
+                }`}
+              >
+                Back
+              </button>
+
+              {/*
+                The dots stand down on the last card at phone width. "Start
+                looking around" is a long label, and Back plus the dots plus
+                that button is about 12px more than a 375px row has; something
+                had to give, and a position indicator reading six of six is
+                the least useful thing in the row once you are at the end.
+              */}
+              <StepDots
+                count={steps}
+                index={Math.min(beat, CLOSING_INDEX)}
+                className={atClosing ? "hidden sm:flex" : "flex"}
+              />
+
+              <button
+                ref={nextRef}
+                type="button"
+                onClick={advance}
+                className="flex h-11 flex-none items-center justify-center rounded-[999px] bg-ink-900 px-4 text-[14.5px] font-semibold text-content-inverse sm:px-5 transition-colors duration-fast hover:bg-ink-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+              >
+                {atClosing ? "Start looking around" : "Next"}
+              </button>
             </div>
           </>
         )}
@@ -395,43 +512,48 @@ export function WhatsNew() {
 }
 
 /* ====================================================================== */
-/* The progress rail                                                      */
+/* The step dots                                                          */
 /* ====================================================================== */
 
 /**
- * One segment per beat: filled behind, filling now, empty ahead.
+ * Where you are in the sequence, as dots.
  *
- * `aria-hidden` because it is a restatement of position in a sequence that is
- * already narrated by the heading changing, and a live progress bar announcing
- * itself six times in ten seconds would be noise.
+ * It replaced a segmented bar that filled over each beat's duration. That bar
+ * was honest while a timer was running and became a lie the moment the person
+ * took the pace: a bar that fills on its own says "this is running out", which
+ * is the one thing this no longer does. Dots say position and nothing else.
+ *
+ * The current dot is a wider pill rather than merely a darker circle, so the
+ * position is readable without relying on the difference between two greys.
+ * Visited dots stay dark, which makes the row read as progress rather than as
+ * a set of equal options.
+ *
+ * `aria-hidden`: the same information is in the "Step 3 of 6" line that the
+ * live region reads out with each beat, and a screen reader does not need it
+ * twice.
  */
-function ProgressRail({
+function StepDots({
   count,
   index,
-  ms,
+  className = "flex",
 }: {
   count: number;
   index: number;
-  ms: number;
+  className?: string;
 }) {
   return (
-    <span aria-hidden="true" className="flex items-center gap-1.5">
+    <span aria-hidden="true" className={`min-w-0 items-center gap-1.5 ${className}`}>
       {Array.from({ length: count }, (_, i) => (
         <span
           key={i}
-          className="h-[3px] w-6 overflow-hidden rounded-[999px] bg-gray-150 sm:w-7"
-        >
-          <span
-            className={`block h-full rounded-[999px] bg-content-strong ${
-              i === index ? "wn-progress-fill" : ""
-            }`}
-            style={
-              i === index
-                ? ({ "--wn-beat": `${ms}ms` } as React.CSSProperties)
-                : { transform: i < index ? "scaleX(1)" : "scaleX(0)" }
-            }
-          />
-        </span>
+          className={`h-[6px] rounded-[999px] transition-all duration-base ${
+            i === index
+              ? "w-[18px] bg-content-strong"
+              : i < index
+                ? "w-[6px] bg-content-strong/45"
+                : "w-[6px] bg-gray-200"
+          }`}
+        />
       ))}
     </span>
   );
@@ -459,7 +581,7 @@ function RecallChip({
   onDismiss: () => void;
 }) {
   return (
-    <div className="oe-health wn-recall fixed bottom-[calc(1rem+var(--safe-bottom))] left-4 z-[150] flex items-center gap-0.5 rounded-[999px] bg-paper p-1 shadow-lg">
+    <div className="wn-recall fixed bottom-[calc(1rem+var(--safe-bottom))] left-4 z-[150] flex items-center gap-0.5 rounded-[999px] bg-paper p-1 shadow-lg">
       <button
         type="button"
         onClick={onOpen}

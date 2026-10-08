@@ -156,6 +156,59 @@ export function briefQuota(cap: number | null, queued: number | null): number | 
 }
 
 // ---------------------------------------------------------------------------
+// Inputs: measured, saved, resolved
+// ---------------------------------------------------------------------------
+
+/**
+ * The seven inputs of the Plan page. Saved per client in Postgres
+ * (`velocity_inputs`); a null saved field means "use the measured value", so a
+ * saved row never freezes a number nobody typed. `newShare` and `hitRate` are
+ * shares (0..1). `targetNewAds` has no measured value: it is a decision.
+ */
+export interface VelocityInputs {
+  monthlySpend: number | null;
+  newShare: number | null;
+  cpa: number | null;
+  verdictN: number | null;
+  adsPerPack: number | null;
+  hitRate: number | null;
+  targetNewAds: number | null;
+}
+
+export const VELOCITY_INPUT_KEYS = [
+  "monthlySpend",
+  "newShare",
+  "cpa",
+  "verdictN",
+  "adsPerPack",
+  "hitRate",
+  "targetNewAds",
+] as const satisfies readonly (keyof VelocityInputs)[];
+
+export const EMPTY_VELOCITY_INPUTS: VelocityInputs = {
+  monthlySpend: null, newShare: null, cpa: null, verdictN: null,
+  adsPerPack: null, hitRate: null, targetNewAds: null,
+};
+
+/** Saved where present, measured otherwise, field by field. */
+export function resolveInputs(saved: VelocityInputs | null, measured: VelocityInputs): VelocityInputs {
+  const out = { ...measured };
+  if (saved) for (const k of VELOCITY_INPUT_KEYS) out[k] = saved[k] ?? measured[k];
+  return out;
+}
+
+export function toCapacityInputs(v: VelocityInputs): CapacityInputs {
+  return {
+    spend: v.monthlySpend,
+    share: v.newShare,
+    cpa: v.cpa,
+    verdictN: v.verdictN,
+    adsPerPack: v.adsPerPack,
+    hitRate: v.hitRate,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Tier
 // ---------------------------------------------------------------------------
 

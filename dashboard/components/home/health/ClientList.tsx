@@ -11,7 +11,7 @@ import type { ChipTone, ClientRow } from "@/lib/home/health/types";
 import { Chevron } from "./Icons";
 import { family } from "./palette";
 
-const CHIP: Record<ChipTone, { text: string; bg: string }> = {
+export const CHIP: Record<ChipTone, { text: string; bg: string }> = {
   positive: { text: "var(--h-positive-text)", bg: "var(--h-positive-tint)" },
   info: { text: "var(--h-info-text)", bg: "var(--h-info-tint)" },
   warning: { text: "var(--h-warning-text)", bg: "var(--h-warning-tint)" },

@@ -52,6 +52,8 @@ export interface ClientHealth {
   /** The task status in ClickUp Client Success > Clients (steady, onboarding, churned). */
   crmStatus: string | null;
   crmUrl: string | null;
+  /** Why the ClickUp fields are missing (token refused, list unreadable, no matching task). Null when matched. */
+  crmNote?: string | null;
   /** Last day of data in the plan actuals. */
   asOf: string | null;
   /** Month label of the pacing rows ("October 2026"). */

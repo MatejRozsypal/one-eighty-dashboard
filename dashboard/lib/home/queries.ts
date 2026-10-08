@@ -366,10 +366,15 @@ function buildClient(client: Client, crm: CrmClient | undefined, s: Sources): Cl
           pct: contract?.profitSharePct ?? null,
         };
 
-  const crmGap =
-    s.crm.state === "not_configured"
+  // A client found in the rows that were read keeps its ClickUp fields even
+  // when a later page of the list failed; only the unmatched ones say why.
+  const crmGap = crm
+    ? null
+    : s.crm.state === "not_configured"
       ? "ClickUp not connected."
-      : unreadable("the ClickUp Clients list", s.crm.state) ?? (crm ? null : "No matching task in the ClickUp Clients list.");
+      : s.crm.state === "denied"
+        ? "ClickUp refused the token for the Clients list."
+        : unreadable("the ClickUp Clients list", s.crm.state) ?? "No matching task in the ClickUp Clients list.";
   const retainer =
     contract?.retainerCzk !== null && contract?.retainerCzk !== undefined
       ? { ...figure(contract.retainerCzk, null), source: "contract" as const }
@@ -403,6 +408,7 @@ function buildClient(client: Client, crm: CrmClient | undefined, s: Sources): Cl
     registryStatus: client.status,
     crmStatus: crm?.status ?? null,
     crmUrl: crm?.url ?? null,
+    crmNote: crmGap,
     asOf: rows[0]?.asOf || act?.asOf || null,
     monthLabel: rows[0]?.label ?? monthName(act?.asOf ? `${act.asOf.slice(0, 7)}-01` : null),
     focus,
@@ -425,6 +431,7 @@ function buildClient(client: Client, crm: CrmClient | undefined, s: Sources): Cl
 function invoiceNote(crm: CrmClient | undefined, read: CrmRead): string | null {
   if (crm?.lastInvoice) return null;
   if (read.invoiceState === "not_configured") return "ClickUp not connected.";
+  if (read.invoiceState === "denied") return "ClickUp refused the token for the Invoice Tracker.";
   return (
     unreadable("the ClickUp Invoice Tracker", read.invoiceState) ??
     (crm ? "No invoice for this client in the ClickUp Invoice Tracker." : "No matching task in the ClickUp Clients list.")

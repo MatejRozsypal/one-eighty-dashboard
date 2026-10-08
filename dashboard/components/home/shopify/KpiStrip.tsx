@@ -18,7 +18,8 @@ function display(k: Kpi): string {
   return formatNumber(k.value);
 }
 
-function Cell({ k }: { k: Kpi }) {
+/** One cell of the strip; exported for Home, which lays out its own strip. */
+export function KpiCell({ k }: { k: Kpi }) {
   const missing = k.value === null;
   const tip = [k.tip, k.note].filter(Boolean).join(" ");
   const partial = !missing && k.clients.included < k.clients.total;
@@ -46,9 +47,9 @@ function Cell({ k }: { k: Kpi }) {
         />
       </div>
       <Sparkline data={k.series} tone={missing ? "muted" : "accent"} width={160} height={26} className="mt-1" />
-      {partial && (
+      {(partial || k.caption) && (
         <span className="text-[11.5px] leading-[1.3] text-content-muted">
-          {k.clients.included} of {k.clients.total} clients
+          {[k.caption, partial ? `${k.clients.included} of ${k.clients.total} clients` : null].filter(Boolean).join(" · ")}
         </span>
       )}
     </div>
@@ -67,7 +68,7 @@ export function KpiStrip({ kpis }: { kpis: Kpi[] }) {
           key={k.key}
           className={`min-w-0 bg-surface-card ${i === kpis.length - 1 && kpis.length % 2 === 1 ? "col-span-2 lg:col-span-1" : ""}`}
         >
-          <Cell k={k} />
+          <KpiCell k={k} />
         </div>
       ))}
     </section>

@@ -12,7 +12,23 @@ import "server-only";
  * A failed read never takes the page down and never reads as zero: the state
  * comes back with the rows and every affected figure renders n/a with the
  * reason. The status code and body go to the server log.
+ *
+ * ── One failing call never blanks the others ──────────────────────────────
+ * The two lists are read independently and each keeps its own state. Within a
+ * list, a page that fails after earlier pages were read keeps those rows (the
+ * state then says the list is incomplete). A timeout, a 429 or a 5xx is tried
+ * once more before it counts as a failure; a 401, 403 or 404 is final.
+ *
+ * Read once per request (`perRequest`), so a page that renders several
+ * sections from `getHomeData()` asks ClickUp once.
+ *
+ * Note (2026-10-08): the n/a on /home that day was a rejected token, not this
+ * code: the production logs show `401 Token invalid (OAUTH_025)` only from
+ * deployments built before CLICKUP_API_TOKEN was replaced, and Vercel bakes
+ * environment variables into a deployment at build time.
  */
+
+import * as React from "react";
 
 import type { InvoiceLine, SourceState } from "./types";
 
@@ -31,7 +47,13 @@ const FIELD = {
 } as const;
 
 const API = "https://api.clickup.com/api/v2";
-const TIMEOUT_MS = 5000;
+/** Per attempt. ClickUp list reads with custom fields can take several seconds under load. */
+const TIMEOUT_MS = 8000;
+/** Pause before the single retry of a transient failure. */
+const RETRY_MS = 400;
+
+const perRequest: <F extends (...args: never[]) => unknown>(fn: F) => F =
+  (React as unknown as { cache?: <F>(fn: F) => F }).cache ?? ((fn) => fn);
 
 interface RawField {
   id: string;
@@ -78,28 +100,53 @@ function stateOf(status: number): SourceState {
   return "error";
 }
 
+/** Worth one more try: a timeout or dropped connection (status 0), rate limiting, a server error. */
+function transient(status: number): boolean {
+  return status === 0 || status === 429 || status >= 500;
+}
+
+type PageResult =
+  | { ok: true; tasks: RawTask[]; lastPage: boolean }
+  | { ok: false; status: number; detail: string };
+
+async function fetchPage(listId: string, page: number, auth: string): Promise<PageResult> {
+  try {
+    const res = await fetch(`${API}/list/${listId}/task?include_closed=true&subtasks=false&page=${page}`, {
+      headers: { Authorization: auth },
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { ok: false, status: res.status, detail: body.slice(0, 300) };
+    }
+    const json = (await res.json()) as { tasks?: RawTask[]; last_page?: boolean };
+    const tasks = json.tasks ?? [];
+    return { ok: true, tasks, lastPage: json.last_page !== false || tasks.length === 0 };
+  } catch (error) {
+    return { ok: false, status: 0, detail: String((error as Error)?.message ?? error) };
+  }
+}
+
 async function listTasks(listId: string, auth: string): Promise<{ state: SourceState; tasks: RawTask[] }> {
   const tasks: RawTask[] = [];
   // A list of clients or monthly invoices is far below one page; the loop is a
   // guard, capped so a misbehaving API cannot hold the page.
   for (let page = 0; page < 5; page++) {
-    try {
-      const res = await fetch(
-        `${API}/list/${listId}/task?include_closed=true&subtasks=false&page=${page}`,
-        { headers: { Authorization: auth }, cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) }
-      );
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        console.error(`[home] ClickUp list ${listId} failed: ${res.status} ${body.slice(0, 300)}`);
-        return { state: stateOf(res.status), tasks: [] };
-      }
-      const json = (await res.json()) as { tasks?: RawTask[]; last_page?: boolean };
-      tasks.push(...(json.tasks ?? []));
-      if (json.last_page !== false || (json.tasks ?? []).length === 0) break;
-    } catch (error) {
-      console.error(`[home] ClickUp list ${listId} unreachable: ${(error as Error)?.message ?? error}`);
-      return { state: "error", tasks: [] };
+    let result = await fetchPage(listId, page, auth);
+    if (!result.ok && transient(result.status)) {
+      await new Promise((r) => setTimeout(r, RETRY_MS));
+      result = await fetchPage(listId, page, auth);
     }
+    if (!result.ok) {
+      console.error(
+        `[home] ClickUp list ${listId} page ${page} ${result.status ? `failed: ${result.status}` : "unreachable:"} ${result.detail}`
+      );
+      // Rows already read stay: a later page failing does not blank them.
+      return { state: result.status ? stateOf(result.status) : "error", tasks };
+    }
+    tasks.push(...result.tasks);
+    if (result.lastPage) break;
   }
   return { state: "ok", tasks };
 }
@@ -148,7 +195,9 @@ function periodOf(task: RawTask): string {
   return `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCFullYear()).slice(2)}`;
 }
 
-export async function readCrm(): Promise<CrmRead> {
+export const readCrm = perRequest(readCrmOnce);
+
+async function readCrmOnce(): Promise<CrmRead> {
   const auth = token();
   if (!auth) return { state: "not_configured", invoiceState: "not_configured", clients: [] };
 

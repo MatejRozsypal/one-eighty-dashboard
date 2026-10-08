@@ -184,3 +184,38 @@ Notes on the wireframe: the scenario cells are Ethia's sheet inputs run through 
 5. One month in parallel with the sheet for Ethia, then retire the tab (Q7).
 
 Depends on task 1 being deployed (280c fills the ad set mart; 280 makes the ClickUp queue mappable).
+
+---
+
+## 9. Owner decisions, 2026-10-08 (second round), and the revised model
+
+Decided:
+- Q1 replace the current Velocity page. Q2 one Velocity area with three sub-pages in the sidebar (This month, Plan, Track record), the same pattern as Breakdown.
+- Q3 verdict N = Settings read-at N. Q4 CPA = actual (trailing 90 days, 7d click + 1d view).
+- Q5 packs always run side by side. A new pack is launched beside the live ones; the CBO decides whether it takes spend. Old packs are switched off only when they clearly waste spend.
+- Q6 every input lives ON THE PAGE, editable per client, saved for the whole team (not in Settings). Spend changes month to month; the page is where the team works.
+- Hit rate: SOP (trailing 12 months, section 11.1 winner rule).
+- No-touch window is computed, never typed: at least 7 days, longer until the pack has had the money for N purchases. No upper cap below 30.
+
+Revised model (replaces section 2):
+
+```
+new-creative spend a month   B = spend x new-creative share        (share: measured, editable)
+verdict cost                 V = N x CPA
+verdicts a month                 B / V
+daily money for one new pack d = B / days_in_month                 (if one pack is launched at a time)
+window                       w = max(7, V / d)                      (days until N purchases are paid for)
+packs launched at once k         each gets d / k, window = max(7, k x V / d)
+ads per pack                     A (editable); warning when d / A < 0.5 x CPA (SOP per-ad signal floor)
+new ads a month (capacity)       verdicts a month x A
+```
+
+Worked example, Ethia, from the warehouse on 2026-10-08 (arithmetic on measured inputs, N = 10):
+spend last 30 days 35,900 Kc; CPA 554 Kc; share of spend on creative in its first 14 days 28.9 % -> B about 10,400 Kc a month.
+V = 5,540 Kc. Verdicts a month about 1.9. One pack at a time gets about 341 Kc a day and reaches 10 purchases in about 16 days,
+so the window is 16 days, not 7. A 7-day window needs about 791 Kc a day on the new pack, i.e. about 24,000 Kc a month on new creative.
+At 4 ads per pack: about 7.5 new ads a month, and each ad gets about 85 Kc a day against a SOP per-ad floor of 277 (warning).
+
+Proposed (to confirm):
+- New-creative share default = measured share of spend on ads in their first 14 days (Ethia 28.9 %, Manami 27.2 %, last 30 days), editable.
+- Queue = ClickUp ad tasks from `brief: approved` up to `ready to upload` (approved, in production, in editing, production QA, trial reel, ready to upload), shown as "ready" (ready to upload) and "in the works" (the rest). `brief: in progress` and `awaiting approval` shown separately as "being briefed", not counted.

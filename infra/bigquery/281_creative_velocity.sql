@@ -21,7 +21,9 @@
 --               production QA, trial reel)
 --     briefing  `brief: in progress`, `brief: awaiting approval` (shown, not
 --               counted as queue)
---   Statuses outside these (backlog, live, killed) are not queue.
+--     other     every other status (backlog, live, killed): not queue, but it
+--               tells a client with a ClickUp board and an empty queue (0) from
+--               a client without one (n/a)
 --
 -- First-day caveat: an ad or ad set already running when the insights history
 --   starts gets that start date as its first day. The Velocity screens skip the
@@ -42,10 +44,10 @@ WITH firsts AS (
   FROM `oneeighty-warehouse.mart.mart_creative_perf`
   WHERE spend > 0
 ),
-ad_first AS (
+ad_starts AS (
   SELECT DISTINCT client_id, ad_id, ad_first FROM firsts
 ),
-adset_first AS (
+adset_starts AS (
   SELECT DISTINCT client_id, adset_id, adset_first FROM firsts
 ),
 days AS (
@@ -57,13 +59,13 @@ days AS (
     SUM(IF(DATE_DIFF(p.date, f.ad_first, DAY) BETWEEN 0 AND 13, p.spend, 0)) AS new_creative_spend,
     ANY_VALUE(p.currency)                                          AS currency
   FROM `oneeighty-warehouse.mart.mart_creative_perf` p
-  LEFT JOIN ad_first f
+  LEFT JOIN ad_starts f
     ON f.client_id = p.client_id AND f.ad_id = p.ad_id
   GROUP BY p.client_id, p.date
 ),
 packs AS (
   SELECT client_id, adset_first AS date, COUNT(*) AS new_packs
-  FROM adset_first
+  FROM adset_starts
   WHERE adset_id IS NOT NULL
   GROUP BY client_id, adset_first
 )
@@ -97,8 +99,8 @@ FROM (
       WHEN REGEXP_CONTAINS(s, r'brief: ?approved')                   THEN 'in_works'
       WHEN REGEXP_CONTAINS(s, r'production|editing|\bqa\b|trial reel') THEN 'in_works'
       WHEN REGEXP_CONTAINS(s, r'^brief')                             THEN 'briefing'
+      ELSE 'other'
     END AS bucket
   FROM tasks
 )
-WHERE bucket IS NOT NULL
 GROUP BY client_id, bucket;

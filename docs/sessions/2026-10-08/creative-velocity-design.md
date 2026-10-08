@@ -131,8 +131,8 @@ Per client page (tiers, CPA, hit rates differ). Cross client gets one table in t
 |---|---|---|---|
 | Q1 | Replace the current Velocity page? | Replace / add a sixth page | Replace (A1) |
 | Q2 | One page with three bands? | Three bands / two pages / mode switch | Three bands (B2) |
-| Q3 | What N defines a verdict for capacity? | Settings "read at" N (Ethia 10) / test size (25) / a new field | Read-at N, the number decisions are actually taken on (SOP 11.5). 25 stays the "confident" line shown beside it |
-| Q4 | Which CPA drives capacity? | Actual trailing 90 days / Settings target CPA | Actual: capacity is what the money really buys. Target shown as the "if we hit target" line |
+| Q3 | What N defines a verdict for capacity? | **Decided 2026-10-08: Settings "read at" N** (Ethia 10) | |
+| Q4 | Which CPA drives capacity? | **Decided 2026-10-08: actual CPA** on the decision basis | |
 | Q5 | Parallel packs for MID and LARGE? | Yes (SOP) / keep one at a time | Yes, it is the SOP, and it is the only way extra budget buys more learning |
 | Q6 | Where do t, A, L and target ads a month live? | Settings / ClickUp plan / page inputs | Settings, beside the thresholds |
 | Q7 | Retire the sheet tab once the page exists? | Yes / keep both | Yes, after one month of both agreeing on Ethia |

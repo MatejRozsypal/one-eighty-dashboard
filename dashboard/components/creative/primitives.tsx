@@ -162,7 +162,7 @@ export function StatusChip({ status }: { status: string | null }) {
   };
   return (
     <span
-      className={`inline-flex items-center whitespace-nowrap rounded-xs px-2 py-[3px] font-mono text-[10.5px] font-semibold uppercase tracking-[0.09em] ${styles[tone]}`}
+      className={`inline-flex w-fit items-center whitespace-nowrap rounded-xs px-2 py-[3px] font-mono text-[10.5px] font-semibold uppercase tracking-[0.09em] ${styles[tone]}`}
     >
       {label}
     </span>

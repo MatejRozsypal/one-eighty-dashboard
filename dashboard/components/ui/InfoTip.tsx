@@ -11,68 +11,98 @@
  * hover). It never closes a tip that hover opened. It closes on Escape, on a
  * press outside, or when the pointer leaves an unpinned tip.
  *
- * Placement starts below and left-aligned. After the tip is rendered it is
- * measured once, before paint: near the right edge it aligns to the right edge
- * of the (i), near the bottom edge of the viewport it opens above.
+ * ── Placement ──────────────────────────────────────────────────────────────
+ * The tip is portalled to <body> with `position: fixed`, so no parent with
+ * `overflow: hidden` (a card, a strip, a table wrapper) can cut it off. It is
+ * measured before paint: below the (i) and left-aligned by default, above it
+ * when there is no room below, and shifted sideways to stay 8 px inside the
+ * viewport. It follows the (i) on scroll and resize while open.
  */
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-
-interface Placement {
-  right: boolean;
-  above: boolean;
-}
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const EDGE = 8;
-const HOME: Placement = { right: false, above: false };
+const GAP = 6;
+
+interface Position {
+  top: number;
+  left: number;
+}
+
+/** Where the tip goes for an (i) at `anchor`, given the tip's size and the viewport. Pure. */
+export function placeTip(
+  anchor: { top: number; bottom: number; left: number },
+  tip: { width: number; height: number },
+  viewport: { width: number; height: number },
+): Position {
+  const maxLeft = viewport.width - EDGE - tip.width;
+  const left = Math.max(EDGE, Math.min(anchor.left, maxLeft));
+  const below = anchor.bottom + GAP;
+  const above = anchor.top - GAP - tip.height;
+  const fitsBelow = below + tip.height <= viewport.height - EDGE;
+  const fitsAbove = above >= EDGE;
+  const top = fitsBelow || !fitsAbove ? below : above;
+  return { top, left };
+}
 
 /** Hover/focus tooltip with plain text. */
 export function InfoTip({ text, label = "More info" }: { text: string; label?: string }) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const [placement, setPlacement] = useState<Placement>(HOME);
+  const [pos, setPos] = useState<Position | null>(null);
   const id = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
   const tipRef = useRef<HTMLSpanElement>(null);
 
-  // Measure at the default position and flip once if it would be cut off.
-  useLayoutEffect(() => {
-    if (!open) {
-      setPlacement(HOME);
-      return;
-    }
+  const measure = useCallback(() => {
     const tip = tipRef.current;
     const root = rootRef.current;
     if (!tip || !root) return;
-    const t = tip.getBoundingClientRect();
     const r = root.getBoundingClientRect();
-    const right = t.right > window.innerWidth - EDGE && r.right - t.width >= EDGE;
-    const above =
-      t.bottom > window.innerHeight - EDGE && r.top - t.height - EDGE >= EDGE;
-    setPlacement((p) => (p.right === right && p.above === above ? p : { right, above }));
-  }, [open]);
+    const next = placeTip(
+      r,
+      { width: tip.offsetWidth, height: tip.offsetHeight },
+      { width: document.documentElement.clientWidth, height: window.innerHeight },
+    );
+    setPos((p) => (p && p.top === next.top && p.left === next.left ? p : next));
+  }, []);
+
+  // Measured before paint, so the tip never flashes at a wrong spot.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    measure();
+  }, [open, measure]);
 
   useEffect(() => {
     if (!open) return;
+    function close() {
+      setOpen(false);
+      setPinned(false);
+    }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setOpen(false);
-        setPinned(false);
-      }
+      if (e.key === "Escape") close();
     }
     function onPress(e: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setPinned(false);
-      }
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t) || tipRef.current?.contains(t)) return;
+      close();
     }
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onPress);
+    // Capture: a scroll inside any scrolling parent moves the (i) as well.
+    window.addEventListener("scroll", measure, { capture: true, passive: true });
+    window.addEventListener("resize", measure);
     return () => {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onPress);
+      window.removeEventListener("scroll", measure, { capture: true });
+      window.removeEventListener("resize", measure);
     };
-  }, [open]);
+  }, [open, measure]);
 
   return (
     <span ref={rootRef} className="relative inline-flex align-middle normal-case tracking-normal">
@@ -103,18 +133,20 @@ export function InfoTip({ text, label = "More info" }: { text: string; label?: s
         <span aria-hidden="true">ⓘ</span>
       </button>
 
-      {open && (
-        <span
-          ref={tipRef}
-          id={id}
-          role="tooltip"
-          className={`absolute z-[80] w-[260px] max-w-[calc(100vw-16px)] whitespace-normal rounded-md border border-hairline-inverse bg-bg-inverse p-[11px_13px] text-left font-sans text-[12px] font-normal leading-[1.5] text-gray-250 shadow-lg ${
-            placement.right ? "right-0" : "left-0"
-          } ${placement.above ? "bottom-[22px]" : "top-[22px]"}`}
-        >
-          {text}
-        </span>
-      )}
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <span
+            ref={tipRef}
+            id={id}
+            role="tooltip"
+            style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? "visible" : "hidden" }}
+            className="pointer-events-auto fixed z-[90] block w-[260px] max-w-[calc(100vw-16px)] whitespace-normal rounded-md border border-hairline-inverse bg-bg-inverse p-[11px_13px] text-left font-sans text-[12px] font-normal normal-case leading-[1.5] tracking-normal text-gray-250 shadow-lg"
+          >
+            {text}
+          </span>,
+          document.body,
+        )}
     </span>
   );
 }

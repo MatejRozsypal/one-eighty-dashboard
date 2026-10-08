@@ -1,0 +1,555 @@
+/*
+ * Motion for the "what's new" sequence.
+ *
+ * Every class is prefixed `wn-`, and nothing in here selects an app element,
+ * so this file cannot reach anything outside the overlay.
+ *
+ * ── Why plain CSS and no easing library ───────────────────────────────────
+ * Six beats of layered motion is still only a handful of keyframes, and the
+ * curves are two lines. A library would be more bytes than the whole sequence.
+ *
+ * The curves are the dashboard's own motion tokens where one fits:
+ * `--ease-out` is the confident deceleration used for reveals, and the few
+ * places that want a touch of overshoot declare their own, because the token
+ * set deliberately has no bounce in it.
+ *
+ * ── Reduced motion ────────────────────────────────────────────────────────
+ * There is no `prefers-reduced-motion` block here on purpose. When reduced
+ * motion is set, the component renders a different tree entirely, a static
+ * before and after summary with none of these classes on it, so there is no
+ * animation left to switch off. The app's global reduced-motion rule, which
+ * collapses every animation to 0.01ms, would also catch anything that slipped
+ * through, which is the belt to this file's braces.
+ */
+
+/* A beat's own overshoot. Short, flat, and nowhere near a spring. */
+.wn-root {
+  --wn-lift: cubic-bezier(0.19, 1.2, 0.35, 1);
+}
+
+/* ========================================================================
+   The dialog itself
+   ======================================================================== */
+
+@keyframes wn-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes wn-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.wn-backdrop {
+  animation: wn-backdrop-in var(--dur-base) var(--ease-out) both;
+}
+
+.wn-panel {
+  animation: wn-panel-in 320ms var(--ease-out) both;
+}
+
+/* ========================================================================
+   Shared beat entrances
+   ======================================================================== */
+
+@keyframes wn-rise {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes wn-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The outgoing "before" state: it does not merely vanish, it is replaced.
+   Scaling down a touch while it fades is what makes the two states read as
+   one object changing rather than two pictures cutting. */
+@keyframes wn-before-out {
+  0%,
+  22% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.94) translateY(-6px);
+  }
+}
+
+@keyframes wn-after-in {
+  0%,
+  26% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.wn-copy {
+  animation: wn-rise 300ms var(--ease-out) both;
+}
+
+.wn-copy-body {
+  animation: wn-rise 340ms var(--ease-out) 70ms both;
+}
+
+.wn-before {
+  animation: wn-before-out 620ms var(--ease-in-out) both;
+}
+
+.wn-after {
+  animation: wn-after-in 720ms var(--ease-out) both;
+}
+
+/* ========================================================================
+   Beat 1: the sidebar
+   ======================================================================== */
+
+/* Icons arrive from the left into the gutter the rows just opened up. */
+@keyframes wn-icon-in {
+  from {
+    opacity: 0;
+    transform: translateX(-9px) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A section's pages unfolding underneath it. Height is animated on a fixed
+   row count, so there is no measuring and nothing to go wrong at 375px. */
+@keyframes wn-unfold {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    max-height: 120px;
+    transform: none;
+  }
+}
+
+.wn-nav-icon {
+  animation: wn-icon-in 300ms var(--wn-lift) both;
+}
+
+.wn-nav-children {
+  overflow: hidden;
+  animation: wn-unfold 340ms var(--ease-out) both;
+}
+
+/* Reports did not exist before, so it does not fade in with the rest: it
+   drops into the list and the list makes room for it. */
+@keyframes wn-nav-new {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    max-height: 40px;
+    transform: none;
+  }
+}
+
+.wn-nav-new {
+  overflow: hidden;
+  animation: wn-nav-new 360ms var(--wn-lift) both;
+}
+
+/* ========================================================================
+   Beat 2: two pages becoming one
+   ======================================================================== */
+
+@keyframes wn-merge-left {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  60% {
+    opacity: 0.25;
+    transform: translateX(26px) scale(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(32px) scale(0.94);
+  }
+}
+
+@keyframes wn-merge-right {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  60% {
+    opacity: 0.25;
+    transform: translateX(-26px) scale(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-32px) scale(0.94);
+  }
+}
+
+@keyframes wn-merged-in {
+  0%,
+  40% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.wn-merge-left {
+  animation: wn-merge-left 560ms var(--ease-in-out) both;
+}
+
+.wn-merge-right {
+  animation: wn-merge-right 560ms var(--ease-in-out) both;
+}
+
+.wn-merged {
+  animation: wn-merged-in 700ms var(--ease-out) both;
+}
+
+/* The six metric chips, staggered. The two that are new to the page land
+   last and land harder, because they are the point of the beat. */
+@keyframes wn-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.wn-chip {
+  animation: wn-chip-in 260ms var(--wn-lift) both;
+}
+
+/* ========================================================================
+   Beat 3: the pill becoming a ring
+   ======================================================================== */
+
+@keyframes wn-pill-out {
+  0%,
+  18% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.62) rotate(-6deg);
+  }
+}
+
+@keyframes wn-ring-in {
+  0%,
+  22% {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The arc is drawn, not revealed: `stroke-dashoffset` from a full
+   circumference down to the share of the goal reached. */
+@keyframes wn-ring-draw {
+  from {
+    stroke-dashoffset: var(--wn-ring-c);
+  }
+  to {
+    stroke-dashoffset: var(--wn-ring-end);
+  }
+}
+
+@keyframes wn-dot-in {
+  0%,
+  55% {
+    opacity: 0;
+    transform: scale(0.1);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.wn-pill-out {
+  animation: wn-pill-out 420ms var(--ease-in-out) both;
+}
+
+.wn-ring {
+  animation: wn-ring-in 620ms var(--ease-out) both;
+}
+
+.wn-ring-arc {
+  animation: wn-ring-draw 900ms var(--ease-out) 240ms both;
+}
+
+.wn-ring-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wn-dot-in 900ms var(--wn-lift) 240ms both;
+}
+
+/* ========================================================================
+   Beat 4: the period controls
+   ======================================================================== */
+
+/* A select turning into a pill. The flip is on the X axis and deliberately
+   shallow: a full 90 degrees reads as a card trick, 62 reads as the same
+   control changing shape. */
+@keyframes wn-flip {
+  0% {
+    opacity: 1;
+    transform: perspective(520px) rotateX(0deg);
+  }
+  45% {
+    opacity: 0.35;
+    transform: perspective(520px) rotateX(-62deg) translateY(-3px);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(520px) rotateX(0deg);
+  }
+}
+
+.wn-flip {
+  animation: wn-flip 520ms var(--ease-in-out) both;
+}
+
+/* The popover under the period pill: the thing that did not exist before. */
+@keyframes wn-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.wn-popover {
+  transform-origin: top left;
+  animation: wn-popover-in 300ms var(--ease-out) both;
+}
+
+/* The preset rail filling in, one row at a time, fast. */
+.wn-preset {
+  animation: wn-fade 200ms linear both;
+}
+
+/* A calendar day being filled: the two ends go black, the span between them
+   greys. The ends scale in; the span wipes left to right. */
+@keyframes wn-day-end {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes wn-day-span {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.wn-day-end {
+  animation: wn-day-end 240ms var(--wn-lift) both;
+}
+
+.wn-day-span {
+  animation: wn-day-span 420ms var(--ease-out) both;
+}
+
+/* ========================================================================
+   Beat 5: the surface
+   ======================================================================== */
+
+/* The page losing its green cast. Both the page and the card change at once,
+   so the beat is one transition rather than two. */
+@keyframes wn-surface {
+  from {
+    background: var(--wn-old-page);
+  }
+  to {
+    background: var(--wn-new-page);
+  }
+}
+
+@keyframes wn-surface-card {
+  from {
+    background: var(--wn-old-card);
+    border-color: var(--wn-old-border);
+    border-radius: 14px;
+    box-shadow: none;
+  }
+  to {
+    background: #ffffff;
+    border-color: var(--border);
+    border-radius: 22px;
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+.wn-surface {
+  animation: wn-surface 760ms var(--ease-in-out) both;
+}
+
+.wn-surface-card {
+  animation: wn-surface-card 760ms var(--ease-in-out) both;
+}
+
+/* The figure changing face. Two copies stacked in the same cell, one leaving
+   and one arriving, so the glyph widths cross over instead of reflowing. */
+@keyframes wn-type-out {
+  0%,
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes wn-type-in {
+  0%,
+  30% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.wn-type-out {
+  animation: wn-type-out 560ms var(--ease-in-out) both;
+}
+
+.wn-type-in {
+  animation: wn-type-in 640ms var(--ease-out) both;
+}
+
+/* ========================================================================
+   The closing card
+   ======================================================================== */
+
+@keyframes wn-check-draw {
+  from {
+    stroke-dashoffset: 34;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes wn-check-ring {
+  from {
+    stroke-dashoffset: 170;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.wn-check-ring {
+  animation: wn-check-ring 620ms var(--ease-out) both;
+}
+
+.wn-check {
+  animation: wn-check-draw 320ms var(--ease-out) 420ms both;
+}
+
+/* ========================================================================
+   The progress rail
+   ======================================================================== */
+
+/* One segment per beat. The active one fills over exactly that beat's
+   duration, which the component passes in as `--wn-beat`. */
+@keyframes wn-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.wn-progress-fill {
+  transform-origin: left center;
+  animation: wn-progress var(--wn-beat) linear both;
+}
+
+/* ========================================================================
+   The recall chip
+   ======================================================================== */
+
+@keyframes wn-chip-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.wn-recall {
+  animation: wn-chip-rise 280ms var(--ease-out) 240ms both;
+}

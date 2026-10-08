@@ -22,6 +22,9 @@ import "server-only";
  * Read once per request (`perRequest`), so a page that renders several
  * sections from `getHomeData()` asks ClickUp once.
  *
+ * `clickupGet` and `readMembers` are the same pattern for other Home reads
+ * (the For you task cards, lib/home/final/myTasks.ts).
+ *
  * Note (2026-10-08): the n/a on /home that day was a rejected token, not this
  * code: the production logs show `401 Token invalid (OAUTH_025)` only from
  * deployments built before CLICKUP_API_TOKEN was replaced, and Vercel bakes
@@ -87,14 +90,14 @@ export interface CrmRead {
   clients: CrmClient[];
 }
 
-function token(): string | null {
+export function clickupToken(): string | null {
   const t = process.env.CLICKUP_API_TOKEN;
   // Same cleaning as lib/creative/clickup.ts: a pasted value often carries a
   // newline or quotes, which turns every call into a 401.
   return t ? t.trim().replace(/^["']|["']$/g, "") : null;
 }
 
-function stateOf(status: number): SourceState {
+export function stateOf(status: number): SourceState {
   if (status === 401 || status === 403) return "denied";
   if (status === 404) return "missing";
   return "error";
@@ -105,27 +108,48 @@ function transient(status: number): boolean {
   return status === 0 || status === 429 || status >= 500;
 }
 
+export type GetResult<T> = { ok: true; json: T } | { ok: false; status: number; detail: string };
+
+/**
+ * One read-only GET with the timeout; a timeout, 429 or 5xx is tried once
+ * more after RETRY_MS. Shared by the list reads below and by the For you task
+ * read (lib/home/final/myTasks.ts).
+ */
+export async function clickupGet<T>(path: string, auth: string): Promise<GetResult<T>> {
+  const once = async (): Promise<GetResult<T>> => {
+    try {
+      const res = await fetch(`${API}${path}`, {
+        headers: { Authorization: auth },
+        cache: "no-store",
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return { ok: false, status: res.status, detail: body.slice(0, 300) };
+      }
+      return { ok: true, json: (await res.json()) as T };
+    } catch (error) {
+      return { ok: false, status: 0, detail: String((error as Error)?.message ?? error) };
+    }
+  };
+  const first = await once();
+  if (first.ok || !transient(first.status)) return first;
+  await new Promise((r) => setTimeout(r, RETRY_MS));
+  return once();
+}
+
 type PageResult =
   | { ok: true; tasks: RawTask[]; lastPage: boolean }
   | { ok: false; status: number; detail: string };
 
 async function fetchPage(listId: string, page: number, auth: string): Promise<PageResult> {
-  try {
-    const res = await fetch(`${API}/list/${listId}/task?include_closed=true&subtasks=false&page=${page}`, {
-      headers: { Authorization: auth },
-      cache: "no-store",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return { ok: false, status: res.status, detail: body.slice(0, 300) };
-    }
-    const json = (await res.json()) as { tasks?: RawTask[]; last_page?: boolean };
-    const tasks = json.tasks ?? [];
-    return { ok: true, tasks, lastPage: json.last_page !== false || tasks.length === 0 };
-  } catch (error) {
-    return { ok: false, status: 0, detail: String((error as Error)?.message ?? error) };
-  }
+  const result = await clickupGet<{ tasks?: RawTask[]; last_page?: boolean }>(
+    `/list/${listId}/task?include_closed=true&subtasks=false&page=${page}`,
+    auth
+  );
+  if (!result.ok) return result;
+  const tasks = result.json.tasks ?? [];
+  return { ok: true, tasks, lastPage: result.json.last_page !== false || tasks.length === 0 };
 }
 
 async function listTasks(listId: string, auth: string): Promise<{ state: SourceState; tasks: RawTask[] }> {
@@ -133,11 +157,7 @@ async function listTasks(listId: string, auth: string): Promise<{ state: SourceS
   // A list of clients or monthly invoices is far below one page; the loop is a
   // guard, capped so a misbehaving API cannot hold the page.
   for (let page = 0; page < 5; page++) {
-    let result = await fetchPage(listId, page, auth);
-    if (!result.ok && transient(result.status)) {
-      await new Promise((r) => setTimeout(r, RETRY_MS));
-      result = await fetchPage(listId, page, auth);
-    }
+    const result = await fetchPage(listId, page, auth);
     if (!result.ok) {
       console.error(
         `[home] ClickUp list ${listId} page ${page} ${result.status ? `failed: ${result.status}` : "unreachable:"} ${result.detail}`
@@ -198,7 +218,7 @@ function periodOf(task: RawTask): string {
 export const readCrm = perRequest(readCrmOnce);
 
 async function readCrmOnce(): Promise<CrmRead> {
-  const auth = token();
+  const auth = clickupToken();
   if (!auth) return { state: "not_configured", invoiceState: "not_configured", clients: [] };
 
   const [clients, invoices] = await Promise.all([
@@ -239,6 +259,41 @@ async function readCrmOnce(): Promise<CrmRead> {
     }),
   };
 }
+
+/** The agency's ClickUp workspace. */
+export const CLICKUP_TEAM_ID = "90151448219";
+
+export interface ClickUpMember {
+  id: string;
+  name: string;
+  email: string;
+}
+
+/**
+ * Workspace members (GET /team), read once per request. Used to find the
+ * signed-in person's ClickUp member by email.
+ */
+export const readMembers = perRequest(
+  async (): Promise<{ state: SourceState; members: ClickUpMember[] }> => {
+    const auth = clickupToken();
+    if (!auth) return { state: "not_configured", members: [] };
+    type User = { id: number; username: string | null; email: string | null };
+    const result = await clickupGet<{ teams?: Array<{ id: string; members?: Array<{ user: User }> }> }>("/team", auth);
+    if (!result.ok) {
+      console.error(`[home] ClickUp members ${result.status ? `failed: ${result.status}` : "unreachable:"} ${result.detail}`);
+      return { state: result.status ? stateOf(result.status) : "error", members: [] };
+    }
+    const team = result.json.teams?.find((t) => String(t.id) === CLICKUP_TEAM_ID);
+    if (!team) return { state: "denied", members: [] };
+    return {
+      state: "ok",
+      members: (team.members ?? [])
+        .map((m) => m.user)
+        .filter((u) => u.email)
+        .map((u) => ({ id: String(u.id), name: u.username ?? u.email!, email: u.email!.toLowerCase() })),
+    };
+  }
+);
 
 /** Lowercase, no diacritics, first word: "Dobias Healing Solutions" -> "dobias". */
 export function matchKey(name: string): string {

@@ -412,7 +412,7 @@ BEGIN
       a.brief_url,
       a.created_date,
       a.creative_id_raw,
-      -- The brief template's own placeholder is not a name. Eleven Manami tasks
+      -- The brief template's own placeholder is not a name. Fourteen Manami tasks
       -- still carry it; matching on it would pair every such task with nothing
       -- or, worse, with each other.
       REGEXP_CONTAINS(IFNULL(a.task_name, ''), r'PersonaID-NAME|STAGE \| FORMAT') AS is_placeholder,

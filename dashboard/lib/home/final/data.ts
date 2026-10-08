@@ -213,3 +213,6 @@ export async function loadClientTiles(): Promise<ClientTile[]> {
   const [h, rows] = await Promise.all([home(), daily()]);
   return buildClientTiles(h.clients, toSeries(rows.value ?? []));
 }
+
+/** Shared with lib/home/final/alerts.ts (For you), same per-request memo. */
+export { ruleInput, velocity as velocityForRequest, rates as ratesForRequest };

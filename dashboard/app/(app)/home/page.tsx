@@ -40,13 +40,11 @@ import { HomeKpiStrip, StripThrough } from "@/components/home/final/KpiStrip";
 import { ClientCardsSkeleton } from "@/components/home/final/ClientCards";
 import {
   ChipsSkeleton,
-  GreetingLine,
-  GreetingLineSkeleton,
   HomeChips,
   HomeClients,
   RecommendationsSkeleton,
 } from "@/components/home/final/Sections";
-import { TeamStreak, TeamLeaderboard } from "@/components/presence/Presence";
+import { TeamLeaderboard } from "@/components/presence/Presence";
 import { LeaderboardCardSkeleton } from "@/components/presence/LeaderboardCard";
 import { DailyQuote } from "@/components/home/DailyQuote";
 import { HomeForYou, HomePromotions, PromotionsSkeleton } from "@/components/home/final/AlertSections";
@@ -65,63 +63,63 @@ export default async function HomePage() {
   return (
     <>
       <Header title="Home" />
-      <main className="page-frame flex flex-col gap-6 px-4 pb-14 pt-5 sm:px-5 lg:px-8">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={PILL}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-content-muted">
-                  <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
-                </svg>
-                Last 30 days
-                <Suspense fallback={null}>
-                  <StripThrough />
-                </Suspense>
+      <main className="page-frame flex flex-col gap-6 px-4 pb-14 pt-5 [container-type:inline-size] sm:px-5 lg:px-8">
+        {/*
+          Shopify keeps its globe in the top-right corner; the leaderboard
+          takes that place. Measured on the content area (a container query),
+          so the sidebar's width counts. From 1040 px of content: two
+          columns, everything on the left, the weather and the leaderboard
+          card in the right one from the very top. Narrower: one column with
+          the card under the strip.
+        */}
+        <div className="flex flex-col gap-6 [@container(min-width:1040px)]:grid [@container(min-width:1040px)]:grid-cols-[minmax(0,1fr)_288px] [@container(min-width:1040px)]:items-start [@container(min-width:1040px)]:gap-x-8">
+          <div className="flex min-w-0 flex-col gap-4 [@container(min-width:1040px)]:col-start-1 [@container(min-width:1040px)]:row-start-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={PILL}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-content-muted">
+                    <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+                  </svg>
+                  Last 30 days
+                  <Suspense fallback={null}>
+                    <StripThrough />
+                  </Suspense>
+                </span>
+                <span className={PILL}>All clients · CZK</span>
+              </div>
+              <span className="[@container(min-width:1040px)]:hidden">
+                <WeatherChip />
               </span>
-              <span className={PILL}>All clients · CZK</span>
             </div>
-            <WeatherChip />
+            <HomeKpiStrip />
           </div>
-          <HomeKpiStrip />
-        </div>
 
-        <div className="flex flex-col gap-5 py-6 [container-type:inline-size] sm:py-10">
-          {/*
-            Measured on the content area (a container query), not the window,
-            so the sidebar's width counts. From 960 px of content: three
-            columns, the leaderboard card in the right one and an empty one of
-            the same width on the left, so the greeting and the box stay
-            centred and the card never pushes them. Narrower: one column, the
-            card first, right under the strip.
-          */}
-          <div className="flex flex-col gap-6 [@container(min-width:960px)]:grid [@container(min-width:960px)]:grid-cols-[minmax(232px,1fr)_minmax(0,720px)_minmax(232px,1fr)] [@container(min-width:960px)]:items-start [@container(min-width:960px)]:gap-x-5">
-            <aside
-              aria-label="Leaderboard"
-              className="w-full [@container(min-width:960px)]:col-start-3 [@container(min-width:960px)]:row-start-1 [@container(min-width:960px)]:max-w-[296px] [@container(min-width:960px)]:justify-self-end"
-            >
+          <aside
+            aria-label="Leaderboard"
+            className="flex w-full flex-col items-end gap-3 [@container(min-width:1040px)]:col-start-2 [@container(min-width:1040px)]:row-span-2 [@container(min-width:1040px)]:row-start-1"
+          >
+            <span className="hidden [@container(min-width:1040px)]:inline-flex">
+              <WeatherChip />
+            </span>
+            <div className="w-full">
               <Suspense fallback={<LeaderboardCardSkeleton />}>
                 <TeamLeaderboard />
               </Suspense>
-            </aside>
-            <section aria-label="Assistant" className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 text-center [@container(min-width:960px)]:col-start-2 [@container(min-width:960px)]:row-start-1">
+            </div>
+          </aside>
+
+          <div className="flex min-w-0 flex-col gap-5 py-4 [@container(min-width:1040px)]:col-start-1 [@container(min-width:1040px)]:row-start-2 sm:py-8">
+            <section aria-label="Assistant" className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 text-center">
               <div className="flex flex-col items-center gap-3">
-                <div className="flex flex-col items-center gap-2">
-                  <GreetingHeader name={name} now={new Date().toISOString()} />
-                  <Suspense fallback={<GreetingLineSkeleton />}>
-                    <GreetingLine />
-                  </Suspense>
-                </div>
-                <Suspense fallback={null}>
-                  <TeamStreak />
-                </Suspense>
+                <GreetingHeader name={name} now={new Date().toISOString()} />
                 <DailyQuote />
               </div>
               <AssistantBox />
             </section>
+            <Suspense fallback={<ChipsSkeleton />}>
+              <HomeChips />
+            </Suspense>
           </div>
-          <Suspense fallback={<ChipsSkeleton />}>
-            <HomeChips />
-          </Suspense>
         </div>
 
         <Suspense fallback={<PromotionsSkeleton />}>

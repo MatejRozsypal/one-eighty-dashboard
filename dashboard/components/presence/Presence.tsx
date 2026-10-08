@@ -20,5 +20,5 @@ export async function TeamStreak() {
 export async function TeamLeaderboard() {
   const board = await getPresenceBoard();
   if (!board || board.rows.length === 0) return null;
-  return <LeaderboardCard rows={board.rows} />;
+  return <LeaderboardCard rows={board.rows} countsWeekends={board.countsWeekends} />;
 }

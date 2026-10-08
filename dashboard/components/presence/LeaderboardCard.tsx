@@ -14,6 +14,7 @@
 
 import { useMemo, useState } from "react";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { FlameStreak } from "@/components/presence/StreakBadge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatNumber } from "@/lib/format";
 import { XP_RULES, levelFor, type XpWindow } from "@/lib/presence/xp";
@@ -108,7 +109,15 @@ function Row({ row, rank, win }: { row: PresenceRow; rank: number; win: CardWind
   );
 }
 
-export function LeaderboardCard({ rows, initialWindow = "week" }: { rows: PresenceRow[]; initialWindow?: CardWindow }) {
+export function LeaderboardCard({
+  rows,
+  initialWindow = "week",
+  countsWeekends = true,
+}: {
+  rows: PresenceRow[];
+  initialWindow?: CardWindow;
+  countsWeekends?: boolean;
+}) {
   const [win, setWin] = useState<CardWindow>(initialWindow);
   const [all, setAll] = useState(false);
   const ranked = useMemo(() => rankRows(rows, win), [rows, win]);
@@ -119,6 +128,7 @@ export function LeaderboardCard({ rows, initialWindow = "week" }: { rows: Presen
 
   return (
     <div className={CARD}>
+      {viewer && <FlameStreak row={viewer} countsWeekends={countsWeekends} />}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="m-0 inline-flex items-center gap-1 text-[15px] font-semibold text-content-strong">
           Leaderboard

@@ -246,11 +246,11 @@ function Tile({
     tone === "muted"
       ? "text-content-muted"
       : tone === "winner"
-        ? "text-positive"
+        ? "text-positive-text"
         : tone === "promising"
           ? "text-positive/70"
           : tone === "negative"
-            ? "text-negative"
+            ? "text-negative-text"
             : "text-content-strong";
 
   return (

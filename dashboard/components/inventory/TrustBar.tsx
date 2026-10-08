@@ -46,7 +46,7 @@ export function TrustBar({ summary }: { summary: InventorySummary }) {
           <strong
             className={
               (costCoverage ?? 0) < 0.8
-                ? "font-semibold text-negative"
+                ? "font-semibold text-negative-text"
                 : "font-semibold text-content-strong"
             }
           >
@@ -58,7 +58,7 @@ export function TrustBar({ summary }: { summary: InventorySummary }) {
         {summary.negativeStockCount > 0 && (
           <>
             <span className="text-hairline-strong">·</span>
-            <span className="text-negative">
+            <span className="text-negative-text">
               {formatNumber(summary.negativeStockCount)} SKUs with negative stock
             </span>
           </>

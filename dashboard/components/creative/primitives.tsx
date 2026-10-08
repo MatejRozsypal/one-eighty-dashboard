@@ -96,9 +96,9 @@ const VERDICT_STYLES: Record<VerdictCode, string> = {
   "aggressive-scale": "bg-accent-soft text-growth-700",
   hold: "bg-gray-100 text-content-muted",
   iterate: "bg-warning/10 text-warning",
-  kill: "bg-negative/10 text-negative",
+  kill: "bg-negative/10 text-negative-700",
   "too-early": "bg-info/10 text-info",
-  "data-missing": "bg-negative/10 text-negative",
+  "data-missing": "bg-negative/10 text-negative-700",
   "needs-more-data": OUTLINE,
   "not-separable": OUTLINE,
 };

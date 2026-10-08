@@ -59,7 +59,7 @@ export function RateDiff({
   }
 
   const arrow = parts.flat ? "→" : parts.change > 0 ? "▲" : "▼";
-  const color = diff.verdict === "up" ? "text-positive" : diff.verdict === "down" ? "text-negative" : "text-content-muted";
+  const color = diff.verdict === "up" ? "text-positive-text" : diff.verdict === "down" ? "text-negative-text" : "text-content-muted";
 
   return (
     <span className="inline-flex items-center gap-2">

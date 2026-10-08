@@ -104,7 +104,7 @@ export default async function StockHealthPage({
     {
       label: "At risk",
       value: summary.valueAtRisk,
-      tone: "text-negative",
+      tone: "text-negative-text",
       info: `Under ${COVER_AT_RISK_DAYS} days of cover.`,
     },
     {

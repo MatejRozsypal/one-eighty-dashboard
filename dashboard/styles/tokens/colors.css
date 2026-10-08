@@ -43,6 +43,19 @@
   --warning-700: #8A5B0A;
   /* Amber text on the dark tooltip surface. */
   --warning-300: #F0C070;
+  /* Text steps for the two status colours, for type on a light surface.
+     --positive and --negative stay as they are: they draw chart series,
+     platform tags and dots, where 3:1 is the bar, and #12B76A measures 2.6:1
+     and #E5484D 3.9:1 on white as type. These are the Health skin's text
+     steps (5.0:1 and 4.7:1 on white), with the hex as the fallback so the
+     product keeps them if the skin is ever taken off.
+     --negative-700 is for red type on its own pink tint (a pill, a hover):
+     the tint costs about half a point of contrast, which the text step above
+     cannot spare. On the dark chrome and the dark tooltips keep
+     --negative: these steps are too dark for them. */
+  --positive-text: var(--h-positive-text, #1C7F45);
+  --negative-text: var(--h-negative-text, #D8332A);
+  --negative-700: #C92D24;
   --info:     #0866FF;
 
   /* ---- Platform (product/dashboard UI kit only) ---- */

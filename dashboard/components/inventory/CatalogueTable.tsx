@@ -94,7 +94,7 @@ export function CatalogueTable({
                 </span>,
                 <span
                   className={`font-mono text-[12.5px] tabular ${
-                    r.negativeStock ? "text-negative" : "text-content-body"
+                    r.negativeStock ? "text-negative-text" : "text-content-body"
                   }`}
                 >
                   <Value>{formatNumber(r.onHand)}</Value>
@@ -124,7 +124,7 @@ function GradeChip({ grade }: { grade: AbcGrade }) {
     grade === "A"
       ? "bg-accent-soft text-growth-700"
       : grade === "D"
-        ? "bg-negative/10 text-negative"
+        ? "bg-negative/10 text-negative-700"
         : "bg-gray-100 text-content-body";
   return (
     <span
@@ -142,7 +142,7 @@ function CoverCell({ row }: { row: InventoryRow }) {
   const state = stockState(row);
   const tone =
     state === "at-risk"
-      ? "text-negative"
+      ? "text-negative-text"
       : state === "overstocked"
         ? "text-content-muted"
         : "text-content-body";

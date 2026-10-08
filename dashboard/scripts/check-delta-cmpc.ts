@@ -93,7 +93,7 @@ async function main() {
   check("scorecard abs: purchases", absHtml.includes(">30<") || absHtml.includes("30</span>"));
   check("scorecard abs: hit rate is still pp", absHtml.includes("7.0 pp"));
   check("scorecard abs: no percent chip left", !/>\s*\d+(\.\d+)?%<\/span>/.test(absHtml.replace(/12\.0%/g, "")) );
-  check("scorecard: CPA up is bad (red)", /text-negative[^>]*>[^<]*<span[^>]*>▲<\/span>CZK 30\.00/.test(absHtml));
+  check("scorecard: CPA up is bad (red)", /text-negative-text[^>]*>[^<]*<span[^>]*>▲<\/span>CZK 30\.00/.test(absHtml));
   check("scorecard: spend up is neutral (muted)", /text-content-muted[^>]*><span[^>]*>▲<\/span>CZK 20,000/.test(absHtml));
   const noChip = html(createElement(Scorecard, { tiles: [{ label: "Spend", value: "CZK 1", change: null }] }), "pct");
   check("scorecard: null change draws no chip", !noChip.includes("▲") && !noChip.includes("▼") && !noChip.includes("→"));

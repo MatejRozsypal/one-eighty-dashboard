@@ -489,7 +489,7 @@ function Notes({
                   </a>
                 )}
                 {problem && (
-                  <span className="text-[12.5px] text-negative">{problem}</span>
+                  <span className="text-[12.5px] text-negative-text">{problem}</span>
                 )}
               </div>
             </div>

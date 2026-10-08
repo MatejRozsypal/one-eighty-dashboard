@@ -150,7 +150,7 @@ export function PeopleList({
               <form action={deleteUserAction}>
                 <input type="hidden" name="id" value={user.id} />
                 <input type="hidden" name="email" value={user.email} />
-                <PendingSubmit className="rounded-control border border-negative/35 px-2.5 py-1.5 font-mono text-[11px] text-negative transition-colors duration-fast hover:bg-notice-negative">
+                <PendingSubmit className="rounded-control border border-negative/35 px-2.5 py-1.5 font-mono text-[11px] text-negative-700 transition-colors duration-fast hover:bg-notice-negative">
                   Remove
                 </PendingSubmit>
               </form>

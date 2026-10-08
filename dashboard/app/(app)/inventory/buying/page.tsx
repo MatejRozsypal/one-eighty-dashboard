@@ -246,7 +246,7 @@ export default async function BuyingPlanPage({
                         <span
                           className={`font-mono text-[12.5px] font-semibold tabular ${
                             (l.daysCover ?? 0) <= 0
-                              ? "text-negative"
+                              ? "text-negative-text"
                               : "text-content-body"
                           }`}
                         >

@@ -101,7 +101,7 @@ export function UnmappedQueue({
             </div>
 
             {done[row.adId] ? (
-              <span className="text-[12.5px] text-positive">{done[row.adId]}</span>
+              <span className="text-[12.5px] text-positive-text">{done[row.adId]}</span>
             ) : (
               <>
                 <div className="min-w-[220px] flex-1 text-[12.5px] text-content-muted">
@@ -152,7 +152,7 @@ export function UnmappedQueue({
                 </div>
 
                 {failed[row.adId] && (
-                  <p className="m-0 w-full text-[12.5px] text-negative">
+                  <p className="m-0 w-full text-[12.5px] text-negative-text">
                     {failed[row.adId]}
                   </p>
                 )}

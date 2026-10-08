@@ -187,7 +187,7 @@ export default async function SettingsPage({
                       <span
                         className={`font-mono text-[11px] ${
                           e.event === "refused"
-                            ? "font-semibold text-negative"
+                            ? "font-semibold text-negative-text"
                             : "text-content-muted"
                         }`}
                       >

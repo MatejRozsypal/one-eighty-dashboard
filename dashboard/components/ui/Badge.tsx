@@ -27,7 +27,7 @@ const VARIANTS: Record<Variant, { pill: string; dot: string }> = {
   accent: { pill: "bg-accent-soft text-growth-700 border-transparent", dot: "bg-accent" },
   live: { pill: "bg-growth-500/[0.12] text-growth-700 border-transparent", dot: "bg-accent" },
   positive: { pill: "bg-growth-50 text-growth-700 border-transparent", dot: "bg-positive" },
-  negative: { pill: "bg-negative/10 text-negative border-transparent", dot: "bg-negative" },
+  negative: { pill: "bg-negative/10 text-negative-700 border-transparent", dot: "bg-negative" },
   inverse: {
     pill: "bg-white/10 text-content-inverse border-white/[0.14]",
     dot: "bg-accent",

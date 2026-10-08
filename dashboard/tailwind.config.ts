@@ -72,8 +72,19 @@ const config: Config = {
         },
 
         // Semantic status, red/amber/blue exist ONLY as status, never decoration
-        positive: token("--positive"),
-        negative: token("--negative"),
+        // `positive` and `negative` are the graphic steps (dots, bars, series,
+        // borders, tints) and the text step on dark surfaces. Type on a light
+        // surface uses `text-positive-text` / `text-negative-text`, and red type
+        // on its own pink tint `text-negative-700`.
+        positive: {
+          DEFAULT: token("--positive"),
+          text: token("--positive-text"),
+        },
+        negative: {
+          DEFAULT: token("--negative"),
+          text: token("--negative-text"),
+          700: token("--negative-700"),
+        },
         warning: {
           DEFAULT: token("--warning"),
           700: token("--warning-700"),

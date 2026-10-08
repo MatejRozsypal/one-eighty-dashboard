@@ -288,7 +288,7 @@ export function CellDelta({
   const flat = Math.abs(delta) < 0.0005;
   const direction = flat ? "flat" : delta > 0 ? "up" : "down";
   const sentiment = goodWhen === "neutral" || flat ? "neutral" : direction === goodWhen ? "good" : "bad";
-  const color = { good: "text-positive", bad: "text-negative", neutral: "text-content-muted" }[sentiment];
+  const color = { good: "text-positive-text", bad: "text-negative-text", neutral: "text-content-muted" }[sentiment];
   const arrow = { up: "▲", down: "▼", flat: "→" }[direction];
   return (
     <span className={`inline-flex items-center gap-[5px] font-mono text-[12px] font-medium tabular ${color}`}>

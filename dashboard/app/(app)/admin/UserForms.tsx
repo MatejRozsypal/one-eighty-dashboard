@@ -150,7 +150,7 @@ export function CreateUserForm({
         <div className="flex items-center gap-3">
           <Submit label="Create user" busy="Creating..." />
           {result?.ok === false && (
-            <span className="text-[12.5px] text-negative">{result.message}</span>
+            <span className="text-[12.5px] text-negative-text">{result.message}</span>
           )}
         </div>
       </form>
@@ -177,7 +177,7 @@ export function ResetPasswordButton({ user }: { user: AppUser }) {
       </form>
       {result?.ok && <TemporaryPassword result={result} />}
       {result?.ok === false && (
-        <span className="text-[12px] text-negative">{result.message}</span>
+        <span className="text-[12px] text-negative-text">{result.message}</span>
       )}
     </div>
   );

@@ -80,8 +80,8 @@ export function DeltaChip({
         : "bad";
 
   const color = {
-    good: "text-positive",
-    bad: "text-negative",
+    good: "text-positive-text",
+    bad: "text-negative-text",
     neutral: "text-content-muted",
   }[sentiment];
 

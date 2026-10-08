@@ -76,7 +76,7 @@ export default async function CataloguePage({
 
   const tiles = [
     { label: "SKUs", value: summary.skuCount, tone: "text-content-strong" },
-    { label: "At risk", value: count("at-risk"), tone: "text-negative" },
+    { label: "At risk", value: count("at-risk"), tone: "text-negative-text" },
     { label: "Healthy", value: count("healthy"), tone: "text-growth-700" },
     {
       label: "Overstocked",
@@ -89,7 +89,7 @@ export default async function CataloguePage({
       value: summary.skuCount - summary.skusWithCost,
       tone:
         summary.skusWithCost < summary.skuCount
-          ? "text-negative"
+          ? "text-negative-text"
           : "text-content-strong",
     },
   ];

@@ -116,7 +116,7 @@ export function RevenueComposition({
                 row.value === NO_VALUE || row.value.endsWith(" only")
                   ? "text-content-muted"
                   : row.negative
-                    ? "text-negative"
+                    ? "text-negative-text"
                     : "text-content-strong"
               }`}
             >

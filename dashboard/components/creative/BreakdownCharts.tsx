@@ -261,16 +261,16 @@ export function IntervalChart({
 
       {(judged
         ? ([
-            [killRoas, "var(--negative)", `kill ${killRoas.toFixed(2)}`],
-            [targetRoas, "var(--accent)", `target ${targetRoas.toFixed(2)}`],
+            [killRoas, "var(--negative)", "var(--negative-text)", `kill ${killRoas.toFixed(2)}`],
+            [targetRoas, "var(--accent)", "var(--accent)", `target ${targetRoas.toFixed(2)}`],
           ] as const)
         : []
-      ).map(([v, col, label]) => (
+      ).map(([v, col, textCol, label]) => (
         <g key={label as string}>
           <line x1={X(v as number)} x2={X(v as number)} y1="4" y2={plotB}
                 stroke={col as string} strokeWidth="1.25" />
           <text x={X(v as number)} y={plotB + 17} textAnchor="middle"
-                fontFamily="var(--font-mono)" fontSize="10.5" fill={col as string}
+                fontFamily="var(--font-mono)" fontSize="10.5" fill={textCol as string}
                 letterSpacing=".05em">
             {label}
           </text>
@@ -300,7 +300,7 @@ export function IntervalChart({
           colour = "var(--growth-700)";
         } else if ((r.ciHigh ?? 0) < killRoas) {
           say = SEPARATION_LABELS["below-kill"];
-          colour = "var(--negative)";
+          colour = "var(--negative-text)";
         } else if (lo >= killRoas) {
           say = SEPARATION_LABELS["profitable-under-target"];
           colour = "var(--text-body)";

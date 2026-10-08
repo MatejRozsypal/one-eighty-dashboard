@@ -192,7 +192,7 @@ function MenuList({ label, entries, close }: { label: string; entries: readonly 
             }}
             className={cx(
               "flex w-full items-center justify-between gap-4 rounded-sm px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-fast focus-visible:bg-gray-100",
-              entry.disabled ? "cursor-not-allowed text-content-muted" : entry.danger ? "text-negative hover:bg-negative/10" : "text-content-body hover:bg-gray-100",
+              entry.disabled ? "cursor-not-allowed text-content-muted" : entry.danger ? "text-negative-700 hover:bg-negative/10" : "text-content-body hover:bg-gray-100",
             )}
           >
             <span>{entry.label}</span>

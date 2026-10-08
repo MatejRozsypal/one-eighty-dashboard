@@ -56,7 +56,7 @@ export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit,
             <button type="button" onClick={onReset} className="rounded-control border border-hairline-strong px-2.5 py-1 text-[12.5px] text-content-body hover:bg-gray-50">
               Reset
             </button>
-            <button type="button" onClick={onRemove} className="rounded-control border border-hairline-strong px-2.5 py-1 text-[12.5px] text-negative hover:bg-negative/10">
+            <button type="button" onClick={onRemove} className="rounded-control border border-hairline-strong px-2.5 py-1 text-[12.5px] text-negative-700 hover:bg-negative/10">
               Remove
             </button>
           </span>
@@ -278,7 +278,7 @@ export type SaveState = "idle" | "saving" | "saved" | "error";
 export function SaveStatus({ state }: { state: SaveState }) {
   const text = state === "saving" ? "Saving" : state === "saved" ? "Saved" : state === "error" ? "Not saved" : "";
   return (
-    <span role="status" aria-live="polite" className={`flex-none whitespace-nowrap text-[12px] ${state === "error" ? "text-negative" : "text-content-muted"}`}>
+    <span role="status" aria-live="polite" className={`flex-none whitespace-nowrap text-[12px] ${state === "error" ? "text-negative-text" : "text-content-muted"}`}>
       {text}
     </span>
   );

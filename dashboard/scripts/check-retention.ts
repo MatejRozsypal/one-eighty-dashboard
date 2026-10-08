@@ -429,12 +429,12 @@ check("months control", withClasses.includes('aria-label="Months shown"'));
   const pct = html(createElement(RateDiff, props), "pct");
   const abs = html(createElement(RateDiff, props), "abs");
   check("chip shows +2.7 pp as 2.7 pp", pct.includes("2.7 pp") && abs.includes("2.7 pp"));
-  check("chip is neutral grey for no clear change", pct.includes("text-content-muted") && !pct.includes("text-positive") && !pct.includes("text-negative"));
+  check("chip is neutral grey for no clear change", pct.includes("text-content-muted") && !pct.includes("text-positive-text") && !pct.includes("text-negative-text"));
   check("chip hover has CI and n", pct.includes(`title="+2.7 pp, 95% CI ${MINUS}2.8 to +7.3, n 488 vs 202"`), pct.slice(0, 400));
   const up = html(createElement(RateDiff, { current: { k: 300, n: 1000 }, previous: { k: 200, n: 1000 }, diff: newcombe({ k: 300, n: 1000 }, { k: 200, n: 1000 }) }), "pct");
   const down = html(createElement(RateDiff, { current: { k: 200, n: 1000 }, previous: { k: 300, n: 1000 }, diff: newcombe({ k: 200, n: 1000 }, { k: 300, n: 1000 }) }), "pct");
-  check("chip green when the range is above 0", up.includes("text-positive") && up.includes("▲"));
-  check("chip red when the range is below 0", down.includes("text-negative") && down.includes("▼") && down.includes(MINUS));
+  check("chip green when the range is above 0", up.includes("text-positive-text") && up.includes("▲"));
+  check("chip red when the range is below 0", down.includes("text-negative-text") && down.includes("▼") && down.includes(MINUS));
   check("chip n/a without a diff", html(createElement(RateDiff, { current: { k: 1, n: 10 }, previous: { k: 3, n: 100 }, diff: null }), "pct").includes("n/a"));
   eq("signed points", [signedPoints(0.0273), signedPoints(-0.0279), signedPoints(0)], ["+2.7", `${MINUS}2.8`, "0.0"]);
   // Entrant counts follow the delta toggle

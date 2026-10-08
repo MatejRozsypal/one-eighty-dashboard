@@ -165,7 +165,7 @@ function ReviewItem({
       </div>
 
       {result?.ok ? (
-        <p className="m-0 text-[12.5px] text-positive">{result.message}</p>
+        <p className="m-0 text-[12.5px] text-positive-text">{result.message}</p>
       ) : (
         <div className="flex flex-col gap-2.5">
           <div className="flex flex-wrap items-center gap-2.5">
@@ -250,7 +250,7 @@ function ReviewItem({
           )}
 
           {result && !result.ok && (
-            <p className="m-0 text-[12.5px] text-negative">{result.message}</p>
+            <p className="m-0 text-[12.5px] text-negative-text">{result.message}</p>
           )}
         </div>
       )}

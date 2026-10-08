@@ -559,9 +559,11 @@ export async function getUnmapped(clientId: string): Promise<UnmappedData> {
   try {
     const [ads, tasks] = await Promise.all([
       query<Record<string, unknown>>(
+        // Ads that ran before the client had a ClickUp ad pipeline never had
+        // a brief to be matched to, so they are not filing work (migration 280).
         `SELECT ad_id, ad_name, spend, purchases, impressions, first_seen, last_seen
          FROM \`${PROJECT_ID}.mart.mart_creative_unmapped\`
-         WHERE client_id = @clientId
+         WHERE client_id = @clientId AND NOT before_pipeline
          ORDER BY spend DESC
          LIMIT 200`,
         { clientId }
@@ -692,6 +694,8 @@ export interface ConceptRow {
   offer: string | null;
   personaId: string | null;
   clickupUrl: string | null;
+  /** The concept task's ClickUp status, e.g. `live: testing`, `backlog`. */
+  status: string | null;
   /** True when ClickUp held two angles or two personas. Never averaged away. */
   multiValued: boolean;
 }
@@ -712,7 +716,7 @@ export async function getConcepts(clientId: string): Promise<ConceptRow[]> {
   try {
     const rows = await query<Record<string, unknown>>(
       `SELECT concept_id, concept_code, name, angle, offer, persona_id,
-              clickup_url, multi_valued
+              clickup_url, status, multi_valued
        FROM \`${PROJECT_ID}.mart.mart_creative_concepts\`
        WHERE client_id = @clientId ORDER BY name`,
       { clientId }
@@ -726,6 +730,7 @@ export async function getConcepts(clientId: string): Promise<ConceptRow[]> {
       offer: s(r.offer),
       personaId: s(r.persona_id),
       clickupUrl: s(r.clickup_url),
+      status: s(r.status),
       multiValued: r.multi_valued === true,
     }));
   } catch (error) {

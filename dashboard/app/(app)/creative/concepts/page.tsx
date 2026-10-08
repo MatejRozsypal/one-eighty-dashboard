@@ -21,7 +21,9 @@ import {
   CreativeNotConnected,
   StatLine,
   SectionHead,
+  StatusChip,
   Tag,
+  clickupStatusTone,
   pct,
 } from "@/components/creative/primitives";
 import { NoData, NotConnected } from "@/components/ui/EmptyState";
@@ -76,6 +78,7 @@ export default async function ConceptsPage({
     getConcepts(client.clientId),
   ]);
   const conceptUrl = new Map(roster.map((c) => [c.conceptId, c.clickupUrl]));
+  const conceptStatus = new Map(roster.map((c) => [c.conceptId, c.status]));
   const byId = new Map(views.map((v) => [v.adId, v]));
 
   // Spend per angle, for the coverage grid. Untagged spend is excluded from the
@@ -144,6 +147,7 @@ export default async function ConceptsPage({
       conceptId: g.untagged ? null : g.key,
       conceptCode: meta?.conceptCode ?? null,
       clickupUrl: g.untagged ? null : conceptUrl.get(g.key) ?? null,
+      status: g.untagged ? null : conceptStatus.get(g.key) ?? null,
       adsHref: g.untagged ? null : adsHref(g.key),
       name: g.untagged ? UNTAGGED : (conceptLabel(first.tags.conceptId, first.tags.conceptName) ?? g.key),
       persona: first.tags.personaName ?? first.tags.personaId,
@@ -185,7 +189,16 @@ export default async function ConceptsPage({
   // persona and offer were never filled, which every ad inheriting from it
   // then inherits nothing from.
   const runningIds = new Set(tagged.map((c) => c.conceptId));
-  const dormant = roster.filter((c) => !runningIds.has(c.conceptId));
+  // Ordered by where the concept is in ClickUp: one marked live but with no
+  // delivery is the first thing to look at, backlog the last.
+  const STAGE_ORDER = { live: 0, ready: 1, working: 2, idle: 3 } as const;
+  const dormant = roster
+    .filter((c) => !runningIds.has(c.conceptId))
+    .sort(
+      (a, b) =>
+        STAGE_ORDER[clickupStatusTone(a.status)] - STAGE_ORDER[clickupStatusTone(b.status)]
+    );
+  const liveInClickup = roster.filter((c) => clickupStatusTone(c.status) === "live").length;
   const incomplete = roster.filter(
     (c) => c.angle === null || c.offer === null || c.personaId === null
   );
@@ -200,13 +213,16 @@ export default async function ConceptsPage({
   // holds whether somebody is looking at seven days or two years. It supports
   // an order-of-magnitude claim, "six personas, not twelve", so a precise
   // quarter boundary would be false precision either way.
+  // The bank counts only personas in play in ClickUp. Backlog, rejected and
+  // archived research personas are not a set anybody is trying to feed.
+  const activePersonas = personas.filter((p) => clickupStatusTone(p.status) !== "idle").length;
   const quarterSpend = account.spend * (91 / Math.max(1, daysInRange(ctx.params.range)));
   const capacity = personaCapacity(
     purchasesForPrecision(display.maxCiHalfWidth),
     display.targetCpa,
     quarterSpend,
-    personas.length || personasUsed.size,
-    Math.max(0, (personas.length || personasUsed.size) - personasUsed.size)
+    activePersonas || personasUsed.size,
+    Math.max(0, (activePersonas || personasUsed.size) - personasUsed.size)
   );
 
   // ── Hooks per body, and when it is not a measurement ────────────────────
@@ -265,7 +281,11 @@ export default async function ConceptsPage({
     <Shell ctx={ctx}>
       <StatLine
         tiles={[
-          { label: "Live concepts", value: String(tagged.length), info: "Minimum 3." },
+          {
+            label: "Live concepts",
+            value: String(liveInClickup),
+            info: `Live in ClickUp. ${tagged.length} with delivery in this range. Minimum 3.`,
+          },
           {
             label: "Angles in use",
             value: `${spendByAngle.size} / ${ANGLES.length}`,
@@ -285,7 +305,9 @@ export default async function ConceptsPage({
           },
           {
             label: "Top concept share",
-            value: pct(cards[0]?.spendShare ?? 0),
+            // The largest CONCEPT. Untagged spend is not a concept, and when it
+            // led the list this tile reported it as one (Ethia 100 %).
+            value: tagged.length > 0 ? pct(tagged[0].spendShare) : NO_VALUE,
             info: "Concentration limit: 60%.",
           },
           {
@@ -342,6 +364,7 @@ export default async function ConceptsPage({
                 {incomplete.map((c) => (
                   <li key={c.conceptId} className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
                     <span className="text-[13.5px] font-medium text-content-strong">{c.name}</span>
+                    <StatusChip status={c.status} />
                     <span className="flex flex-wrap gap-1.5">
                       <Tag value={c.personaId} missing="persona" />
                       <Tag value={c.angle} missing="angle" />
@@ -375,6 +398,7 @@ export default async function ConceptsPage({
                       <span className="text-[11.5px] text-content-muted">{humanizeConceptCode(c.conceptCode)}</span>
                     )}
                     <span className="text-[13.5px] text-content-body">{c.name}</span>
+                    <StatusChip status={c.status} />
                     <span className="flex flex-wrap gap-1.5">
                       <Tag value={c.angle} missing="angle" />
                       <Tag value={c.offer} missing="offer" />

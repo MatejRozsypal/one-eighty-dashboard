@@ -19,6 +19,7 @@ import type { AdView, VerdictView } from "@/lib/creative/view";
 import type { Confidence } from "@/lib/creative/stats";
 import {
   ConfidenceChip,
+  StatusChip,
   VerdictChip,
   money,
   pct,
@@ -36,6 +37,8 @@ export interface ConceptCardData {
   conceptCode: string | null;
   /** The concept's own ClickUp task, where the angle and offer are edited. */
   clickupUrl: string | null;
+  /** The concept task's ClickUp status. Null for the untagged group. */
+  status: string | null;
   /** The Creatives grid, filtered to this concept. Null for the untagged group. */
   adsHref: string | null;
   name: string;
@@ -140,6 +143,7 @@ export function ConceptCard({
           )}
           {data.name}
         </span>
+        <StatusChip status={data.status} />
         {/* ── One per line, each labelled, each its own colour ───────────
             These three ARE the concept, persona x angle x offer is the
             definition the whole screen is built on, and as an unlabelled row

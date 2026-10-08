@@ -501,16 +501,17 @@ export function demoConcepts(): ConceptRow[] {
       offer: c.offer,
       personaId: c.persona,
       clickupUrl: null,
+      status: "live: testing",
       multiValued: false,
     })),
     {
       conceptId: "C16", conceptCode: "C16", name: "Gift set, wrapped",
-      angle: null, offer: null, personaId: null, clickupUrl: null, multiValued: false,
+      angle: null, offer: null, personaId: null, clickupUrl: null, status: "backlog", multiValued: false,
     },
     {
       conceptId: "C17", conceptCode: "C17", name: "The refill argument",
       angle: "Cost of inaction", offer: "Refill", personaId: "QuietElegance",
-      clickupUrl: null, multiValued: false,
+      clickupUrl: null, status: "in briefing & production", multiValued: false,
     },
   ];
 }

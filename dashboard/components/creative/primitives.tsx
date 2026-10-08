@@ -145,6 +145,41 @@ export function Tag({
   );
 }
 
+/**
+ * A ClickUp status, as the team set it. Emoji and case are normalised, the
+ * words are not: the status is a decision somebody made and is shown as such.
+ */
+export function StatusChip({ status }: { status: string | null }) {
+  if (!status) return null;
+  const label = status.replace(/[^\p{L}\p{N}:&/ -]/gu, "").replace(/\s+/g, " ").trim();
+  if (!label) return null;
+  const tone = clickupStatusTone(label);
+  const styles: Record<typeof tone, string> = {
+    live: "bg-positive/10 text-positive-text",
+    ready: "bg-info/10 text-info",
+    working: "bg-gray-100 text-content-body",
+    idle: "border border-hairline text-content-muted",
+  };
+  return (
+    <span
+      className={`inline-flex items-center whitespace-nowrap rounded-xs px-2 py-[3px] font-mono text-[10.5px] font-semibold uppercase tracking-[0.09em] ${styles[tone]}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+export type ClickupStatusTone = "live" | "ready" | "working" | "idle";
+
+/** Live, ready to launch, in progress, or not moving (backlog, ideation, killed, rejected). */
+export function clickupStatusTone(status: string | null): ClickupStatusTone {
+  const s = (status ?? "").toLowerCase();
+  if (s.startsWith("live") || s === "approved") return "live";
+  if (s.startsWith("ready")) return "ready";
+  if (!s || /backlog|ideation|kill|reject|archiv|paused/.test(s)) return "idle";
+  return "working";
+}
+
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------

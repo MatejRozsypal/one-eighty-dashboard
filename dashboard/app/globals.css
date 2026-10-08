@@ -90,16 +90,14 @@
   --page-max: 1400px;
 
   /*
-   * The two left columns.
+   * The sidebar's width.
    *
-   * Both are zero below `lg`, where there is no sidebar at all and navigation
-   * is the mobile top bar instead. Expressing them as variables rather than as
-   * literals is what lets the account menu in the top-right corner stay aligned
-   * with the content column: it is position-fixed, so it has to be told how
-   * much chrome sits to its left, and it used to be told `252px` in a hardcoded
-   * class that knew nothing about a rail existing.
+   * Zero below `lg`, where there is no sidebar at all and navigation is the
+   * mobile top bar instead. A variable rather than a literal is what lets the
+   * account menu in the top-right corner stay aligned with the content column:
+   * it is position-fixed, so it has to be told how much chrome sits to its
+   * left, open or collapsed.
    */
-  --rail-w: 0px;
   --nav-w: 0px;
 
   /*
@@ -318,36 +316,89 @@ body {
 }
 
 /* ==========================================================================
-   Navigation chrome: the icon rail, the collapsible panel beside it
+   Navigation chrome: the sidebar, open and collapsed
    ========================================================================== */
 
-@media (min-width: 1024px) {
-  :root {
-    --rail-w: 56px;
-    --nav-w: 252px;
-  }
-
-  /* Collapsing sets the panel's width to zero rather than hiding it alone, so
-     the account menu's left offset follows in the same rule. */
-  :root[data-nav="collapsed"] {
-    --nav-w: 0px;
-  }
-
-  :root[data-nav="collapsed"] .nav-panel {
-    display: none;
-  }
-}
-
-/* Paired visibility for the collapse and expand affordances: exactly one of
-   the two is on screen, and neither exists below `lg` where nothing collapses.
-   Declared outside the media query so the default (hidden) holds on mobile. */
-.nav-when-collapsed {
+/*
+ * Collapsed (`data-nav="collapsed"`, set by NavCollapseToggle before first
+ * paint) the sidebar is a column of product icons. The rules key off the root
+ * attribute rather than React state, so a collapse is a restyle, not a render:
+ *
+ *  .nav-when-open       shown only while open (logo, chevrons, a product's list)
+ *  .nav-when-collapsed  shown only while collapsed (the expand button)
+ *  .nav-label           a row's text; collapsed, it is visually hidden but kept
+ *                       as the link's accessible name
+ *  .nav-row             a product or Settings row; collapsed, its icon centres
+ *  .nav-current         the product you are in; collapsed, its list is gone, so
+ *                       the icon itself carries the highlight
+ *  .nav-tip             the row's label as a tooltip, collapsed only
+ *
+ * None of it exists below `lg`, where the sidebar is not rendered.
+ */
+.nav-when-collapsed,
+.nav-tip {
   display: none;
 }
 
 @media (min-width: 1024px) {
+  :root {
+    --nav-w: 248px;
+  }
+
+  :root[data-nav="collapsed"] {
+    --nav-w: 60px;
+  }
+
+  :root[data-nav="collapsed"] .nav-when-open {
+    display: none;
+  }
+
   :root[data-nav="collapsed"] .nav-when-collapsed {
+    display: flex;
+  }
+
+  :root[data-nav="collapsed"] .nav-head {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  :root[data-nav="collapsed"] .nav-row {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  :root[data-nav="collapsed"] .nav-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  :root[data-nav="collapsed"] .nav-current {
+    @apply bg-growth-500/[0.16] text-growth-300;
+  }
+
+  :root[data-nav="collapsed"] .nav-tip {
     display: block;
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 50%;
+    z-index: 50;
+    transform: translateY(-50%);
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  :root[data-nav="collapsed"] .nav-row:hover .nav-tip,
+  :root[data-nav="collapsed"] .nav-row:focus-visible .nav-tip {
+    opacity: 1;
   }
 }
 

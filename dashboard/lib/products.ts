@@ -1,7 +1,7 @@
 /**
- * The products behind the icon rail.
+ * The products: the top-level rows of the sidebar.
  *
- * Each rail icon opens a different instance of the app. They share exactly two
+ * Each one opens a different instance of the app. They share exactly two
  * things: the sign-in session and the shell chrome, and nothing else. In
  * particular Chat deliberately loads no warehouse data at all, which is why it
  * is a product rather than another page inside Analytics.
@@ -20,16 +20,16 @@ export type ProductId = "home" | "chat" | "analytics" | "creative" | "reports";
 export interface Product {
   id: ProductId;
   label: string;
-  /** Where the rail icon points. */
+  /** Where the product row points. */
   href: string;
   /** Longer line for the tooltip. */
   hint: string;
   /** Client-role users are confined to products marked false. */
   internalOnly: boolean;
   /**
-   * When set, only these roles see the icon. Presentation only: the real gate
+   * When set, only these roles see the row. Presentation only: the real gate
    * for Reports is server side (`lib/authz.ts`, which also checks the email
-   * domain), so a hidden icon is a courtesy and never the protection.
+   * domain), so a hidden row is a courtesy and never the protection.
    */
   roles?: readonly Role[];
 }
@@ -37,7 +37,7 @@ export interface Product {
 export const PRODUCTS: Product[] = [
   {
     // Every client's results and money side by side, so internal only. The page
-    // gates itself with `requireInternalRole`; hiding the icon is a courtesy.
+    // gates itself with `requireInternalRole`; hiding the row is a courtesy.
     id: "home",
     label: "Home",
     href: "/home",
@@ -79,9 +79,9 @@ export const PRODUCTS: Product[] = [
  * Which product a path belongs to.
  *
  * Analytics is the fallback rather than an explicit list: it owns every route
- * that predates the rail, so enumerating them here would mean editing this file
+ * that predates the products, so enumerating them here would mean editing this file
  * every time a page is added, and forgetting to would silently unhighlight the
- * rail rather than fail loudly.
+ * sidebar rather than fail loudly.
  */
 export function productFor(pathname: string): ProductId {
   if (pathname === "/home" || pathname.startsWith("/home/")) return "home";
@@ -92,7 +92,7 @@ export function productFor(pathname: string): ProductId {
 }
 
 /**
- * The products a role gets a rail icon for. Internal means admin or agency;
+ * The products a role gets a sidebar row for. Internal means admin or agency;
  * `roles`, where a product sets it, narrows that further (Reports).
  */
 export function productsFor(role: Role): Product[] {

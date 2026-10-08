@@ -1,132 +1,383 @@
 "use client";
 
 /**
- * Left sidebar: dark, fixed, the app's spine.
+ * The sidebar: one dark column, the way Shopify's admin has one.
  *
- * The nav is filtered for the selected client: a page the client has no source
- * for is hidden (see `navFor` and `lib/capabilities.ts`). The selected client
- * is worked out here from `?client=`, because the layout cannot read search
- * params; it falls back to the first client exactly as `resolveClient` does.
+ * Top to bottom: the logo and the collapse toggle, then the products (Home,
+ * Assistant, Analytics, Creative, Reports) as rows with an icon and a label,
+ * then Settings pinned at the foot. The product you are in opens in place and
+ * lists its own navigation underneath, indented and without icons:
  *
- * On mobile the sidebar collapses out of flow entirely and navigation moves to
- * `MobileTopBar`. The client switcher and the account live in `AccountMenu`.
+ *  - Analytics and Creative: their trees from `lib/nav.ts`, group labels as
+ *    small headers, and a third level (Paid's platforms, Breakdown's
+ *    dimensions, Velocity's screens) under an item while its section is open;
+ *  - Assistant: the latest conversations (`HistoryList`);
+ *  - Reports: the pinned and recent reports, portalled in by the Reports
+ *    layout, which is the only place that list is read (`NavSlot`).
  *
- * This panel belongs to whichever product the rail has selected, so its
- * contents change with the section. It is also the half that collapses: the
- * rail beside it never does, because it is the only route back to the other
- * products.
+ * Only the open product's list scrolls. The product rows above and below it
+ * and Settings stay where they are, so Creative and Reports never drop off a
+ * laptop screen while Analytics is open.
  *
- * ── Items and their children ────────────────────────────────────────────────
- * Every top-level item has an icon. An item with children (Paid's platforms,
- * Breakdown's dimensions) lists them directly beneath it, indented, as plain
- * muted rows: the same vertical list, no flyout and no second column. They are
- * open while the item's section is the current one and fold away when you go
- * elsewhere. A chevron beside the item opens or folds them by hand for as long
- * as you stay on the page.
+ * The tree is filtered for the selected client (`navForProduct`): a page the
+ * client has no source for is hidden, a `keepWhenUnavailable` child stays
+ * muted, `adminOnly` and `internalOnly` items go for roles that may not see
+ * them, and the products themselves follow the role (`sidebarProducts`). The
+ * selected client is worked out here from `?client=`, because the layout
+ * cannot read search params; it falls back to the first client exactly as
+ * `resolveClient` does.
+ *
+ * A chevron beside a product opens its list without navigating (a peek) or
+ * folds the open one; a chevron beside an item does the same for its children.
+ * Both last until the next navigation.
+ *
+ * Collapsed (`data-nav="collapsed"`, see `NavCollapseToggle`) it is a column
+ * of product icons with the label as a tooltip; everything below the product
+ * rows is hidden. Below `lg` it is not rendered at all and `MobileTopBar`
+ * carries the same hierarchy in its page sheet.
  */
 
 import { useEffect, useRef, useState } from "react";
-import { AppLink } from "@/components/ui/AppLink";
 import { usePathname, useSearchParams } from "next/navigation";
-import { navForProduct, navHref, resolveActive, selectedClient, type NavChild, type NavItem } from "@/lib/nav";
-import { productFor } from "@/lib/products";
-import { NavCollapseToggle } from "@/components/shell/NavCollapseToggle";
-import { NavIcon } from "@/components/shell/NavIcon";
-import { HistoryList } from "@/components/chat/HistoryList";
+import { AppLink } from "@/components/ui/AppLink";
 import { Logo } from "@/components/ui/Logo";
+import { HistoryList } from "@/components/chat/HistoryList";
+import { NavCollapseToggle } from "@/components/shell/NavCollapseToggle";
+import { NavSlotHost } from "@/components/shell/NavSlot";
+import { ProductIcon, SettingsIcon } from "@/components/shell/ProductIcon";
+import {
+  SUB_HEAD,
+  SUB_ROW,
+  SUB_ROW_ACTIVE,
+  SUB_ROW_IDLE,
+  SUB_ROW_MUTED,
+  THIRD_ROW,
+} from "@/components/shell/navStyles";
+import {
+  SETTINGS_HREF,
+  isSettingsPath,
+  navForProduct,
+  navHref,
+  resolveActive,
+  selectedClient,
+  sidebarProducts,
+  type NavChild,
+  type NavGroup,
+  type NavItem,
+} from "@/lib/nav";
+import { productFor, type Product, type ProductId } from "@/lib/products";
 import type { Client } from "@/lib/clients";
+import type { Role } from "@/lib/users/store";
 
-const ROW =
-  "flex w-full items-center gap-[9px] rounded-sm px-2.5 py-[9px] text-left text-[13.5px] tracking-[-0.01em] transition-colors duration-fast focus-visible:outline-offset-[-2px]";
+/** A product row and the Settings row: 32px, icon and label. */
+const TOP_ROW =
+  "nav-row relative flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-sm px-2 text-left text-[13.5px] tracking-[-0.01em] transition-colors duration-fast focus-visible:outline-offset-[-2px]";
+
+/** The label shown beside a row while the sidebar is collapsed. Decorative: the row keeps its own name. */
+function Tip({ label }: { label: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="nav-tip whitespace-nowrap rounded-sm bg-ink-900 px-2 py-1 text-[12px] font-medium text-content-inverse shadow-lg ring-1 ring-white/[0.08]"
+    >
+      {label}
+    </span>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={`transition-transform duration-fast ${open ? "rotate-90" : ""}`}
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+const CHEVRON_BUTTON =
+  "flex h-7 w-7 flex-none items-center justify-center rounded-sm text-gray-400 transition-colors duration-fast hover:bg-white/[0.08] hover:text-gray-250 focus-visible:outline-offset-[-2px]";
+
+const idFor = (prefix: string, href: string) =>
+  `${prefix}-${href.replace(/\W+/g, "-").replace(/^-|-$/g, "")}`;
 
 export function Sidebar({
   clients,
+  role,
   isAdmin = false,
   isInternal = isAdmin,
+  showSettings = isInternal,
 }: {
   /** The switcher's client list; the selected one decides which pages show. */
   clients: Client[];
+  /** Decides which products get a row. */
+  role: Role;
   isAdmin?: boolean;
   /** Admin or agency: sees internal-only pages such as Paid. */
   isInternal?: boolean;
+  /** Settings is internal only. */
+  showSettings?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
   const client = selectedClient(clients, searchParams.get("client"));
-  const product = productFor(pathname);
-  const nav = navForProduct(product, isAdmin, client, isInternal);
-  const active = resolveActive(pathname, searchParams, nav.flatMap((g) => g.items));
+  const onSettings = isSettingsPath(pathname);
+  const current: ProductId | null = onSettings ? null : productFor(pathname);
+  const products = sidebarProducts(role, client);
 
-  // Hand-opened and hand-folded sections, held for the page they were set on:
-  // going to another page drops them, so a section you folded does not stay
-  // folded the next time you arrive, and one you peeked into closes again.
-  // Reset during render (the derived-state pattern) rather than in an effect, so
-  // the stale state never paints.
-  const [manual, setManual] = useState<{ path: string; open: Record<string, boolean> }>({
-    path: pathname,
-    open: {},
-  });
-  if (manual.path !== pathname) setManual({ path: pathname, open: {} });
-  const override = manual.path === pathname ? manual.open : {};
-  const toggle = (href: string, next: boolean) =>
-    setManual({ path: pathname, open: { ...override, [href]: next } });
+  // Peeks and folds, held for the page they were made on: navigating drops
+  // them, so the sidebar always comes back to "the product you are in is open".
+  // Reset during render (the derived-state pattern) so the stale value never paints.
+  const [manual, setManual] = useState<{
+    path: string;
+    product?: ProductId | null;
+    items: Record<string, boolean>;
+  }>({ path: pathname, items: {} });
+  if (manual.path !== pathname) setManual({ path: pathname, items: {} });
+  const held = manual.path === pathname ? manual : { path: pathname, items: {} };
+  const open: ProductId | null = held.product !== undefined ? held.product : current;
 
-  // With children open the list is taller than a laptop screen, so a page near
-  // the bottom would be current and out of sight. Bring it into view on arrival.
-  const listRef = useRef<HTMLElement>(null);
+  // The current page can sit low in a long list. Bring it into view on arrival,
+  // inside the list's own scroll area, never by scrolling the page.
+  const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    listRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
-  }, [pathname]);
+    const list = listRef.current;
+    const here = list?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!list || !here) return;
+    const top = here.offsetTop - list.offsetTop;
+    if (top < list.scrollTop || top + here.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTop = top - list.clientHeight / 2;
+    }
+  }, [pathname, open]);
 
-  // Reports draws its own list panel in its layout, to keep the width for the
-  // canvas. Creative used to do the same with a top tab bar; its pages now live
-  // here, as this panel's items and children.
-  // Home spans every client and has no pages under it, so it has no panel either.
-  if (product === "reports" || product === "home") return null;
+  /** Whether a product has anything to list under it here. */
+  const hasContent = (id: ProductId): boolean => {
+    if (id === "analytics" || id === "creative") {
+      return navForProduct(id, isAdmin, client, isInternal).length > 0;
+    }
+    if (id === "chat") return true;
+    // The report list is read by the Reports layout only, so it exists on /reports.
+    if (id === "reports") return current === "reports";
+    return false;
+  };
 
   return (
-    <aside className="nav-panel sticky top-0 hidden h-screen w-[var(--nav-w)] flex-none flex-col gap-[22px] bg-bg-inverse px-4 pb-[18px] pt-[22px] lg:flex">
-      <div className="flex items-center justify-between gap-2 px-2">
-        <Logo tone="inverse" />
-        <NavCollapseToggle variant="panel" />
+    <div className="nav-shell sticky top-0 z-40 hidden h-screen w-[var(--nav-w)] flex-none flex-col bg-bg-inverse lg:flex">
+      <div className="nav-head flex h-[var(--header-bar-h)] flex-none items-center justify-between gap-2 pl-4 pr-2">
+        <span className="nav-when-open">
+          <Logo tone="inverse" size={22} />
+        </span>
+        <NavCollapseToggle />
       </div>
 
-      <nav
-        ref={listRef}
-        aria-label={product === "creative" ? "Creative" : "Analytics"}
-        className="scrollbar-inverse flex flex-1 flex-col gap-[18px] overflow-auto"
-      >
-        {product === "chat" ? (
-          <HistoryList />
-        ) : (
-          nav.map((group) => (
-            <div key={group.label} className="flex flex-col gap-[3px]">
-              <span className="px-2.5 pb-1.5 font-mono text-[10px] uppercase tracking-eyebrow text-gray-400">
-                {group.label}
-              </span>
-
-              {group.items.map((item) => (
-                <NavEntry
-                  key={item.href}
-                  item={item}
+      <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
+        <ul className="m-0 flex min-h-0 flex-1 list-none flex-col gap-0.5 px-2 pb-2 pt-1">
+          {products.map((p) => {
+            const isOpen = p.id === open && hasContent(p.id);
+            const listId = `nav-product-${p.id}`;
+            return (
+              <li
+                key={p.id}
+                className={isOpen ? "flex min-h-0 flex-[0_1_auto] flex-col" : "flex-none"}
+              >
+                <ProductRow
+                  product={p}
                   qs={qs}
-                  // Longest prefix wins, so a sub-route (/paid/meta) lights its parent.
-                  isSection={active.item?.href === item.href}
-                  activeChild={active.item?.href === item.href ? active.child : null}
-                  expanded={override[item.href] ?? active.item?.href === item.href}
-                  onToggle={(next) => toggle(item.href, next)}
+                  pathname={pathname}
+                  isCurrent={p.id === current}
+                  canOpen={hasContent(p.id)}
+                  isOpen={isOpen}
+                  listId={listId}
+                  onToggle={() =>
+                    setManual({ ...held, product: isOpen ? null : p.id })
+                  }
                 />
-              ))}
-            </div>
-          ))
+                {isOpen && (
+                  <div
+                    id={listId}
+                    ref={listRef}
+                    className="nav-when-open scrollbar-inverse min-h-0 flex-[0_1_auto] overflow-y-auto pb-2 pt-0.5"
+                  >
+                    {p.id === "chat" ? (
+                      <HistoryList />
+                    ) : p.id === "reports" ? (
+                      <NavSlotHost id="reports" />
+                    ) : (
+                      <ProductTree
+                        groups={navForProduct(p.id, isAdmin, client, isInternal)}
+                        qs={qs}
+                        pathname={pathname}
+                        query={searchParams}
+                        expanded={held.items}
+                        onToggleItem={(href, next) =>
+                          setManual({ ...held, items: { ...held.items, [href]: next } })
+                        }
+                      />
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+
+        {showSettings && (
+          <div className="flex flex-none border-t border-white/[0.07] px-2 py-2">
+            <AppLink
+              href={SETTINGS_HREF}
+              aria-current={onSettings ? "page" : undefined}
+              className={`${TOP_ROW} ${
+                onSettings
+                  ? "nav-current bg-growth-500/[0.14] font-semibold text-growth-300"
+                  : "text-gray-250 hover:bg-white/[0.06]"
+              }`}
+            >
+              <span className={onSettings ? "" : "text-gray-400"}>
+                <SettingsIcon />
+              </span>
+              <span className="nav-label truncate">Settings</span>
+              <Tip label="Settings" />
+            </AppLink>
+          </div>
         )}
       </nav>
-    </aside>
+    </div>
   );
 }
 
-function NavEntry({
+function ProductRow({
+  product,
+  qs,
+  pathname,
+  isCurrent,
+  canOpen,
+  isOpen,
+  listId,
+  onToggle,
+}: {
+  product: Product;
+  qs: string;
+  pathname: string;
+  /** The current page belongs to this product. */
+  isCurrent: boolean;
+  /** It has a list to open, so it gets a chevron. */
+  canOpen: boolean;
+  isOpen: boolean;
+  listId: string;
+  onToggle: () => void;
+}) {
+  // The row is the page itself where the product is one page with no list
+  // (Home) or on its own landing page (the report list). Elsewhere it is the
+  // place you are inside, and the page is a row in its list (in the Assistant,
+  // "New conversation" or the open conversation).
+  const isPage =
+    isCurrent && (product.id === "home" || (product.id === "reports" && pathname === "/reports"));
+  const tone = isPage
+    ? "bg-growth-500/[0.14] font-semibold text-growth-300"
+    : isCurrent
+      ? "nav-current font-semibold text-content-inverse hover:bg-white/[0.06]"
+      : "text-gray-250 hover:bg-white/[0.06]";
+
+  return (
+    <div className="flex items-center gap-0.5">
+      <AppLink
+        // The query string carries client, range and currency. Dropping it when
+        // switching products would silently reset whose numbers you were reading.
+        href={qs ? `${product.href}?${qs}` : product.href}
+        aria-current={isPage ? "page" : isCurrent ? "true" : undefined}
+        className={`${TOP_ROW} ${tone}`}
+      >
+        <span className={isCurrent ? "" : "text-gray-400"}>
+          <ProductIcon id={product.id} />
+        </span>
+        <span className="nav-label truncate">{product.label}</span>
+        <Tip label={product.label} />
+      </AppLink>
+      {canOpen && (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={isOpen}
+          aria-controls={isOpen ? listId : undefined}
+          aria-label={`${product.label} pages`}
+          className={`nav-when-open ${CHEVRON_BUTTON}`}
+        >
+          <Chevron open={isOpen} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ProductTree({
+  groups,
+  qs,
+  pathname,
+  query,
+  expanded,
+  onToggleItem,
+}: {
+  groups: NavGroup[];
+  qs: string;
+  pathname: string;
+  query: { get(name: string): string | null };
+  /** Items whose children were opened or folded by hand on this page. */
+  expanded: Record<string, boolean>;
+  onToggleItem: (href: string, next: boolean) => void;
+}) {
+  const active = resolveActive(pathname, query, groups.flatMap((g) => g.items));
+  // One group (Creative) needs no heading: the product row above already names it.
+  const headed = groups.length > 1;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {groups.map((group) => {
+        const headingId = idFor("nav-group", group.label);
+        return (
+          <div key={group.label} className="flex flex-col">
+            {headed && (
+              <span id={headingId} className={SUB_HEAD}>
+                {group.label}
+              </span>
+            )}
+            <ul
+              aria-labelledby={headed ? headingId : undefined}
+              className="m-0 flex list-none flex-col gap-px p-0"
+            >
+              {group.items.map((item) => {
+                const isSection = active.item?.href === item.href;
+                return (
+                  <li key={item.href}>
+                    <ItemRow
+                      item={item}
+                      qs={qs}
+                      isSection={isSection}
+                      activeChild={isSection ? active.child : null}
+                      expanded={expanded[item.href] ?? isSection}
+                      onToggle={(next) => onToggleItem(item.href, next)}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ItemRow({
   item,
   qs,
   isSection,
@@ -144,28 +395,21 @@ function NavEntry({
   onToggle: (next: boolean) => void;
 }) {
   const children = item.children ?? [];
-  const listId = `nav-children-${item.href.replace(/\W+/g, "-").replace(/^-|-$/g, "")}`;
-  // On a child's page the parent is a place you are inside, not the page itself.
-  const current = isSection ? (activeChild ? "true" : "page") : undefined;
-  const pill = isSection
-    ? "bg-growth-500/[0.14] font-semibold text-growth-300"
-    : "text-gray-250 hover:bg-white/[0.06]";
+  const listId = idFor("nav-children", item.href);
+  const isPage = isSection && !activeChild;
+  const tone = isPage
+    ? SUB_ROW_ACTIVE
+    : isSection
+      ? "font-medium text-content-inverse hover:bg-white/[0.06]"
+      : SUB_ROW_IDLE;
 
   const link = (
     <AppLink
       href={navHref(item.href, qs)}
-      aria-current={current}
-      className={`${ROW} ${children.length > 0 ? "min-w-0 flex-1 pr-1" : ""} ${children.length > 0 ? "" : pill} ${
-        isSection ? "relative" : ""
-      }`}
+      // On a child's page the parent is a place you are inside, not the page itself.
+      aria-current={isPage ? "page" : isSection ? "true" : undefined}
+      className={`${SUB_ROW} ${tone}`}
     >
-      {isSection && (
-        <span
-          aria-hidden="true"
-          className="absolute left-[3px] top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-accent"
-        />
-      )}
-      <NavIcon name={item.icon} />
       <span className="min-w-0 truncate">{item.label}</span>
     </AppLink>
   );
@@ -174,7 +418,7 @@ function NavEntry({
 
   return (
     <div className="flex flex-col">
-      <div className={`flex items-center rounded-sm transition-colors duration-fast ${pill}`}>
+      <div className="flex items-center gap-0.5">
         {link}
         <button
           type="button"
@@ -182,27 +426,14 @@ function NavEntry({
           aria-expanded={expanded}
           aria-controls={expanded ? listId : undefined}
           aria-label={`${item.label} pages`}
-          className="mr-1 flex h-7 w-7 flex-none items-center justify-center rounded-sm text-gray-400 transition-colors duration-fast hover:bg-white/[0.08] hover:text-gray-250 focus-visible:outline-offset-[-2px]"
+          className={CHEVRON_BUTTON}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            className={`transition-transform duration-fast ${expanded ? "rotate-90" : ""}`}
-          >
-            <path d="M9 6l6 6-6 6" />
-          </svg>
+          <Chevron open={expanded} />
         </button>
       </div>
 
       {expanded && (
-        <ul id={listId} className="m-0 flex list-none flex-col gap-px p-0 pb-1 pt-[3px]">
+        <ul id={listId} className="m-0 flex list-none flex-col gap-px p-0 pb-0.5 pt-px">
           {children.map((child) => {
             const isActive = activeChild !== null && child.href === activeChild.href;
             return (
@@ -210,12 +441,8 @@ function NavEntry({
                 <AppLink
                   href={navHref(child.href, qs)}
                   aria-current={isActive ? "page" : undefined}
-                  className={`flex w-full items-center rounded-sm py-[6px] pl-[37px] pr-2.5 text-left text-[13px] tracking-[-0.01em] transition-colors duration-fast focus-visible:outline-offset-[-2px] ${
-                    isActive
-                      ? "bg-white/[0.08] font-medium text-content-inverse"
-                      : child.muted
-                        ? "text-gray-400 hover:bg-white/[0.06] hover:text-gray-300"
-                        : "text-gray-300 hover:bg-white/[0.06] hover:text-gray-250"
+                  className={`${THIRD_ROW} ${
+                    isActive ? SUB_ROW_ACTIVE : child.muted ? SUB_ROW_MUTED : SUB_ROW_IDLE
                   }`}
                 >
                   <span className="min-w-0 truncate">{child.label}</span>

@@ -7,11 +7,12 @@
  * `requireReportsAccess()` (admin or agency on an internal domain, never the
  * client role). Enforcing it here covers every page under /reports, including
  * ones added later; each page calls it again, cheaply (design 3.1, points 1
- * and 2). The rail only hides the link; presentation is not access control.
+ * and 2). The sidebar only hides the link; presentation is not access control.
  *
- * Layout. The analytics sidebar is hidden on /reports (`Sidebar`), so this draws
- * the section's own list panel beside the page, and mounts the report switcher
- * (Cmd/Ctrl+K) once for every page. The grid's two stylesheets load here, the
+ * Layout. The report list is the Reports product's second level in the
+ * sidebar; this layout is the only place the list is read, so it fills that
+ * slot from here (`ReportListPanel`, a portal). It also mounts the report
+ * switcher (Cmd/Ctrl+K) once for every page. The grid's two stylesheets load here, the
  * library's first and the token restyle second (RS6): the restyle is one class
  * deeper than the library, so the order only matters for equal specificity.
  */
@@ -37,10 +38,8 @@ export default async function ReportsLayout({ children }: { children: React.Reac
 
   return (
     <ReportsDirectory entries={entries}>
-      <div className="flex min-h-screen min-w-0 flex-1 items-start">
-        <ReportListPanel />
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col bg-bg-subtle">{children}</div>
-      </div>
+      <ReportListPanel />
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col bg-bg-subtle">{children}</div>
       <Suspense fallback={null}>
         <ReportSwitcher />
       </Suspense>

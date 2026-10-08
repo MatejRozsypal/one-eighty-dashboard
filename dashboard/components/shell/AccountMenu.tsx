@@ -108,11 +108,9 @@ export function AccountMenu({
   const onChat = product === "chat";
   // Reports has the same problem from the other side: client selection belongs
   // to each report, so a global client name up here would contradict it. It
-  // shows the account like Chat does. With no panel beside the rail, the bar
-  // is also offset by the rail alone.
+  // shows the account like Chat does.
   const onReports = product === "reports";
-  // Home lists every client at once, so a selected client means nothing there,
-  // and like Reports it has no panel beside the rail.
+  // Home lists every client at once, so a selected client means nothing there.
   const onHome = product === "home";
   const accountOnly = onChat || onReports || onHome;
 
@@ -151,9 +149,7 @@ export function AccountMenu({
   );
 
   return (
-    <div className={`pointer-events-none fixed inset-x-0 top-0 z-40 hidden h-[var(--header-h)] pt-[var(--safe-top)] lg:block ${
-      onReports || onHome ? "lg:pl-[var(--rail-w)]" : "lg:pl-[calc(var(--rail-w)+var(--nav-w))]"
-    }`}>
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-40 hidden h-[var(--header-h)] pt-[var(--safe-top)] lg:block lg:pl-[var(--nav-w)]">
       {/*
         The menu sits in the same frame as the bar it shares the row with, or
         the reserve that bar leaves (`--account-reserve`) is measured from the

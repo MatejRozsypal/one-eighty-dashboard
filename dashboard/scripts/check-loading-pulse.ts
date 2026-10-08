@@ -79,13 +79,30 @@ check("pending region pulses main, not a skeleton main", css.includes('[data-pen
   check("tailwind animate-pulse is the shared pulse", /pulse:\s*"oe-pulse var\(--pulse-dur\)/.test(tw));
 }
 
+// The release sequence (components/whatsnew) owns its own keyframes. It is a
+// one-off product tour, not a loading state, so it is exempt from the rule
+// below, and the check straight after holds it to that: if it ever grows a
+// pulse or a shimmer of its own, this fails like anything else would.
+const WHATS_NEW_CSS = join("whatsnew", "whats-new.css");
+
 const strayAnimation = sources.filter((f) => {
   if (f.endsWith("globals.css")) return false;
+  if (f.endsWith(WHATS_NEW_CSS)) return false;
   const text = read(f);
   // `oe-indeterminate` (the route progress sweep) is a different thing: a bar, not a pulse.
   return /animate-pulse|animate-\[oe-(?!indeterminate)|oe-shimmer|@keyframes/.test(text);
 });
 check("no second pulse or shimmer definition", strayAnimation.length === 0, strayAnimation.map(rel).join(", "));
+
+{
+  const exempt = sources.filter((f) => f.endsWith(WHATS_NEW_CSS));
+  const offending = exempt.filter((f) => /animate-pulse|oe-pulse|oe-shimmer|oe-skeleton/.test(read(f)));
+  check(
+    "the release sequence defines no pulse of its own",
+    offending.length === 0,
+    offending.map(rel).join(", "),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Nothing bypasses the shared navigation

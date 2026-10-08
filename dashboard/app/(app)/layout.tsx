@@ -35,6 +35,7 @@ import {
   PendingRegion,
 } from "@/components/shell/NavigationPending";
 import { DeltaModeProvider } from "@/components/ui/DeltaMode";
+import { WhatsNew } from "@/components/whatsnew/WhatsNew";
 import { DELTA_COOKIE, resolveDeltaMode } from "@/lib/params";
 
 export default async function AppLayout({
@@ -169,6 +170,8 @@ export default async function AppLayout({
         </div>
       </div>
 
+      {/* Once per person, after the page is interactive. Renders null until then. */}
+      <WhatsNew />
     </div>
     </HistoryProvider>
     </DeltaModeProvider>

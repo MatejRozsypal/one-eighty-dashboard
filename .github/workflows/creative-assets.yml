@@ -67,13 +67,22 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      # Until a credential is added, scheduled runs skip with a notice instead
+      # of failing (and emailing) every two hours; a manual run still fails loudly.
       - name: Check that a credential was configured
+        id: cred
         if: env.WIF_PROVIDER == '' && env.HAS_SA_KEY != 'true'
         run: |
-          echo "::error::No GCP credential. Add GCP_WORKLOAD_IDENTITY_PROVIDER + GCP_SERVICE_ACCOUNT, or GCP_SA_KEY (runbooks/33_creative_assets_schedule.md)."
-          exit 1
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "::notice::No GCP credential yet, skipping (runbooks/33_creative_assets_schedule.md)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No GCP credential. Add GCP_WORKLOAD_IDENTITY_PROVIDER + GCP_SERVICE_ACCOUNT, or GCP_SA_KEY (runbooks/33_creative_assets_schedule.md)."
+            exit 1
+          fi
 
       - name: Mirror creatives
+        if: steps.cred.outputs.skip != 'true'
         env:
           ARGS: ${{ github.event.inputs.args }}
           PYTHONUNBUFFERED: "1"

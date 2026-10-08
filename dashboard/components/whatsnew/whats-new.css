@@ -516,23 +516,33 @@
 }
 
 /* ========================================================================
-   The progress rail
+   A beat being revisited
    ======================================================================== */
 
-/* One segment per beat. The active one fills over exactly that beat's
-   duration, which the component passes in as `--wn-beat`. */
-@keyframes wn-progress {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-
-.wn-progress-fill {
-  transform-origin: left center;
-  animation: wn-progress var(--wn-beat) linear both;
+/*
+ * `wn-settled` on the stage shows a beat already resolved, for somebody who
+ * stepped Back and then forward again. Watching the same transition a second
+ * time because you wanted another look at it is irritating, and on the fourth
+ * or fifth pass it reads as the thing being broken.
+ *
+ * One rule does it. A negative delay larger than any duration in this file
+ * puts every animation past its own active phase before the first frame is
+ * painted, and all of them fill `both`, so the end keyframe is what shows.
+ * Nothing here has to know what any individual end state is, which is the
+ * point: a new beat cannot forget to add itself.
+ *
+ * `!important` because the staggers are inline `animationDelay` values, and an
+ * inline style wins over a stylesheet without it.
+ *
+ * It overrides the delay rather than setting `animation: none`, because
+ * several of these animations are the only thing that defines their element's
+ * resting state. With `none`, the "before" layer would sit at full opacity on
+ * top of the "after" layer and the beat would render back to front.
+ */
+.wn-settled *,
+.wn-settled *::before,
+.wn-settled *::after {
+  animation-delay: -10s !important;
 }
 
 /* ========================================================================

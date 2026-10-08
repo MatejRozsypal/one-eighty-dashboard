@@ -53,6 +53,10 @@
     "mcp__meta-ads__ads_catalog_product_feed_delete_rule",
     "mcp__meta-ads__ads_catalog_product_set_delete",
     "mcp__meta-ads__ads_catalog_event_source_connect",
-    "mcp__meta-ads__ads_catalog_event_source_disconnect"
+    "mcp__meta-ads__ads_catalog_event_source_disconnect",
+    "mcp__meta-ads__ads_creative_upload_local_image",
+    "mcp__meta-ads__ads_delete_local_ad_image",
+    "mcp__meta-ads__ads_finalize_local_ad_image_upload",
+    "mcp__meta-ads__ads_log_ui_interaction"
   ]
 }

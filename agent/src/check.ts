@@ -18,7 +18,7 @@ const q = query({
     cwd: process.env.AGENT_WORKDIR ?? process.cwd(),
     tools: [],
     skills: [],
-    settingSources: [],
+    settingSources: ["user"],
     allowedTools: ALLOWED,
     disallowedTools: DASHBOARD_DENIED,
     permissionMode: "dontAsk",

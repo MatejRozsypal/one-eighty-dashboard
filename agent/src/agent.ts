@@ -95,7 +95,10 @@ export async function runTurn(
       cwd: process.env.AGENT_WORKDIR ?? process.cwd(),
       tools: [],
       skills: [],
-      settingSources: [],
+      // "user" loads the MCP servers from ~/.claude.json (bigquery with its
+      // headersHelper, meta-ads with its stored login). Nothing else lives
+      // there, and the read-only guard below holds whatever it contains.
+      settingSources: ["user"],
       allowedTools: ALLOWED,
       disallowedTools: DASHBOARD_DENIED,
       permissionMode: "dontAsk",

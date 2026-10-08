@@ -7,7 +7,8 @@
  *
  *   GET /health  liveness for the reverse proxy and uptime checks.
  *
- * Listens on 127.0.0.1 only; Caddy terminates HTTPS in front of it. The shared
+ * Listens on a private address only (AGENT_HOST); the reverse proxy in front
+ * (Caddy or Traefik) terminates HTTPS. The shared
  * secret is the only thing standing between the internet and a signed-in Meta
  * account, so it is compared in constant time and never logged.
  */
@@ -17,6 +18,12 @@ import { timingSafeEqual } from "node:crypto";
 import { isModel, runTurn, type ChatEvent, type Turn } from "./agent.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
+/**
+ * 127.0.0.1 behind Caddy. On the Hostinger n8n VPS the proxy is Traefik in
+ * Docker, so this is the n8n_default bridge gateway (172.18.0.1): reachable by
+ * Traefik, not from the internet (the VPS has no host firewall).
+ */
+const HOST = process.env.AGENT_HOST ?? "127.0.0.1";
 const SECRET = process.env.AGENT_SHARED_SECRET ?? "";
 const MAX_CONCURRENT = Number(process.env.AGENT_MAX_CONCURRENT ?? 3);
 const MAX_BODY = 6_000_000;
@@ -119,6 +126,6 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.info(`[agent] listening on 127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.info(`[agent] listening on ${HOST}:${PORT}`);
 });

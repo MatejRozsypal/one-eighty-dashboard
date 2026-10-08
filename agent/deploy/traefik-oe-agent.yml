@@ -1,0 +1,46 @@
+# Traefik dynamic config for the Hostinger "Ubuntu 24.04 with n8n" VPS, where
+# n8n's Traefik (docker compose in /docker/n8n) owns ports 80/443.
+# Installed as /docker/oe-agent-traefik/oe-agent.yml; Traefik reads that
+# directory through --providers.file (see README, "Hostinger n8n VPS").
+#
+# Both services listen on the n8n_default bridge gateway (172.18.0.1), which
+# Traefik can reach and the internet cannot. HTTPS certificates come from the
+# same Let's Encrypt resolver n8n uses.
+
+http:
+  routers:
+    oe-agent:
+      rule: Host(`agent.oneeighty.cz`) && (Path(`/chat`) || Path(`/health`))
+      entryPoints: [websecure]
+      service: oe-agent
+      tls:
+        certResolver: mytlschallenge
+
+    cloudcli:
+      rule: Host(`cli.oneeighty.cz`)
+      entryPoints: [websecure]
+      service: cloudcli
+      middlewares: [cloudcli-gate]
+      tls:
+        certResolver: mytlschallenge
+
+  middlewares:
+    # First lock in front of CloudCLI; its own single-user login is the second.
+    # Users file is written by `htpasswd -B` (README step 6), never in git.
+    cloudcli-gate:
+      basicAuth:
+        usersFile: /dynamic/cloudcli.htpasswd
+
+  services:
+    oe-agent:
+      loadBalancer:
+        servers:
+          - url: http://172.18.0.1:8787
+        # Answers stream as NDJSON; flush every 100 ms so text appears live.
+        responseForwarding:
+          flushInterval: 100ms
+
+    cloudcli:
+      loadBalancer:
+        servers:
+          - url: http://172.18.0.1:3001

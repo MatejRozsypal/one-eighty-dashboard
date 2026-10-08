@@ -1,6 +1,6 @@
 [Unit]
 Description=One Eighty Assistant, dashboard side (read only; Claude Agent SDK + BigQuery/Meta MCP)
-After=network-online.target
+After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]

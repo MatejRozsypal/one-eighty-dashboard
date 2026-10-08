@@ -1,6 +1,6 @@
 [Unit]
 Description=CloudCLI web UI onto the One Eighty agent workspace
-After=network-online.target
+After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]

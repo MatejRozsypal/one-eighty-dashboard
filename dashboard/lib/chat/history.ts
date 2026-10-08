@@ -39,6 +39,12 @@ export interface Conversation {
   messages: StoredMessage[];
   /** Shipped as an illustration, not something the user wrote. */
   example?: boolean;
+  /**
+   * The agent's session for this conversation. The agent keeps the full
+   * transcript, tool results included, on its own server and resumes it by
+   * this id, so the browser never resends history.
+   */
+  agentSessionId?: string;
 }
 
 export function newId(): string {

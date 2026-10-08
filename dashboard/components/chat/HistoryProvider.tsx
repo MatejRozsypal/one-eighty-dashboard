@@ -37,6 +37,8 @@ interface Ctx {
   remove: (id: string) => void;
   /** Appends to the active conversation, starting one if there isn't one. */
   append: (message: StoredMessage) => void;
+  /** Records the agent session the active conversation continues. */
+  setAgentSession: (sessionId: string) => void;
 }
 
 const ChatHistory = createContext<Ctx | null>(null);
@@ -131,9 +133,22 @@ export function HistoryProvider({ children }: { children: React.ReactNode }) {
     [setActiveId]
   );
 
+  const setAgentSession = useCallback((sessionId: string) => {
+    const target = activeIdRef.current;
+    if (!target) return;
+    setConversations((prev) => {
+      if (!prev) return prev;
+      const next = prev.map((c) =>
+        c.id === target && c.agentSessionId !== sessionId ? { ...c, agentSessionId: sessionId } : c
+      );
+      save(next);
+      return next;
+    });
+  }, []);
+
   const value = useMemo(
-    () => ({ conversations, activeId, open, remove, append }),
-    [conversations, activeId, open, remove, append]
+    () => ({ conversations, activeId, open, remove, append, setAgentSession }),
+    [conversations, activeId, open, remove, append, setAgentSession]
   );
 
   return <ChatHistory.Provider value={value}>{children}</ChatHistory.Provider>;

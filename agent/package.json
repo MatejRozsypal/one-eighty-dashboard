@@ -1,0 +1,24 @@
+{
+  "name": "one-eighty-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The One Eighty Assistant: one Claude Agent SDK agent with the BigQuery and Meta Ads MCP servers, served to the dashboard over HTTP.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "type-check": "tsc --noEmit",
+    "check": "tsx src/check.ts"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.294",
+    "google-auth-library": "^9.15.1",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,35 +1,29 @@
 /**
- * The assistant's reply.
+ * The assistant's reply: a pass-through to the One Eighty agent.
  *
- * ── Why this is a real network round trip for a fixed string ────────────────
- * The answer is currently a placeholder Matěj wrote, but the *path* is the
- * finished one: the client posts a transcript, the server owns the reply, and
- * nothing about the model is decided in the browser. Faking it client-side
- * would have meant rewriting the page later rather than this file, and would
- * have left the interface unproven, latency, the pending state and error
- * handling are the parts of a chat that are actually hard, and they only exist
- * if there is a server to wait for.
+ * The agent runs on its own server (`agent/` in this repo, Hostinger VPS): the
+ * Claude Code CLI via the Agent SDK, with the BigQuery and Meta Ads MCP servers
+ * attached. This route owns only who may talk to it. It checks the session,
+ * validates the payload, and pipes the agent's NDJSON stream straight back
+ * (`ChatEvent` in `agent/src/agent.ts`: session, text, tool, notice, error,
+ * done). No model, warehouse or Meta credentials live in the dashboard.
  *
- * ── What replaces this ─────────────────────────────────────────────────────
- * Swap the body of `reply()` for an Anthropic call reading ANTHROPIC_API_KEY.
- * The route deliberately reads no warehouse data and holds no BigQuery client:
- * this product is separate from Analytics by design, and a query here would be
- * the first step in quietly merging them again.
+ * ── Who gets the real assistant ────────────────────────────────────────────
+ * Internal roles only. The agent reads every client's data and acts through
+ * one Meta login, so a `client` account here would undo the tenant isolation
+ * every page enforces. Client accounts get the holding reply through the same
+ * stream shape, so the UI has one code path.
  */
 
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { currentAccess, isInternal } from "@/lib/authz";
+import { DEFAULT_CHAT_MODEL, isChatModel } from "@/lib/chat/models";
 
 export const dynamic = "force-dynamic";
+/** Several SQL queries and Meta reads in one answer take a while. */
+export const maxDuration = 300;
 
-/** Holding answer until the assistant ships. Every question gets it. */
-const HOLDING_REPLY =
-  "Coming soon.";
-
-async function reply(_message: string, _images: Img[]): Promise<string> {
-  return HOLDING_REPLY;
-}
+const HOLDING_REPLY = "Coming soon.";
 
 interface Img {
   mime: string;
@@ -39,26 +33,43 @@ interface Img {
 /** Ceiling on the decoded payload, under Vercel's 4.5MB request body limit. */
 const MAX_TOTAL_BYTES = 3_500_000;
 const MAX_IMAGES = 5;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+const SESSION_ID = /^[0-9a-f-]{36}$/i;
 
 function decodedBytes(dataUrl: string): number {
   const i = dataUrl.indexOf(",");
   return i < 0 ? 0 : Math.floor((dataUrl.length - i - 1) * 0.75);
 }
 
+function ndjson(lines: object[]): Response {
+  return new Response(lines.map((l) => `${JSON.stringify(l)}\n`).join(""), {
+    headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },
+  });
+}
+
 export async function POST(request: Request) {
-  // Same gate as every page: this route sits outside the (app) layout that
-  // enforces the session, so it has to enforce it itself.
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email || !session.user.role) {
+  // This route sits outside the (app) layout that enforces the session, so it
+  // has to enforce it itself.
+  const access = await currentAccess();
+  if (!access) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+  if (access.mustChangePassword) {
+    return NextResponse.json({ error: "Change your password first." }, { status: 403 });
   }
 
   let message = "";
   let images: Img[] = [];
+  let model = DEFAULT_CHAT_MODEL;
+  let sessionId: string | null = null;
   try {
     const body = await request.json();
     message = typeof body?.message === "string" ? body.message.trim() : "";
     images = Array.isArray(body?.images) ? body.images : [];
+    if (isChatModel(body?.model)) model = body.model;
+    if (typeof body?.sessionId === "string" && SESSION_ID.test(body.sessionId)) {
+      sessionId = body.sessionId;
+    }
   } catch {
     return NextResponse.json({ error: "Malformed request." }, { status: 400 });
   }
@@ -67,18 +78,15 @@ export async function POST(request: Request) {
   // the browser is not where a limit is enforced, it is where it is a
   // convenience.
   if (images.length > MAX_IMAGES) {
-    return NextResponse.json(
-      { error: `At most ${MAX_IMAGES} images.` },
-      { status: 413 }
-    );
+    return NextResponse.json({ error: `At most ${MAX_IMAGES} images.` }, { status: 413 });
   }
   let total = 0;
   for (const img of images) {
     if (
       typeof img?.mime !== "string" ||
-      !img.mime.startsWith("image/") ||
+      !IMAGE_TYPES.includes(img.mime) ||
       typeof img?.dataUrl !== "string" ||
-      !img.dataUrl.startsWith("data:image/")
+      !img.dataUrl.startsWith(`data:${img.mime};base64,`)
     ) {
       return NextResponse.json({ error: "Unsupported attachment." }, { status: 415 });
     }
@@ -93,5 +101,46 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Empty message." }, { status: 400 });
   }
 
-  return NextResponse.json({ reply: await reply(message, images) });
+  const agentUrl = process.env.AGENT_URL;
+  const secret = process.env.AGENT_SHARED_SECRET;
+  if (!isInternal(access.role) || !agentUrl || !secret) {
+    return ndjson([{ type: "text", delta: HOLDING_REPLY }, { type: "done" }]);
+  }
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${agentUrl.replace(/\/$/, "")}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({
+        message,
+        images: images.map((img) => ({
+          mime: img.mime,
+          data: img.dataUrl.slice(img.dataUrl.indexOf(",") + 1),
+        })),
+        model,
+        sessionId,
+        user: access.email,
+      }),
+      // Closing the tab cancels this fetch, which closes the agent's stream,
+      // which stops the agent.
+      signal: request.signal,
+      cache: "no-store",
+    });
+  } catch (error) {
+    console.error("[chat] agent unreachable", error);
+    return NextResponse.json({ error: "The assistant is offline." }, { status: 502 });
+  }
+
+  if (!upstream.ok || !upstream.body) {
+    const body = await upstream.json().catch(() => null);
+    return NextResponse.json(
+      { error: body?.error ?? `The assistant answered ${upstream.status}.` },
+      { status: upstream.status === 429 ? 429 : 502 }
+    );
+  }
+
+  return new Response(upstream.body, {
+    headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },
+  });
 }

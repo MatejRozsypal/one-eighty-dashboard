@@ -1,0 +1,27 @@
+[Unit]
+Description=One Eighty Assistant, dashboard side (read only; Claude Agent SDK + BigQuery/Meta MCP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=oeagent
+Group=oeagent
+WorkingDirectory=/opt/oe-agent
+EnvironmentFile=/etc/oe-agent/agent.env
+# HOME must be the oeagent home: Claude Code keeps the Meta MCP config and
+# its OAuth grant (~/.claude.json, ~/.claude/) and the session transcripts there.
+Environment=HOME=/home/oeagent
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=3
+# Hardening. The agent has no built-in tools, but the process still should
+# not be able to write outside its own state.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/oeagent /var/lib/oe-agent
+
+[Install]
+WantedBy=multi-user.target

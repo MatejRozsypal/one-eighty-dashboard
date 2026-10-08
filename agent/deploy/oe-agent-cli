@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# The agent in a terminal:   ssh -t root@<vps> oe-agent-cli
+# Continue a dashboard chat:  ssh -t root@<vps> oe-agent-cli --resume <session id>
+# Same user, workspace, MCP servers and CLAUDE.md as the dashboard and CloudCLI.
+# Like CloudCLI it can write (Meta changes, BigQuery with the key in
+# cloudcli.env), and every write asks for approval. Extra arguments go to `claude`.
+set -euo pipefail
+exec sudo -u oeagent -H bash -c '
+  set -a; . /etc/oe-agent/agent.env; . /etc/oe-agent/cloudcli.env; set +a
+  cd /var/lib/oe-agent/work
+  exec claude "$@"
+' oe-agent-cli "$@"

@@ -1,0 +1,31 @@
+[Unit]
+Description=CloudCLI web UI onto the One Eighty agent workspace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=oeagent
+Group=oeagent
+WorkingDirectory=/var/lib/oe-agent/work
+# ANTHROPIC_API_KEY (and the rest) for the Claude Code runs it starts.
+EnvironmentFile=/etc/oe-agent/agent.env
+# JWT_SECRET for CloudCLI's own login.
+EnvironmentFile=/etc/oe-agent/cloudcli.env
+Environment=HOME=/home/oeagent
+# CloudCLI binds 0.0.0.0 by default; only Caddy may reach it.
+Environment=HOST=127.0.0.1
+Environment=SERVER_PORT=3001
+# Projects are discovered under here, so the agent workspace is the project.
+Environment=WORKSPACES_ROOT=/var/lib/oe-agent
+Environment=DATABASE_PATH=/var/lib/oe-agent/cloudcli/auth.db
+# The same Claude Code binary the dashboard agent runs.
+Environment=CLAUDE_CLI_PATH=/usr/local/bin/claude
+ExecStart=/usr/bin/cloudcli
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

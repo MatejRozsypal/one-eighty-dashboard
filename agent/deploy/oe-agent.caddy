@@ -1,0 +1,28 @@
+# /etc/caddy/oe-agent.caddy on the Hostinger VPS, imported from /etc/caddy/Caddyfile.
+# Caddy gets and renews HTTPS certificates on its own once the DNS A records
+# for both hosts point at this VPS.
+
+# Dashboard -> agent. The shared secret is checked by the agent itself.
+agent.oneeighty.cz {
+	@agent path /chat /health
+	handle @agent {
+		reverse_proxy 127.0.0.1:8787 {
+			# Stream NDJSON as it is written, no buffering.
+			flush_interval -1
+			transport http {
+				read_timeout 6m
+			}
+		}
+	}
+	handle {
+		respond 404
+	}
+}
+
+# CloudCLI. Two locks: this gate password (in cloudcli-auth.caddy, never in
+# git) and CloudCLI's own single-user login behind it. CloudCLI has a shell
+# tab running as oeagent, so nobody without both gets near it.
+cli.oneeighty.cz {
+	import /etc/caddy/cloudcli-auth.caddy
+	reverse_proxy 127.0.0.1:3001
+}

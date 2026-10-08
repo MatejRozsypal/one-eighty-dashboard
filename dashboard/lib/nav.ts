@@ -186,6 +186,7 @@ export const SETTINGS_HREF = "/settings";
 
 /** Titles for routes outside NAV and CREATIVE_NAV (used by the mobile bar). */
 const OTHER_TITLES: Array<{ href: string; label: string }> = [
+  { href: "/home", label: "Home" },
   { href: "/chat", label: "Assistant" },
   { href: "/reports", label: "Reports" },
   { href: "/channels", label: "Channels" },

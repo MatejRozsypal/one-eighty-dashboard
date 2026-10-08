@@ -82,7 +82,8 @@ export function Sidebar({
   // Reports draws its own list panel in its layout, to keep the width for the
   // canvas. Creative used to do the same with a top tab bar; its pages now live
   // here, as this panel's items and children.
-  if (product === "reports") return null;
+  // Home spans every client and has no pages under it, so it has no panel either.
+  if (product === "reports" || product === "home") return null;
 
   return (
     <aside className="nav-panel sticky top-0 hidden h-screen w-[var(--nav-w)] flex-none flex-col gap-[22px] bg-bg-inverse px-4 pb-[18px] pt-[22px] lg:flex">

@@ -111,7 +111,10 @@ export function AccountMenu({
   // shows the account like Chat does. With no panel beside the rail, the bar
   // is also offset by the rail alone.
   const onReports = product === "reports";
-  const accountOnly = onChat || onReports;
+  // Home lists every client at once, so a selected client means nothing there,
+  // and like Reports it has no panel beside the rail.
+  const onHome = product === "home";
+  const accountOnly = onChat || onReports || onHome;
 
   useEffect(() => {
     if (!open) return;
@@ -149,7 +152,7 @@ export function AccountMenu({
 
   return (
     <div className={`pointer-events-none fixed inset-x-0 top-0 z-40 hidden h-[var(--header-h)] pt-[var(--safe-top)] lg:block ${
-      onReports ? "lg:pl-[var(--rail-w)]" : "lg:pl-[calc(var(--rail-w)+var(--nav-w))]"
+      onReports || onHome ? "lg:pl-[var(--rail-w)]" : "lg:pl-[calc(var(--rail-w)+var(--nav-w))]"
     }`}>
       {/*
         The menu sits in the same frame as the bar it shares the row with, or

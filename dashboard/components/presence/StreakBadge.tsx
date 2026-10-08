@@ -37,8 +37,10 @@ export function StreakBadge({
         className="h-2 w-2 shrink-0 rounded-full"
         style={{ background: live ? `var(--h-${tone})` : "transparent", boxShadow: `inset 0 0 0 1.5px var(--h-${tone})` }}
       />
-      {streakLabel(row.currentStreak)}
-      {!row.todayCounted && row.currentStreak > 0 && <span className="font-medium">· not yet today</span>}
+      <span>
+        {streakLabel(row.currentStreak)}
+        {!row.todayCounted && row.currentStreak > 0 && <span className="font-medium"> · not yet today</span>}
+      </span>
       <InfoTip text={tip} label="About the streak" />
     </span>
   );

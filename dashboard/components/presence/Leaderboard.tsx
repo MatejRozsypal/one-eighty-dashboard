@@ -116,7 +116,7 @@ export function Leaderboard({
                         {row.isViewer && <span className="font-medium text-content-muted"> · you</span>}
                       </span>
                       <span className="text-[12px] text-content-muted sm:hidden">
-                        Best {row.bestStreak} · {row.startedToday ?? NO_VALUE}
+                        Best {row.bestStreak} · Started {row.startedToday ?? NO_VALUE}
                       </span>
                     </span>
                   </td>

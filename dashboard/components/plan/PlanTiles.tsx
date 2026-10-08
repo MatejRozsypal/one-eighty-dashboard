@@ -1,5 +1,5 @@
 /**
- * One tile per plan metric: actual to date against target to date, the pace
+ * One tile per plan metric: actual to date against target to date, the goal
  * ring, and the plan figures underneath (gap, projected end with its 80%
  * range, the required daily rate, MER).
  *
@@ -20,7 +20,7 @@
  */
 
 import { MetricTooltip } from "@/components/dashboard/MetricTooltip";
-import { PaceRing } from "@/components/plan/PaceRing";
+import { GoalRing } from "@/components/plan/GoalRing";
 import { PreliminaryMark } from "@/components/plan/StatusChip";
 import { METRIC_DEFINITIONS } from "@/lib/metrics";
 import { NO_VALUE, formatMoney } from "@/lib/format";
@@ -85,8 +85,10 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
       ? `${fmtValue(row.projectedLow, metric, currency)} to ${fmtValue(row.projectedHigh, metric, currency)}`
       : null;
 
-  // Pace, for the ring and the footer. A closed period is paced against its
-  // final target; the warehouse's own pace stops at the as-of day.
+  // Pace, for the footer. A closed period is paced against its final target;
+  // the warehouse's own pace stops at the as-of day. The ring does not use
+  // this: it divides by the period total, not by the plan to date, which is
+  // why the two percentages on the tile differ and why each one says so.
   const pacePct =
     untargeted || notStarted
       ? null
@@ -129,7 +131,7 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
           )}
         </div>
 
-        <PaceRing pacePct={pacePct} tone={toneOfRow(row)} />
+        <GoalRing row={row} periodType={row.periodType} tone={toneOfRow(row)} />
       </div>
 
       {untargeted && (

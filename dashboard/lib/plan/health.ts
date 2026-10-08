@@ -1,34 +1,39 @@
 /**
- * Presentation rules for the Goals page in the Health skin: the pace ring's
+ * Presentation rules for the Goals page in the Health skin: the goal ring's
  * geometry, and the one mapping from a row's status to a status colour.
  *
  * Pure presentation. Nothing here computes a figure; every number it reads
- * (`pacePct`, `status`, `result`) arrives finished from the warehouse through
- * `lib/plan/model.ts`, exactly as before. Safe in client components.
+ * (`actual`, `targetToDate`, `target`, `status`) arrives finished from the
+ * warehouse through `lib/plan/model.ts`, exactly as before. Safe in client
+ * components.
  */
 
 import { STATUS_LABEL } from "./format";
-import type { PacingRow, RowStatus } from "./types";
+import type { PacingRow, PeriodType, RowStatus } from "./types";
 
 /* ======================================================================== */
-/* The pace ring                                                            */
+/* The goal ring                                                            */
 /* ======================================================================== */
 
-/**
- * A full circle is 125% of plan.
+/*
+ * One full rotation is the period's goal.
  *
- * The scale carries headroom above the plan line on purpose: a ring that
- * closed at 100% would have nothing left to show for a period that is ahead,
- * and every good month would look identical to a merely adequate one.
+ * The arc is `actual to date / target`, so the ring fills as the period runs
+ * and closes exactly when the goal is met. The dot is `target to date /
+ * target`: where the plan says today should be. The gap between the end of the
+ * arc and the dot is therefore the shortfall, read directly off the ring.
+ *
+ * There is no scale factor to name here, and that is the point of the rule:
+ * the denominator is the period's own target, which is data, not a constant.
+ * The first cut of this ring plotted pace on a scale with 25% headroom, which
+ * meant a month a fifth of the way through drew four fifths of a circle and
+ * the goal itself sat two rotations away. One rotation now means one goal.
+ *
+ * Ratio metrics need no special case. A ratio target does not ramp through the
+ * period, so its target to date is its period target and the dot lands at a
+ * full rotation, which is correct: an aMER of 2.00x is expected from day one,
+ * not accumulated. The same two lines of arithmetic serve every metric.
  */
-export const RING_FULL_PACE = 1.25;
-
-/**
- * Being exactly on plan therefore sits at 80% of the circumference (1 / 1.25).
- * The dark dot is drawn there, so "where the dot is" reads as "where today
- * should be" on every metric without a label.
- */
-export const RING_ON_PLAN_FRACTION = 1 / RING_FULL_PACE;
 
 /** Box, radius and stroke of the ring, in the SVG's own user units. */
 export const RING_BOX = 66;
@@ -41,51 +46,115 @@ export const RING_OVERFLOW_STROKE = 3.5;
 
 export const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
+/** What the ring is drawn from. Every field is a warehouse figure, unchanged. */
+export interface RingInput {
+  actual: number | null | undefined;
+  targetToDate: number | null | undefined;
+  target: number | null | undefined;
+}
+
 export interface RingGeometry {
   /** Arc length of the main ring, in user units. */
   arc: number;
-  /** Arc length of the overflow ring. Zero while pace is within the scale. */
+  /** Arc length of the overflow ring. Zero until the goal is passed. */
   overflowArc: number;
-  /** True once the main ring has closed and the overflow arc is carrying the rest. */
+  /** True once the goal is passed and the inner arc is carrying the excess. */
   isOver: boolean;
-  /** Centre of the on-plan dot. */
-  mark: { x: number; y: number };
+  /** Share of the goal reached. Null when the period has no target to divide by. */
+  fraction: number | null;
+  /** Share of the goal the plan expects today. Null without a target. */
+  markFraction: number | null;
+  /** Centre of the on-plan dot. Null when there is no target to mark. */
+  mark: { x: number; y: number } | null;
+}
+
+function share(value: number | null | undefined, target: number): number | null {
+  return value === null || value === undefined || !Number.isFinite(value) ? null : value / target;
+}
+
+/** A point on the ring at `fraction` of a turn, clockwise from the top. */
+function pointAt(fraction: number): { x: number; y: number } {
+  const f = Math.min(1, Math.max(0, fraction));
+  const angle = 2 * Math.PI * f;
+  const centre = RING_BOX / 2;
+  return {
+    x: centre + RING_RADIUS * Math.sin(angle),
+    y: centre - RING_RADIUS * Math.cos(angle),
+  };
 }
 
 /**
- * Where the ring's arcs end for a pace.
+ * Where the ring's arcs end, and where the dot sits.
  *
- * `pacePct` is the warehouse's pace, as a percentage (64.1 for 64.1%). Null,
- * or a period with nothing to pace against, draws an empty ring.
+ * A period with no target has nothing to divide by, so it draws an empty ring
+ * and no dot rather than inventing a denominator.
  *
- * Past `RING_FULL_PACE` the main ring has nowhere left to go, so it closes and
- * the excess continues on a second, inner arc. Without that, 125% and 400%
- * would draw the same closed circle. The overflow arc itself saturates at one
- * further turn; the figure beside the ring always carries the number.
+ * Past one full turn the main ring has nowhere left to go, so it closes and
+ * the excess continues on a second, inner arc. Without that, meeting the goal
+ * and doubling it would draw the same closed circle. Ad spend and aMER reach
+ * this in normal use. The overflow arc itself saturates at one further turn;
+ * the figures beside the ring always carry the number.
  */
-export function ringGeometry(pacePct: number | null | undefined): RingGeometry {
-  const fraction =
-    pacePct === null || pacePct === undefined || !Number.isFinite(pacePct)
-      ? 0
-      : Math.max(0, pacePct / 100 / RING_FULL_PACE);
+export function ringGeometry({ actual, targetToDate, target }: RingInput): RingGeometry {
+  if (target === null || target === undefined || !Number.isFinite(target) || target === 0) {
+    return { arc: 0, overflowArc: 0, isOver: false, fraction: null, markFraction: null, mark: null };
+  }
 
-  const main = Math.min(1, fraction);
-  const over = Math.min(1, Math.max(0, fraction - 1));
+  const fraction = share(actual, target);
+  const markFraction = share(targetToDate, target) ?? 0;
 
-  // Clockwise from the top: the ring is drawn rotated -90 degrees, so the
-  // marker is placed in the same frame.
-  const angle = 2 * Math.PI * RING_ON_PLAN_FRACTION;
-  const centre = RING_BOX / 2;
+  // A figure below zero (CM3 early in a period, when spend lands before margin)
+  // draws nothing rather than running the arc backwards.
+  const drawn = Math.max(0, fraction ?? 0);
+  const main = Math.min(1, drawn);
+  const over = Math.min(1, Math.max(0, drawn - 1));
 
   return {
     arc: main * RING_CIRCUMFERENCE,
     overflowArc: over * 2 * Math.PI * RING_OVERFLOW_RADIUS,
     isOver: over > 0,
-    mark: {
-      x: centre + RING_RADIUS * Math.sin(angle),
-      y: centre - RING_RADIUS * Math.cos(angle),
-    },
+    fraction,
+    markFraction,
+    mark: pointAt(markFraction),
   };
+}
+
+/**
+ * What the period is called in the ring's own description, so a reader is told
+ * which denominator the ring used ("22% of the month's goal") and cannot take
+ * it for the pace in the tile's footer, which is measured against the plan to
+ * date instead.
+ */
+const PERIOD_NOUN: Record<PeriodType, string> = {
+  day: "day",
+  week: "week",
+  month: "month",
+  quarter: "quarter",
+  promo: "window",
+  gate: "checkpoint",
+};
+
+export function periodNoun(periodType: PeriodType): string {
+  return PERIOD_NOUN[periodType] ?? "period";
+}
+
+function asPercent(fraction: number): string {
+  return `${Math.round(fraction * 100)}%`;
+}
+
+/**
+ * The ring in words, for its hover title and for screen readers. The ring
+ * itself is `aria-hidden`, so this is the only place its two marks are
+ * readable, and it names the denominator in both of them.
+ */
+export function ringDescription(geometry: RingGeometry, periodType: PeriodType): string {
+  const noun = periodNoun(periodType);
+  if (geometry.fraction === null || geometry.markFraction === null) {
+    return `No target for this ${noun}, so the ring is empty.`;
+  }
+  return `${asPercent(geometry.fraction)} of the ${noun}'s goal. The dot marks ${asPercent(
+    geometry.markFraction
+  )}, where the plan is today.`;
 }
 
 /* ======================================================================== */

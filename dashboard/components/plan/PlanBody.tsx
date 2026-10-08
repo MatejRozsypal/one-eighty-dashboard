@@ -18,7 +18,7 @@ import {
 import { daysBetween, fmtDay, fmtRange } from "@/lib/plan/dates";
 import { PLAN_METRICS, type PlanData, type PlanMetric, type PlanView } from "@/lib/plan/types";
 import { NoData } from "@/components/ui/EmptyState";
-import { OnPlanMark } from "@/components/plan/PaceRing";
+import { GoalArcMark, OnPlanMark } from "@/components/plan/GoalRing";
 import { SectionTitle } from "@/components/plan/SectionTitle";
 import { toneOfRow, type HealthTone } from "@/lib/plan/health";
 import { PlanTiles } from "@/components/plan/PlanTiles";
@@ -59,7 +59,16 @@ function PeriodHeading({ period, asOf, planStatus }: { period: PeriodOption; asO
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        {/* What the dot on every ring means. */}
+        {/*
+          What the two marks on every ring mean. The arc is a share of the
+          period goal and the pace in each tile's footer is a share of the plan
+          to date, so the ring says which of the two it is drawing rather than
+          leaving a reader to assume they are the same number.
+        */}
+        <span className="inline-flex items-center gap-1.5 text-[12.5px] text-content-muted">
+          <GoalArcMark />
+          Share of the goal
+        </span>
         <span className="inline-flex items-center gap-1.5 text-[12.5px] text-content-muted">
           <OnPlanMark />
           On plan for today

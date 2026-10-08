@@ -64,7 +64,7 @@ function Row({ s }: { s: SetupItem }) {
           ) : (
             s.where
           )}
-          <span> · Unlocks {s.unlocks.charAt(0).toLowerCase() + s.unlocks.slice(1)}</span>
+          <span> · Unlocks {/^[A-Z][a-z]/.test(s.unlocks) ? s.unlocks.charAt(0).toLowerCase() + s.unlocks.slice(1) : s.unlocks}</span>
         </span>
         {!s.done && s.clients.length > 0 && (
           <ul className="m-0 mt-1 flex list-none flex-wrap gap-1.5 p-0" aria-label="Clients missing this">

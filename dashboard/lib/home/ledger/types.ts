@@ -47,6 +47,11 @@ export interface SettledMonth {
   keeps: Figure;
   /** Kept per 1 CZK paid to us: keeps / fees. */
   perKoruna: Figure;
+  /**
+   * When only the profit share is unknown: (CM3 - retainer) / retainer. Any
+   * profit share lowers the ratio, so this is its upper bound. Null otherwise.
+   */
+  perKorunaCeiling: number | null;
 }
 
 export interface TrendMonth {

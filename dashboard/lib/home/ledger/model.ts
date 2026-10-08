@@ -214,6 +214,7 @@ function settle(c: ClientHealth, month: string | null, rows: MonthRow[], invoice
     afterRetainer: fig(null, note),
     keeps: fig(null, note),
     perKoruna: fig(null, note),
+    perKorunaCeiling: null,
   });
   if (!c.clientId) return empty("Not in the warehouse registry (ref.clients), so no shop data.");
   if (!month) return empty(monthsNote ?? "No complete month in mart.plan_actuals_daily.");
@@ -264,7 +265,12 @@ function settle(c: ClientHealth, month: string | null, rows: MonthRow[], invoice
       ? fig(keeps.value / fees.value, null)
       : fig(null, keeps.note ?? (fees.value === 0 ? `No fees for ${name}.` : null));
 
-  return { month, label: name, cm3Czk, retainer, profitShare, fees, afterRetainer, keeps, perKoruna };
+  const perKorunaCeiling =
+    perKoruna.value === null && profitShare.value === null && afterRetainer.value !== null && retainer.value !== null && retainer.value > 0
+      ? afterRetainer.value / retainer.value
+      : null;
+
+  return { month, label: name, cm3Czk, retainer, profitShare, fees, afterRetainer, keeps, perKoruna, perKorunaCeiling };
 }
 
 function trendOf(c: ClientHealth, months: string[], rows: MonthRow[], invoices: Invoice[]): TrendMonth[] {
@@ -460,7 +466,7 @@ function buildSetup(input: LedgerInputs, partnerships: Partnership[], settledMon
       title: "Payments received",
       where: "Pohoda, or a paid date on each Invoice Tracker task",
       href: CLICKUP_INVOICES,
-      unlocks: "Received",
+      unlocks: "Money received",
       tip: "No source records money received. Payments are booked in Pohoda, which is not connected.",
       clients: [],
       total: null,

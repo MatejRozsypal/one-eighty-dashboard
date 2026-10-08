@@ -36,6 +36,7 @@ function ratioText(v: number): string {
 
 function Ratio({ p }: { p: Partnership }) {
   const r = p.settled.perKoruna;
+  const ceiling = p.settled.perKorunaCeiling;
   const month = p.settled.label;
   return (
     <div className="flex flex-col gap-1">
@@ -46,7 +47,24 @@ function Ratio({ p }: { p: Partnership }) {
           label="About client kept per 1 Kč"
         />
       </span>
-      {r.value === null ? (
+      {r.value === null && ceiling !== null ? (
+        <span className="inline-flex items-baseline gap-2">
+          <span className="text-[15px] font-semibold text-content-muted">at most</span>
+          <span
+            className="tabular text-[40px] font-bold leading-[1] tracking-display text-content-muted"
+            style={ceiling < 0 ? { color: "var(--h-negative-text)" } : undefined}
+          >
+            {ratioText(ceiling)}
+            <span className="ml-1.5 text-[17px] font-semibold tracking-normal">Kč</span>
+          </span>
+          <span className="self-center text-[13px]">
+            <InfoTip
+              text={`Before profit share. ${r.note ?? ""} Any profit share lowers this.`.trim()}
+              label="Why this is an upper bound"
+            />
+          </span>
+        </span>
+      ) : r.value === null ? (
         <span className="text-[34px] font-bold leading-[1.05] tracking-display">
           <NotAvailable note={r.note} label="the ratio" />
         </span>
@@ -105,7 +123,7 @@ export function PartnershipCard({ p }: { p: Partnership }) {
   const meta = [capitalise(p.crmStatus), p.billingType, p.currency].filter(Boolean);
 
   return (
-    <article className={CARD}>
+    <article className={p.clientId ? CARD : `${CARD} self-start`}>
       <header className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           {href ? (
@@ -143,16 +161,25 @@ export function PartnershipCard({ p }: { p: Partnership }) {
         </div>
       </header>
 
-      <Ratio p={p} />
+      {p.clientId ? (
+        <>
+          <Ratio p={p} />
 
-      <SplitBar s={p.settled} currency={p.currency} />
+          <SplitBar s={p.settled} currency={p.currency} />
 
-      <section className={GROUP} aria-label="Six months">
-        <span className={GROUP_TITLE}>CM3 and fees · 6 months · CZK</span>
-        <TrendBars months={p.trend} retainer={p.agreedRetainer.value} note={p.trendNote} />
-      </section>
+          <section className={GROUP} aria-label="Six months">
+            <span className={GROUP_TITLE}>CM3 and fees · 6 months · CZK</span>
+            <TrendBars months={p.trend} retainer={p.agreedRetainer.value} note={p.trendNote} />
+          </section>
 
-      <ThisMonth p={p} />
+          <ThisMonth p={p} />
+        </>
+      ) : (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-dashed border-hairline-strong px-4 py-3 text-[13px] text-content-muted">
+          <span>No shop data</span>
+          <NotAvailable note={p.trendNote} label="shop data" />
+        </div>
+      )}
     </article>
   );
 }

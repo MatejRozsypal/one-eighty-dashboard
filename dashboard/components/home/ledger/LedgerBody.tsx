@@ -17,10 +17,10 @@ export function LedgerBody({ data, name, now }: { data: LedgerData; name: string
   const invoices = data.setup.find((s) => s.id === "invoices");
   const chips = [
     { href: "#partnerships", label: "Partnerships", count: String(data.partnerships.length) },
+    { href: "#setup", label: "Setup", count: open ? `${open} open` : "done" },
     ...(invoices && !invoices.done && invoices.href
       ? [{ href: invoices.href, label: invoices.title, count: `${invoices.clients.length} missing` }]
       : []),
-    { href: "#setup", label: "Setup", count: open ? `${open} open` : "done" },
   ];
 
   return (

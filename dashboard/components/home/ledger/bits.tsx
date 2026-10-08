@@ -53,7 +53,11 @@ export function NotAvailable({ note, label, className = "" }: { note: string | n
   return (
     <span className={`inline-flex items-center gap-1 text-content-muted ${className}`}>
       {NO_VALUE}
-      {note && <InfoTip text={note} label={`Why ${label} is n/a`} />}
+      {note && (
+        <span className="inline-flex text-[13px] font-normal leading-none tracking-normal">
+          <InfoTip text={note} label={`Why ${label} is n/a`} />
+        </span>
+      )}
     </span>
   );
 }

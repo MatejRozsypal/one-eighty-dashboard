@@ -32,7 +32,8 @@
     "check:velocity": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-velocity.ts",
     "check:retention": "tsx --tsconfig scripts/tsconfig.json scripts/check-retention.ts",
     "check:period": "tsx --tsconfig scripts/tsconfig.json scripts/check-period.ts",
-    "check:xp": "tsx --tsconfig scripts/tsconfig.json scripts/check-presence-xp.ts"
+    "check:xp": "tsx --tsconfig scripts/tsconfig.json scripts/check-presence-xp.ts",
+    "check:home-alerts": "tsx --tsconfig scripts/tsconfig.json scripts/check-home-alerts.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.0",

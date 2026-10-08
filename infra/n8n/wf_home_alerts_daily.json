@@ -1,0 +1,99 @@
+{
+  "id": "Pmp7pH20TqlW8fqS",
+  "name": "wf_home_alerts_daily",
+  "active": true,
+  "nodes": [
+    {
+      "id": "7aa3af6a-5c23-43a1-9902-a6ca7e4f3977",
+      "name": "Daily at 05:10",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 5,
+              "triggerAtMinute": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "d5dea604-0675-4442-b45d-5928524a7bd9",
+      "name": "BQ: CALL sp_refresh_home_alerts",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        540,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "oneeighty-warehouse",
+          "cachedResultName": "oneeighty-warehouse"
+        },
+        "sqlQuery": "CALL `oneeighty-warehouse.mart.sp_refresh_home_alerts`();",
+        "options": {
+          "location": "EU",
+          "timeoutMs": 300000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 60000,
+      "credentials": {
+        "googleApi": {
+          "id": "GllXD8PCRtfTuXbu",
+          "name": "BQ Service Account"
+        }
+      }
+    },
+    {
+      "id": "a535bf6b-e09f-4d37-9b98-620c2d700d06",
+      "name": "Sticky Note home alerts",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "content": "## BQ: refresh home alerts\nComputes the Home For you alerts once a day into mart.home_alerts (first seen, last seen per alert) via the procedure mart.sp_refresh_home_alerts (migration 282). A failed check (plan_pacing older than 36 h, duplicate keys) keeps the previous alerts and fails this run, which triggers the Error workflow. The page falls back to live computation when the snapshot is older than 36 h. Repo: infra/n8n/wf_home_alerts_daily.json. Import INACTIVE, activate only after 282 is deployed.",
+        "color": 4
+      }
+    }
+  ],
+  "connections": {
+    "Daily at 05:10": {
+      "main": [
+        [
+          {
+            "node": "BQ: CALL sp_refresh_home_alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "errorWorkflow": "lslDsvbP8jLKEgw0",
+    "timezone": "Europe/Prague"
+  },
+  "tags": [],
+  "versionId": "dd9fd5f2-26ea-426f-b175-fcc16e439318"
+}

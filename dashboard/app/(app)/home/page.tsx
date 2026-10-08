@@ -13,7 +13,8 @@
  *   THURSDAY 8 OCTOBER, the greeting, one line about the clients
  *   the streak pill (with XP today) and the daily quote
  *   the assistant's box, chips of waiting work
- *   For you: cards from explicit rules, ordered by money at stake
+ *   Promotions: running and starting within 7 days (ClickUp promo calendars)
+ *   For you: client alerts (daily snapshot) and my ClickUp tasks, dismissable per person
  *   Clients: a ring card per client, opening its Goals page
  *
  * Every figure comes from lib/home/final/data.ts, which names its sources;
@@ -43,12 +44,12 @@ import {
   GreetingLineSkeleton,
   HomeChips,
   HomeClients,
-  HomeRecommendations,
   RecommendationsSkeleton,
 } from "@/components/home/final/Sections";
 import { TeamStreak, TeamLeaderboard } from "@/components/presence/Presence";
 import { LeaderboardCardSkeleton } from "@/components/presence/LeaderboardCard";
 import { DailyQuote } from "@/components/home/DailyQuote";
+import { HomeForYou, HomePromotions, PromotionsSkeleton } from "@/components/home/final/AlertSections";
 
 export const metadata: Metadata = { title: "Home" };
 export const dynamic = "force-dynamic";
@@ -123,8 +124,12 @@ export default async function HomePage() {
           </Suspense>
         </div>
 
+        <Suspense fallback={<PromotionsSkeleton />}>
+          <HomePromotions />
+        </Suspense>
+
         <Suspense fallback={<RecommendationsSkeleton />}>
-          <HomeRecommendations />
+          <HomeForYou />
         </Suspense>
 
         <Suspense fallback={<ClientCardsSkeleton />}>

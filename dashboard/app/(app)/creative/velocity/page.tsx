@@ -1,286 +1,92 @@
 /**
- * Screen 4, Velocity.
+ * Velocity, Overview: every client with Meta on one table.
  *
- * Whether enough creative is being made, and whether the packs it goes into are
- * funded well enough to produce a verdict before the no-touch window closes.
+ * Capacity is how many new ads the budget can bring to a verdict a month; the
+ * rest of the row says whether the team is producing to it and what is queued.
+ * Each row uses the client's saved Plan inputs where present, measured values
+ * otherwise, in the client's own Meta currency. A row opens that client's Plan.
  *
- * ── Why the unit is the pack ───────────────────────────────────────────────
- * Nathan's creatives-per-month model ignores how long an ad takes to spend and
- * does not separate winners from losers. A pack has a fixed cost to a verdict
- * and a fixed duration, so both gaps close. The eight gauges say whether the
- * cadence is being kept; the spec below says whether one pack can actually
- * finish; the horizon table says what changes if you spread the same money
- * differently.
- *
- * The cost of a verdict is fixed. How you spread it is the only real lever.
+ * Cross-client by design, so it reads every client at once: the Creative
+ * layout already refuses anyone outside the agency.
  */
 
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Header } from "@/components/shell/Header";
-import { CreativeBar } from "@/components/creative/CreativeBar";
-import { PageControls } from "@/components/controls/PageControls";
-import { CreativeNotConnected, Scorecard, SectionHead } from "@/components/creative/primitives";
 import { NotConnected } from "@/components/ui/EmptyState";
-import { InfoTip } from "@/components/ui/InfoTip";
-import { Notice } from "@/components/ui/Notice";
-import { loadCreative, type CreativeContext } from "@/lib/creative/page";
-import { getAdsetLaunchDates } from "@/lib/queries/creative";
-import { gauges, horizons, launchCadence, packSpec, type PackSettings } from "@/lib/creative/velocity";
-import { LaunchCadence } from "@/components/creative/LaunchCadence";
-import { formatMoney, isNoValue } from "@/lib/format";
+import { money, unitMoney } from "@/components/creative/primitives";
+import { RowLink } from "@/components/creative/velocity/RowLink";
+import { TableFrame, Td, Th } from "@/components/creative/velocity/Table";
+import { loadVelocityOverview, velocityFacts } from "@/lib/creative/velocityData";
+import { OVER_CAPACITY_X, LONG_WINDOW_DAYS } from "@/lib/creative/capacity";
+import { days, perMonth, share, times, whole } from "@/lib/creative/velocityFormat";
+import { formatRate } from "@/lib/creative/hitRate";
+import { NO_VALUE } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Velocity" };
 export const dynamic = "force-dynamic";
 
-export default async function VelocityPage({
-  searchParams,
-}: {
-  searchParams: { [k: string]: string | string[] | undefined };
-}) {
-  const loaded = await loadCreative(searchParams);
-  if (loaded.status === "not-connected") {
-    return <CreativeNotConnected title="Velocity" source={loaded.source} />;
-  }
-  const { ctx } = loaded;
-  const { client, currency, data, thresholds, display, settings } = ctx;
+export default async function VelocityOverviewPage() {
+  const clients = await loadVelocityOverview();
+  const rows = clients
+    .map((d) => ({ d, f: velocityFacts(d) }))
+    .sort((a, b) => a.d.client.name.localeCompare(b.d.client.name));
 
-  // ── What survives without a target CPA, and what does not ───────────────
-  // The pack model is CPA all the way down: the pack's daily budget is 2× CPA,
-  // the ads it can feed follow from that, and the horizon and the testing share
-  // follow from those. None of it means anything without the number.
-  //
-  // The cadence does. How many packs shipped in each of the last six months is
-  // counted off the ad sets, and it is the single most useful thing on this
-  // screen for an account that has not been configured yet, a team that
-  // stopped shipping looks exactly like a team that is fine, until you draw it.
-  const judged = thresholds !== null;
-
-  // The two floors are 2× and 0.5× CPA by SOP. A client can override them in
-  // settings; the defaults are derived rather than stored so a CPA correction
-  // moves the whole model instead of leaving three stale numbers behind.
-  const pack: PackSettings = {
-    testPurchases: settings.testPurchases,
-    targetCpa: display.targetCpa,
-    perAdFloorDaily: settings.perAdFloorDaily ?? display.targetCpa * 0.5,
-    minPackDaily: settings.minAdsetBudgetDaily ?? display.targetCpa * 2,
-    noTouchDays: display.noTouchDays,
-    monthlyBudget: settings.monthlyBudget ?? estimateMonthlyBudget(ctx),
-    packsPerMonthTarget: settings.packsPerMonthTarget,
-    hooksPerBodyTarget: settings.hooksPerBodyTarget,
-    netNewShareTarget: settings.netNewShareTarget,
-  };
-
-  const spec = packSpec(pack);
-  const tiles = gauges({ ads: data.ads, adsets: data.adsets, settings: pack }).filter(
-    (g) => judged || !g.cpaDerived
-  );
-  const options = horizons(pack);
-  const cadence = launchCadence(await getAdsetLaunchDates(client.clientId));
-  const m = (v: number | null) => formatMoney(v, currency);
-
-  return (
-    <Shell ctx={ctx}>
-      {!judged && <Notice tone="warning">No verdicts. Set thresholds in Settings.</Notice>}
-
-      {!data.available && <NotConnected source="Creative data" />}
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {tiles.map((g) => (
-          <div key={g.label} className="glass flex flex-col gap-2.5 px-4 py-3.5">
-            <div className="flex items-center gap-2">
-              <span
-                aria-hidden="true"
-                className="h-2 w-2 flex-shrink-0 rounded-full"
-                style={{ background: STATE_COLOUR[g.state] }}
-              />
-              <span className="truncate font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-                {g.label}
-              </span>
-              <InfoTip text={sentence(g.against)} label={`About ${g.label}`} />
-            </div>
-            <div className="flex items-baseline gap-2 whitespace-nowrap">
-              <b
-                className={`font-mono text-[26px] font-medium leading-none tracking-heading tabular ${
-                  isNoValue(g.value) ? "text-content-muted" : "text-content-strong"
-                }`}
-              >
-                {g.value}
-              </b>
-            </div>
-            <div className="relative h-1.5 overflow-hidden rounded-xs bg-gray-100">
-              <span
-                className="absolute inset-y-0 left-0 rounded-xs"
-                style={{
-                  width: `${Math.max(3, g.fill * 100).toFixed(0)}%`,
-                  background: STATE_COLOUR[g.state],
-                }}
-              />
-              {/* The target tick. Without it a half-full bar means nothing,
-                  half of what? */}
-              <span
-                aria-hidden="true"
-                className="absolute -inset-y-0.5 w-0.5 bg-content-strong opacity-50"
-                style={{ left: `${Math.min(99, g.mark * 100).toFixed(0)}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <section>
-        <SectionHead
-          title="Packs per month"
-          info="A pack is an ad set, dated by the month it first delivered. Ad sets that never spent are not counted."
-        />
-        <div className="glass p-5">
-          <LaunchCadence months={cadence} target={pack.packsPerMonthTarget} />
-        </div>
-      </section>
-
-      {/* Everything below is the pack model, and the pack model is the target
-          CPA restated four ways. Without one it would be arithmetic on a
-          placeholder, printed with the confidence of a measurement. */}
-      {judged && (
-      <>
-      <section>
-        <SectionHead title="One pack" />
-        <Scorecard
-          tiles={[
-            { label: "Pack budget", value: `${m(pack.minPackDaily)}/day`, info: "2× CPA floor." },
-            { label: "Ads per pack", value: String(spec.adsPerPack), info: `${m(pack.perAdFloorDaily)}/day each.` },
-            { label: "Runs for", value: `${pack.noTouchDays} days`, info: "The no-touch window." },
-            { label: "Pack costs", value: m(spec.packCost), info: "Cost to the decision." },
-            { label: "Purchases reached", value: String(spec.purchasesReached), info: `At ${m(pack.targetCpa)} CPA.` },
-            { label: "Purchases needed", value: String(spec.purchasesNeeded), info: "The test size." },
-          ]}
-        />
-        {/*
-          The horizon does not quite close, and this is the one line on the
-          screen that says so. A 14-day pack at the 2× CPA floor reaches 23
-          purchases against a test size of 25, two short, every pack, which
-          means either the verdict is taken on thinner data than the standard
-          claims or the no-touch window quietly runs long. One decision, two
-          answers, stated as a sentence rather than buried in a table.
-        */}
-        <p className="mt-3 max-w-[78ch] border-l-2 border-hairline-strong pl-4 text-[13.5px] leading-[1.7] text-content-body">
-          {spec.closes ? (
-            <>No change needed.</>
-          ) : (
-            <>
-              <strong className="font-medium text-content-strong">
-                Short by {spec.purchasesNeeded - spec.purchasesReached}{" "}
-                {spec.purchasesNeeded - spec.purchasesReached === 1 ? "purchase" : "purchases"}.
-              </strong>{" "}
-              Raise the pack to{" "}
-              <span className="font-mono">{m(spec.dailyToClose)}/day</span>, or let it run{" "}
-              <span className="font-mono">{spec.daysToClose} days</span> instead of{" "}
-              {pack.noTouchDays}.
-            </>
-          )}
-        </p>
-      </section>
-
-      <section>
-        <SectionHead title="Horizon options" />
-        <div className="glass-solid overflow-x-auto">
-          <table className="w-full min-w-[620px] border-collapse">
-            <thead>
-              <tr>
-                {["Pack runs for", "Budget / day", "Ads per pack", "Packs / month", "New ads / month", "Share of budget"].map(
-                  (h, i) => (
-                    <th
-                      key={h}
-                      className={`border-b border-hairline bg-gray-50/60 px-3.5 py-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-content-muted ${
-                        i === 0 ? "text-left" : "text-right"
-                      }`}
-                    >
-                      {h}
-                    </th>
-                  )
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {options.map((o) => (
-                <tr key={o.days} className={o.current ? "bg-accent-soft/60" : ""}>
-                  <td className="border-b border-hairline px-3.5 py-2.5 text-[13px] font-medium text-content-strong">
-                    {o.days} days
-                    {o.current && (
-                      <span className="ml-2 rounded-xs bg-accent-soft px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-growth-700">
-                        current
-                      </span>
-                    )}
-                  </td>
-                  <Cell>{m(o.dailyBudget)}</Cell>
-                  <Cell>{o.adsPerPack}</Cell>
-                  <Cell>{o.packsPerMonth.toFixed(1)}</Cell>
-                  <Cell>{o.newAdsPerMonth}</Cell>
-                  <Cell>{Math.round(o.shareOfBudget * 100)}%</Cell>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      </>
-      )}
-    </Shell>
-  );
-}
-
-const STATE_COLOUR = {
-  ok: "var(--positive)",
-  warn: "var(--warning)",
-  bad: "var(--negative)",
-} as const;
-
-/** "target 6" becomes "Target 6." for a tooltip. */
-function sentence(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1) + ".";
-}
-
-function Cell({ children }: { children: React.ReactNode }) {
-  return (
-    <td className="border-b border-hairline px-3.5 py-2.5 text-right font-mono text-[13px] tabular text-content-body">
-      {children}
-    </td>
-  );
-}
-
-/**
- * Monthly budget, when nobody has stated one.
- *
- * Derived from the last 30 days of actual delivery rather than defaulted to a
- * round number: the testing-share gauge is a fraction of this, and a wrong
- * denominator would turn a healthy 25% into a red 60% with nothing on screen
- * explaining why.
- */
-function estimateMonthlyBudget(ctx: CreativeContext): number {
-  const months = new Set(
-    ctx.data.ads.flatMap((a) => a.monthlySpend.filter((m) => m.spend > 0).map((m) => m.month))
-  ).size;
-  return months > 0 ? ctx.account.spend / months : ctx.account.spend;
-}
-
-function Shell({
-  ctx,
-  children,
-}: {
-  ctx: CreativeContext;
-  children: React.ReactNode;
-}) {
   return (
     <>
       <Header title="Velocity" />
-      <PageControls client={ctx.client} params={ctx.params} />
       <main className="page-frame flex flex-col gap-6 px-5 pb-14 pt-4 lg:px-8">
-        <CreativeBar
-          unmapped={ctx.unmappedCount}
-          through={ctx.data.through}
-          currency={ctx.currency}
-          href="/creative#unmapped"
-        />
-        {children}
+        {rows.length === 0 ? (
+          <NotConnected source="Meta" />
+        ) : (
+          <TableFrame minWidth={1180}>
+            <thead>
+              <tr>
+                <Th left>Client</Th>
+                <Th info="SMALL under 3k, MID 3k to 15k, LARGE over 15k USD of Meta spend a month.">Tier</Th>
+                <Th info="Meta spend, last 30 days.">Spend 30d</Th>
+                <Th info="Last 90 days, 7d click + 1d view.">CPA</Th>
+                <Th info="Share of spend on ads in their first 14 days, last 30 days.">New share</Th>
+                <Th info="New ads a month the budget brings to a verdict, at the saved Plan inputs.">Capacity</Th>
+                <Th info="Ads first delivered in the last 30 days, relaunches excluded.">New ads 30d</Th>
+                <Th info="New ads 30d over capacity at the last 30 days' actual spend.">Prod. vs cap.</Th>
+                <Th info="Days until a new pack has been paid N x CPA, at least 7.">Window</Th>
+                <Th info="ClickUp ad tasks ready to upload plus in the works.">Queue</Th>
+                <Th info="Capacity minus queue.">Brief next mo.</Th>
+                <Th info="Winners among launches of the trailing 12 months.">Hit rate 12m</Th>
+                <Th info="1 / (capacity x hit rate).">Mo. / winner</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ d, f }) => {
+                const href = `/creative/velocity/plan?client=${encodeURIComponent(d.client.clientId)}`;
+                const over = f.production !== null && f.production > OVER_CAPACITY_X;
+                const long = f.plan.windowDays !== null && f.plan.windowDays > LONG_WINDOW_DAYS;
+                return (
+                  <RowLink key={d.client.clientId} href={href}>
+                    <Td left>
+                      <Link href={href} className="hover:underline">
+                        {d.client.name}
+                      </Link>
+                    </Td>
+                    <Td>{f.tier ?? NO_VALUE}</Td>
+                    <Td>{money(d.summary?.spend30d ?? null, d.currency)}</Td>
+                    <Td>{unitMoney(d.resolved.cpa, d.currency)}</Td>
+                    <Td>{share(d.resolved.newShare)}</Td>
+                    <Td>{perMonth(f.plan.capacity)}</Td>
+                    <Td>{whole(f.newAds30d)}</Td>
+                    <Td tone={over ? "warn" : "default"}>{times(f.production)}</Td>
+                    <Td tone={long ? "warn" : "default"}>{days(f.plan.windowDays)}</Td>
+                    <Td>{whole(f.queued)}</Td>
+                    <Td>{whole(f.brief)}</Td>
+                    <Td>{formatRate(d.resolved.hitRate) ?? NO_VALUE}</Td>
+                    <Td>{perMonth(f.plan.monthsPerWinner)}</Td>
+                  </RowLink>
+                );
+              })}
+            </tbody>
+          </TableFrame>
+        )}
       </main>
     </>
   );

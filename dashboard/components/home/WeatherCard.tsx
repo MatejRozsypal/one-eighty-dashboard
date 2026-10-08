@@ -56,20 +56,23 @@ export function WeatherCard() {
 
   useEffect(() => {
     let live = true;
+    // Prague first, so the card is never blank while the browser's location
+    // prompt waits for an answer (the geolocation timeout does not run while
+    // the prompt is open). The user's own location replaces it if granted.
+    getJson(forecastUrl(FALLBACK_PLACE.latitude, FALLBACK_PLACE.longitude))
+      .then(parseForecast)
+      .catch(() => null)
+      .then((weather) => {
+        if (live) setState((s) => (s.status === "loading" ? { status: "ready", place: FALLBACK_PLACE.name, weather } : s));
+      });
     (async () => {
       const here = await locate();
-      const point = here ?? FALLBACK_PLACE;
+      if (!here || !live) return;
       const [weather, place] = await Promise.all([
-        getJson(forecastUrl(point.latitude, point.longitude))
-          .then(parseForecast)
-          .catch(() => null),
-        here
-          ? getJson(placeUrl(here.latitude, here.longitude))
-              .then(parsePlace)
-              .catch(() => null)
-          : Promise.resolve(FALLBACK_PLACE.name),
+        getJson(forecastUrl(here.latitude, here.longitude)).then(parseForecast).catch(() => null),
+        getJson(placeUrl(here.latitude, here.longitude)).then(parsePlace).catch(() => null),
       ]);
-      if (live) setState({ status: "ready", place: place ?? "Your location", weather });
+      if (live && weather) setState({ status: "ready", place: place ?? "Your location", weather });
     })();
     return () => {
       live = false;

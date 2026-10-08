@@ -15,8 +15,7 @@
 import { useMemo, useState } from "react";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { NO_VALUE, formatNumber } from "@/lib/format";
-import { formatMinutes } from "@/lib/presence/streak";
+import { formatNumber } from "@/lib/format";
 import { XP_RULES, levelFor, type XpWindow } from "@/lib/presence/xp";
 import type { PresenceRow } from "@/lib/presence/types";
 
@@ -77,10 +76,13 @@ function LevelBar({ xp, label }: { xp: number; label: string }) {
   );
 }
 
-function Row({ row, rank, win, detail }: { row: PresenceRow; rank: number; win: CardWindow; detail?: boolean }) {
+function Row({ row, rank, win }: { row: PresenceRow; rank: number; win: CardWindow }) {
   const trophy = rank <= TROPHIES.length && row.xp[win] > 0 ? TROPHIES[rank - 1] : null;
   return (
-    <li className="flex items-center gap-2.5">
+    <li
+      className={`-mx-2 flex items-center gap-2.5 rounded-[10px] px-2 py-1 ${row.isViewer ? "bg-[var(--h-info-tint)]" : ""}`}
+      aria-current={row.isViewer ? "true" : undefined}
+    >
       <span className="flex w-6 shrink-0 justify-center text-[15px] leading-none">
         <span className="sr-only">Rank {rank}</span>
         {trophy ? (
@@ -94,12 +96,9 @@ function Row({ row, rank, win, detail }: { row: PresenceRow; rank: number; win: 
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-[13.5px] font-semibold text-content-strong">
           {row.name}
-          {row.isViewer && <span className="font-medium text-content-muted"> · you</span>}
+          {row.isViewer && <span className="sr-only"> (you)</span>}
         </span>
-        <span className="truncate text-[11.5px] text-content-muted">
-          Lv {levelFor(row.xp.all).level}
-          {detail && ` · ${formatMinutes(row.minutes.today)} today · from ${row.startedToday ?? NO_VALUE}`}
-        </span>
+        <span className="truncate text-[11.5px] text-content-muted">Lv {levelFor(row.xp.all).level}</span>
       </span>
       <Streak row={row} />
       <span className="w-[52px] shrink-0 text-right text-[13.5px] font-semibold tabular text-content-strong">
@@ -120,7 +119,7 @@ export function LeaderboardCard({ rows, initialWindow = "week" }: { rows: Presen
 
   return (
     <div className={CARD}>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="m-0 inline-flex items-center gap-1 text-[15px] font-semibold text-content-strong">
           Leaderboard
           <span className="text-[11px] font-normal leading-none">
@@ -148,23 +147,22 @@ export function LeaderboardCard({ rows, initialWindow = "week" }: { rows: Presen
         <span>Team</span>
         <span>XP</span>
       </div>
-      <ol className="m-0 flex list-none flex-col gap-2.5 p-0">
+      <ol className="m-0 flex list-none flex-col gap-1 p-0">
         {shown.map((row) => (
-          <Row key={row.key} row={row} rank={ranked.indexOf(row) + 1} win={win} detail={all} />
+          <Row key={row.key} row={row} rank={ranked.indexOf(row) + 1} win={win} />
         ))}
       </ol>
 
       {viewer && level && (
-        <div className="flex flex-col gap-1.5 rounded-[12px] px-3 py-2.5" style={{ background: "var(--h-info-tint)" }}>
-          <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
-            <span className="font-semibold text-content-strong">
-              You · #{viewerRank} · Lv {level.level}
-            </span>
-            <span className="tabular text-content-muted">
-              {formatNumber(Math.max(0, level.nextXp - viewer.xp.all))} XP to Lv {level.level + 1}
-            </span>
+        <div className="flex flex-col gap-1.5 border-t border-hairline pt-3">
+          <div className="flex items-baseline justify-between gap-2 whitespace-nowrap text-[12.5px]">
+            <span className="font-semibold text-content-strong">You · #{viewerRank}</span>
+            <span className="font-semibold text-content-strong">Lv {level.level}</span>
           </div>
           <LevelBar xp={viewer.xp.all} label={`Level ${level.level}, ${Math.round(level.progress * 100)}% to level ${level.level + 1}`} />
+          <span className="text-right text-[11.5px] tabular text-content-muted">
+            {formatNumber(Math.max(0, level.nextXp - viewer.xp.all))} XP to Lv {level.level + 1}
+          </span>
         </div>
       )}
 

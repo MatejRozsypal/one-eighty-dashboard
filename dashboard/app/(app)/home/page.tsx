@@ -8,8 +8,8 @@
  *   period pill, "All clients · CZK", weather pill
  *   six figures for the last 30 days, one centred row without a card
  *   (components/home/final/KpiStrip.tsx)
- *   the leaderboard card, top right beside the greeting from 1100 px, under
- *   the strip below that (components/presence/LeaderboardCard.tsx)
+ *   the leaderboard card, top right beside the greeting when the content
+ *   area is 960 px or wider, under the strip below that (components/presence/LeaderboardCard.tsx)
  *   THURSDAY 8 OCTOBER, the greeting, one line about the clients
  *   the streak pill (with XP today) and the daily quote
  *   the assistant's box, chips of waiting work
@@ -84,23 +84,25 @@ export default async function HomePage() {
           <HomeKpiStrip />
         </div>
 
-        <div className="flex flex-col gap-5 py-6 sm:py-10">
+        <div className="flex flex-col gap-5 py-6 [container-type:inline-size] sm:py-10">
           {/*
-            From 1100 px: three columns, the leaderboard card in the right one
-            and an empty one of the same width on the left, so the greeting
-            and the box stay centred and the card never pushes them. Narrower:
-            one column, the card first, right under the strip.
+            Measured on the content area (a container query), not the window,
+            so the sidebar's width counts. From 960 px of content: three
+            columns, the leaderboard card in the right one and an empty one of
+            the same width on the left, so the greeting and the box stay
+            centred and the card never pushes them. Narrower: one column, the
+            card first, right under the strip.
           */}
-          <div className="flex flex-col gap-6 min-[1100px]:grid min-[1100px]:grid-cols-[minmax(248px,1fr)_minmax(0,720px)_minmax(248px,1fr)] min-[1100px]:items-start min-[1100px]:gap-x-6">
+          <div className="flex flex-col gap-6 [@container(min-width:960px)]:grid [@container(min-width:960px)]:grid-cols-[minmax(232px,1fr)_minmax(0,720px)_minmax(232px,1fr)] [@container(min-width:960px)]:items-start [@container(min-width:960px)]:gap-x-5">
             <aside
               aria-label="Leaderboard"
-              className="w-full min-[1100px]:col-start-3 min-[1100px]:row-start-1 min-[1100px]:max-w-[296px] min-[1100px]:justify-self-end"
+              className="w-full [@container(min-width:960px)]:col-start-3 [@container(min-width:960px)]:row-start-1 [@container(min-width:960px)]:max-w-[296px] [@container(min-width:960px)]:justify-self-end"
             >
               <Suspense fallback={<LeaderboardCardSkeleton />}>
                 <TeamLeaderboard />
               </Suspense>
             </aside>
-            <section aria-label="Assistant" className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 text-center min-[1100px]:col-start-2 min-[1100px]:row-start-1">
+            <section aria-label="Assistant" className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 text-center [@container(min-width:960px)]:col-start-2 [@container(min-width:960px)]:row-start-1">
               <div className="flex flex-col items-center gap-3">
                 <div className="flex flex-col items-center gap-2">
                   <GreetingHeader name={name} now={new Date().toISOString()} />

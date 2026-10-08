@@ -10,7 +10,7 @@
  * What used to sit under a tile ("4 of 5 clients") is in its (i). The four money figures share one read of the daily actuals; new ads
  * and new concepts each have their own, slower source. Every figure streams
  * in its own Suspense boundary, so a slow source holds only its own slot.
- * Wraps to three a row on tablets and two on phones, never scrolls sideways.
+ * Wraps to three a row or two (see StripFrame), never scrolls sideways.
  */
 
 import { Suspense, type ReactNode } from "react";
@@ -102,15 +102,23 @@ export function CellSkeleton() {
   );
 }
 
-/** The row: a grid of two or three on small screens, one centred line from lg. */
+/**
+ * The row, sized by the content area (a container query), not the window, so
+ * the sidebar's width counts: two a row on a phone, three from 560 px, all
+ * six on one centred line from 1100 px (they need about 1100 px at their
+ * natural width, so none of them is squeezed into wrapping), never five and
+ * an orphan.
+ */
 export function StripFrame({ children }: { children: ReactNode }) {
   return (
-    <section
-      aria-label="Last 30 days, all clients"
-      className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:flex lg:flex-wrap lg:items-start lg:justify-center lg:gap-x-10 lg:gap-y-3"
-    >
-      {children}
-    </section>
+    <div className="[container-type:inline-size]">
+      <section
+        aria-label="Last 30 days, all clients"
+        className="grid grid-cols-2 gap-x-3 gap-y-4 [@container(min-width:560px)]:grid-cols-3 [@container(min-width:1100px)]:flex [@container(min-width:1100px)]:flex-wrap [@container(min-width:1100px)]:items-start [@container(min-width:1100px)]:justify-center [@container(min-width:1100px)]:gap-x-6 [&>*]:shrink-0"
+      >
+        {children}
+      </section>
+    </div>
   );
 }
 

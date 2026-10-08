@@ -63,52 +63,61 @@ export default async function HomePage() {
   return (
     <>
       <Header title="Home" />
-      <main className="page-frame flex flex-col gap-6 px-4 pb-14 pt-5 [container-type:inline-size] sm:px-5 lg:px-8">
-        {/*
-          Shopify keeps its globe in the top-right corner; the leaderboard
-          takes that place. Measured on the content area (a container query),
-          so the sidebar's width counts. From 1040 px of content: two
-          columns, everything on the left, the weather and the leaderboard
-          card in the right one from the very top. Narrower: one column with
-          the card under the strip.
-        */}
-        <div className="flex flex-col gap-6 [@container(min-width:1040px)]:grid [@container(min-width:1040px)]:grid-cols-[minmax(0,1fr)_288px] [@container(min-width:1040px)]:items-start [@container(min-width:1040px)]:gap-x-8">
-          <div className="flex min-w-0 flex-col gap-4 [@container(min-width:1040px)]:col-start-1 [@container(min-width:1040px)]:row-start-1">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={PILL}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-content-muted">
-                    <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
-                  </svg>
-                  Last 30 days
-                  <Suspense fallback={null}>
-                    <StripThrough />
-                  </Suspense>
-                </span>
-                <span className={PILL}>All clients · CZK</span>
-              </div>
-              <span className="[@container(min-width:1040px)]:hidden">
-                <WeatherChip />
-              </span>
-            </div>
-            <HomeKpiStrip />
+      {/*
+        Container queries on the whole content area (sidebar excluded):
+        - 2040 px and wider: the page column (1400 px max) leaves a gutter on
+          the right, and the leaderboard sits in the far right corner of the
+          window, where Shopify keeps its globe.
+        - 1040 to 2039 px: it sits in a right column beside the greeting.
+        - narrower: a full-width card under the strip.
+        The card renders in each place and container queries show one.
+      */}
+      <div className="relative [container-type:inline-size]">
+        <aside
+          aria-label="Leaderboard"
+          className="absolute right-5 top-5 z-[1] hidden w-[300px] flex-col items-end gap-3 [@container(min-width:2040px)]:flex"
+        >
+          <WeatherChip />
+          <div className="w-full">
+            <Suspense fallback={<LeaderboardCardSkeleton />}>
+              <TeamLeaderboard />
+            </Suspense>
           </div>
+        </aside>
 
-          <aside
-            aria-label="Leaderboard"
-            className="flex w-full flex-col items-end gap-3 [@container(min-width:1040px)]:col-start-2 [@container(min-width:1040px)]:row-span-2 [@container(min-width:1040px)]:row-start-1"
-          >
-            <span className="hidden [@container(min-width:1040px)]:inline-flex">
+      <main className="page-frame flex flex-col gap-6 px-4 pb-14 pt-5 sm:px-5 lg:px-8">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={PILL}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-content-muted">
+                  <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+                </svg>
+                Last 30 days
+                <Suspense fallback={null}>
+                  <StripThrough />
+                </Suspense>
+              </span>
+              <span className={PILL}>All clients · CZK</span>
+            </div>
+            <span className="[@container(min-width:2040px)]:hidden">
               <WeatherChip />
             </span>
-            <div className="w-full">
-              <Suspense fallback={<LeaderboardCardSkeleton />}>
-                <TeamLeaderboard />
-              </Suspense>
-            </div>
+          </div>
+          <HomeKpiStrip />
+        </div>
+
+        <div className="flex flex-col gap-6 [@container(min-width:1040px)_and_(max-width:2039px)]:grid [@container(min-width:1040px)_and_(max-width:2039px)]:grid-cols-[minmax(0,1fr)_288px] [@container(min-width:1040px)_and_(max-width:2039px)]:items-start [@container(min-width:1040px)_and_(max-width:2039px)]:gap-x-8">
+          <aside
+            aria-label="Leaderboard"
+            className="w-full [@container(min-width:2040px)]:hidden [@container(min-width:1040px)_and_(max-width:2039px)]:col-start-2 [@container(min-width:1040px)_and_(max-width:2039px)]:row-start-1"
+          >
+            <Suspense fallback={<LeaderboardCardSkeleton />}>
+              <TeamLeaderboard />
+            </Suspense>
           </aside>
 
-          <div className="flex min-w-0 flex-col gap-5 py-4 [@container(min-width:1040px)]:col-start-1 [@container(min-width:1040px)]:row-start-2 sm:py-8">
+          <div className="flex min-w-0 flex-col gap-5 py-4 [@container(min-width:1040px)_and_(max-width:2039px)]:col-start-1 [@container(min-width:1040px)_and_(max-width:2039px)]:row-start-1 sm:py-8">
             <section aria-label="Assistant" className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 text-center">
               <div className="flex flex-col items-center gap-3">
                 <GreetingHeader name={name} now={new Date().toISOString()} />
@@ -135,6 +144,7 @@ export default async function HomePage() {
         </Suspense>
 
       </main>
+      </div>
     </>
   );
 }

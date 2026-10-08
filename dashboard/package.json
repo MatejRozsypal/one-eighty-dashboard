@@ -29,6 +29,7 @@
     "check:delta-paid": "tsx --tsconfig scripts/tsconfig.json scripts/check-delta-paid.ts",
     "check:delta-cmpc": "tsx --tsconfig scripts/tsconfig.json scripts/check-delta-cmpc.ts",
     "check:hitrate": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-hitrate.ts",
+    "check:velocity": "tsx --tsconfig scripts/tsconfig.json scripts/check-creative-velocity.ts",
     "check:retention": "tsx --tsconfig scripts/tsconfig.json scripts/check-retention.ts",
     "check:period": "tsx --tsconfig scripts/tsconfig.json scripts/check-period.ts"
   },

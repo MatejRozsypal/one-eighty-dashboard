@@ -100,8 +100,15 @@ fi
 echo "== systemd"
 cp /opt/oe-agent/deploy/oe-agent.service /etc/systemd/system/oe-agent.service
 cp /opt/oe-agent/deploy/cloudcli.service /etc/systemd/system/cloudcli.service
+cp /opt/oe-agent/deploy/brain-pull.service /etc/systemd/system/brain-pull.service
+cp /opt/oe-agent/deploy/brain-pull.timer /etc/systemd/system/brain-pull.timer
 systemctl daemon-reload
 systemctl enable oe-agent cloudcli
+if [ -d /var/lib/oe-agent/work/brain/.git ]; then
+  systemctl enable --now brain-pull.timer
+else
+  echo "   (Second Brain not cloned yet: README, 'Second Brain'. The pull timer starts once it is.)"
+fi
 
 if [ "$SKIP_CADDY" != 1 ]; then
   echo "== Caddy (added beside whatever this VPS already serves, never in place of it)"

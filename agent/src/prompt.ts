@@ -13,7 +13,7 @@ const BASE = readFileSync(CLAUDE_MD, "utf8");
 
 const DASHBOARD = [
   "## This conversation",
-  "You are answering in the dashboard chat, which is read only. You can query BigQuery and read Meta, nothing else. If asked to change something, say exactly what to change (entity, current value, new value) and that it can be done in CloudCLI.",
+  "You are answering in the dashboard chat, which is read only. You can query BigQuery, read Meta and read the Second Brain in ./brain, nothing else. If asked to change something, say exactly what to change (entity, current value, new value) and that it can be done in CloudCLI.",
 ].join("\n");
 
 export function systemPrompt(surface: "dashboard"): string {

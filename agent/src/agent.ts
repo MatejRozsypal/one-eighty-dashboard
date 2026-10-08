@@ -17,7 +17,7 @@
 
 import { query, type HookCallback, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { systemPrompt } from "./prompt.js";
-import { ALLOWED, DASHBOARD_DENIED } from "./tools.js";
+import { ALLOWED, DASHBOARD_DENIED, FILE_TOOLS, fileArgsInsideWorkspace } from "./tools.js";
 
 export type ChatEvent =
   | { type: "session"; id: string }
@@ -45,11 +45,22 @@ const SERVER_LABEL: Record<string, string> = {
 
 /**
  * Last line of the dashboard's read-only guarantee: runs before every tool
- * call and refuses anything not on the read allowlist, independent of any
- * settings file on the VPS.
+ * call and refuses anything not on the read allowlist, and any file read or
+ * search outside the workspace, independent of any settings file on the VPS.
  */
 export const readOnlyGuard: HookCallback = async (input) => {
   if (input.hook_event_name !== "PreToolUse" || ALLOWED.includes(input.tool_name)) return {};
+  if (FILE_TOOLS.includes(input.tool_name)) {
+    if (fileArgsInsideWorkspace(input.tool_name, input.tool_input)) return {};
+    console.warn(`[agent] refused ${input.tool_name} outside the workspace`);
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: "Only the One Eighty workspace (the Second Brain in ./brain) can be read here.",
+      },
+    };
+  }
   console.warn(`[agent] refused ${input.tool_name} in the read-only dashboard`);
   return {
     hookSpecificOutput: {
@@ -93,13 +104,13 @@ export async function runTurn(
       effort: "high",
       systemPrompt: systemPrompt("dashboard"),
       cwd: process.env.AGENT_WORKDIR ?? process.cwd(),
-      tools: [],
+      tools: FILE_TOOLS,
       skills: [],
       // "user" loads the MCP servers from ~/.claude.json (bigquery with its
       // headersHelper, meta-ads with its stored login). Nothing else lives
       // there, and the read-only guard below holds whatever it contains.
       settingSources: ["user"],
-      allowedTools: ALLOWED,
+      allowedTools: [...ALLOWED, ...FILE_TOOLS],
       disallowedTools: DASHBOARD_DENIED,
       permissionMode: "dontAsk",
       hooks: { PreToolUse: [{ hooks: [readOnlyGuard] }] },
@@ -139,6 +150,8 @@ export async function runTurn(
         if (block.type === "tool_use" && block.name.startsWith("mcp__")) {
           const [, server = "", name = ""] = block.name.split("__");
           emit({ type: "tool", server: SERVER_LABEL[server] ?? server, name });
+        } else if (block.type === "tool_use" && FILE_TOOLS.includes(block.name)) {
+          emit({ type: "tool", server: "Second Brain", name: block.name.toLowerCase() });
         } else if (block.type === "text" && wroteText) {
           // Text before and after a tool call arrives as separate blocks.
           emit({ type: "text", delta: "\n\n" });

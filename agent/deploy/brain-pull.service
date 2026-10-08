@@ -1,0 +1,13 @@
+[Unit]
+Description=Pull the One Eighty Second Brain into the agent workspace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=oeagent
+Group=oeagent
+Environment=HOME=/home/oeagent
+# Read-only deploy key via the github-brain host alias in ~oeagent/.ssh/config.
+# --ff-only: the clone is never edited on the VPS, so this never merges.
+ExecStart=/usr/bin/git -C /var/lib/oe-agent/work/brain pull --ff-only -q

@@ -14,9 +14,9 @@ import { quoteForDay } from "@/lib/home/quotes";
 export function DailyQuote({ date }: { date?: Date } = {}) {
   const quote = quoteForDay(date ?? new Date());
   return (
-    <figure className="m-0 flex max-w-[620px] flex-col gap-1 border-l-2 border-hairline pl-3">
-      <blockquote className="m-0 text-[15px] leading-[1.45] text-content-body">{quote.text}</blockquote>
-      <figcaption className="text-[13px] font-medium text-content-muted">
+    <figure className="m-0 flex w-full max-w-[560px] flex-col items-center gap-1 text-center">
+      <blockquote className="m-0 text-balance text-[14px] leading-[1.5] text-content-muted">{quote.text}</blockquote>
+      <figcaption className="text-[12.5px] font-medium text-content-body">
         <span title={quote.source}>{quote.author}</span>
       </figcaption>
     </figure>

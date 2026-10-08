@@ -45,7 +45,7 @@ function Tile({
   return (
     <section
       aria-label={title}
-      className="flex min-h-[188px] min-w-0 flex-col gap-1 rounded-card border border-hairline bg-surface-card p-4 shadow-sm sm:p-[18px]"
+      className="flex min-w-0 flex-col gap-1 rounded-card min-[420px]:min-h-[188px] border border-hairline bg-surface-card p-4 shadow-sm sm:p-[18px]"
     >
       <header className="flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-content-muted">
         <TileGlyph icon={icon} />

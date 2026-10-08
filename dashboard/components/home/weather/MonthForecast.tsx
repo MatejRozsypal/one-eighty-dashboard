@@ -67,16 +67,21 @@ function Bar({ row, max }: { row: PacingRow; max: number }) {
           }}
         />
       )}
-      {pillStart !== null && pillEnd !== null && (
+      {pillStart !== null && pillEnd !== null && pillEnd - pillStart >= 1 && (
         <span
           className="absolute inset-y-0 rounded-full"
           style={{
             left: `${pillStart}%`,
-            width: `max(8px, ${pillEnd - pillStart}%)`,
-            transform: pillEnd - pillStart < 1 ? "translateX(-4px)" : undefined,
+            width: `${pillEnd - pillStart}%`,
             background: `linear-gradient(90deg, ${tone.tint}, ${tone.graphic})`,
             boxShadow: `inset 0 0 0 1px ${tone.graphic}`,
           }}
+        />
+      )}
+      {pillStart !== null && pillEnd !== null && pillEnd - pillStart < 1 && (
+        <span
+          className="absolute top-1/2 h-[12px] w-[12px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{ left: `${(pillStart + pillEnd) / 2}%`, background: tone.graphic }}
         />
       )}
       <span
@@ -224,9 +229,9 @@ export function MonthForecast({ clients, monthLabel }: { clients: ClientHealth[]
             {ticks.map((t) => (
               <span
                 key={t}
-                className={`absolute top-0 -translate-x-1/2 text-[11px] font-semibold tabular ${
-                  t === 1 ? "text-content-strong" : "text-content-muted"
-                }`}
+                className={`absolute top-0 text-[11px] font-semibold tabular ${
+                  t === 0 ? "" : t === max ? "-translate-x-full" : "-translate-x-1/2"
+                } ${t === 1 ? "text-content-strong" : "text-content-muted"}`}
                 style={{ left: `${(t / max) * 100}%` }}
               >
                 {t === 1 ? "Target" : `${Math.round(t * 100)}%`}

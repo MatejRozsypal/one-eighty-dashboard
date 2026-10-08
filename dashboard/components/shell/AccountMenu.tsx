@@ -28,6 +28,7 @@ import { AppLink } from "@/components/ui/AppLink";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import { SETTINGS_HREF } from "@/lib/nav";
+import { WhatsNewMenuItem } from "@/components/whatsnew/WhatsNewButton";
 import { productFor } from "@/lib/products";
 import type { Client } from "@/lib/clients";
 
@@ -74,6 +75,9 @@ export function AccountMenu({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  /** The chip itself, so focus has somewhere real to land when a menu item
+      opens something over the page and takes the menu with it. */
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -159,6 +163,7 @@ export function AccountMenu({
       <div className={`${onReports ? "w-full" : "page-frame"} flex h-full items-center justify-end px-5 lg:px-8`}>
         <div ref={rootRef} className="pointer-events-auto relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
@@ -250,6 +255,16 @@ export function AccountMenu({
           </div>
 
           <div className="flex flex-col border-t border-hairline p-1.5">
+            {/*
+              Above Settings on purpose: it is the lightest thing in the group
+              and the only one that does not leave the page, so it reads first
+              and costs least to try. Sign out stays last.
+            */}
+            <WhatsNewMenuItem
+              className="flex items-center gap-2.5 rounded-control px-2 py-2 text-[13px] text-content-body transition-colors duration-fast hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus-ring)]"
+              onOpen={() => setOpen(false)}
+              restoreFocusTo={() => triggerRef.current}
+            />
             {showSettings && (
               <AppLink
                 href={SETTINGS_HREF}

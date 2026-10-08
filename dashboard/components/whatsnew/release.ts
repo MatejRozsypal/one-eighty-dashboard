@@ -26,7 +26,6 @@
 export const RELEASE_ID = "2026-10-redesign";
 
 const SEEN_KEY = `one-eighty:whats-new:${RELEASE_ID}`;
-const RECALL_KEY = `one-eighty:whats-new-recall:${RELEASE_ID}`;
 
 /**
  * The store, or null when it cannot be used.
@@ -66,25 +65,5 @@ export function markSeen(): void {
   } catch {
     // Storage filled up or was revoked between the probe and here. The only
     // cost is that the sequence may play once more; not worth failing over.
-  }
-}
-
-/** True while the "watch it again" recall chip is still worth offering. */
-export function recallOffered(): boolean {
-  const s = store();
-  if (!s) return false;
-  try {
-    return s.getItem(RECALL_KEY) !== "1";
-  } catch {
-    return false;
-  }
-}
-
-/** Retires the recall chip for good. Never throws. */
-export function retireRecall(): void {
-  try {
-    store()?.setItem(RECALL_KEY, "1");
-  } catch {
-    // Same as above: the chip may be offered once more. Harmless.
   }
 }

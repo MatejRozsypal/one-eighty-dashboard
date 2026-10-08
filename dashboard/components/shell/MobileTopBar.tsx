@@ -29,11 +29,12 @@
  */
 
 import { AppLink } from "@/components/ui/AppLink";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { navForProduct, navHref, pageTitle, railProducts, resolveActive, selectedClient } from "@/lib/nav";
 import { productFor } from "@/lib/products";
 import { NavIcon } from "@/components/shell/NavIcon";
+import { WhatsNewMenuItem } from "@/components/whatsnew/WhatsNewButton";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import type { Client } from "@/lib/clients";
 import type { Role } from "@/lib/users/store";
@@ -53,6 +54,8 @@ export function MobileTopBar({
   // One menu at a time: the page sheet and the client menu used to stack over
   // each other at 390 px (QA C-12). A single value cannot hold both open.
   const [menu, setMenu] = useState<"pages" | "client" | null>(null);
+  /** The title, which is what opens this sheet and outlives it. */
+  const titleRef = useRef<HTMLButtonElement>(null);
   const open = menu === "pages";
   const clientOpen = menu === "client";
   const toggle = (which: "pages" | "client") =>
@@ -133,6 +136,7 @@ export function MobileTopBar({
     <header className="sticky top-0 z-40 bg-ink-900 pt-[var(--safe-top)] lg:hidden">
       <div className="flex h-[var(--header-bar-h)] items-center justify-between gap-3 px-4">
         <button
+          ref={titleRef}
           type="button"
           onClick={() => toggle("pages")}
           aria-expanded={open}
@@ -351,6 +355,28 @@ export function MobileTopBar({
                 })}
               </div>
             ))}
+
+            {/*
+              The account menu is `hidden lg:block`, so a phone has no corner
+              drawer for this to sit in. The page sheet is the only global menu
+              there is, so the item sits at its foot behind a rule, where a
+              footer action is expected and cannot be mistaken for a page.
+
+              Sticky, because this sheet scrolls: the nav groups are about
+              1050px of list inside a 70vh box, so a footer in normal flow was
+              a scroll away from anybody who did not already know it was there,
+              which is the opposite of what a permanent control is for.
+
+              Padded to a 44px target rather than matching the 42px nav rows:
+              this one is a touch target first.
+            */}
+            <div className="sticky bottom-0 -mx-2 -mb-2 mt-2 border-t border-hairline bg-paper px-2 pb-2 pt-1.5">
+              <WhatsNewMenuItem
+                className="flex w-full items-center gap-2.5 rounded-sm px-3 py-3 text-left text-[15px] text-content-body transition-colors duration-fast active:bg-gray-100"
+                onOpen={() => setMenu(null)}
+                restoreFocusTo={() => titleRef.current}
+              />
+            </div>
           </nav>
         </>
       )}

@@ -544,22 +544,3 @@
 .wn-settled *::after {
   animation-delay: -10s !important;
 }
-
-/* ========================================================================
-   The recall chip
-   ======================================================================== */
-
-@keyframes wn-chip-rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.wn-recall {
-  animation: wn-chip-rise 280ms var(--ease-out) 240ms both;
-}

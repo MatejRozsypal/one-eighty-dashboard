@@ -50,12 +50,8 @@ import {
   useState,
 } from "react";
 import { BEATS, CLOSING, Stage, StaticSummary } from "./Stages";
-import {
-  markSeen,
-  recallOffered,
-  retireRecall,
-  shouldAutoPlay,
-} from "./release";
+import { markSeen, shouldAutoPlay } from "./release";
+import { WHATS_NEW_OPEN, type OpenWhatsNewDetail } from "./open";
 import "./whats-new.css";
 
 /** Index of the closing card: one past the last beat. */
@@ -65,7 +61,7 @@ const CLOSING_INDEX = BEATS.length;
 type Mode =
   /** First visit after the release. Dismissal is recorded. */
   | "auto"
-  /** Asked for again with `?whatsnew=1`. Dismissal is recorded too. */
+  /** Asked for on purpose: the menu item, or `?whatsnew=1`. */
   | "replay"
   /** `?whatsnew=still`, or reduced motion: the static summary. */
   | "still";
@@ -135,7 +131,14 @@ export function WhatsNew() {
   const [furthest, setFurthest] = useState(0);
   /** True when the beat on screen is one the person has already watched. */
   const [settled, setSettled] = useState(false);
-  const [recall, setRecall] = useState(false);
+  /**
+   * Set as soon as the tour is open by any route.
+   *
+   * The automatic first showing waits for an idle moment, so there is a window
+   * in which somebody can open it from the menu first. Without this the idle
+   * callback would arrive afterwards and take over a tour already in progress.
+   */
+  const openedRef = useRef(false);
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   /** The primary control. Focus lands here on open so Enter works at once. */
@@ -155,10 +158,12 @@ export function WhatsNew() {
     // is the durable way back in, and it has to work even in a browser where
     // storage throws.
     if (asked === "still") {
+      openedRef.current = true;
       setMode("still");
       return;
     }
     if (asked === "1") {
+      openedRef.current = true;
       setMode(still ? "still" : "replay");
       return;
     }
@@ -166,19 +171,21 @@ export function WhatsNew() {
     // Otherwise it is the automatic first showing, which is the only path that
     // consults storage, and the only one that fails closed when storage is
     // unavailable.
-    // No chip here: there is nothing to recall until somebody has actually cut
-    // a sequence short, which is decided in `close`.
     if (!shouldAutoPlay()) return;
 
     return whenIdle(() => {
+      // Somebody opened it from the menu while this was waiting for an idle
+      // moment. Their tour is already running; do not restart it underneath
+      // them, and do not mark seen a second time.
+      if (openedRef.current) return;
       // Recorded the moment it is shown, not when it is dismissed.
       //
       // Marking it on dismissal looks tidier and is wrong: somebody who clicks
       // a nav link while the sequence is running never dismisses it, so the
       // flag is never written, and it would start again on the next page, and
       // the page after that. Showing it once and meaning it is the promise;
-      // the way back for somebody who missed it is the recall chip, and
-      // `?whatsnew=1` on any page after that.
+      // the way back for somebody who missed it is the permanent "What's new"
+      // item in the account menu and the mobile page sheet.
       markSeen();
       setMode(still ? "still" : "auto");
     });
@@ -189,15 +196,28 @@ export function WhatsNew() {
   /* ------------------------------------------------------------------ */
 
   const close = useCallback(
-    (offerRecall: boolean) => {
+    () => {
+      /*
+       * Marked seen on the way out, whichever route opened it.
+       *
+       * This is the whole of how the menu item interacts with the flag, and
+       * the reasoning is worth keeping: somebody who has never seen the tour
+       * and opens it from the menu has, by the time they close it, seen it.
+       * Writing the flag then is simply true, and it is what stops the
+       * automatic showing arriving unprompted on their next page load, which
+       * would look like the app had forgotten. Nothing clears the flag, ever,
+       * so a deliberate viewing can never resurrect the automatic one.
+       *
+       * The flag is never written merely because the control exists or the
+       * menu was opened. Only an actual viewing writes it, so the item being
+       * present cannot cost anybody their first showing.
+       */
       markSeen();
+      openedRef.current = false;
       setMode(null);
       setBeat(0);
       setFurthest(0);
       setSettled(false);
-      // The chip is only worth offering to somebody who cut the sequence
-      // short, and only until they have taken it up or waved it away once.
-      if (offerRecall && recallOffered()) setRecall(true);
       // Hand focus back to whatever had it. `preventScroll` because the page
       // behind has not moved and should not jump.
       const target = returnTo.current;
@@ -208,6 +228,33 @@ export function WhatsNew() {
     },
     []
   );
+
+  /* ------------------------------------------------------------------ */
+  /* Opened on purpose                                                  */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * The permanent control, in the account menu and the mobile page sheet.
+   *
+   * Deliberately asks storage nothing. The automatic showing fails closed when
+   * `localStorage` throws, because a tour that cannot be remembered would
+   * otherwise appear on every page view; a click is not a guess, so it opens
+   * regardless and simply will not be remembered. The seen flag is still
+   * written on close, and still fails silently if it cannot be.
+   */
+  useEffect(() => {
+    function onOpen(e: Event) {
+      const detail = (e as CustomEvent<OpenWhatsNewDetail>).detail;
+      openedRef.current = true;
+      returnTo.current = detail?.restoreFocusTo ?? document.activeElement;
+      setBeat(0);
+      setFurthest(0);
+      setSettled(false);
+      setMode(prefersReducedMotion() ? "still" : "replay");
+    }
+    window.addEventListener(WHATS_NEW_OPEN, onOpen);
+    return () => window.removeEventListener(WHATS_NEW_OPEN, onOpen);
+  }, []);
 
   /* ------------------------------------------------------------------ */
   /* Stepping                                                           */
@@ -237,7 +284,7 @@ export function WhatsNew() {
 
   /** The primary action: forward, or out when there is nowhere further. */
   const advance = useCallback(() => {
-    if (atClosing) close(false);
+    if (atClosing) close();
     else goTo(beat + 1);
   }, [atClosing, beat, goTo, close]);
 
@@ -251,7 +298,11 @@ export function WhatsNew() {
 
   useEffect(() => {
     if (!mode) return;
-    returnTo.current = document.activeElement;
+    // `??`, not `=`: an open from the menu has already named the control to
+    // hand focus back to, because the menu item that was clicked is about to
+    // be unmounted along with its menu. Only the automatic showing falls back
+    // to whatever happened to have focus.
+    returnTo.current = returnTo.current ?? document.activeElement;
     // Focus goes to Next, so Enter and Space work the moment the dialog opens
     // without anybody having to find the control first. The dialog is named by
     // the beat's heading, so a screen reader still hears what it is before it
@@ -273,7 +324,7 @@ export function WhatsNew() {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.stopPropagation();
-        close(true);
+        close();
         return;
       }
 
@@ -332,22 +383,9 @@ export function WhatsNew() {
   /* Render                                                             */
   /* ------------------------------------------------------------------ */
 
-  if (!mode) {
-    return recall ? (
-      <RecallChip
-        onOpen={() => {
-          retireRecall();
-          setRecall(false);
-          setBeat(0);
-          setMode(prefersReducedMotion() ? "still" : "replay");
-        }}
-        onDismiss={() => {
-          retireRecall();
-          setRecall(false);
-        }}
-      />
-    ) : null;
-  }
+  // Nothing to render until it is open. The way back in is the permanent
+  // "What's new" item in the shell, not a chip this component plants.
+  if (!mode) return null;
 
   const isStill = mode === "still";
   const current = atClosing ? CLOSING : BEATS[beat];
@@ -363,7 +401,7 @@ export function WhatsNew() {
       <button
         type="button"
         aria-label="Close what's new"
-        onClick={() => close(true)}
+        onClick={() => close()}
         className="wn-backdrop absolute inset-0 w-full cursor-default bg-ink-950/55"
       />
 
@@ -393,7 +431,7 @@ export function WhatsNew() {
               is padded rather than merely sized. */}
           <button
             type="button"
-            onClick={() => close(true)}
+            onClick={() => close()}
             className="-mr-2 -mt-2 flex h-11 min-w-[44px] flex-none items-center justify-center rounded-[999px] px-3 text-[13.5px] font-semibold text-content-muted transition-colors duration-fast hover:bg-gray-100 hover:text-content-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
           >
             {isStill ? "Close" : "Skip"}
@@ -401,7 +439,7 @@ export function WhatsNew() {
         </div>
 
         {isStill ? (
-          <StaticSummary titleId={titleId} onDone={() => close(false)} />
+          <StaticSummary titleId={titleId} onDone={() => close()} />
         ) : (
           <>
             {/* ---- The stage ----
@@ -556,58 +594,5 @@ function StepDots({
         />
       ))}
     </span>
-  );
-}
-
-/* ====================================================================== */
-/* The recall chip                                                        */
-/* ====================================================================== */
-
-/**
- * "Watch again", offered only to somebody who cut the sequence short, and only
- * until they take it up or wave it away once. Then it is gone for good.
- *
- * This is the whole of the re-open affordance, deliberately. A permanent
- * "What's new" button in the chrome would be clutter for a release that
- * happens a few times a year; a link that survives one skip is not. The
- * durable way back in afterwards is the `?whatsnew=1` query, which works on
- * any dashboard page and does not need storage to have worked.
- */
-function RecallChip({
-  onOpen,
-  onDismiss,
-}: {
-  onOpen: () => void;
-  onDismiss: () => void;
-}) {
-  return (
-    <div className="wn-recall fixed bottom-[calc(1rem+var(--safe-bottom))] left-4 z-[150] flex items-center gap-0.5 rounded-[999px] bg-paper p-1 shadow-lg">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex h-11 items-center rounded-[999px] px-3.5 text-[13px] font-semibold text-content-strong transition-colors duration-fast hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
-      >
-        See what&rsquo;s new
-      </button>
-      <button
-        type="button"
-        aria-label="Hide this"
-        onClick={onDismiss}
-        className="flex h-11 w-11 flex-none items-center justify-center rounded-[999px] text-content-muted transition-colors duration-fast hover:bg-gray-100 hover:text-content-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
-      >
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.9"
-          strokeLinecap="round"
-          aria-hidden="true"
-        >
-          <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
-        </svg>
-      </button>
-    </div>
   );
 }

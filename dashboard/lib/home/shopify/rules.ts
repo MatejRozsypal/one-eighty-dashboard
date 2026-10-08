@@ -20,7 +20,7 @@
  * Missing cost data CM3 cannot be measured this month.
  *
  * Cards are ordered by money at stake in CZK (latest rate in ref.fx_rates),
- * then by the rule order above, and capped at six.
+ * then by the rule order above, at most two per rule and six in all.
  */
 
 import { formatMoney, formatNumber, formatPercent, formatRatio } from "@/lib/format";
@@ -69,6 +69,7 @@ export interface RuleInput {
 }
 
 export const MAX_CARDS = 6;
+export const MAX_PER_RULE = 2;
 /** Revenue this far under last year fires "Below last year". */
 export const LY_DROP = -0.1;
 
@@ -153,7 +154,7 @@ function lastYearCard(c: ClientHealth, rates: Map<string, number>): Recommendati
     clientId: c.clientId!,
     fact: `Revenue month to date is ${formatPercent(Math.abs(f))} below the same days last year.`,
     detail: `${money(now, currency)} against ${money(before, currency)}`,
-    stake: { value: gap, currency, label: "Below last year" },
+    stake: { value: gap, currency, label: "Gap to last year" },
     stakeCzk: toCzk(gap, currency, rates),
     href: `/snapshot?client=${encodeURIComponent(c.clientId!)}`,
     action: "Open Snapshot",
@@ -186,8 +187,8 @@ function unmappedCard(u: UnmappedFact, rates: Map<string, number>): Recommendati
     client: u.name,
     clientId: u.clientId,
     fact: `${whole(u.ads)} Meta ${u.ads === 1 ? "ad has" : "ads have"} no ClickUp task.`,
-    detail: `${money(u.spend, u.currency)} spent to date`,
-    stake: u.spend > 0 ? { value: u.spend, currency: u.currency, label: "Unmapped spend" } : null,
+    detail: "Their spend is missing from every tag breakdown.",
+    stake: u.spend > 0 ? { value: u.spend, currency: u.currency, label: "Spent to date" } : null,
     stakeCzk: u.spend > 0 ? toCzk(u.spend, u.currency, rates) : null,
     href: `/creative?client=${encodeURIComponent(u.clientId)}#unmapped`,
     action: "Map ads",
@@ -274,14 +275,24 @@ export function recommendations(input: RuleInput): Recommendation[] {
   }
   for (const v of input.velocity ?? []) all.push(...velocityCards(v));
 
-  return all
-    .sort((a, b) => {
-      if (a.stakeCzk !== null && b.stakeCzk !== null) return b.stakeCzk - a.stakeCzk;
-      if (a.stakeCzk !== null) return -1;
-      if (b.stakeCzk !== null) return 1;
-      return ruleRank(a.id) - ruleRank(b.id) || a.client.localeCompare(b.client);
-    })
-    .slice(0, MAX_CARDS);
+  const sorted = all.sort((a, b) => {
+    if (a.stakeCzk !== null && b.stakeCzk !== null) return b.stakeCzk - a.stakeCzk;
+    if (a.stakeCzk !== null) return -1;
+    if (b.stakeCzk !== null) return 1;
+    return ruleRank(a.id) - ruleRank(b.id) || a.client.localeCompare(b.client);
+  });
+  // At most two cards per rule, so one busy rule cannot fill the page; the
+  // chips above still count every case.
+  const perRule = new Map<string, number>();
+  const out: Recommendation[] = [];
+  for (const r of sorted) {
+    const n = perRule.get(r.rule) ?? 0;
+    if (n >= MAX_PER_RULE) continue;
+    perRule.set(r.rule, n + 1);
+    out.push(r);
+    if (out.length === MAX_CARDS) break;
+  }
+  return out;
 }
 
 /** A chip points at the one client when only one is concerned, else the overview. */

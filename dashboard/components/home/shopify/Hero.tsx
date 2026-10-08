@@ -27,6 +27,12 @@ export function Hero({ name, now, line }: { name: string | null; now: string; li
   useEffect(() => {
     const el = box.current;
     if (!el) return;
+    // Empty, the box keeps its two rows. Measuring then would run before the
+    // font and the width settle and can return a far taller box.
+    if (!text) {
+      el.style.height = "";
+      return;
+    }
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_H)}px`;
   }, [text]);

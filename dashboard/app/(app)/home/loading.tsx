@@ -1,6 +1,6 @@
 /**
  * Loading state of Home, shown only while the session is checked: the page
- * streams its own sections after that. The pills, the six tiles, the
+ * streams its own sections after that. The pills, the six figures, the
  * greeting and the box.
  */
 
@@ -10,14 +10,14 @@ import { CellSkeleton, StripFrame } from "@/components/home/final/KpiStrip";
 export default function Loading() {
   return (
     <main className="page-frame flex flex-col gap-6 px-4 pb-14 pt-5 sm:px-5 lg:px-8" aria-busy="true">
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-[220px] rounded-pill" />
+          <Skeleton className="h-7 w-[220px] rounded-pill" />
           <Skeleton className="h-8 w-[140px] rounded-pill" />
         </div>
         <StripFrame>
           {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} className="min-w-0 bg-surface-card">
+            <div key={i} className="min-w-0">
               <CellSkeleton />
             </div>
           ))}

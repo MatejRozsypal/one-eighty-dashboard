@@ -6,9 +6,10 @@
  * long date above the greeting. Top to bottom:
  *
  *   period pill, "All clients · CZK", weather pill
- *   six tiles for the last 30 days (components/home/final/KpiStrip.tsx)
+ *   six figures for the last 30 days, one centred row without a card
+ *   (components/home/final/KpiStrip.tsx)
  *   THURSDAY 8 OCTOBER, the greeting, one line about the clients
- *   the streak pill and the daily quote
+ *   the streak pill (with XP today) and the daily quote
  *   the assistant's box, chips of waiting work
  *   For you: cards from explicit rules, ordered by money at stake
  *   Clients: a ring card per client, opening its Goals page
@@ -45,12 +46,13 @@ import {
   RecommendationsSkeleton,
 } from "@/components/home/final/Sections";
 import { TeamStreak, TeamLeaderboard } from "@/components/presence/Presence";
+import { DailyQuote } from "@/components/home/DailyQuote";
 
 export const metadata: Metadata = { title: "Home" };
 export const dynamic = "force-dynamic";
 
 const PILL =
-  "inline-flex h-8 items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-3 text-[13px] font-semibold text-content-strong shadow-xs";
+  "inline-flex h-7 items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-2.5 text-[12.5px] font-semibold text-content-strong";
 
 export default async function HomePage() {
   await requireInternalRole();
@@ -61,11 +63,11 @@ export default async function HomePage() {
     <>
       <Header title="Home" />
       <main className="page-frame flex flex-col gap-6 px-4 pb-14 pt-5 sm:px-5 lg:px-8">
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className={PILL}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-content-muted">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-content-muted">
                   <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
                 </svg>
                 Last 30 days
@@ -92,7 +94,7 @@ export default async function HomePage() {
               <Suspense fallback={null}>
                 <TeamStreak />
               </Suspense>
-              {/* daily quote */}
+              <DailyQuote />
             </div>
             <AssistantBox />
           </section>

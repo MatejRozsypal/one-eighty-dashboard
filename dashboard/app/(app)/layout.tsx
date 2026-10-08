@@ -27,6 +27,8 @@ import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { ProductTransition } from "@/components/shell/ProductTransition";
 import { HistoryProvider } from "@/components/chat/HistoryProvider";
+import { ChatSessionProvider } from "@/components/chat/ChatSession";
+import { HandoffStage } from "@/components/chat/HandoffStage";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
 import { AccountMenu } from "@/components/shell/AccountMenu";
 import {
@@ -121,6 +123,7 @@ export default async function AppLayout({
     <NavigationPendingProvider>
     <DeltaModeProvider initial={deltaDefault}>
     <HistoryProvider>
+    <ChatSessionProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
       <Sidebar
         clients={clients}
@@ -150,7 +153,7 @@ export default async function AppLayout({
         stretching, leaving a short page's rounded surface floating with black
         underneath it.
       */}
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+      <div data-app-column="" className="flex min-h-screen min-w-0 flex-1 flex-col">
         <MobileTopBar clients={clients} isAdmin={isAdmin} isInternal={isInternal} role={session.user.role} />
 
         {/*
@@ -180,7 +183,15 @@ export default async function AppLayout({
 
       {/* Presence for streaks and the Home leaderboard. Internal roles only: clients are never tracked. */}
       {isInternal && <Heartbeat />}
+
+      {/*
+        Home's question gliding into the Assistant. Here, above both routes,
+        because it has to outlive the page it starts on. Renders null until a
+        question is sent from Home.
+      */}
+      <HandoffStage />
     </div>
+    </ChatSessionProvider>
     </HistoryProvider>
     </DeltaModeProvider>
     </NavigationPendingProvider>

@@ -35,10 +35,14 @@ interface Ctx {
   activeId: string | null;
   open: (id: string | null) => void;
   remove: (id: string) => void;
-  /** Appends to the active conversation, starting one if there isn't one. */
-  append: (message: StoredMessage) => void;
-  /** Records the agent session the active conversation continues. */
-  setAgentSession: (sessionId: string) => void;
+  /**
+   * Appends to the active conversation, starting one if there isn't one, and
+   * returns the id written to. With `to` it writes to that conversation
+   * instead, whichever is open, and to nothing if it has since been removed.
+   */
+  append: (message: StoredMessage, to?: string) => string;
+  /** Records the agent session a conversation (the active one by default) continues. */
+  setAgentSession: (sessionId: string, to?: string) => void;
 }
 
 const ChatHistory = createContext<Ctx | null>(null);
@@ -91,14 +95,14 @@ export function HistoryProvider({ children }: { children: React.ReactNode }) {
   );
 
   const append = useCallback(
-    (message: StoredMessage) => {
+    (message: StoredMessage, to?: string) => {
       const now = Date.now();
 
       // The id is minted and published here, outside the updater. React may
       // invoke an updater twice in development, and an updater that calls
       // `newId()` would mint a different id each time, leaving the selected
       // conversation pointing at one that was never stored.
-      let id = activeIdRef.current;
+      let id = to ?? activeIdRef.current;
       if (!id) {
         id = newId();
         setActiveId(id);
@@ -108,6 +112,9 @@ export function HistoryProvider({ children }: { children: React.ReactNode }) {
       setConversations((prev) => {
         const list = prev ?? [];
         const existing = list.find((c) => c.id === target);
+        // An answer addressed to a conversation that was deleted while it
+        // streamed is dropped, not used to bring the conversation back.
+        if (!existing && to !== undefined) return prev;
 
         const next = existing
           ? list.map((c) =>
@@ -129,12 +136,13 @@ export function HistoryProvider({ children }: { children: React.ReactNode }) {
         save(next);
         return next;
       });
+      return target;
     },
     [setActiveId]
   );
 
-  const setAgentSession = useCallback((sessionId: string) => {
-    const target = activeIdRef.current;
+  const setAgentSession = useCallback((sessionId: string, to?: string) => {
+    const target = to ?? activeIdRef.current;
     if (!target) return;
     setConversations((prev) => {
       if (!prev) return prev;

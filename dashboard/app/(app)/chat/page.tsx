@@ -8,6 +8,7 @@
 
 import type { Metadata } from "next";
 import { Conversation } from "@/components/chat/Conversation";
+import { CHAT_FRAME } from "@/components/chat/frame";
 
 export const metadata: Metadata = { title: "Assistant" };
 export const dynamic = "force-dynamic";
@@ -20,7 +21,11 @@ export default function ChatPage() {
     // The corner account menu is position-fixed over the top `--header-h`, and
     // this page draws no Header of its own to reserve that space, so the first
     // message was sliding underneath it.
-    <div className="flex h-[100dvh] min-h-0 flex-col lg:pt-[var(--header-h)]">
+    //
+    // On a phone a bare 100dvh overran the screen by the sticky bar above and
+    // the shell's foot padding below, so the composer began below the fold.
+    // CHAT_FRAME sizes it to the space between; see components/chat/frame.ts.
+    <div className={CHAT_FRAME}>
       <Conversation />
     </div>
   );

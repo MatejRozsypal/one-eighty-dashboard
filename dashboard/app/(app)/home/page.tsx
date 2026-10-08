@@ -12,7 +12,8 @@
  *   area is 960 px or wider, under the strip below that (components/presence/LeaderboardCard.tsx)
  *   THURSDAY 8 OCTOBER, the greeting, one line about the clients
  *   the streak pill (with XP today) and the daily quote
- *   the assistant's box, chips of waiting work
+ *   the assistant's box (sending carries it into a new Assistant
+ *   conversation), chips of waiting work
  *   Promotions: running and starting within 7 days (ClickUp promo calendars)
  *   For you: client alerts (daily snapshot) and my ClickUp tasks, dismissable per person
  *   Clients: a ring card per client, opening its Goals page
@@ -61,7 +62,9 @@ export default async function HomePage() {
   const name = firstName(session?.user?.name, session?.user?.email);
 
   return (
-    <>
+    // `data-blend-root` is what dissolves when a question sent from the box
+    // carries the page into the Assistant (components/chat/HandoffStage.tsx).
+    <div data-blend-root="" className="flex min-w-0 flex-1 flex-col">
       <Header title="Home" />
       {/*
         Container queries on the whole content area (sidebar excluded):
@@ -145,6 +148,6 @@ export default async function HomePage() {
 
       </main>
       </div>
-    </>
+    </div>
   );
 }

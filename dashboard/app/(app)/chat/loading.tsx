@@ -4,13 +4,14 @@
  */
 
 import { Skeleton } from "@/components/ui/Skeleton";
+import { CHAT_FRAME } from "@/components/chat/frame";
 
 export default function Loading() {
   return (
     <div
       aria-busy="true"
       aria-label="Loading"
-      className="flex h-[100dvh] min-h-0 flex-col lg:pt-[var(--header-h)]"
+      className={CHAT_FRAME}
     >
       <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-6 px-5 py-8 lg:px-8">
         <Skeleton className="h-[56px] w-[60%] self-end rounded-card" />

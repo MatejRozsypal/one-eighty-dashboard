@@ -67,15 +67,11 @@ const sources = [...walk(join(ROOT, "app")), ...walk(join(ROOT, "components"))].
 // fixes a file this check fails until its entry is deleted, so the list can
 // only shrink. Everything else, including new Home files, is held to the rule.
 const HANDED_OFF: Record<string, readonly string[]> = {
-  "stray-animation": [
-    "components/home/WeatherCard.tsx",
-    "components/home/shopify/WeatherChip.tsx",
-    "components/home/today/WeatherChip.tsx",
-    "components/home/weather/ForecastHero.tsx",
-  ],
-  "raw-push": ["components/home/shopify/Hero.tsx"],
-  "loading-own-style": ["app/(app)/home/v/weather/loading.tsx"],
-  "loading-hex": ["app/(app)/home/v/weather/loading.tsx"],
+  // Emptied on home-final (2026-10-08): the Home files now follow every rule.
+  "stray-animation": [],
+  "raw-push": [],
+  "loading-own-style": [],
+  "loading-hex": [],
 };
 
 /** The violations a rule still reports once its handed-off files are set aside. */

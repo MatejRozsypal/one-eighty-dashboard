@@ -16,6 +16,7 @@
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { NO_VALUE, formatPercent } from "@/lib/format";
 import { HOME_TIME_ZONE, hourIn, longDate, partOfDay } from "@/lib/home/greeting";
 import {
@@ -127,7 +128,11 @@ function glyphOf(kind: WeatherKind | null, isDay: boolean): Condition {
 
 function OutsideWeather({ state }: { state: WeatherState }) {
   if (state.status === "loading") {
-    return <div aria-busy="true" className="h-[58px] w-[180px] animate-pulse rounded-2xl bg-white/15" />;
+    return (
+      <div aria-busy="true">
+        <Skeleton className="h-[58px] w-[180px] rounded-2xl opacity-40" />
+      </div>
+    );
   }
   const { place, weather } = state;
   const described = describeCode(weather?.code ?? null);

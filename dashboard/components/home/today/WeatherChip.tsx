@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { NO_VALUE } from "@/lib/format";
 import {
   FALLBACK_PLACE,
@@ -71,7 +72,11 @@ export function WeatherChip() {
   }, []);
 
   if (state.status === "loading") {
-    return <span aria-busy="true" className="inline-block h-9 w-[168px] animate-pulse rounded-pill bg-[var(--gray-100)]" />;
+    return (
+      <span aria-busy="true" className="inline-flex">
+        <Skeleton className="h-9 w-[168px] rounded-pill" />
+      </span>
+    );
   }
 
   const { place, weather } = state;

@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { NO_VALUE } from "@/lib/format";
 import {
   FALLBACK_PLACE,
@@ -63,7 +64,11 @@ export function WeatherChip() {
   }, []);
 
   if (!state) {
-    return <span aria-busy="true" className="h-8 w-[150px] animate-pulse rounded-full bg-gray-150" />;
+    return (
+      <span aria-busy="true" className="inline-flex">
+        <Skeleton className="h-8 w-[150px] rounded-full" />
+      </span>
+    );
   }
 
   const described = describeCode(state.weather?.code ?? null);

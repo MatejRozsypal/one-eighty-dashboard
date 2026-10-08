@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { NO_VALUE } from "@/lib/format";
 import {
   FALLBACK_PLACE,
@@ -81,11 +82,9 @@ export function WeatherCard() {
 
   if (state.status === "loading") {
     return (
-      <div
-        aria-busy="true"
-        className="h-[148px] w-full animate-pulse rounded-[22px] sm:w-[300px]"
-        style={{ background: skyGradient("cloud", true), opacity: 0.35 }}
-      />
+      <div aria-busy="true" className="w-full sm:w-[300px]">
+        <Skeleton className="h-[148px] w-full rounded-[22px]" />
+      </div>
     );
   }
 

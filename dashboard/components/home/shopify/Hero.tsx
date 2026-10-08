@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigation } from "@/components/shell/NavigationPending";
 import { Logo } from "@/components/ui/Logo";
 import { HOME_TIME_ZONE, hourIn, partOfDay } from "@/lib/home/greeting";
 
@@ -38,7 +38,7 @@ export function Hero({ name, now, line }: { name: string | null; now: string; li
 export function AssistantBox() {
   const [text, setText] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
-  const router = useRouter();
+  const { navigate } = useNavigation();
 
   useEffect(() => {
     const el = box.current;
@@ -56,7 +56,7 @@ export function AssistantBox() {
   function ask() {
     const q = text.trim();
     if (!q) return;
-    router.push(`/chat?q=${encodeURIComponent(q)}`);
+    navigate(`/chat?q=${encodeURIComponent(q)}`);
   }
 
   return (

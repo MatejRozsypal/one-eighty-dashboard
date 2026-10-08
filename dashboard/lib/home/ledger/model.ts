@@ -338,7 +338,8 @@ function item(
   };
 }
 
-function buildSetup(input: LedgerInputs, partnerships: Partnership[], settledMonth: string | null): SetupItem[] {
+function buildSetup(input: LedgerInputs, partnerships: Partnership[], months: string[]): SetupItem[] {
+  const settledMonth = months[months.length - 1] ?? null;
   const inRegistry = input.home.clients.filter((c) => c.clientId);
   const names = (ids: (c: ClientHealth) => boolean) => inRegistry.filter(ids).map((c) => c.name);
   const platform = new Map(input.registry.map((r) => [r.clientId, r.shopPlatform]));
@@ -353,7 +354,9 @@ function buildSetup(input: LedgerInputs, partnerships: Partnership[], settledMon
   const settledRows = input.months.rows.filter((r) => r.month === settledMonth);
   const noCost = settledRows.filter((r) => r.cm3Gaps > 0).map((r) => r.clientId);
   const noRate = new Set(
-    input.months.rows.filter((r) => r.currency !== "CZK" && r.rate === null).map((r) => r.clientId)
+    input.months.rows
+      .filter((r) => months.includes(r.month) && r.currency !== "CZK" && r.rate === null)
+      .map((r) => r.clientId)
   );
   const lastTracked = input.invoices.invoices
     .map((i) => i.month)
@@ -506,7 +509,7 @@ export function buildLedger(input: LedgerInputs): LedgerData {
         a.name.localeCompare(b.name)
     );
 
-  const setup = buildSetup(input, partnerships, settledMonth);
+  const setup = buildSetup(input, partnerships, months);
 
   // Hero: agreed retainers.
   const retainers = partnerships.flatMap((p) => (p.agreedRetainer.value === null ? [] : [p.agreedRetainer.value]));

@@ -4,12 +4,12 @@
  * for a client-role viewer or when Postgres is unavailable.
  *
  *   <TeamStreak />        the viewer's streak pill, under the greeting
- *   <TeamLeaderboard />   the leaderboard section
+ *   <TeamLeaderboard />   the leaderboard side card (top 3, the viewer, See all)
  */
 
 import { getPresenceBoard } from "@/lib/presence/leaderboard";
 import { StreakBadge } from "@/components/presence/StreakBadge";
-import { Leaderboard } from "@/components/presence/Leaderboard";
+import { LeaderboardCard } from "@/components/presence/LeaderboardCard";
 
 export async function TeamStreak() {
   const board = await getPresenceBoard();
@@ -20,5 +20,5 @@ export async function TeamStreak() {
 export async function TeamLeaderboard() {
   const board = await getPresenceBoard();
   if (!board || board.rows.length === 0) return null;
-  return <Leaderboard rows={board.rows} />;
+  return <LeaderboardCard rows={board.rows} />;
 }

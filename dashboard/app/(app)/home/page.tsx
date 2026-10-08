@@ -8,12 +8,13 @@
  *   period pill, "All clients · CZK", weather pill
  *   six figures for the last 30 days, one centred row without a card
  *   (components/home/final/KpiStrip.tsx)
+ *   the leaderboard card, top right beside the greeting from 1100 px, under
+ *   the strip below that (components/presence/LeaderboardCard.tsx)
  *   THURSDAY 8 OCTOBER, the greeting, one line about the clients
  *   the streak pill (with XP today) and the daily quote
  *   the assistant's box, chips of waiting work
  *   For you: cards from explicit rules, ordered by money at stake
  *   Clients: a ring card per client, opening its Goals page
- *   the team leaderboard
  *
  * Every figure comes from lib/home/final/data.ts, which names its sources;
  * anything a source cannot give is n/a with the source in its (i). Each
@@ -46,6 +47,7 @@ import {
   RecommendationsSkeleton,
 } from "@/components/home/final/Sections";
 import { TeamStreak, TeamLeaderboard } from "@/components/presence/Presence";
+import { LeaderboardCardSkeleton } from "@/components/presence/LeaderboardCard";
 import { DailyQuote } from "@/components/home/DailyQuote";
 
 export const metadata: Metadata = { title: "Home" };
@@ -83,21 +85,37 @@ export default async function HomePage() {
         </div>
 
         <div className="flex flex-col gap-5 py-6 sm:py-10">
-          <section aria-label="Assistant" className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 text-center">
-            <div className="flex flex-col items-center gap-3">
-              <div className="flex flex-col items-center gap-2">
-                <GreetingHeader name={name} now={new Date().toISOString()} />
-                <Suspense fallback={<GreetingLineSkeleton />}>
-                  <GreetingLine />
-                </Suspense>
-              </div>
-              <Suspense fallback={null}>
-                <TeamStreak />
+          {/*
+            From 1100 px: three columns, the leaderboard card in the right one
+            and an empty one of the same width on the left, so the greeting
+            and the box stay centred and the card never pushes them. Narrower:
+            one column, the card first, right under the strip.
+          */}
+          <div className="flex flex-col gap-6 min-[1100px]:grid min-[1100px]:grid-cols-[minmax(248px,1fr)_minmax(0,720px)_minmax(248px,1fr)] min-[1100px]:items-start min-[1100px]:gap-x-6">
+            <aside
+              aria-label="Leaderboard"
+              className="w-full min-[1100px]:col-start-3 min-[1100px]:row-start-1 min-[1100px]:max-w-[296px] min-[1100px]:justify-self-end"
+            >
+              <Suspense fallback={<LeaderboardCardSkeleton />}>
+                <TeamLeaderboard />
               </Suspense>
-              <DailyQuote />
-            </div>
-            <AssistantBox />
-          </section>
+            </aside>
+            <section aria-label="Assistant" className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-6 text-center min-[1100px]:col-start-2 min-[1100px]:row-start-1">
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-col items-center gap-2">
+                  <GreetingHeader name={name} now={new Date().toISOString()} />
+                  <Suspense fallback={<GreetingLineSkeleton />}>
+                    <GreetingLine />
+                  </Suspense>
+                </div>
+                <Suspense fallback={null}>
+                  <TeamStreak />
+                </Suspense>
+                <DailyQuote />
+              </div>
+              <AssistantBox />
+            </section>
+          </div>
           <Suspense fallback={<ChipsSkeleton />}>
             <HomeChips />
           </Suspense>
@@ -111,9 +129,6 @@ export default async function HomePage() {
           <HomeClients />
         </Suspense>
 
-        <Suspense fallback={null}>
-          <TeamLeaderboard />
-        </Suspense>
       </main>
     </>
   );

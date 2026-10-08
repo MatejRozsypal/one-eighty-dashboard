@@ -11,7 +11,7 @@ import { isNoValue } from "@/lib/format";
 export function Th({ children, info, left = false }: { children: string; info?: string; left?: boolean }) {
   return (
     <th
-      className={`whitespace-nowrap border-b border-hairline bg-gray-50/60 px-3.5 py-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-content-muted ${
+      className={`border-b border-hairline bg-gray-50/60 px-2.5 py-2.5 align-bottom font-mono text-[10px] leading-tight font-medium uppercase tracking-[0.1em] text-content-muted ${
         left ? "text-left" : "text-right"
       }`}
     >
@@ -36,7 +36,7 @@ export function Td({
   const muted = isNoValue(children);
   return (
     <td
-      className={`whitespace-nowrap border-b border-hairline px-3.5 py-2.5 text-[13px] ${
+      className={`whitespace-nowrap border-b border-hairline px-2.5 py-2.5 text-[13px] ${
         left ? "text-left font-medium text-content-strong" : "text-right font-mono tabular"
       } ${muted ? "text-content-muted" : tone === "warn" ? "text-warning" : left ? "" : "text-content-body"}`}
     >

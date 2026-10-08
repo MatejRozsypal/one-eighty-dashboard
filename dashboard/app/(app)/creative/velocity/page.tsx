@@ -39,7 +39,7 @@ export default async function VelocityOverviewPage() {
         {rows.length === 0 ? (
           <NotConnected source="Meta" />
         ) : (
-          <TableFrame minWidth={1180}>
+          <TableFrame minWidth={960}>
             <thead>
               <tr>
                 <Th left>Client</Th>

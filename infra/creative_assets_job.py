@@ -2,12 +2,22 @@
 """
 creative_assets_job.py — mirror Meta ad creatives into BigQuery and GCS.
 
-    python3 creative_assets_job.py [client_id ...] [--all]
+    python3 creative_assets_job.py [client_id ...] [--all | --reshape]
 
 `--all` reprocesses every delivering ad instead of only the ones with no
 mirrored asset, and rebuilds thumbnails even where one already exists. Use it
 after changing how thumbnails are generated; without it the existing objects
 short-circuit the work.
+
+`--reshape` re-fetches only the video ads whose stored asset is not vertical
+(9:16) although the creative carries more than one video, so a vertical
+variant may exist. Run it once after the 2026-10-08 change that made video
+selection prefer the Stories / Reels asset. It is cheap: a vertical variant is
+a new video id, so a new object; an ad with no vertical variant resolves to
+the object already in the bucket and nothing is downloaded.
+
+Runs on a schedule from `.github/workflows/creative-assets.yml`; see
+`runbooks/33_creative_assets_schedule.md`.
 
 Owns `raw.raw_meta_ad_creatives` end to end: it fetches the creative, extracts
 the copy, downloads the asset, writes the thumbnail, and loads the row. One job
@@ -37,9 +47,12 @@ jobs; this one takes the bytes.
 
 DEPENDENCIES
 ------------
-google-cloud-bigquery, google-cloud-storage, and optionally Pillow. Without
-Pillow the original image is stored as its own thumbnail and a warning is
-printed — the job still completes, the grid is just heavier.
+google-cloud-bigquery, google-cloud-storage, google-cloud-secret-manager, and
+optionally Pillow (`infra/requirements-creative-assets.txt`). Without Pillow
+the original image is stored as its own thumbnail and a warning is printed;
+the job still completes, the grid is just heavier. Without the Secret Manager
+library the job falls back to the `gcloud` CLI for secrets, which is how it
+ran by hand before it was scheduled.
 """
 
 from __future__ import annotations
@@ -95,13 +108,32 @@ CREATIVE_FIELDS = (
 # ---------------------------------------------------------------------------
 
 
+_SECRETS_CLIENT = None
+
+
 def secret(name: str) -> str:
-    """Read a Secret Manager value. Same access path the workflows use."""
-    return subprocess.run(
-        ["gcloud", "secrets", "versions", "access", "latest",
-         f"--secret={name}", f"--project={PROJECT}"],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
+    """
+    Read a Secret Manager value.
+
+    Through the Python client when it is installed, which is what the scheduled
+    run uses: the runner authenticates with Application Default Credentials and
+    has no reason to carry the whole gcloud SDK. Falls back to the CLI so the
+    old by-hand invocation on a laptop with only gcloud still works.
+    """
+    global _SECRETS_CLIENT
+    try:
+        from google.cloud import secretmanager  # noqa: PLC0415
+    except ImportError:
+        return subprocess.run(
+            ["gcloud", "secrets", "versions", "access", "latest",
+             f"--secret={name}", f"--project={PROJECT}"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    if _SECRETS_CLIENT is None:
+        _SECRETS_CLIENT = secretmanager.SecretManagerServiceClient()
+    resp = _SECRETS_CLIENT.access_secret_version(
+        name=f"projects/{PROJECT}/secrets/{name}/versions/latest")
+    return resp.payload.data.decode("utf-8").strip()
 
 
 def get_json(url: str, params: dict | None = None) -> dict:
@@ -181,7 +213,9 @@ def fetch_ad_videos(account: str, token: str) -> dict[str, dict]:
     replaces one-per-video, so this is also faster.
 
     `thumbnails` carries up to fifteen sizes; the largest is usually 1024px and
-    is what the grid tile should be built from.
+    is what the grid tile should be built from. Its width and height are the
+    video's own shape, which is how a 9:16 variant is told from a 1:1 one
+    without downloading either (`aspect`, width / height).
     """
     out: dict[str, dict] = {}
     url = f"https://graph.facebook.com/{API_VERSION}/{account}/advideos"
@@ -196,11 +230,13 @@ def fetch_ad_videos(account: str, token: str) -> dict[str, dict]:
         for v in payload.get("data") or []:
             thumbs = (v.get("thumbnails") or {}).get("data") or []
             best = max(thumbs, key=lambda t: t.get("width") or 0, default=None)
+            bw, bh = (best or {}).get("width"), (best or {}).get("height")
             out[str(v["id"])] = {
                 "source": v.get("source"),
                 "picture": v.get("picture"),
                 "length": v.get("length"),
                 "poster": (best or {}).get("uri") or v.get("picture"),
+                "aspect": (bw / bh) if (bw and bh) else None,
             }
         nxt = ((payload.get("paging") or {}).get("next"))
         if not nxt:
@@ -418,8 +454,24 @@ def resolve_image_hashes(account: str, token: str, hashes: list[str]) -> dict[st
 
 # Placements that mean "the ad as people normally see it". The feed image is
 # what a human means by "what does this ad look like", so it is what the grid
-# tile and the detail panel show.
-FEED_POSITIONS = {"feed", "instagram_profile_feed", "instagram_explore_home", "profile_feed"}
+# tile and the detail panel show for IMAGES. `stream` is the Instagram feed's
+# name in `instagram_positions`; it was missing, which only went unnoticed
+# because every rule seen so far also lists the Facebook `feed`.
+FEED_POSITIONS = {"feed", "stream", "instagram_profile_feed", "instagram_explore_home",
+                  "explore_home", "profile_feed"}
+
+# Full-screen vertical placements. For VIDEOS the owner wants the 9:16 cut
+# (2026-10-08): the feed cut of a placement-customised ad is usually 1:1 or
+# 4:5 and crops the frame, while the Stories / Reels cut shows all of it.
+# `facebook_reels_overlay` is deliberately absent: it is a banner laid over
+# someone else's reel, not a full-screen ad, and Manami's FEED rules list it.
+VERTICAL_POSITIONS = {"story", "reels", "facebook_reels", "profile_reels",
+                      "instagram_reels", "instagram_stories", "facebook_stories",
+                      "messenger_stories"}
+TARGET_ASPECT = 9 / 16                     # width / height, 0.5625
+VERTICAL_MAX_ASPECT = 0.7                  # 9:16 and 2:3 pass; 4:5 and 1:1 do not
+POSITION_KEYS = ("facebook_positions", "instagram_positions", "messenger_positions",
+                 "audience_network_positions", "threads_positions")
 
 
 def _label_map(assets: list[dict], key: str) -> dict[str, str]:
@@ -432,9 +484,17 @@ def _label_map(assets: list[dict], key: str) -> dict[str, str]:
     return out
 
 
+def _rule_positions(rule: dict) -> set[str]:
+    spec = rule.get("customization_spec") or {}
+    out: set[str] = set()
+    for k in POSITION_KEYS:
+        out.update(spec.get(k) or [])
+    return out
+
+
 def _by_placement(afs: dict, assets: list[dict], key: str, rule_key: str) -> str | None:
     """
-    The asset a feed placement would actually serve.
+    The asset a feed placement would actually serve. Used for IMAGES.
 
     ── Why not just take the first one ───────────────────────────────────────
     A placement-customised ad lists one asset per placement and an unordered
@@ -452,9 +512,7 @@ def _by_placement(afs: dict, assets: list[dict], key: str, rule_key: str) -> str
     rules = afs.get("asset_customization_rules") or []
     feed = catch_all = None
     for r in rules:
-        spec = r.get("customization_spec") or {}
-        positions = set((spec.get("facebook_positions") or [])
-                        + (spec.get("instagram_positions") or []))
+        positions = _rule_positions(r)
         hit = labels.get((r.get(rule_key) or {}).get("name") or "")
         if not hit:
             continue
@@ -475,7 +533,106 @@ def _by_placement(afs: dict, assets: list[dict], key: str, rule_key: str) -> str
     return max(counts, key=lambda k: counts[k]) if counts else None
 
 
-def pick_asset(c: dict) -> tuple[str | None, str | None, str | None]:
+def video_candidates(c: dict) -> list[tuple[str, int]]:
+    """
+    Every video this creative can serve, best first, as (video_id, rank).
+
+        0  rule with vertical positions and no feed positions
+        1  rule with vertical AND feed positions
+        2  catch-all rule (no positions)       see below
+        3  rule with feed positions
+        4  any other rule (right column, search, in-stream ...)
+        5  asset_feed_spec video no rule points at
+        6  creative.video_id                   a plain video ad
+        7  object_story_spec.video_data.video_id
+
+    Rank 0 means Meta itself says which file is the Stories / Reels cut, so
+    nothing else is consulted.
+
+    ── Why the catch-all outranks feed ───────────────────────────────────────
+    Ads Manager's placement asset customisation writes exactly two rules on
+    every PLACEMENT ad in this warehouse (Dobias, Ethia, Manami, Oct 2026):
+    priority 1 lists the feed positions, priority 2 lists none. The second is
+    "every placement the first did not take", which is Stories and Reels, and
+    it is where the 9:16 file lives. Taking the feed rule first, as the image
+    logic does, is what put 1:1 squares in the player for ten of these ads.
+
+    ── Why both creative ids are candidates ──────────────────────────────────
+    On an Advantage+ (DEGREES_OF_FREEDOM) video ad `creative.video_id` and
+    `video_data.video_id` always differ: the first is Meta's re-post of the
+    second. Usually they are the same shape, but listing both lets the shape
+    check pick whichever is vertical, and `creative.video_id` stays first so an
+    ad whose file is already mirrored keeps its object.
+    """
+    afs = c.get("asset_feed_spec") or {}
+    spec = c.get("object_story_spec") or {}
+    assets = afs.get("videos") or []
+    labels = _label_map(assets, "video_id")
+    ranked: list[tuple[int, int, int, str]] = []          # rank, priority, order, id
+    order = 0
+    for r in afs.get("asset_customization_rules") or []:
+        hit = labels.get((r.get("video_label") or {}).get("name") or "")
+        if not hit:
+            continue
+        pos = _rule_positions(r)
+        vertical, feed = bool(pos & VERTICAL_POSITIONS), bool(pos & FEED_POSITIONS)
+        if vertical and not feed:
+            rank = 0
+        elif vertical:
+            rank = 1
+        elif not pos:
+            rank = 2
+        elif feed:
+            rank = 3
+        else:
+            rank = 4
+        prio = r.get("priority") if isinstance(r.get("priority"), int) else 99
+        ranked.append((rank, prio, order, hit))
+        order += 1
+    for a in assets:
+        if a.get("video_id"):
+            ranked.append((5, 99, order, str(a["video_id"])))
+            order += 1
+    if c.get("video_id"):
+        ranked.append((6, 99, order, str(c["video_id"])))
+        order += 1
+    if (spec.get("video_data") or {}).get("video_id"):
+        ranked.append((7, 99, order, str(spec["video_data"]["video_id"])))
+    out: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    for rank, _prio, _order, vid in sorted(ranked):
+        if vid not in seen:
+            seen.add(vid)
+            out.append((vid, rank))
+    return out
+
+
+def pick_video(c: dict, aspect_of=None) -> str | None:
+    """
+    The video to mirror: the 9:16 cut wherever the creative has one.
+
+    One candidate is the whole answer. Otherwise a rule that names Stories /
+    Reels decides; failing that, the shape decides when it is known
+    (`aspect_of(video_id)` returns width / height or None) and the vertical
+    candidate closest to 9:16 wins; failing that, the rank order above, whose
+    first entry is the catch-all of a placement-customised ad.
+    """
+    cands = video_candidates(c)
+    if not cands:
+        return None
+    if len(cands) == 1 or cands[0][1] == 0 or aspect_of is None:
+        return cands[0][0]
+    shaped = []
+    for i, (vid, _rank) in enumerate(cands):
+        a = aspect_of(vid)
+        if a and a < VERTICAL_MAX_ASPECT:
+            shaped.append((abs(a - TARGET_ASPECT), i, vid))
+    if shaped:
+        return min(shaped)[2]
+    return cands[0][0]
+
+
+def pick_asset(c: dict, aspect_of=None) -> tuple[str | None, str | None, str | None]:
     """
     Decide what the asset for this creative is.
 
@@ -484,20 +641,20 @@ def pick_asset(c: dict) -> tuple[str | None, str | None, str | None]:
     an empty object_story_spec. The media is listed in `asset_feed_spec`
     instead. The order below is what actually finds something:
 
-        video_id on the creative        a plain video ad
-        asset_feed_spec videos          by placement rule, feed first
+        any video                       pick_video(): the 9:16 cut first
         image_hash / image_url          a plain image ad
         asset_feed_spec images          by placement rule, feed first
         nothing                         thumbnail only
+
+    Images stay feed first: a static's feed cut is what a person means by
+    "the ad", and the vertical one is usually the same picture padded.
 
     Returns (kind, video_id, image_hash_or_url).
     """
     afs = c.get("asset_feed_spec") or {}
     spec = c.get("object_story_spec") or {}
 
-    vid = c.get("video_id") or (spec.get("video_data") or {}).get("video_id")
-    if not vid:
-        vid = _by_placement(afs, afs.get("videos") or [], "video_id", "video_label")
+    vid = pick_video(c, aspect_of)
     if vid:
         return "video", str(vid), None
 
@@ -536,7 +693,25 @@ def thumbnail(raw: bytes) -> tuple[bytes, str]:
 # ---------------------------------------------------------------------------
 
 
-def ads_needing_creatives(bq, client_id: str, force: bool = False) -> list[dict]:
+# Which delivering ads a run looks at. "missing" is the scheduled default.
+SELECTIONS = {
+    "missing": "WHERE h.ad_id IS NULL OR h.asset_uri IS NULL",
+    "all": "",
+    # Stored as a video that is not vertical, on a creative that lists more
+    # than one video: the only rows the 9:16 preference can change. A row with
+    # no stored shape is included, since its shape is exactly what is unknown.
+    "reshape": """
+    WHERE h.asset_kind = 'video'
+      AND (h.asset_width IS NULL OR SAFE_DIVIDE(h.asset_width, h.asset_height) >= 0.7)
+      AND (
+        ARRAY_LENGTH(JSON_QUERY_ARRAY(h.payload_json, '$.asset_feed_spec.videos')) > 1
+        OR JSON_VALUE(h.payload_json, '$.video_id')
+           != JSON_VALUE(h.payload_json, '$.object_story_spec.video_data.video_id')
+      )""",
+}
+
+
+def ads_needing_creatives(bq, client_id: str, mode: str = "missing") -> list[dict]:
     """
     Ads with delivery whose creative row is missing or has no asset yet.
 
@@ -544,6 +719,9 @@ def ads_needing_creatives(bq, client_id: str, force: bool = False) -> list[dict]
     row's existence as done: a video whose `source` was refused for want of the
     video permission comes back the moment that permission is granted, with no
     manual re-run to remember.
+
+    `mode` is a key of SELECTIONS: `all` takes every delivering ad, `reshape`
+    the video ads that may have a vertical variant they are not showing.
     """
     sql = f"""
     WITH delivering AS (
@@ -554,14 +732,14 @@ def ads_needing_creatives(bq, client_id: str, force: bool = False) -> list[dict]
         AND spend > 0
     ),
     have AS (
-      SELECT ad_id, asset_uri
+      SELECT ad_id, asset_uri, asset_kind, asset_width, asset_height, payload_json
       FROM `{PROJECT}.stg.stg_meta_ad_creatives`
       WHERE client_id = @client_id
     )
     SELECT d.ad_id
     FROM delivering d
     LEFT JOIN have h USING (ad_id)
-    """ + ("" if force else "WHERE h.ad_id IS NULL OR h.asset_uri IS NULL")
+    """ + SELECTIONS[mode]
     from google.cloud.bigquery import QueryJobConfig, ScalarQueryParameter
 
     job = bq.query(sql, job_config=QueryJobConfig(
@@ -586,10 +764,47 @@ def upload(storage, name: str, data: bytes, content_type: str) -> str:
     return f"gs://{BUCKET}/{name}"
 
 
-def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> int:
+def make_aspect_of(storage, client_id: str, videos: dict, have: set[str], c: dict,
+                   cache: dict[str, float | None]):
+    """
+    width / height of a candidate video, from the cheapest source that knows.
+
+    1. the ad account's video catalogue: its largest thumbnail carries the
+       video's own width and height, no download at all
+    2. our own copy, if this video is already mirrored: a 256 KB range read
+    3. the `thumbnail_url` asset_feed_spec lists beside the video: an
+       `s160x160` CDN image, which keeps the aspect (a 9:16 comes back 90x160),
+       a few KB
+
+    Only consulted when a creative has more than one video, so a plain video
+    ad costs nothing extra.
+    """
+    afs_thumbs = {str(v.get("video_id")): v.get("thumbnail_url")
+                  for v in (c.get("asset_feed_spec") or {}).get("videos") or []
+                  if v.get("video_id")}
+
+    def aspect_of(vid: str) -> float | None:
+        if vid in cache:
+            return cache[vid]
+        a = (videos.get(vid) or {}).get("aspect")
+        if not a:
+            key = f"{client_id}/video/{vid}.mp4"
+            dims = dimensions_of_stored(storage, key) if key in have else None
+            if not dims and afs_thumbs.get(vid):
+                blob = get_bytes(afs_thumbs[vid])
+                dims = image_dimensions(blob) if blob else None
+            a = (dims[0] / dims[1]) if dims and dims[1] else None
+        cache[vid] = a
+        return a
+
+    return aspect_of
+
+
+def run_client(bq, storage, client_id: str, slug: str, mode: str = "missing") -> int:
+    force = mode == "all"
     token = secret(f"meta-{slug}-access-token")
     account = secret(f"meta-{slug}-ad-account-id")
-    todo = ads_needing_creatives(bq, client_id, force)
+    todo = ads_needing_creatives(bq, client_id, mode)
     if not todo:
         print(f"  {client_id}: nothing to fetch")
         return 0
@@ -642,8 +857,11 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
     # to reference it is not left without a retention curve just because the
     # first one already put the file in the bucket.
     lengths: dict[str, float] = {}
+    aspects: dict[str, float | None] = {}
     for ad_id, c in creatives.items():
-        kind, video_id, image_ref = pick_asset(c)
+        kind, video_id, image_ref = pick_asset(
+            c, make_aspect_of(storage, client_id, videos, have, c, aspects))
+        n_videos = len(video_candidates(c))
         asset_uri = thumb_uri = None
         asset_bytes = video_len = None
         # The creative's true shape. Read from the asset itself wherever one is
@@ -681,7 +899,23 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
                     found = ig_media(str(ig_id), token)
                     if found:
                         source = found["source"]
-                        meta = {**meta, "poster": meta.get("poster") or found["poster"]}
+                        if n_videos > 1 and key not in have:
+                            # ── One Instagram post, several cuts ────────────
+                            # The IG post behind the ad is ONE file, and on a
+                            # placement-customised ad it is whichever cut was
+                            # published, not necessarily the one picked above.
+                            # Filing it under the picked video's id would put
+                            # a square file behind a vertical id, and the
+                            # bucket short-circuit would keep it there for
+                            # good. Filed under the post's own id instead, with
+                            # the post's poster, so object, tile and id agree.
+                            key = f"{client_id}/video/ig{ig_id}.mp4"
+                            ident = f"ig{ig_id}"
+                            meta = {**meta, "poster": found["poster"] or meta.get("poster")}
+                            print(f"    · {ad_id}: video {video_id} is not in the ad "
+                                  f"account catalogue; mirroring Instagram post {ig_id}")
+                        else:
+                            meta = {**meta, "poster": meta.get("poster") or found["poster"]}
             if key in have:
                 asset_uri = f"gs://{BUCKET}/{key}"
                 dims = dims or dimensions_of_stored(storage, key)
@@ -698,8 +932,17 @@ def run_client(bq, storage, client_id: str, slug: str, force: bool = False) -> i
             else:
                 print(f"    · {ad_id}: no source for video {video_id}")
             # Up to 1024px from the video's own thumbnail set, rather than the
-            # creative's small crop.
-            best_source = meta.get("poster") or c.get("thumbnail_url")
+            # creative's small crop. Failing that, the small frame asset_feed_spec
+            # lists for THIS video before the creative-level crop: the creative's
+            # `thumbnail_url` belongs to whichever cut Meta considers the default,
+            # which on a placement-customised ad is the feed square, and a square
+            # tile over a vertical player is the mismatch this change removes.
+            afs_thumb = next(
+                (v.get("thumbnail_url")
+                 for v in (c.get("asset_feed_spec") or {}).get("videos") or []
+                 if str(v.get("video_id")) == video_id and v.get("thumbnail_url")),
+                None)
+            best_source = meta.get("poster") or afs_thumb or c.get("thumbnail_url")
 
         elif kind == "image" and image_ref:
             key = f"{client_id}/image/{ident}.jpg"
@@ -827,7 +1070,12 @@ def main() -> None:
     storage = gcs.Client(project=PROJECT)
 
     args = sys.argv[1:]
-    force = "--all" in args
+    flags = {a for a in args if a.startswith("--")}
+    unknown = flags - {"--all", "--reshape"}
+    if unknown or {"--all", "--reshape"} <= flags:
+        sys.exit(f"usage: creative_assets_job.py [client_id ...] [--all | --reshape]"
+                 f"{'; unknown ' + ', '.join(sorted(unknown)) if unknown else ''}")
+    mode = "all" if "--all" in flags else "reshape" if "--reshape" in flags else "missing"
     wanted = {a for a in args if not a.startswith("--")}
     clients = [
         dict(r) for r in bq.query(
@@ -838,10 +1086,22 @@ def main() -> None:
     if wanted:
         clients = [c for c in clients if c["client_id"] in wanted]
 
+    # One client's expired token or missing secret must not cost the others
+    # their run. On a schedule nobody is watching the output, so a failure
+    # still ends the process non-zero, which is what turns the run red.
     total = 0
+    failed: list[str] = []
     for c in clients:
-        total += run_client(bq, storage, c["client_id"], c["slug"], force)
-    print(f"done: {total} rows")
+        try:
+            total += run_client(bq, storage, c["client_id"], c["slug"], mode)
+        except Exception as e:                          # noqa: BLE001
+            print(f"  ! {c['client_id']}: run failed: {type(e).__name__}: {e}",
+                  file=sys.stderr)
+            failed.append(c["client_id"])
+    print(f"done ({mode}): {total} rows"
+          + (f", FAILED: {', '.join(failed)}" if failed else ""))
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

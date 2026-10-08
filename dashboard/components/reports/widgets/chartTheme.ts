@@ -81,9 +81,17 @@ export const AXIS_TICK = {
 } as const;
 
 /**
- * Width of one character of an axis label (10.5px mono is 0.6em wide). Axis
- * and margin sizes come from the labels they hold, not from a guess, so a
- * longer currency prefix or a wider number never loses its first character.
+ * Width of one character of an axis label. Axis and margin sizes come from the
+ * labels they hold, not from a guess, so a longer currency prefix or a wider
+ * number never loses its first character.
+ *
+ * 6.4 was one character of the 10.5px monospace (0.6em). `--font-mono` now
+ * points at Inter, which is proportional, so this is no longer one width but
+ * an upper bound: a tabular digit is about 6.0px at 10.5px and a full stop or
+ * a space is far narrower, while a capital runs to about 7. Axis labels are
+ * mostly digits, separators and a short currency prefix, so the estimate comes
+ * out high and the axis is over-reserved rather than clipped, which is the
+ * side to be wrong on. Lower it only with the labels measured.
  */
 export const AXIS_CHAR_PX = 6.4;
 

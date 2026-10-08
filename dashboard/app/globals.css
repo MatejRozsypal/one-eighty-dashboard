@@ -15,10 +15,15 @@
 @import "../styles/tokens/shadows.css";
 @import "../styles/tokens/motion.css";
 
-/* Scoped skins: token overrides that re-dress a part of the app without
-   touching its components. `.oe-health` is the Apple Health pilot on Goals.
-   Imported after the tokens so it can override them, before Tailwind so
-   utilities still win over it. */
+/* The Health skin: token overrides that re-dress the app without touching its
+   components. Scoped to `:root.oe-health`, a class on <html>, so taking it off
+   is one word in app/layout.tsx. Imported after the tokens so it can override
+   them, before Tailwind so utilities still win over it.
+
+   Note the `:root` block further down redefines `--font-sans` and
+   `--font-mono`, and an @import cannot be moved below a rule, so the skin is
+   parsed first and would lose on equal specificity. `:root.oe-health` is a
+   step higher and wins regardless of order; see the skin's own header. */
 @import "../styles/skins/health.css";
 
 @tailwind base;
@@ -132,9 +137,14 @@ body {
 }
 
 /*
- * Every figure in this dashboard is set in mono with tabular figures, so digits
- * occupy identical width. Without this, a revenue number ticking from 1 to 7
- * shifts the whole column and the page appears to jitter on refresh.
+ * Every figure in this dashboard is set with tabular figures, so digits occupy
+ * identical width. Without this, a revenue number ticking from 1 to 7 shifts
+ * the whole column and the page appears to jitter on refresh.
+ *
+ * Under the Health skin this is also set on the root element, so it already
+ * applies to every figure whether or not it is tagged. The class stays: it is
+ * what the figures rely on if the skin is ever taken off and the house
+ * monospace comes back.
  */
 .tabular {
   font-variant-numeric: tabular-nums;

@@ -28,7 +28,7 @@ export function MetricTooltip({ definition }: { definition: MetricDefinition }) 
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onClick={() => setOpen((v) => !v)}
-        className="cursor-help text-gray-250 transition-colors duration-fast hover:text-content-muted"
+        className="cursor-help text-content-muted transition-colors duration-fast hover:text-content-strong"
       >
         <span aria-hidden="true">ⓘ</span>
       </button>

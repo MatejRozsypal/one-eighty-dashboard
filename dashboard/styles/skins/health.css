@@ -1,32 +1,48 @@
 /*
- * Health: the Apple Health visual language, as a scoped skin.
+ * Health: the Apple Health visual language, now the dashboard's own.
  *
- * This is a pilot on the Goals page. Everything it changes is a design token,
- * and almost every token it changes is one the app already had, so the
- * components inside the scope pick up the new look without knowing about it.
+ * It began as a scoped pilot on the Goals page and is now the whole product.
+ * Everything it changes is still a design token, and almost every token it
+ * changes is one the app already had, so components pick up the look without
+ * knowing about it. No component holds a colour, a radius or a family of its
+ * own; that is what made the rollout a question about tokens rather than a
+ * rewrite.
  *
- * ── How a rollout works ────────────────────────────────────────────────────
- * One line. The scope below is `.oe-health`, carried by the wrapper around the
- * Goals control bar and main (app/(app)/goals/page.tsx). To take the whole
- * dashboard over, change that selector to `:root` and drop the wrapper; to
- * take one more section over, add its wrapper. No component changes either
- * way, because no component holds a colour, a radius or a family of its own.
+ * ── Where the scope lives, and why it is not `:root` ───────────────────────
+ * The class `oe-health` sits on <html> (app/layout.tsx) and every rule here is
+ * written `:root.oe-health`. A bare `:root` would have been the obvious move
+ * and it is wrong for two reasons:
  *
- * What a rollout still has to look at, and nothing else:
- *   - the chrome outside the scope (the sticky Header, the sidebar, the mobile
- *     top bar), which keeps the house look until the scope widens past it;
- *   - the three pieces of Goals-only presentation that are genuinely new
- *     rather than retuned: the pace ring (components/plan/PaceRing.tsx), the
- *     status pairs below, and the section titles in components/plan;
- *   - pages whose components assume a monospace for column alignment. This
- *     skin replaces the mono with the sans and buys the alignment back with
- *     tabular numerals on the scope itself (see the type block).
+ *  1. app/globals.css redefines `--font-sans` and `--font-mono` in its own
+ *     `:root` block, which is parsed *after* this file (an @import has to come
+ *     first, so this can never be moved below it). At equal specificity the
+ *     later rule wins, so a `:root` skin silently loses the font swap, which is
+ *     the most visible thing it does. `:root.oe-health` is (0,2,0) and wins
+ *     wherever it is parsed.
+ *  2. Reverting is then one word. Delete `oe-health` from the <html> element in
+ *     app/layout.tsx and the product is back on the house look, with no CSS
+ *     edit, no component edit and no risk of a half-applied revert.
  *
- * ── Why the existing token names are overridden rather than shadowed ───────
- * A parallel set of `--h-card`, `--h-text` names would have meant editing
- * every component to read them, which is the cost this file exists to avoid.
- * Tokens that are genuinely new (the status triples, the ring) are prefixed
- * `--h-` and are the only names a component had to learn.
+ * ── What stays on Goals, and why ───────────────────────────────────────────
+ * Three groups of tokens would have cost something real if they went global,
+ * so they sit in `.oe-goals` at the bottom of this file instead:
+ *
+ *  - the neutral grey steps. The skin restates `--gray-50` to `--gray-250` as
+ *    translucent ink. On white that is indistinguishable from the house hexes,
+ *    and on the dark sidebar, the icon rail and the dark tooltips, which draw
+ *    their text from `--gray-250`, it is not: those surfaces are dark by
+ *    design and keep the house scale.
+ *  - `--radius-control: 999px`. A pill is right for a segmented control and
+ *    wrong for a text input, a textarea, a multi-line toast or the wrapping
+ *    chip box in the metric picker, all of which read this token.
+ *  - `--series-1`. Outside Goals that slot is the first client's colour in the
+ *    reporting suite, and the six slots were validated as a set for colour
+ *    deficiency. Repointing one of them at the skin's blue puts it next to
+ *    `--series-5` (--info) and breaks the separation the set was chosen for.
+ *
+ * The ring (components/plan/GoalRing.tsx) and the card titles
+ * (components/plan/SectionTitle.tsx) also stay on Goals, but they are
+ * components rather than tokens, so their own headers carry the reasoning.
  *
  * Not part of the design system handoff. styles/tokens/* stay untouched, so a
  * future handoff can overwrite them without touching this.
@@ -64,7 +80,7 @@
   src: url("/fonts/InterVariable-subset.woff2") format("woff2-variations");
 }
 
-.oe-health {
+:root.oe-health {
   /* ================= Type =================
    * One token. Swapping the family is this line and nothing else.
    *
@@ -74,13 +90,16 @@
 
   /*
    * The mono is pointed at the same family on purpose: the mock has no
-   * monospace, and the dashboard's labels and figures ask for `font-mono` in
-   * roughly a hundred places inside this scope. Repointing the token changes
-   * all of them at once.
+   * monospace, and the dashboard asks for `font-mono` in roughly four hundred
+   * places. Repointing the token changes all of them at once.
    *
    * The mono was also doing real work: it aligned digits in a column for free.
-   * `tabular-nums` on the scope buys that back for every figure in it, not
+   * `tabular-nums` here buys that back for every figure in the product, not
    * only the ones tagged `.tabular`, which is stricter than what it replaces.
+   * It is declared on the root element, so it inherits into every page, every
+   * table, every chart axis and every SVG label. Nothing in the app sets
+   * `font-variant-numeric` or `font-feature-settings` of its own, so nothing
+   * can switch it back off by accident.
    */
   --font-sans: var(--h-font);
   --font-mono: var(--h-font);
@@ -104,19 +123,12 @@
   --border: rgba(17, 24, 28, 0.07);
   --border-strong: rgba(17, 24, 28, 0.13);
 
-  /* Neutral fills. The segmented controls and muted rows read these. */
-  --gray-50: rgba(17, 24, 28, 0.025);
-  --gray-100: rgba(17, 24, 28, 0.06);
-  --gray-150: rgba(17, 24, 28, 0.09);
-  --gray-200: rgba(17, 24, 28, 0.14);
-  /* The faintest step that still reads on white: timeline bars for a period
-     that has not started, and the label of a locked control. */
-  --gray-250: #8e8e93;
-
   --radius-card: 22px;
-  --radius-control: 999px;
 
-  /* The card. `shadow-sm` is what every card in the app already asks for. */
+  /* The card. `shadow-sm` is what every card in the app already asks for. The
+     white inset is what separates a white card from a white page; every
+     surface that reads one of these is light, the dark chrome and the dark
+     tooltips use `--shadow-lg`, which has none. */
   --shadow-xs: 0 1px 2px rgba(17, 24, 28, 0.05);
   --shadow-sm: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(17, 24, 28, 0.05),
     0 14px 32px rgba(17, 24, 28, 0.07);
@@ -126,10 +138,10 @@
 
   /* ================= Text =================
    * The mock sets secondary text in #8E8E93, which is 3.3:1 on white and fails
-   * at the 13px it is used at. Every secondary figure on this page is small
-   * text, so the step is darkened to #6C6C70 (5.2:1) and the lighter grey is
-   * not used for type at all. Nothing else about the hierarchy changes: it is
-   * still one near-black and one grey. */
+   * at the 13px it is used at. Every secondary figure is small text, so the
+   * step is darkened to #6C6C70 (5.2:1) and the lighter grey is not used for
+   * type at all. Nothing else about the hierarchy changes: it is still one
+   * near-black and one grey. */
   --text-strong: #1c1c1e;
   --text-body: #1c1c1e;
   --text-muted: #6c6c70;
@@ -149,7 +161,14 @@
    *
    * Over plan (ad spend above its band) and the holding states are not in the
    * mock. They are built here in the same family rather than borrowed from the
-   * house palette, which is tuned for a grey page. */
+   * house palette.
+   *
+   * These five are new names, not overrides. Only Goals reads them today; the
+   * rest of the product keeps `--positive`, `--negative`, `--warning` and
+   * `--info`, which drive chart series, platform tags and the delta chips and
+   * would be a redesign rather than a rollout to repoint. They are declared
+   * here, at the root, so the next page that needs an accessible status colour
+   * on a white surface has one to reach for. */
   --h-negative-text: #d8332a;
   --h-negative: #e0352b;
   --h-negative-tint: #fbdfdd;
@@ -170,38 +189,41 @@
   --h-neutral: #8e8e93;
   --h-neutral-tint: #ebebed;
 
-  /* The dot on the ring, and the one series colour the charts draw actual in. */
+  /* The dot on the ring, and the one series colour the Goals charts draw
+     actual in. */
   --h-mark: #1c1c1e;
-
-  /* Charts keep one accent for "actual" so the burn-up and the daily bars read
-     as the same series. It follows the page's own status language rather than
-     the reporting suite's six client slots. */
-  --series-1: var(--h-info);
 
   --focus-ring: #0a6cd8;
 }
 
-/* The page itself. The scope wrapper paints white across the full width, so the
-   gutters beside the content column are white too, not the shell's grey. */
-.oe-health {
-  background: var(--h-bg);
-}
+/* The pilot painted its own wrapper white, because the shell around it was
+   grey. Nothing needs to now: `body` already paints `--bg-subtle`, which this
+   file sets to white. `html` deliberately keeps `--ink-900` (globals.css), so
+   the strip an iPhone rubber-bands into stays black under the status bar. */
 
-/*
- * The metric tooltip's glyph.
- *
- * It is an icon-only control drawn as a character, so it is held to the 4.5:1
- * text bar rather than the 3:1 one a pure graphic would get. The shared
- * component sets it from the faintest grey, which does not clear that on a
- * white card; it is addressed here by the accessible name it already carries,
- * so the control itself is untouched and every other page keeps its own.
- */
-.oe-health button[aria-label^="About "] {
-  color: var(--text-muted);
-}
+/* ==========================================================================
+   Goals only
+   ==========================================================================
+   Carried by the `oe-goals` wrapper in app/(app)/goals/page.tsx and its
+   loading state. See the header for why each of these is not global. */
 
-.oe-health button[aria-label^="About "]:hover {
-  color: var(--text-strong);
+.oe-goals {
+  /* Neutral fills. The segmented controls and muted rows read these. */
+  --gray-50: rgba(17, 24, 28, 0.025);
+  --gray-100: rgba(17, 24, 28, 0.06);
+  --gray-150: rgba(17, 24, 28, 0.09);
+  --gray-200: rgba(17, 24, 28, 0.14);
+  /* The faintest step that still reads on white: timeline bars for a period
+     that has not started, and the label of a locked control. The house step
+     (#B8B8BF) is 1.9:1 on white and cannot carry a bar. */
+  --gray-250: #8e8e93;
+
+  --radius-control: 999px;
+
+  /* The burn-up and the daily bars draw actual in one accent, so the two read
+     as the same series. It follows the page's own status language rather than
+     the reporting suite's six client slots. */
+  --series-1: var(--h-info);
 }
 
 /*
@@ -209,24 +231,24 @@
  *
  * `SegmentPills` is shared with the rest of the app and is sized for the
  * monospace it was built around; set in the sans it reads small. Rather than
- * fork the control for one page, the two groups on Goals are addressed here by
- * the aria-label they already carry. The view switch gets the mock's size; the
+ * fork the control, the two groups on Goals are addressed here by the
+ * aria-label they already carry. The view switch gets the mock's size; the
  * six-metric chart picker gets a smaller nudge, because at 375px it has to
  * stay on one line.
  */
-.oe-health [role="group"][aria-label="Goals view"] > button {
+.oe-goals [role="group"][aria-label="Goals view"] > button {
   font-size: 13px;
   padding: 7px 18px;
 }
 
-.oe-health [role="group"][aria-label="Chart metric"] > button {
+.oe-goals [role="group"][aria-label="Chart metric"] > button {
   font-size: 12px;
   padding-inline: 8px;
 }
 
 /* Six metrics on a 375px phone: the labels stay, the padding goes. */
 @media (max-width: 420px) {
-  .oe-health [role="group"][aria-label="Chart metric"] > button {
+  .oe-goals [role="group"][aria-label="Chart metric"] > button {
     font-size: 11.5px;
     padding-inline: 5px;
   }

@@ -12,15 +12,15 @@
  * checkpoint timeline, Promo the attribution figures, Target the trajectory.
  *
  * ── The Health skin ────────────────────────────────────────────────────────
- * This page is a pilot of a different visual language: white page, white
- * cards, a pace ring per metric, and a sans in place of the dashboard's
- * monospace. It is expected to look unlike the rest of the product.
+ * This page piloted the visual language the whole product now uses. The skin
+ * itself lives on <html> (app/layout.tsx); what is left here is the `oe-goals`
+ * wrapper below, which carries the four things that would cost something if
+ * they left this page: the pill radius, the chart's single accent colour, the
+ * translucent neutral steps the timeline bars need, and the sizing of the two
+ * segmented controls. styles/skins/health.css says why for each.
  *
- * It is carried entirely by the `oe-health` class on the wrapper below, which
- * is where `styles/skins/health.css` scopes its token overrides. Taking the
- * decision either way is cheap: delete the wrapper and the file, or move the
- * scope up to `:root` and delete the wrapper. Nothing in `components/plan` or
- * `lib/plan` holds a colour, a radius or a font of its own.
+ * The pace ring and the card titles are also Goals-only, and are components
+ * rather than tokens; their own headers carry the reasoning.
  */
 
 import type { Metadata } from "next";
@@ -55,7 +55,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Search
     return (
       <>
         <Header title="Goals" />
-        <div className="oe-health flex min-w-0 flex-1 flex-col">
+        <div className="oe-goals flex min-w-0 flex-1 flex-col">
           <main className="page-frame px-5 pb-14 pt-6 lg:px-8">
             <NotConnected source={missingSource(client, "/goals") ?? "Shop"} />
           </main>
@@ -73,17 +73,8 @@ export default async function GoalsPage({ searchParams }: { searchParams: Search
 
   return (
     <>
-      {/* The skin's one font, fetched as the page streams rather than after the
-          stylesheet has been parsed. */}
-      <link
-        rel="preload"
-        as="font"
-        type="font/woff2"
-        href="/fonts/InterVariable-subset.woff2"
-        crossOrigin="anonymous"
-      />
       <Header title="Goals" />
-      <div className="oe-health flex min-w-0 flex-1 flex-col">
+      <div className="oe-goals flex min-w-0 flex-1 flex-col">
         <PlanControls view={view} options={options} period={period?.id ?? null} />
         <main className="page-frame flex flex-col gap-[22px] px-5 pb-14 pt-6 lg:px-8">
           <PlanBody data={data} view={view} period={period} asOf={asOf} currency={client.currency} />

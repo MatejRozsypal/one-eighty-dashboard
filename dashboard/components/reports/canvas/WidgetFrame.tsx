@@ -83,6 +83,9 @@ function DotsIcon() {
 }
 
 /** Popover menu, portalled to the body so neither the card nor the grid item's stacking context clips it. */
+// Hovers and the unit chip read `--gray-100` / `--gray-50`, not `--bg-subtle`.
+// That token is the page background and the Health skin paints it white, so a
+// hover drawn in it stopped being a hover at all.
 function FrameMenu({ items, label }: { items: readonly FrameMenuItem[]; label: string }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
@@ -154,7 +157,7 @@ function FrameMenu({ items, label }: { items: readonly FrameMenuItem[]; label: s
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => setOpen((v) => !v)}
-        className="report-widget-menu-button -mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-content-muted transition-colors hover:bg-bg-subtle hover:text-content-strong"
+        className="report-widget-menu-button -mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-content-muted transition-colors hover:bg-gray-100 hover:text-content-strong"
       >
         <DotsIcon />
       </button>
@@ -180,7 +183,7 @@ function FrameMenu({ items, label }: { items: readonly FrameMenuItem[]; label: s
                     item.onSelect();
                   }}
                   className={cx(
-                    "flex w-full items-center rounded-xs px-3 py-1.5 text-left text-body-sm outline-none hover:bg-bg-subtle focus-visible:bg-bg-subtle",
+                    "flex w-full items-center rounded-xs px-3 py-1.5 text-left text-body-sm outline-none hover:bg-gray-100 focus-visible:bg-gray-100",
                     item.danger ? "text-negative" : "text-content-strong",
                   )}
                 >
@@ -227,7 +230,7 @@ export const WidgetFrame = forwardRef<HTMLElement, WidgetFrameProps>(function Wi
           )}
         </div>
         {chip ? (
-          <span className="shrink-0 rounded-pill border border-hairline bg-bg-subtle px-2 py-0.5 font-mono text-caption text-content-muted">{chip}</span>
+          <span className="shrink-0 rounded-pill border border-hairline bg-gray-50 px-2 py-0.5 font-mono text-caption text-content-muted">{chip}</span>
         ) : null}
         {menu && menu.length > 0 ? <FrameMenu items={menu} label={title} /> : null}
       </header>

@@ -328,12 +328,18 @@ export function MobileTopBar({
                               key={child.href}
                               href={navHref(child.href, qs)}
                               aria-current={isActive ? "page" : undefined}
+                              // Both steps moved up one. A muted child used to
+                              // be the muted step at 70%, which was 2.9:1 on
+                              // the sheet and is 2.6:1 now that `--text-muted`
+                              // is the skin's lighter grey. The step between a
+                              // plain child and a muted one survives, and both
+                              // now clear 4.5:1 at 14px.
                               className={`rounded-sm py-2 pl-[42px] pr-3 text-[14px] transition-colors duration-fast ${
                                 isActive
                                   ? "font-semibold text-content-strong"
                                   : child.muted
-                                    ? "text-content-muted/70"
-                                    : "text-content-muted"
+                                    ? "text-content-muted"
+                                    : "text-content-body"
                               }`}
                             >
                               {child.label}

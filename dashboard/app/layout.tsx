@@ -45,12 +45,31 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
+    // `oe-health` is the whole of the Apple Health look (styles/skins/health.css).
+    // Every rule in that file is scoped to it, so removing this one class puts
+    // the product back on the house look with no other edit anywhere.
+    //
+    // The Geist variables stay declared: globals.css still names them as the
+    // fallback family, and they are what the page renders in if the skin is
+    // ever taken off again.
     <html
       lang="en"
-      className={`${GeistSans.variable} ${GeistMono.variable}`}
+      className={`oe-health ${GeistSans.variable} ${GeistMono.variable}`}
       suppressHydrationWarning
     >
       <body>
+        {/*
+          The skin's one font, fetched as the document streams rather than
+          after the stylesheet has been parsed. The Goals pilot preloaded it
+          from its own page; now that every page is set in it, it belongs here.
+        */}
+        <link
+          rel="preload"
+          as="font"
+          type="font/woff2"
+          href="/fonts/InterVariable-subset.woff2"
+          crossOrigin="anonymous"
+        />
         {/*
           Applies a remembered collapse before the first paint. Without it the
           panel renders open and snaps shut on hydration, which reads as a bug

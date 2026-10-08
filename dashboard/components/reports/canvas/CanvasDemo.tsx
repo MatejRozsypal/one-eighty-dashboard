@@ -72,7 +72,7 @@ function Readout({ config }: { config: WidgetConfigInput }) {
     );
   }
   return (
-    <div className="flex h-full flex-col justify-end rounded-md bg-bg-subtle p-3 font-mono text-caption text-content-muted">
+    <div className="flex h-full flex-col justify-end rounded-md bg-gray-100 p-3 font-mono text-caption text-content-muted">
       <div>{config.view.type}</div>
       <div className="truncate">{config.query.metrics.join(" / ")}</div>
       <div>
@@ -106,7 +106,7 @@ export function CanvasDemo() {
     setSaves((s) => [`saved ${layout.length} items at ${new Date().toLocaleTimeString()}`, ...s].slice(0, 5));
   }, []);
 
-  const btn = "rounded-control border border-hairline bg-surface-card px-3 py-1.5 text-body-sm text-content-strong hover:bg-bg-subtle disabled:opacity-40";
+  const btn = "rounded-control border border-hairline bg-surface-card px-3 py-1.5 text-body-sm text-content-strong hover:bg-gray-50 disabled:opacity-40";
 
   return (
     <div className="flex flex-col gap-4 p-6">

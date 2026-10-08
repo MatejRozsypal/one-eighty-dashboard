@@ -98,7 +98,7 @@ export function InfoTip({ text, label = "More info" }: { text: string; label?: s
           setOpen(true);
           setPinned(true);
         }}
-        className="cursor-help rounded-full text-gray-250 transition-colors duration-fast hover:text-content-muted focus-visible:text-content-muted"
+        className="cursor-help rounded-full text-content-muted transition-colors duration-fast hover:text-content-strong focus-visible:text-content-strong"
       >
         <span aria-hidden="true">ⓘ</span>
       </button>

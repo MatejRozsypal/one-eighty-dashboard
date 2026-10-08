@@ -14,6 +14,14 @@
  * Past the goal the main ring closes and a second, inner arc carries the
  * excess, so meeting the goal and doubling it do not draw the same picture.
  *
+ * ── Why this did not go out with the rollout ───────────────────────────────
+ * One rotation is a period target that the warehouse computes on a daily
+ * curve, and the dot is where that curve says today should be. No other page
+ * in the product has either: Snapshot, Paid and the rest report what happened
+ * against a comparison period, not against a plan. Drawing a ring there would
+ * mean inventing a denominator, which is the exact mistake the first cut of
+ * this ring made inside Goals. It stays where the data is.
+ *
  * The ring is decorative, so `aria-hidden`. Its two marks are available as
  * text: `ringDescription` names the denominator ("22% of the month goal"), and
  * it is carried both as a hover title and as a visually hidden sentence, so

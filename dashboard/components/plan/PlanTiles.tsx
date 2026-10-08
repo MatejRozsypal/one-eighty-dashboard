@@ -221,8 +221,15 @@ function PlanTile({ metric, row, currency }: { metric: PlanMetric; row: PacingRo
           {planStatusLabel(row)}
           {row.isTooEarly && <span className="sr-only"> (too early to call)</span>}
         </span>
+        {/*
+          "of plan to date", not "of plan". Two denominators meet on this tile:
+          the ring is a share of the whole period's goal, this figure is a
+          share of what the plan expects by today. Naming the denominator
+          inline is what stops the two being read as the same number, and it
+          has to work for a reader who never opens the tooltip.
+        */}
         <span className={`inline-flex items-center gap-1 tabular ${CAPTION}`}>
-          {paceText === NO_VALUE ? NO_VALUE : `${paceText} of plan`}
+          {paceText === NO_VALUE ? NO_VALUE : `${paceText} of plan to date`}
           <MetricTooltip definition={METRIC_DEFINITIONS["Pace"]} />
         </span>
       </div>

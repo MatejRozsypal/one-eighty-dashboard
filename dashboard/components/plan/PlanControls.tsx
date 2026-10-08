@@ -50,7 +50,7 @@ export function PlanControls({
   }
 
   return (
-    <div className="z-20 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline lg:bg-paper">
+    <div className="z-20 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline-strong lg:bg-paper">
       <div className="page-frame flex flex-wrap items-center gap-x-4 gap-y-2 px-5 lg:px-8">
         <SegmentPills
           ariaLabel="Goals view"

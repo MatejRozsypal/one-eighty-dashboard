@@ -9,6 +9,16 @@
  * the hover title says so. The word is always present, so the status never
  * rests on colour alone.
  *
+ * ── Why the status triples did not go out with the rollout ────────────────
+ * The five `--h-*` triples are declared at the root now, so any page can read
+ * them, but nothing outside `components/plan` does. The rest of the product
+ * colours status from `--positive`, `--negative`, `--warning` and `--info`,
+ * and those four also drive the chart series, the platform tags and the delta
+ * chips; repointing them is a redesign of twenty pages, not a rollout. The
+ * surfaces they sit on did not change either, cards were white before the
+ * page was, so nothing about their contrast got worse. The triples are there
+ * for the next page that needs a status colour that reads on white.
+ *
  * It is a coloured word rather than a tinted pill. The skin's status colours
  * are tuned to clear 4.5:1 on white, and on their own tints the darker ones
  * land in the low fours; the choice was a second, darker set of reds and

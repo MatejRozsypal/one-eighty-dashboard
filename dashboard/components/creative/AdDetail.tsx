@@ -155,8 +155,13 @@ export function AdDetail({
           becomes unreachable by scrolling. */}
       <div className="flex min-h-full items-start justify-center p-4 sm:p-6">
       {/* Top-aligned with a floor on its height, so switching tabs does not
-          move the header, the tabs or the close button under the cursor. */}
-      <div className="flex min-h-[min(760px,calc(100vh-3rem))] w-full max-w-[1080px] flex-col rounded-2xl border border-hairline bg-bg-subtle shadow-xl">
+          move the header, the tabs or the close button under the cursor.
+
+          The tray is `--gray-100`, not `--bg-subtle`. It is a tray of white
+          cards and needs a surface of its own to hold them; `--bg-subtle` is
+          the page background, and the Health skin paints that white, which
+          left the cards inside with no edge. */}
+      <div className="flex min-h-[min(760px,calc(100vh-3rem))] w-full max-w-[1080px] flex-col rounded-2xl border border-hairline bg-gray-100 shadow-xl">
         <header className="flex flex-shrink-0 items-start gap-4 border-b border-hairline px-6 py-5">
           <div className="min-w-0 flex-1">
             <div className="break-all font-mono text-[21px] font-medium leading-[1.2] tracking-heading text-content-strong">

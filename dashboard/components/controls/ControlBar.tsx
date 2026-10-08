@@ -73,8 +73,10 @@ export function ControlBar({
       a light header and has a curve-free corner to occupy.
     */
     // Sticky bar spans the viewport; its controls ride the shared column so
-    // they line up with the header above and the cards below.
-    <div className="z-20 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline lg:bg-paper">
+    // they line up with the header above and the cards below. The bottom edge
+    // matches `Header`: one step stronger than a hairline, so the bar still
+    // reads as a layer over a white page.
+    <div className="z-20 py-2 lg:sticky lg:top-[var(--header-h)] lg:border-b lg:border-hairline-strong lg:bg-paper">
       <div className="page-frame flex flex-wrap items-center gap-2 px-5 lg:px-8">
         <DateRangeControl range={range} presetKey={presetKey} withToday />
 

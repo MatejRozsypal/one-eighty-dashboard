@@ -254,7 +254,8 @@ function ruleRank(id: string): number {
   return i < 0 ? RULE_ORDER.length : i;
 }
 
-export function recommendations(input: RuleInput): Recommendation[] {
+/** Every card the rules fire, before ordering and the cap (Home For you dismisses and caps them itself). */
+export function allRecommendations(input: RuleInput): Recommendation[] {
   const all: Recommendation[] = [];
   for (const c of input.clients) {
     if (!c.clientId || !c.currency) continue;
@@ -274,7 +275,11 @@ export function recommendations(input: RuleInput): Recommendation[] {
     if (card) all.push(card);
   }
   for (const v of input.velocity ?? []) all.push(...velocityCards(v));
+  return all;
+}
 
+export function recommendations(input: RuleInput): Recommendation[] {
+  const all = allRecommendations(input);
   const sorted = all.sort((a, b) => {
     if (a.stakeCzk !== null && b.stakeCzk !== null) return b.stakeCzk - a.stakeCzk;
     if (a.stakeCzk !== null) return -1;

@@ -11,7 +11,7 @@
  */
 
 import type { Metadata } from "next";
-import Link from "next/link";
+import { AppLink } from "@/components/ui/AppLink";
 import { Header } from "@/components/shell/Header";
 import { NotConnected } from "@/components/ui/EmptyState";
 import { money, unitMoney } from "@/components/creative/primitives";
@@ -65,9 +65,9 @@ export default async function VelocityOverviewPage() {
                 return (
                   <RowLink key={d.client.clientId} href={href}>
                     <Td left>
-                      <Link href={href} className="hover:underline">
+                      <AppLink href={href} className="hover:underline">
                         {d.client.name}
-                      </Link>
+                      </AppLink>
                     </Td>
                     <Td>{f.tier ?? NO_VALUE}</Td>
                     <Td>{money(d.summary?.spend30d ?? null, d.currency)}</Td>

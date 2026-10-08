@@ -1,5 +1,5 @@
 /**
- * Application shell, dark sidebar on desktop, bottom tab bar on mobile.
+ * Application shell: one dark sidebar on desktop, the top bar and its page sheet on mobile.
  *
  * ── This layout is the authentication gate ──────────────────────────────────
  * There is deliberately no `middleware.ts`. The original one used next-auth's
@@ -14,10 +14,10 @@
  * this cannot, because the data and the check are in the same function.
  *
  * The client registry (with each client's capabilities) is fetched once here
- * and handed to the Sidebar, ProductRail and MobileTopBar. Which client is
- * *selected* is resolved inside them from the URL, because layouts in the App
- * Router don't receive searchParams; the selected client's capabilities then
- * decide which pages and products the nav shows.
+ * and handed to the Sidebar and MobileTopBar. Which client is *selected* is
+ * resolved inside them from the URL, because layouts in the App Router don't
+ * receive searchParams; the selected client's capabilities then decide which
+ * pages the nav shows, and the role which products.
  */
 
 import { redirect } from "next/navigation";
@@ -25,7 +25,6 @@ import { cookies } from "next/headers";
 import { getSession } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
 import { Sidebar } from "@/components/shell/Sidebar";
-import { ProductRail } from "@/components/shell/ProductRail";
 import { ProductTransition } from "@/components/shell/ProductTransition";
 import { HistoryProvider } from "@/components/chat/HistoryProvider";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
@@ -123,8 +122,13 @@ export default async function AppLayout({
     <DeltaModeProvider initial={deltaDefault}>
     <HistoryProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
-      <ProductRail role={session.user.role} clients={clients} />
-      <Sidebar clients={clients} isAdmin={isAdmin} isInternal={isInternal} />
+      <Sidebar
+        clients={clients}
+        role={session.user.role}
+        isAdmin={isAdmin}
+        isInternal={isInternal}
+        showSettings={isInternal}
+      />
 
       {/*
         Fixed to the header's right-hand side rather than rendered inside it:

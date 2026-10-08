@@ -11,7 +11,7 @@
 
 import { pageAvailability, missingSource, hasShop } from "@/lib/capabilities";
 import { productFor } from "@/lib/products";
-import { navFor, navForProduct, navHref, railProducts, pageTitle, activeNavHref, resolveActive, selectedClient, CREATIVE_NAV, NAV } from "@/lib/nav";
+import { navFor, navForProduct, navHref, sidebarProducts, isSettingsPath, pageTitle, activeNavHref, resolveActive, selectedClient, CREATIVE_NAV, NAV } from "@/lib/nav";
 import { formatMoney, formatNumber, formatPercent, formatRatio, NO_VALUE } from "@/lib/format";
 import { tickLabels } from "@/components/dashboard/RevenueMix";
 import { aggregate, spendGapNotice, paidSpendDelta, type PnlDay, type PnlSnapshot } from "@/lib/queries/pnl";
@@ -85,19 +85,30 @@ for (const name of Object.keys(FIXTURES) as Name[]) {
   for (const h of hrefs) eq(`${name} nav ${h} available`, pageAvailability(c, h), "available");
   eq(`${name} nav has /email`, hrefs.includes("/email"), e.email);
   eq(`${name} nav has /inventory`, hrefs.includes("/inventory"), e.inventory);
-  eq(`${name} rail has creative`, railProducts("admin", c).some((p) => p.id === "creative"), true);
-  eq(`${name} rail has analytics`, railProducts("admin", c).some((p) => p.id === "analytics"), true);
+  eq(`${name} sidebar has creative`, sidebarProducts("admin", c).some((p) => p.id === "creative"), true);
+  eq(`${name} sidebar has analytics`, sidebarProducts("admin", c).some((p) => p.id === "analytics"), true);
 }
 
-// Rail by role (RS5): Reports for admin and agency only, other products unchanged.
-const railIds = (role: "admin" | "agency" | "client", c?: Parameters<typeof railProducts>[1]) =>
-  railProducts(role, c).map((p) => p.id);
-eq("rail admin", railIds("admin", FIXTURES.manami), ["chat", "analytics", "creative", "reports"]);
-eq("rail agency", railIds("agency", FIXTURES.manami), ["chat", "analytics", "creative", "reports"]);
-eq("rail client", railIds("client", FIXTURES.manami), ["chat", "analytics"]);
-eq("rail admin, no client", railIds("admin"), ["chat", "analytics", "creative", "reports"]);
-eq("rail admin rawbark (no Meta)", railIds("admin", FIXTURES.rawbark), ["chat", "analytics", "creative", "reports"]);
-eq("rail agency rawbark (no Meta)", railIds("agency", FIXTURES.rawbark), ["chat", "analytics", "creative", "reports"]);
+// Sidebar products by role (RS5, Home): the internal roles get every product in
+// sidebar order; Home, Creative and Reports are internal only, Reports narrowed
+// further by REPORTS_ROLES. The set does not change with the client.
+const ALL_PRODUCTS = ["home", "chat", "analytics", "creative", "reports"];
+const productIds = (role: "admin" | "agency" | "client", c?: Parameters<typeof sidebarProducts>[1]) =>
+  sidebarProducts(role, c).map((p) => p.id);
+eq("sidebar admin", productIds("admin", FIXTURES.manami), ALL_PRODUCTS);
+eq("sidebar agency", productIds("agency", FIXTURES.manami), ALL_PRODUCTS);
+eq("sidebar client", productIds("client", FIXTURES.manami), ["chat", "analytics"]);
+eq("sidebar client, no Home/Creative/Reports", productIds("client", FIXTURES.manami).filter((id) => ["home", "creative", "reports"].includes(id)), []);
+eq("sidebar admin, no client", productIds("admin"), ALL_PRODUCTS);
+eq("sidebar admin rawbark (no Meta)", productIds("admin", FIXTURES.rawbark), ALL_PRODUCTS);
+eq("sidebar agency rawbark (no Meta)", productIds("agency", FIXTURES.rawbark), ALL_PRODUCTS);
+eq("productFor /home", productFor("/home"), "home");
+eq("productFor /homework", productFor("/homework"), "analytics");
+// Settings and Admin belong to the Settings row at the foot, not to a product.
+eq("settings path /settings", isSettingsPath("/settings"), true);
+eq("settings path /admin", isSettingsPath("/admin"), true);
+eq("settings path /settingsx", isSettingsPath("/settingsx"), false);
+eq("settings path /snapshot", isSettingsPath("/snapshot"), false);
 eq("productFor /reports", productFor("/reports"), "reports");
 eq("productFor /reports/abc", productFor("/reports/abc"), "reports");
 eq("productFor /reportsx", productFor("/reportsx"), "analytics");

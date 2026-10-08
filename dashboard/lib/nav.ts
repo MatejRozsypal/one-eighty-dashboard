@@ -1,15 +1,17 @@
 /**
  * Sidebar navigation.
  *
- * Pure (no server imports): the Sidebar, MobileTopBar and ProductRail run it in
- * the browser. A page the selected client can never have data for is hidden,
+ * Pure (no server imports): the Sidebar and MobileTopBar run it in the browser. A page the selected client can never have data for is hidden,
  * not greyed out; opened by URL it renders its title plus "{Source} not
  * connected." (see `lib/capabilities.ts`).
  *
- * The tree is two levels at most: a top-level item has an icon and may have
- * children (Paid's platforms, Breakdown's dimensions, Repurchase's timing view).
- * Children show indented under their parent while the parent's section is open,
- * the way Shopify's admin does, rather than as a tab row inside the page.
+ * The shell is one sidebar, the way Shopify's admin is: the products
+ * (`sidebarProducts`) are its top-level rows, and the open product lists its own
+ * tree underneath, indented. That tree is two levels at most: an item may have
+ * children (Paid's platforms, Breakdown's dimensions, Repurchase's timing view),
+ * shown under it while its section is open rather than as a tab row in the page.
+ * Each item keeps an icon for the mobile page sheet; the desktop sidebar draws
+ * icons on the product rows only.
  */
 
 import { matchesPrefix, pageAvailability, type HasCapabilities } from "@/lib/capabilities";
@@ -153,8 +155,8 @@ export const NAV: NavGroup[] = [
 /**
  * The Creative section's own navigation.
  *
- * A separate tree rather than a group inside NAV: Creative is a product behind
- * the rail, not a category of Analytics pages. The order is the reading order:
+ * A separate tree rather than a group inside NAV: Creative is a product of its
+ * own in the sidebar, not a category of Analytics pages. The order is the reading order:
  * what ran, what it belonged to, how it compares, whether enough of it is being
  * made, and what it cost. Breakdown's children are its dimensions, which used
  * to sit in a select above the table; Velocity's are its four screens.
@@ -194,6 +196,15 @@ export const CREATIVE_NAV: NavGroup[] = [
 
 /** Settings lives behind the gear in the sidebar footer, not in this tree. */
 export const SETTINGS_HREF = "/settings";
+
+/**
+ * Routes that belong to the Settings row at the foot of the sidebar rather than
+ * to a product: Settings itself and Admin, which is reached from it. On them no
+ * product is open.
+ */
+export function isSettingsPath(pathname: string): boolean {
+  return matchesPrefix(pathname, SETTINGS_HREF) || matchesPrefix(pathname, "/admin");
+}
 
 /** Titles for routes outside NAV and CREATIVE_NAV (used by the mobile bar). */
 const OTHER_TITLES: Array<{ href: string; label: string }> = [
@@ -343,7 +354,7 @@ function childrenFor(children: NavChild[], client?: HasCapabilities | null): Nav
   });
 }
 
-/** The groups the sidebar and the mobile sheet list for a product. Chat and Reports draw their own. */
+/** The groups the sidebar and the mobile sheet list under a product. Chat and Reports draw their own. */
 export function navForProduct(
   product: ProductId,
   isAdmin: boolean,
@@ -356,10 +367,11 @@ export function navForProduct(
 }
 
 /**
- * Rail products for this role. The rail is stable across clients: Creative stays visible and its
- * pages show "Meta not connected" for a client without Meta. Reports is not client-scoped.
+ * The products this role gets a top-level row for, in sidebar order. Stable across clients:
+ * Creative stays listed and its pages show "Meta not connected" for a client without Meta.
+ * Reports is not client-scoped.
  */
-export function railProducts(role: Role, _client?: HasCapabilities | null): Product[] {
+export function sidebarProducts(role: Role, _client?: HasCapabilities | null): Product[] {
   return productsFor(role);
 }
 

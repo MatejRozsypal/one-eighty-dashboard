@@ -31,9 +31,19 @@
 import { AppLink } from "@/components/ui/AppLink";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { navForProduct, navHref, pageTitle, railProducts, resolveActive, selectedClient } from "@/lib/nav";
+import {
+  SETTINGS_HREF,
+  isSettingsPath,
+  navForProduct,
+  navHref,
+  pageTitle,
+  resolveActive,
+  selectedClient,
+  sidebarProducts,
+} from "@/lib/nav";
 import { productFor } from "@/lib/products";
 import { NavIcon } from "@/components/shell/NavIcon";
+import { ProductIcon, SettingsIcon } from "@/components/shell/ProductIcon";
 import { WhatsNewMenuItem } from "@/components/whatsnew/WhatsNewButton";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import type { Client } from "@/lib/clients";
@@ -48,7 +58,7 @@ export function MobileTopBar({
   clients?: Client[];
   isAdmin?: boolean;
   isInternal?: boolean;
-  /** Decides which sections the sheet lists. */
+  /** Decides which products the sheet lists. */
   role: Role;
 }) {
   // One menu at a time: the page sheet and the client menu used to stack over
@@ -82,9 +92,10 @@ export function MobileTopBar({
   // switcher is hidden on both.
   const showClientSwitcher = activeProduct !== "reports" && activeProduct !== "home";
 
-  // Pages and products the selected client has no source for are hidden.
-  const nav = navForProduct(activeProduct, isAdmin, shownClient, isInternal);
-  const products = railProducts(role, shownClient);
+  // Pages the selected client has no source for are hidden; products follow the role.
+  const onSettings = isSettingsPath(pathname);
+  const nav = onSettings ? [] : navForProduct(activeProduct, isAdmin, shownClient, isInternal);
+  const products = sidebarProducts(role, shownClient);
 
   // The section you are in: its children are listed under it in the sheet, the
   // same as in the sidebar, and the bar names the page you are on inside it.
@@ -121,6 +132,17 @@ export function MobileTopBar({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [menu]);
+
+  // The current page can sit far down the open product's list. Show it on open,
+  // scrolling the sheet only, never the page behind it.
+  const sheetRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const sheet = sheetRef.current;
+    const here = sheet?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!open || !sheet || !here) return;
+    const top = here.offsetTop;
+    if (top + here.offsetHeight > sheet.clientHeight - 64) sheet.scrollTop = top - sheet.clientHeight / 3;
+  }, [open]);
 
   // A sheet this tall over a scrollable page invites scrolling the page behind
   // it by accident.
@@ -261,101 +283,127 @@ export function MobileTopBar({
             a new screen.
           */}
           <nav
+            ref={sheetRef}
             aria-label="Pages"
             className="absolute left-3 top-[calc(var(--header-bar-h)+var(--safe-top))] z-[50] max-h-[70vh] w-[64%] min-w-[228px] max-w-[300px] overflow-y-auto rounded-lg bg-paper p-2 shadow-lg"
           >
             {/*
-              The rail has no mobile equivalent, there is no room for a second
-              column, so the products it holds lead this sheet instead. Putting
-              them among the page groups would have made a product look like a
-              page, which is the one distinction the rail exists to draw.
+              The same hierarchy as the desktop sidebar: the products are the
+              top-level rows, and the one you are in lists its pages under it,
+              indented, with their own children one step further in. One
+              vertical list, so nothing sits behind a sideways scroll at 390px
+              (QA C-12). Chat history and the report list stay on their pages
+              here: the sheet is for moving between pages.
             */}
-            <div className="flex flex-col">
-              <span className="px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-                Sections
-              </span>
-              {/*
-                Two columns rather than one row: four sections in one row are
-                wider than the sheet, and the last one (Reports) sat behind an
-                invisible horizontal scroll (QA C-12).
-              */}
-              <div className="grid grid-cols-2 gap-1 px-1.5 pb-1">
-                {products.map((p) => (
+            <ul className="m-0 flex list-none flex-col gap-px p-0">
+              {products.map((p) => {
+                const isCurrent = p.id === activeProduct && !onSettings;
+                const isPage =
+                  isCurrent &&
+                  (p.id === "home" || p.id === "chat" || (p.id === "reports" && pathname === "/reports"));
+                return (
+                  <li key={p.id} className="flex flex-col">
+                    <AppLink
+                      href={qs ? `${p.href}?${qs}` : p.href}
+                      onClick={() => setMenu(null)}
+                      aria-current={isPage ? "page" : isCurrent ? "true" : undefined}
+                      className={`flex items-center gap-2.5 rounded-sm px-3 py-2.5 text-[15px] tracking-[-0.01em] transition-colors duration-fast ${
+                        isPage
+                          ? "bg-gray-100 font-semibold text-content-strong"
+                          : isCurrent
+                            ? "font-semibold text-content-strong"
+                            : "text-content-body"
+                      }`}
+                    >
+                      <span className={isCurrent ? "text-growth-700" : "text-content-muted"}>
+                        <ProductIcon id={p.id} />
+                      </span>
+                      {p.label}
+                    </AppLink>
+
+                    {isCurrent && nav.length > 0 && (
+                      <div className="flex flex-col pb-1">
+                        {nav.map((group) => (
+                          <div key={group.label} className="flex flex-col">
+                            {nav.length > 1 && (
+                              <span className="pb-1 pl-[40px] pr-3 pt-2.5 font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
+                                {group.label}
+                              </span>
+                            )}
+
+                            {group.items.map((item) => {
+                              const isSection = active.item?.href === item.href;
+                              const activeChild = isSection ? active.child : null;
+                              const current = isSection ? (activeChild ? "true" : "page") : undefined;
+                              return (
+                                <div key={item.href} className="flex flex-col">
+                                  <AppLink
+                                    href={navHref(item.href, qs)}
+                                    aria-current={current}
+                                    className={`flex items-center gap-2.5 rounded-sm py-2 pl-[40px] pr-3 text-[14.5px] transition-colors duration-fast ${
+                                      isSection
+                                        ? "bg-gray-100 font-semibold text-content-strong"
+                                        : "text-content-body"
+                                    }`}
+                                  >
+                                    <span className={isSection ? "text-growth-700" : "text-content-muted"}>
+                                      <NavIcon name={item.icon} size={16} />
+                                    </span>
+                                    {item.label}
+                                  </AppLink>
+
+                                  {isSection &&
+                                    item.children?.map((child) => {
+                                      const isActive = activeChild !== null && child.href === activeChild.href;
+                                      return (
+                                        <AppLink
+                                          key={child.href}
+                                          href={navHref(child.href, qs)}
+                                          aria-current={isActive ? "page" : undefined}
+                                          // Both steps clear 4.5:1 at 14px on the sheet: a
+                                          // muted child is `--text-muted`, a plain one the
+                                          // body colour, so the step between them survives.
+                                          className={`rounded-sm py-2 pl-[66px] pr-3 text-[14px] transition-colors duration-fast ${
+                                            isActive
+                                              ? "font-semibold text-content-strong"
+                                              : child.muted
+                                                ? "text-content-muted"
+                                                : "text-content-body"
+                                          }`}
+                                        >
+                                          {child.label}
+                                        </AppLink>
+                                      );
+                                    })}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+
+              {isInternal && (
+                <li className="flex flex-col">
                   <AppLink
-                    key={p.id}
-                    href={qs ? `${p.href}?${qs}` : p.href}
+                    href={SETTINGS_HREF}
                     onClick={() => setMenu(null)}
-                    aria-current={p.id === activeProduct ? "page" : undefined}
-                    className={`min-w-0 truncate rounded-sm px-2 py-[7px] text-center text-[12.5px] tracking-[-0.01em] ${
-                      p.id === activeProduct
-                        ? "bg-growth-500/[0.14] font-semibold text-growth-700"
-                        : "text-content-body"
+                    aria-current={onSettings ? "page" : undefined}
+                    className={`flex items-center gap-2.5 rounded-sm px-3 py-2.5 text-[15px] tracking-[-0.01em] transition-colors duration-fast ${
+                      onSettings ? "bg-gray-100 font-semibold text-content-strong" : "text-content-body"
                     }`}
                   >
-                    {p.label}
+                    <span className={onSettings ? "text-growth-700" : "text-content-muted"}>
+                      <SettingsIcon />
+                    </span>
+                    Settings
                   </AppLink>
-                ))}
-              </div>
-            </div>
-
-            {nav.map((group) => (
-              <div key={group.label} className="flex flex-col">
-                <span className="px-3 pb-1 pt-3 font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-                  {group.label}
-                </span>
-
-                {group.items.map((item) => {
-                  const isSection = active.item?.href === item.href;
-                  const activeChild = isSection ? active.child : null;
-                  const current = isSection ? (activeChild ? "true" : "page") : undefined;
-                  return (
-                    <div key={item.href} className="flex flex-col">
-                      <AppLink
-                        href={navHref(item.href, qs)}
-                        aria-current={current}
-                        className={`flex items-center gap-2.5 rounded-sm px-3 py-2.5 text-[15px] transition-colors duration-fast ${
-                          isSection
-                            ? "bg-gray-100 font-semibold text-content-strong"
-                            : "text-content-body"
-                        }`}
-                      >
-                        <span className={isSection ? "text-growth-700" : "text-content-muted"}>
-                          <NavIcon name={item.icon} size={18} />
-                        </span>
-                        {item.label}
-                      </AppLink>
-
-                      {isSection &&
-                        item.children?.map((child) => {
-                          const isActive = activeChild !== null && child.href === activeChild.href;
-                          return (
-                            <AppLink
-                              key={child.href}
-                              href={navHref(child.href, qs)}
-                              aria-current={isActive ? "page" : undefined}
-                              // Both steps moved up one. A muted child used to
-                              // be the muted step at 70%, which was 2.9:1 on
-                              // the sheet and is 2.6:1 now that `--text-muted`
-                              // is the skin's lighter grey. The step between a
-                              // plain child and a muted one survives, and both
-                              // now clear 4.5:1 at 14px.
-                              className={`rounded-sm py-2 pl-[42px] pr-3 text-[14px] transition-colors duration-fast ${
-                                isActive
-                                  ? "font-semibold text-content-strong"
-                                  : child.muted
-                                    ? "text-content-muted"
-                                    : "text-content-body"
-                              }`}
-                            >
-                              {child.label}
-                            </AppLink>
-                          );
-                        })}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+                </li>
+              )}
+            </ul>
 
             {/*
               The account menu is `hidden lg:block`, so a phone has no corner

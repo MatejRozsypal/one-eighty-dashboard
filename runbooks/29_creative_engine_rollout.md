@@ -105,6 +105,12 @@ Then run the mirror once by hand before scheduling it:
 python3 infra/creative_assets_job.py manami
 ```
 
+> **Scheduling (2026-10-08).** The Cloud Run job this step assumed was never
+> created. The mirror now runs from GitHub Actions every 2 hours; the service
+> account, IAM roles and GitHub secrets it needs are in
+> `runbooks/33_creative_assets_schedule.md`. Read "the Cloud Run job's SA"
+> above as `sa-creative-mirror` from that runbook.
+
 **Video needs the video permission on the Meta system user**
 (`runbooks/07_meta_app_and_system_user.md`). Without it the job stores the
 poster frame, leaves `asset_uri` null, and retries on every later run — so

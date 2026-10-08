@@ -40,7 +40,7 @@ export default function SignInPage() {
 
     // A full load, not a client push: the session cookie has just changed and
     // the shell needs to re-read it server-side to know the role.
-    window.location.href = "/snapshot";
+    window.location.href = "/";
   }
 
   return (
@@ -54,7 +54,7 @@ export default function SignInPage() {
           disabled={busy}
           onClick={() => {
             setBusy(true);
-            signIn("google", { callbackUrl: "/snapshot" });
+            signIn("google", { callbackUrl: "/" });
           }}
           className="inline-flex items-center justify-center gap-2 rounded-control bg-accent px-4 py-3 text-[14px] font-semibold text-accent-contrast transition-all duration-fast hover:bg-accent-hover hover:shadow-accent active:translate-y-px disabled:opacity-60"
         >

@@ -24,7 +24,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "One Eighty Dashboard",
     short_name: "One Eighty",
-    start_url: "/snapshot",
+    start_url: "/",
     display: "standalone",
     background_color: "#0A0A0B",
     theme_color: "#0A0A0B",

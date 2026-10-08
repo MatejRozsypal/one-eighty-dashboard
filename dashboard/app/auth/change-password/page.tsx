@@ -35,7 +35,7 @@ async function changePassword(formData: FormData) {
   }
 
   await setOwnPassword(email, password);
-  redirect("/snapshot");
+  redirect("/");
 }
 
 const ERRORS: Record<string, string> = {

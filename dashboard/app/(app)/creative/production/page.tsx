@@ -41,6 +41,7 @@ import { getCreatorTerms, getProductionRates } from "@/lib/creative/store";
 import { adCost, contributionMargin, type CreatorTerms, type ProductionRate } from "@/lib/creative/cost";
 import { classify, groupBy, sum } from "@/lib/creative/model";
 import { confidenceOf } from "@/lib/creative/stats";
+import { isNetNew } from "@/lib/creative/velocity";
 
 export const metadata: Metadata = { title: "Production ROI" };
 export const dynamic = "force-dynamic";
@@ -127,17 +128,12 @@ export default async function ProductionPage({
   });
 
   const totalProduction = rows.reduce((a, r) => a + (r.production ?? 0), 0);
+  // No cost entered anywhere is an absent input, not free production.
+  const anyPriced = rows.some((r) => r.production !== null);
   const totalWinners = rows.reduce((a, r) => a + r.winners, 0);
-  // Stated where ClickUp says so, inferred from b1h1 only for the ads that
-  // predate the field, the same precedence the velocity gauge uses, so the two
-  // screens cannot report different net-new hit rates.
-  const stated = data.ads.filter((a) => a.tags.productionType !== null);
-  const netNew =
-    stated.length > 0
-      ? stated.filter((a) => a.tags.productionType === "Net-new")
-      : data.ads.filter(
-          (a) => (a.tags.hookCode ?? "h1") === "h1" && (a.tags.bodyCode ?? "b1") === "b1"
-        );
+  // The same rule as the velocity gauge (isNetNew), so the two screens cannot
+  // disagree: stated in ClickUp, else b1h1, else unknown and left out.
+  const netNew = data.ads.filter((a) => isNetNew(a) === true);
   // The net-new hit rate is hitRate() on the launch cohort (ads first
   // delivered in the window, relaunches excluded), restricted to the ads this
   // screen calls net-new. Same function, same anchor, same age rule as the
@@ -260,8 +256,10 @@ export default async function ProductionPage({
             },
             {
               label: "Production per winner",
-              value: totalWinners > 0 ? money(totalProduction / totalWinners, currency) : NO_VALUE,
-              info: `${money(totalProduction, currency)} across ${data.ads.length} ads.`,
+              value: totalWinners > 0 && anyPriced ? money(totalProduction / totalWinners, currency) : NO_VALUE,
+              info: anyPriced
+                ? `${money(totalProduction, currency)} across ${data.ads.length} ads.`
+                : "No production cost entered.",
             },
             {
               label: "Wasted spend per winner",

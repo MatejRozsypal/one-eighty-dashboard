@@ -118,6 +118,23 @@ export function horizons(s: PackSettings, days = [7, 10, 14, 21]): HorizonOption
   });
 }
 
+/**
+ * Whether an ad is net-new, or null when nobody said.
+ *
+ * ClickUp's `Content Purpose` states it (Net-new against Winner Variant). For
+ * ads that predate the field, a b1h1 code pair reads as net-new: the first hook
+ * on the first body of a concept. An ad with neither is unknown, never
+ * net-new: counting every untagged ad as net-new put every client at 58 to
+ * 100 % against a 20 % target on 2026-10-08.
+ */
+export function isNetNew(a: AdRow): boolean | null {
+  if (a.tags.productionType !== null) return a.tags.productionType === "Net-new";
+  if (a.tags.hookCode !== null && a.tags.bodyCode !== null) {
+    return a.tags.hookCode === "h1" && a.tags.bodyCode === "b1";
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // The eight gauges
 // ---------------------------------------------------------------------------
@@ -199,15 +216,8 @@ export function gauges(input: VelocityInput): Gauge[] {
   // is filled in. The b1h1 reading is the fallback for the ads that predate the
   // field: first hook on the first body of a concept is a fresh idea rather
   // than an iteration of a proven one. Inference only where nobody stated it.
-  const stated = ads.filter((a) => a.tags.productionType !== null);
-  const netNew =
-    stated.length > 0
-      ? stated.filter((a) => a.tags.productionType === "Net-new").length / stated.length
-      : ads.length
-        ? ads.filter(
-            (a) => (a.tags.hookCode ?? "h1") === "h1" && (a.tags.bodyCode ?? "b1") === "b1"
-          ).length / ads.length
-        : 0;
+  const known = ads.map(isNetNew).filter((v): v is boolean => v !== null);
+  const netNew = known.length > 0 ? known.filter(Boolean).length / known.length : null;
 
   const testShare = s.monthlyBudget > 0 ? (s.minPackDaily * 30) / s.monthlyBudget : 0;
 
@@ -283,13 +293,19 @@ export function gauges(input: VelocityInput): Gauge[] {
     },
     {
       label: "Net-new share",
-      value: `${Math.round(netNew * 100)}%`,
-      against: `target ${Math.round(s.netNewShareTarget * 100)}%`,
+      value: netNew === null ? NO_VALUE : `${Math.round(netNew * 100)}%`,
+      against:
+        netNew === null
+          ? "no ad says whether it is net-new"
+          : `target ${Math.round(s.netNewShareTarget * 100)}%, ${known.length} of ${ads.length} ads known`,
       // Scaled against 60% so the bar has somewhere to go: this is a gauge you
       // want LOW, and a full bar meaning "bad" would read backwards.
-      fill: clamp(netNew / 0.6),
+      fill: netNew === null ? 0 : clamp(netNew / 0.6),
       mark: s.netNewShareTarget / 0.6,
-      state: band(netNew, netNew <= s.netNewShareTarget * 1.5, netNew <= 0.45),
+      state:
+        netNew === null
+          ? "warn"
+          : band(netNew, netNew <= s.netNewShareTarget * 1.5, netNew <= 0.45),
       cpaDerived: false,
     },
     {

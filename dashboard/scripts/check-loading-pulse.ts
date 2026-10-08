@@ -57,6 +57,38 @@ const read = (f: string) => readFileSync(f, "utf8");
 const sources = [...walk(join(ROOT, "app")), ...walk(join(ROOT, "components"))].filter((f) => /\.(tsx?|css)$/.test(f));
 
 // ---------------------------------------------------------------------------
+// Known violations handed to their owner
+// ---------------------------------------------------------------------------
+//
+// Files that break a rule below and belong to work in flight on another branch,
+// which this branch must not edit: the Home page and its variants are being
+// finished on `home-final` (2026-10-08). Each entry names the rule and the exact
+// file, nothing wider, and is checked to still be a violation: once the owner
+// fixes a file this check fails until its entry is deleted, so the list can
+// only shrink. Everything else, including new Home files, is held to the rule.
+const HANDED_OFF: Record<string, readonly string[]> = {
+  "stray-animation": [
+    "components/home/WeatherCard.tsx",
+    "components/home/shopify/WeatherChip.tsx",
+    "components/home/today/WeatherChip.tsx",
+    "components/home/weather/ForecastHero.tsx",
+  ],
+  "raw-push": ["components/home/shopify/Hero.tsx"],
+  "loading-own-style": ["app/(app)/home/v/weather/loading.tsx"],
+  "loading-hex": ["app/(app)/home/v/weather/loading.tsx"],
+};
+
+/** The violations a rule still reports once its handed-off files are set aside. */
+function unhanded(rule: keyof typeof HANDED_OFF, violators: string[]): string[] {
+  const listed = HANDED_OFF[rule];
+  const found = new Set(violators.map(rel));
+  for (const f of listed) {
+    check(`handed-off ${rule}: ${f} still violates (else drop the entry)`, found.has(f));
+  }
+  return violators.filter((f) => !listed.includes(rel(f)));
+}
+
+// ---------------------------------------------------------------------------
 // One animation definition
 // ---------------------------------------------------------------------------
 
@@ -92,7 +124,10 @@ const strayAnimation = sources.filter((f) => {
   // `oe-indeterminate` (the route progress sweep) is a different thing: a bar, not a pulse.
   return /animate-pulse|animate-\[oe-(?!indeterminate)|oe-shimmer|@keyframes/.test(text);
 });
-check("no second pulse or shimmer definition", strayAnimation.length === 0, strayAnimation.map(rel).join(", "));
+{
+  const left = unhanded("stray-animation", strayAnimation);
+  check("no second pulse or shimmer definition", left.length === 0, left.map(rel).join(", "));
+}
 
 {
   const exempt = sources.filter((f) => f.endsWith(WHATS_NEW_CSS));
@@ -111,13 +146,18 @@ check("no second pulse or shimmer definition", strayAnimation.length === 0, stra
 const rawLink = sources.filter((f) => !f.includes(`${join("app", "auth")}`) && !f.endsWith(join("ui", "AppLink.tsx")) && /from "next\/link"/.test(read(f)));
 check("next/link only in AppLink (and the signed-out pages)", rawLink.length === 0, rawLink.map(rel).join(", "));
 
-const rawPush = sources.filter((f) => !f.endsWith(join("shell", "NavigationPending.tsx")) && /\brouter\.(push|replace)\(/.test(read(f)));
+const rawPush = unhanded(
+  "raw-push",
+  sources.filter((f) => !f.endsWith(join("shell", "NavigationPending.tsx")) && /\brouter\.(push|replace)\(/.test(read(f))),
+);
 check("router.push/replace only in NavigationPending", rawPush.length === 0, rawPush.map(rel).join(", "));
 
 const ownTransition = sources.filter((f) => !f.endsWith(join("shell", "NavigationPending.tsx")) && /useTransition\(\)/.test(read(f)));
 check(
   "useTransition only in NavigationPending and the server-action buttons",
-  ownTransition.every((f) => /creative[\\/](DecisionLog|UnmappedQueue)\.tsx$/.test(f)),
+  // The server-action buttons: each awaits its action inside the transition to
+  // show its own pending state, and none of them navigates.
+  ownTransition.every((f) => /creative[\\/](DecisionLog|UnmappedQueue|velocity[\\/]PlanCalculator)\.tsx$/.test(f)),
   ownTransition.map(rel).join(", "),
 );
 
@@ -234,7 +274,11 @@ check(
   const bar = read(join(ROOT, "components", "shell", "MobileTopBar.tsx"));
   check("mobile menus: one state for both (never open together)", bar.includes('useState<"pages" | "client" | null>(null)') && !/useState\(false\)/.test(bar));
   check("mobile menus: Escape closes them", /e\.key === "Escape"\) setMenu\(null\)/.test(bar));
-  check("mobile sections wrap instead of scrolling sideways", bar.includes("grid grid-cols-2 gap-1"));
+  // The sheet carries the sidebar's hierarchy: products as one vertical list,
+  // the current one's pages under it. Nothing in it scrolls sideways (QA C-12).
+  check("mobile sheet lists products as one vertical list", bar.includes("sidebarProducts(role, shownClient)") && /<ul className="m-0 flex list-none flex-col/.test(bar));
+  check("mobile sheet never scrolls sideways", !/overflow-x-(auto|scroll)/.test(bar));
+  check("mobile sheet nests the current product's pages", /isCurrent && nav\.length > 0/.test(bar));
 }
 
 // ---------------------------------------------------------------------------
@@ -257,10 +301,16 @@ for (const dir of pageDirs) {
   check(`loading.tsx covers ${name}`, own || group || name === "channels");
 }
 
-for (const f of walk(APP).filter((x) => x.endsWith("loading.tsx"))) {
-  const text = read(f);
-  check(`${rel(f)} uses the Skeleton primitive`, text.includes('@/components/ui/Skeleton'));
-  check(`${rel(f)} has no colour or timing of its own`, !/#[0-9a-fA-F]{3,8}\b|rgb\(|animate-|duration-/.test(text));
+{
+  const loadings = walk(APP).filter((x) => x.endsWith("loading.tsx"));
+  const ownStyle = (f: string) => /#[0-9a-fA-F]{3,8}\b|rgb\(|animate-|duration-/.test(read(f));
+  unhanded("loading-own-style", loadings.filter(ownStyle));
+  for (const f of loadings) {
+    check(`${rel(f)} uses the Skeleton primitive`, read(f).includes('@/components/ui/Skeleton'));
+    if (!HANDED_OFF["loading-own-style"].includes(rel(f))) {
+      check(`${rel(f)} has no colour or timing of its own`, !ownStyle(f));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +361,13 @@ const DASHES = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(
 const owned = [
   join(ROOT, "components", "shell", "AccountMenu.tsx"),
   join(ROOT, "components", "shell", "MobileTopBar.tsx"),
+  join(ROOT, "components", "shell", "Sidebar.tsx"),
+  join(ROOT, "components", "shell", "ProductIcon.tsx"),
+  join(ROOT, "components", "shell", "NavSlot.tsx"),
+  join(ROOT, "components", "shell", "navStyles.ts"),
+  join(ROOT, "components", "shell", "NavCollapseToggle.tsx"),
+  join(ROOT, "components", "chat", "HistoryList.tsx"),
+  join(ROOT, "components", "reports", "ReportListPanel.tsx"),
   join(ROOT, "components", "controls", "DateRangeControl.tsx"),
   join(ROOT, "components", "controls", "SegmentedControl.tsx"),
   join(ROOT, "components", "controls", "MarketFilter.tsx"),
@@ -321,10 +378,15 @@ const owned = [
   join(ROOT, "scripts", "check-loading-pulse.ts"),
   ...walk(APP).filter((x) => x.endsWith("loading.tsx")),
 ];
-for (const f of owned) {
-  const text = read(f);
-  check(`${rel(f)}: no em or en dash`, !DASHES.test(text));
-  if (!f.endsWith("check-loading-pulse.ts")) check(`${rel(f)}: no hex literal`, !/#[0-9a-fA-F]{3,8}\b/.test(text));
+{
+  const hex = (f: string) => !f.endsWith("check-loading-pulse.ts") && /#[0-9a-fA-F]{3,8}\b/.test(read(f));
+  unhanded("loading-hex", owned.filter(hex));
+  for (const f of owned) {
+    check(`${rel(f)}: no em or en dash`, !DASHES.test(read(f)));
+    if (!f.endsWith("check-loading-pulse.ts") && !HANDED_OFF["loading-hex"].includes(rel(f))) {
+      check(`${rel(f)}: no hex literal`, !hex(f));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

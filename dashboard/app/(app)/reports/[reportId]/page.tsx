@@ -18,6 +18,7 @@ import { getReportClients } from "@/lib/reports/clients";
 import { buildPageMetrics } from "@/lib/reports/pageData";
 import { getReport } from "@/lib/reports/store";
 import { ReportClient } from "@/components/reports/ReportClient";
+import { SkeletonPage } from "@/components/ui/Skeleton";
 
 export const metadata: Metadata = { title: "Reports" };
 export const dynamic = "force-dynamic";
@@ -40,8 +41,11 @@ export default async function ReportPage({
   const { pickerMetrics, widgetMetrics, caveatTexts } = buildPageMetrics();
   const edit = Array.isArray(searchParams.edit) ? searchParams.edit[0] : searchParams.edit;
 
+  // The client half reads the query string, so it sits in a boundary. Its
+  // fallback is the report's own shape (as in `loading.tsx`): filter strip,
+  // KPI tiles and two charts, never a blank page.
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<SkeletonPage blocks={["kpi", "split"]} />}>
       <ReportClient
         key={loaded.report.id}
         report={loaded.report}

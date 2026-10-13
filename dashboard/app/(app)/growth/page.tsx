@@ -174,7 +174,8 @@ export default async function GrowthPage({
                     rx={3}
                     // Partial months are drawn faded, the bar is real, the
                     // comparison isn't.
-                    fill={m.isPartial ? "rgba(38,38,43,0.35)" : "var(--ink-700)"}
+                    fill={m.isPartial ? "var(--ink-600)" : "var(--ink-700)"}
+                    fillOpacity={m.isPartial ? 0.35 : undefined}
                   />
                 );
               })}

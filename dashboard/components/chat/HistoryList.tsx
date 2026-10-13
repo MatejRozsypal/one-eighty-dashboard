@@ -18,6 +18,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useChatHistory } from "@/components/chat/HistoryProvider";
 import { useNavigation } from "@/components/shell/NavigationPending";
 import { SUB_HEAD, SUB_ROW, SUB_ROW_ACTIVE, SUB_ROW_IDLE, SUB_ROW_MUTED } from "@/components/shell/navStyles";
+import { SkeletonNavRows } from "@/components/ui/Skeleton";
 
 /** How many conversations show before "See all". */
 const LATEST = 5;
@@ -64,7 +65,7 @@ export function HistoryList() {
         // Never rendered as "no conversations": the store has not been read
         // yet, and an empty state shown during a read is a lie that resolves
         // itself half a second later.
-        <span className={`${SUB_ROW} text-gray-400`}>Loading…</span>
+        <SkeletonNavRows rows={4} />
       ) : conversations.length === 0 ? (
         <span className={`${SUB_ROW} text-gray-400`}>No conversations yet.</span>
       ) : (

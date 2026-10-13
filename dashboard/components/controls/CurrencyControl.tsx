@@ -45,7 +45,7 @@ export function CurrencyControl({
   canConvert: boolean;
   convertReason: string;
 }) {
-  const { open, setOpen, wrapRef } = usePopover();
+  const { open, setOpen, wrapRef, triggerRef, panelId } = usePopover();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isPending, navigate, baseQuery } = useNavigation();
@@ -77,13 +77,15 @@ export function CurrencyControl({
         icon={<CurrencyIcon />}
         label={withSymbol(shown === "native" ? nativeCurrency : shown)}
         open={open}
+        triggerRef={triggerRef}
+        panelId={panelId}
         onClick={() => setOpen((v) => !v)}
         pending={isPending && optimistic !== null}
         ariaLabel="Display currency"
       />
       {open && (
-        <Popover label="Display currency" onClose={() => setOpen(false)} className="sm:w-[200px]">
-          <div role="menu" className="flex flex-col gap-0.5 p-2">
+        <Popover id={panelId} label="Display currency" onClose={() => setOpen(false)} className="sm:w-[200px]">
+          <div className="flex flex-col gap-0.5 p-2">
             {options.map((o) => (
               <MenuRow
                 key={o.value}

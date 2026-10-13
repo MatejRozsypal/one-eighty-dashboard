@@ -341,7 +341,7 @@ function Figures({ items }: { items: Array<{ label: string; value: string; info?
           </div>
           <div
             className={`mt-1 whitespace-nowrap font-mono text-[21px] font-medium tracking-heading tabular ${
-              isNoValue(t.value) ? "text-content-muted" : t.warn ? "text-warning" : "text-content-strong"
+              isNoValue(t.value) ? "text-content-muted" : t.warn ? "text-warning-700" : "text-content-strong"
             }`}
           >
             {t.value}

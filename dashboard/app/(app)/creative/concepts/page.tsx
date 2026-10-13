@@ -353,7 +353,7 @@ export default async function ConceptsPage({
 
           {incomplete.length > 0 && (
             <div className="glass mb-3 flex flex-col gap-3 border-warning/40 p-5">
-              <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-eyebrow text-warning">
+              <span className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-eyebrow text-warning-700">
                 {incomplete.length} of {roster.length} incomplete
                 <InfoTip
                   text="Ads take persona, angle and offer from their concept. These concepts leave one blank, so their ads show n/a."

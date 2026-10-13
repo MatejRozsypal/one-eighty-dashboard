@@ -173,7 +173,7 @@ export function BottomLine({
             {lifeMoney(lifetime?.ltgp ?? null)}
           </span>
           {lifetime?.ltgpRatio != null && (
-            <span className="text-[11.5px] text-gray-300">
+            <span className="text-[11.5px] text-content-muted">
               {formatPercent(lifetime.ltgpRatio)} of LTV
             </span>
           )}
@@ -182,7 +182,7 @@ export function BottomLine({
 
       <AppLink
         href={customersHref}
-        className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-growth-600 transition-colors duration-fast hover:text-growth-700"
+        className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-content-accent transition-colors duration-fast hover:text-content-strong"
       >
         Customers →
       </AppLink>

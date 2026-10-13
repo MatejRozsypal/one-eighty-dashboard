@@ -13,7 +13,7 @@
  * delta).
  */
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   Bar,
   CartesianGrid,
@@ -24,6 +24,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { ChartSummary } from "@/components/ui/ChartSummary";
 import { formatMoney, formatRatio } from "@/lib/format";
 import type { ChartPoint } from "@/components/paid/overview/model";
 
@@ -50,6 +51,9 @@ export function SpendEfficiencyChart({
 }) {
   const [metric, setMetric] = useState<MetricKey>("amer");
   const def = METRICS.find((m) => m.key === metric) ?? METRICS[0];
+  // Two summaries, one per axis: spend in money, the metric in its own unit.
+  const spendSummaryId = useId();
+  const metricSummaryId = useId();
 
   const fmtMetric = (v: number | null | undefined) =>
     def.money ? formatMoney(v, currency, { unit: true }) : formatRatio(v);
@@ -98,6 +102,7 @@ export function SpendEfficiencyChart({
         className="h-[180px] w-full sm:h-[260px] [&_.cmp-line]:max-[400px]:hidden"
         role="img"
         aria-label={`Spend by platform with ${def.label} over time`}
+        aria-describedby={`${spendSummaryId} ${metricSummaryId}`}
       >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={points} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
@@ -167,6 +172,24 @@ export function SpendEfficiencyChart({
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      <ChartSummary
+        id={spendSummaryId}
+        series={[
+          ...(showMeta ? [{ name: "Meta spend", values: points.map((p) => p.meta) }] : []),
+          ...(showGoogle ? [{ name: "Google spend", values: points.map((p) => p.google) }] : []),
+        ]}
+        labels={points.map((p) => p.label)}
+        format={fmtMoney}
+      />
+      <ChartSummary
+        id={metricSummaryId}
+        series={[
+          { name: def.label, values: points.map((p) => p[metric]) },
+          ...(comparing ? [{ name: `${def.label}, previous period`, values: points.map((p) => p[def.compare] as number | null) }] : []),
+        ]}
+        labels={points.map((p) => p.label)}
+        format={fmtMetric}
+      />
     </div>
   );
 }

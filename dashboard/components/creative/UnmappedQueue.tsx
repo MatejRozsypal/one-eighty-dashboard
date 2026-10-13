@@ -69,7 +69,7 @@ export function UnmappedQueue({
   return (
     <section className="glass mt-8 overflow-hidden border-warning/30">
       <header className="flex flex-wrap items-baseline gap-3 border-b border-hairline bg-warning/10 px-5 py-3.5">
-        <h3 className="m-0 text-[14px] font-bold tracking-heading text-warning">
+        <h3 className="m-0 text-[14px] font-bold tracking-heading text-warning-700">
           Unmapped ads
         </h3>
         <p className="m-0 flex min-w-[230px] flex-1 items-center gap-1.5 text-[12.5px] text-content-muted">

@@ -104,7 +104,7 @@ export function AssistantBox() {
   return (
     <div ref={wrap} className={`flex w-full flex-col gap-2 text-left ${leaving ? "invisible" : ""}`}>
       <form
-        className="w-full rounded-[22px] border border-hairline bg-surface-card p-2 text-left shadow-md transition-shadow focus-within:shadow-lg"
+        className="w-full rounded-[22px] border border-hairline bg-surface-card p-2 text-left shadow-md transition-shadow focus-within:shadow-lg has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-[var(--focus-ring)]"
         onSubmit={(e) => {
           e.preventDefault();
           ask();

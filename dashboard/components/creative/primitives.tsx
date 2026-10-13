@@ -92,10 +92,10 @@ const OUTLINE = "border border-hairline-strong text-content-muted";
 
 const VERDICT_STYLES: Record<VerdictCode, string> = {
   unjudged: OUTLINE,
-  scale: "bg-accent-soft text-growth-700",
-  "aggressive-scale": "bg-accent-soft text-growth-700",
+  scale: "bg-positive/10 text-positive-text",
+  "aggressive-scale": "bg-positive/10 text-positive-text",
   hold: "bg-gray-100 text-content-muted",
-  iterate: "bg-warning/10 text-warning",
+  iterate: "bg-warning/10 text-warning-700",
   kill: "bg-negative/10 text-negative-700",
   "too-early": "bg-info/10 text-info",
   "data-missing": "bg-negative/10 text-negative-700",

@@ -22,7 +22,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useId } from "react";
 import { ChartFrame, TooltipCard, TooltipRow, useHatch } from "@/components/reports/widgets/ChartFrame";
+import { ChartSummary } from "@/components/ui/ChartSummary";
 import { AXIS_TICK, BAR_RADIUS, GRID_STROKE, MUTED_FILL, TEXT_MUTED, TEXT_STRONG, axisWidth, edgeMargin, seriesColor } from "@/components/reports/widgets/chartTheme";
 import { fmtValue, METRIC_LABEL } from "@/lib/plan/format";
 import { fmtDay } from "@/lib/plan/dates";
@@ -43,6 +45,7 @@ export function DailyChart({
   currency: string;
 }) {
   const { id: hatchId, defs } = useHatch();
+  const summaryId = useId();
   const fmt = (v: number | null | undefined) => fmtValue(v, metric, currency);
   const fmtAxis = (v: number) => fmtValue(v, metric, currency, { compact: true });
   const top = Math.max(0, ...points.map((p) => Math.max(p.actual ?? 0, p.target ?? 0)));
@@ -74,6 +77,7 @@ export function DailyChart({
         className="h-[200px] w-full sm:h-[240px]"
         role="img"
         aria-label={`Daily ${METRIC_LABEL[metric].toLowerCase()} against the daily target`}
+        aria-describedby={summaryId}
       >
         <ChartFrame>
           <ComposedChart data={points} margin={{ top: 8, right: rightMargin, bottom: 0, left: 4 }} barCategoryGap="18%">
@@ -106,6 +110,15 @@ export function DailyChart({
           </ComposedChart>
         </ChartFrame>
       </div>
+      <ChartSummary
+        id={summaryId}
+        series={[
+          { name: "Actual", values: points.map((p) => p.actual) },
+          { name: "Daily target", values: points.map((p) => p.target) },
+        ]}
+        labels={points.map((p) => fmtDay(p.date))}
+        format={fmt}
+      />
     </div>
   );
 }

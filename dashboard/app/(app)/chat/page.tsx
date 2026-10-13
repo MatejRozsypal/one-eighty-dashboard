@@ -25,8 +25,9 @@ export default function ChatPage() {
     // On a phone a bare 100dvh overran the screen by the sticky bar above and
     // the shell's foot padding below, so the composer began below the fold.
     // CHAT_FRAME sizes it to the space between; see components/chat/frame.ts.
-    <div className={CHAT_FRAME}>
+    // The page's <main>: unlike the Analytics pages there is no inner one.
+    <main className={CHAT_FRAME}>
       <Conversation />
-    </div>
+    </main>
   );
 }

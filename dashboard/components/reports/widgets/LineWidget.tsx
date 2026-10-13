@@ -23,11 +23,12 @@
  * Owner: RS7 (widgets). Design 1.9, 1.13, 2.10, 5.2.
  */
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis, type TooltipProps } from "recharts";
 import type { MetricId } from "@/lib/reports/registry/ids";
 import type { MetricReference } from "@/lib/reports/registry/types";
 import { NO_VALUE } from "@/lib/format";
+import { ChartSummary } from "@/components/ui/ChartSummary";
 import { BenchmarkStrip } from "./BenchmarkHover";
 import { MetricSwitch, NotesMark, SeriesLegend, type LegendItem } from "./CellStatus";
 import { ChartFrame, TooltipCard, TooltipRow } from "./ChartFrame";
@@ -59,6 +60,7 @@ export function LineWidget({ result, metrics, caveatTexts, size }: ChartWidgetPr
   const metric = metrics.find((m) => m.id === chosen) ?? metrics[0];
   const styles = useMemo(() => assignSeriesStyles(result.series), [result.series]);
   const partial = useMemo(() => new Set(result.partialBuckets), [result.partialBuckets]);
+  const summaryId = useId();
 
   const rows: Row[] = useMemo(() => {
     if (!metric) return [];
@@ -184,7 +186,12 @@ export function LineWidget({ result, metrics, caveatTexts, size }: ChartWidgetPr
         <MetricSwitch options={metrics.map((m) => ({ id: m.id, label: m.label }))} value={metric.id} onChange={setChosen} />
       </div>
 
-      <div className="min-h-0 flex-1" role="img" aria-label={`${metric.label} over time`}>
+      <div
+        className="min-h-0 flex-1"
+        role="img"
+        aria-label={`${metric.label} over time`}
+        aria-describedby={drawn.length > 0 && rows.length > 0 ? summaryId : undefined}
+      >
         {drawn.length === 0 || rows.length === 0 ? (
           <div className="grid h-full place-items-center">
             <span className="text-content-muted">{NO_VALUE}</span>
@@ -276,6 +283,14 @@ export function LineWidget({ result, metrics, caveatTexts, size }: ChartWidgetPr
           </ChartFrame>
         )}
       </div>
+      {drawn.length > 0 && rows.length > 0 && (
+        <ChartSummary
+          id={summaryId}
+          series={drawn.map(({ s, cell }) => ({ name: s.label, values: cell?.points ?? [] }))}
+          labels={result.buckets.map((b) => formatBucket(b, result.grain))}
+          format={fmt}
+        />
+      )}
 
       {metric.benchmarkable && <BenchmarkStrip matches={matches} metric={metric} currency={result.currency} />}
     </div>

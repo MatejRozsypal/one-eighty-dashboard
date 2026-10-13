@@ -6,6 +6,12 @@
  * share it without each fetching. It is a snapshot from the last server render:
  * actions revalidate `/reports`, and callers `router.refresh()` after a change.
  *
+ * Two halves, because the list streams. `ReportsDirectory` wraps the whole
+ * section and owns the overlay and its actions, so a page can patch the list
+ * before the list has even arrived. `ReportsDirectoryEntries` sits inside the
+ * layout's Suspense boundary with the list and lays the overlay over it for the
+ * panel and the switcher. The page itself never waits for the list.
+ *
  * Owner: RS9.
  */
 
@@ -28,22 +34,39 @@ interface DirectoryActions {
 const NO_ACTIONS: DirectoryActions = { patch: () => undefined, drop: () => undefined };
 const ActionsContext = createContext<DirectoryActions>(NO_ACTIONS);
 
+type Overlay = Record<string, DirectoryPatch | "dropped">;
+
+const OverlayContext = createContext<{ overlay: Overlay; reset(): void }>({ overlay: {}, reset: () => undefined });
+
 /**
- * `entries` is the server snapshot from the layout. A layout is not re-rendered
- * by a plain navigation, so after a rename, a pin or a delete the list would
- * keep the old state until the next refresh. Writers call `useDirectoryActions()`
- * to lay their change over the snapshot immediately; the next snapshot replaces
- * the overlay, so the server stays the source of truth.
+ * A layout is not re-rendered by a plain navigation, so after a rename, a pin or
+ * a delete the list would keep the old state until the next refresh. Writers
+ * call `useDirectoryActions()` to lay their change over the snapshot
+ * immediately; the next snapshot replaces the overlay (`ReportsDirectoryEntries`
+ * resets it), so the server stays the source of truth.
  */
-export function ReportsDirectory({ entries, children }: { entries: readonly DirectoryEntry[]; children: ReactNode }) {
-  const [overlay, setOverlay] = useState<Record<string, DirectoryPatch | "dropped">>({});
-  useEffect(() => setOverlay({}), [entries]);
+export function ReportsDirectory({ children }: { children: ReactNode }) {
+  const [overlay, setOverlay] = useState<Overlay>({});
 
   const patch = useCallback((id: string, next: DirectoryPatch) => {
     setOverlay((o) => ({ ...o, [id]: o[id] === "dropped" ? "dropped" : { ...(o[id] as DirectoryPatch | undefined), ...next } }));
   }, []);
   const drop = useCallback((id: string) => setOverlay((o) => ({ ...o, [id]: "dropped" })), []);
+  const reset = useCallback(() => setOverlay({}), []);
   const actions = useMemo(() => ({ patch, drop }), [patch, drop]);
+  const store = useMemo(() => ({ overlay, reset }), [overlay, reset]);
+
+  return (
+    <ActionsContext.Provider value={actions}>
+      <OverlayContext.Provider value={store}>{children}</OverlayContext.Provider>
+    </ActionsContext.Provider>
+  );
+}
+
+/** `entries` is the server snapshot from the layout, with the overlay laid over it for everything below. */
+export function ReportsDirectoryEntries({ entries, children }: { entries: readonly DirectoryEntry[]; children: ReactNode }) {
+  const { overlay, reset } = useContext(OverlayContext);
+  useEffect(() => reset(), [entries, reset]);
 
   const shown = useMemo(() => {
     if (Object.keys(overlay).length === 0) return entries;
@@ -57,11 +80,7 @@ export function ReportsDirectory({ entries, children }: { entries: readonly Dire
     });
   }, [entries, overlay]);
 
-  return (
-    <ActionsContext.Provider value={actions}>
-      <DirectoryContext.Provider value={shown}>{children}</DirectoryContext.Provider>
-    </ActionsContext.Provider>
-  );
+  return <DirectoryContext.Provider value={shown}>{children}</DirectoryContext.Provider>;
 }
 
 export function useReportsDirectory(): readonly DirectoryEntry[] {

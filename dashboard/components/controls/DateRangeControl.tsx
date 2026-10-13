@@ -55,7 +55,7 @@ export function DateRangeControl({
   /** Offer the "Today" preset. Only where the page's params accept it. */
   withToday?: boolean;
 }) {
-  const { open, setOpen, wrapRef } = usePopover();
+  const { open, setOpen, wrapRef, triggerRef, panelId } = usePopover();
   const [customMode, setCustomMode] = useState(false);
   const [draft, setDraft] = useState<{ from: string | null; to: string | null }>({
     from: range.from,
@@ -127,6 +127,8 @@ export function DateRangeControl({
         icon={<CalendarIcon />}
         label={label}
         open={open}
+        triggerRef={triggerRef}
+        panelId={panelId}
         onClick={toggle}
         pending={isPending}
         title={formatRange(shownRange)}
@@ -134,6 +136,7 @@ export function DateRangeControl({
 
       {open && (
         <Popover
+          id={panelId}
           label="Date range"
           onClose={() => setOpen(false)}
           className="sm:grid sm:w-[min(800px,calc(100vw-2rem))] sm:grid-cols-[200px_minmax(0,1fr)]"

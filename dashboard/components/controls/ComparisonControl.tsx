@@ -32,7 +32,7 @@ export function ComparisonControl({
   mode: ComparisonMode;
   comparison: DateRange | null;
 }) {
-  const { open, setOpen, wrapRef } = usePopover();
+  const { open, setOpen, wrapRef, triggerRef, panelId } = usePopover();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isPending, navigate, baseQuery } = useNavigation();
@@ -62,13 +62,15 @@ export function ComparisonControl({
         icon={<CompareIcon />}
         label={shownComparison ? formatRange(shownComparison) : "No comparison"}
         open={open}
+        triggerRef={triggerRef}
+        panelId={panelId}
         onClick={() => setOpen((v) => !v)}
         pending={isPending && optimistic !== null}
         ariaLabel="Comparison period"
       />
       {open && (
-        <Popover label="Comparison period" onClose={() => setOpen(false)} className="sm:w-[260px]">
-          <div role="menu" className="flex flex-col gap-0.5 p-2">
+        <Popover id={panelId} label="Comparison period" onClose={() => setOpen(false)} className="sm:w-[260px]">
+          <div className="flex flex-col gap-0.5 p-2">
             {OPTIONS.map((o) => (
               <MenuRow key={o.mode} selected={o.mode === shownMode} onClick={() => select(o.mode)}>
                 {o.label}

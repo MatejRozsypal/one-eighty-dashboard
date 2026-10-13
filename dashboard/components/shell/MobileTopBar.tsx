@@ -29,7 +29,7 @@
  */
 
 import { AppLink } from "@/components/ui/AppLink";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   SETTINGS_HREF,
@@ -66,6 +66,11 @@ export function MobileTopBar({
   const [menu, setMenu] = useState<"pages" | "client" | null>(null);
   /** The title, which is what opens this sheet and outlives it. */
   const titleRef = useRef<HTMLButtonElement>(null);
+  const clientButtonRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const clientMenuRef = useRef<HTMLDivElement>(null);
+  const sheetId = useId();
+  const clientMenuId = useId();
   const open = menu === "pages";
   const clientOpen = menu === "client";
   const toggle = (which: "pages" | "client") =>
@@ -144,6 +149,30 @@ export function MobileTopBar({
     if (top + here.offsetHeight > sheet.clientHeight - 64) sheet.scrollTop = top - sheet.clientHeight / 3;
   }, [open]);
 
+  // Focus follows the menu: in on open (to the current page or client, else
+  // the first link), and back to the button that opened it on close, so
+  // Escape or a pick never leaves a keyboard user on the body. Focus a click
+  // already moved somewhere else is left where it is.
+  const lastMenu = useRef<typeof menu>(null);
+  useEffect(() => {
+    const was = lastMenu.current;
+    lastMenu.current = menu;
+    if (menu !== null) {
+      const box = menu === "pages" ? sheetRef.current : clientMenuRef.current;
+      (
+        box?.querySelector<HTMLElement>('[aria-current="page"]') ??
+        box?.querySelector<HTMLElement>("[aria-current]") ??
+        box?.querySelector<HTMLElement>("a[href], button")
+      )?.focus({ preventScroll: true });
+      return;
+    }
+    if (was === null) return;
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || headerRef.current?.contains(focused)) {
+      (was === "pages" ? titleRef : clientButtonRef).current?.focus();
+    }
+  }, [menu]);
+
   // A sheet this tall over a scrollable page invites scrolling the page behind
   // it by accident.
   useEffect(() => {
@@ -156,14 +185,14 @@ export function MobileTopBar({
   }, [open]);
 
   return (
-    <header className="sticky top-0 z-40 bg-ink-900 pt-[var(--safe-top)] lg:hidden">
+    <header ref={headerRef} className="sticky top-0 z-40 bg-ink-900 pt-[var(--safe-top)] lg:hidden">
       <div className="flex h-[var(--header-bar-h)] items-center justify-between gap-3 px-4">
         <button
           ref={titleRef}
           type="button"
           onClick={() => toggle("pages")}
           aria-expanded={open}
-          aria-haspopup="menu"
+          aria-controls={open ? sheetId : undefined}
           className="flex min-w-0 items-center gap-1.5 text-[21px] font-bold tracking-heading text-content-inverse"
         >
           <span className="truncate">
@@ -190,10 +219,11 @@ export function MobileTopBar({
         {showClientSwitcher && shownClient && clients.length > 1 && (
           <div className="relative flex-none">
             <button
+              ref={clientButtonRef}
               type="button"
               onClick={() => toggle("client")}
               aria-expanded={clientOpen}
-              aria-haspopup="menu"
+              aria-controls={clientOpen ? clientMenuId : undefined}
               aria-label={`Client: ${shownClient.name}`}
               className={`flex max-w-[136px] items-center gap-1.5 rounded-pill bg-white/[0.11] px-3 py-1.5 text-content-inverse transition-colors duration-fast active:bg-white/[0.18] ${
                 isPending ? "oe-pulse" : ""
@@ -216,7 +246,10 @@ export function MobileTopBar({
                   className="fixed inset-0 z-[55] block w-full cursor-default"
                 />
                 <div
-                  role="menu"
+                  ref={clientMenuRef}
+                  id={clientMenuId}
+                  role="group"
+                  aria-label="Clients"
                   className="absolute right-0 top-[38px] z-[60] flex w-[212px] flex-col gap-0.5 rounded-lg bg-paper p-1.5 shadow-lg"
                 >
                   {clients.map((c) => {
@@ -225,7 +258,7 @@ export function MobileTopBar({
                       <button
                         key={c.clientId}
                         type="button"
-                        role="menuitem"
+                        aria-current={isActive ? "true" : undefined}
                         onClick={() => selectClient(c)}
                         className={`flex items-center justify-between gap-2 rounded-sm px-3 py-2.5 text-left text-[14px] transition-colors duration-fast ${
                           isActive
@@ -284,6 +317,7 @@ export function MobileTopBar({
           */}
           <nav
             ref={sheetRef}
+            id={sheetId}
             aria-label="Pages"
             className="absolute left-3 top-[calc(var(--header-bar-h)+var(--safe-top))] z-[50] max-h-[70vh] w-[64%] min-w-[228px] max-w-[300px] overflow-y-auto rounded-lg bg-paper p-2 shadow-lg"
           >

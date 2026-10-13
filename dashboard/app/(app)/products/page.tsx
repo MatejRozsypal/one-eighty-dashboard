@@ -200,7 +200,7 @@ export default async function ProductsPage({
                     <span className="font-mono text-[18px] font-semibold tracking-heading tabular text-content-strong">
                       <Value>{money(lineTotals.revenue)}</Value>
                     </span>
-                    <span className="text-[11.5px] text-gray-300">
+                    <span className="text-[11.5px] text-content-muted">
                       {lineTotals.marginPct !== null
                         ? `${formatPercent(lineTotals.marginPct)} margin \u00b7 `
                         : ""}

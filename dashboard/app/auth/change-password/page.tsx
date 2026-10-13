@@ -12,6 +12,7 @@
  * token refresh, so there is nothing to sign out and back in for.
  */
 
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -20,6 +21,8 @@ import { MAX_BYTES, MIN_LENGTH, PASSWORD_PROBLEMS, passwordProblem } from "@/lib
 import { Logo } from "@/components/ui/Logo";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "Choose a password" };
 
 async function changePassword(formData: FormData) {
   "use server";
@@ -79,14 +82,17 @@ export default async function ChangePasswordPage({
             Choose a password
           </h1>
           <p className="text-[13.5px] leading-[1.6] text-gray-300">
-            Choose your own password: at least {MIN_LENGTH} characters, not your
-            email address, and not one that has leaked in a data breach. A
-            short sentence is easier to remember than a jumble of symbols.
+            At least {MIN_LENGTH} characters, not your email address, and not
+            one that has leaked in a data breach.
           </p>
         </div>
 
         <form action={changePassword} className="flex flex-col gap-3">
+          <label htmlFor="new-password" className="sr-only">
+            New password
+          </label>
           <input
+            id="new-password"
             name="password"
             type="password"
             required
@@ -96,7 +102,11 @@ export default async function ChangePasswordPage({
             placeholder="New password"
             className={field}
           />
+          <label htmlFor="confirm-password" className="sr-only">
+            Repeat the new password
+          </label>
           <input
+            id="confirm-password"
             name="confirm"
             type="password"
             required

@@ -23,7 +23,7 @@
  * page switcher and a second corner menu would crowd a 375pt bar.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AppLink } from "@/components/ui/AppLink";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useNavigation } from "@/components/shell/NavigationPending";
@@ -45,17 +45,20 @@ function initials(name: string): string {
 /**
  * Avatar tints, assigned by position in the list.
  *
- * Identity only: these never encode a value, so they carry none of the
- * obligations a chart palette does. They are here so two clients are told apart
- * at a glance in a menu, which is exactly what the Shopify store switcher this
- * mirrors does.
+ * Identity only: these never encode a value. They are here so two clients are
+ * told apart at a glance in a menu, which is exactly what the Shopify store
+ * switcher this mirrors does. Being categories, they come from the six
+ * `--series-*` slots rather than from the status colours, so an avatar never
+ * reads as a warning or an info state. The initials take whichever of white
+ * and ink clears 4.5:1 on each slot.
  */
-const TINTS = [
-  "bg-growth-500 text-ink-900",
-  "bg-info text-white",
-  "bg-platform-woocommerce text-white",
-  "bg-warning-700 text-white",
-  "bg-ink-600 text-white",
+const TINTS: Array<{ background: string; color: string }> = [
+  { background: "var(--series-1)", color: "var(--ink-900)" },
+  { background: "var(--series-2)", color: "var(--paper)" },
+  { background: "var(--series-3)", color: "var(--paper)" },
+  { background: "var(--series-4)", color: "var(--ink-900)" },
+  { background: "var(--series-5)", color: "var(--paper)" },
+  { background: "var(--series-6)", color: "var(--ink-900)" },
 ];
 
 const tintFor = (index: number) => TINTS[index % TINTS.length];
@@ -78,6 +81,8 @@ export function AccountMenu({
   /** The chip itself, so focus has somewhere real to land when a menu item
       opens something over the page and takes the menu with it. */
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -130,6 +135,28 @@ export function AccountMenu({
     };
   }, [open]);
 
+  // Opening puts focus on the current client (or the first row), and closing
+  // hands it back to the chip, so Escape or a pick never strands a keyboard
+  // user on the body. Focus that a click already moved elsewhere is left alone.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open) {
+      wasOpen.current = true;
+      const panel = panelRef.current;
+      (
+        panel?.querySelector<HTMLElement>('[aria-current="true"]') ??
+        panel?.querySelector<HTMLElement>("a[href], button")
+      )?.focus();
+      return;
+    }
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || rootRef.current?.contains(focused)) {
+      triggerRef.current?.focus();
+    }
+  }, [open]);
+
   function select(clientId: string) {
     setOpen(false);
     if (clientId === shown.clientId) return;
@@ -166,7 +193,7 @@ export function AccountMenu({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-haspopup="menu"
+        aria-controls={open ? panelId : undefined}
         aria-busy={isPending}
         className={`flex items-center gap-2.5 rounded-control border border-hairline-strong bg-paper py-1.5 pl-1.5 pr-3 text-left shadow-sm transition-colors duration-fast hover:bg-gray-50 ${
           isPending ? "oe-pulse" : ""
@@ -174,10 +201,9 @@ export function AccountMenu({
       >
         <span
           className={`flex h-7 w-7 flex-none items-center justify-center font-mono text-[11px] font-semibold ${
-            accountOnly
-              ? "rounded-full bg-accent text-accent-contrast"
-              : `rounded-lg ${tintFor(activeIndex)}`
+            accountOnly ? "rounded-full bg-accent text-accent-contrast" : "rounded-lg"
           }`}
+          style={accountOnly ? undefined : tintFor(activeIndex)}
         >
           {initials(accountOnly ? userName : shown.name)}
         </span>
@@ -201,26 +227,32 @@ export function AccountMenu({
       </button>
 
       {open && (
+        // A plain panel of buttons and links, not role="menu": there is no
+        // arrow-key handling, and Tab already walks it in order.
         <div
-          role="menu"
+          ref={panelRef}
+          id={panelId}
+          role="group"
+          aria-label="Account"
           className="absolute right-0 top-[calc(100%+10px)] w-[320px] overflow-hidden rounded-card border border-hairline bg-paper shadow-lg"
         >
           {!accountOnly && (
-          <div className="flex flex-col p-1.5">
+          <div role="group" aria-label="Clients" className="flex flex-col p-1.5">
             {clients.map((c, i) => {
               const isActive = c.clientId === shown.clientId;
               return (
                 <button
                   key={c.clientId}
                   type="button"
-                  role="menuitem"
+                  aria-current={isActive ? "true" : undefined}
                   onClick={() => select(c.clientId)}
                   className={`flex items-center gap-2.5 rounded-control px-2 py-2 text-left transition-colors duration-fast ${
                     isActive ? "bg-gray-100" : "hover:bg-gray-50"
                   }`}
                 >
                   <span
-                    className={`flex h-7 w-7 flex-none items-center justify-center rounded-lg font-mono text-[11px] font-semibold ${tintFor(i)}`}
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-lg font-mono text-[11px] font-semibold"
+                    style={tintFor(i)}
                   >
                     {initials(c.name)}
                   </span>
@@ -267,7 +299,6 @@ export function AccountMenu({
             {showSettings && (
               <AppLink
                 href={SETTINGS_HREF}
-                role="menuitem"
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 rounded-control px-2 py-2 text-[13px] text-content-body transition-colors duration-fast hover:bg-gray-50"
               >
@@ -291,7 +322,6 @@ export function AccountMenu({
             )}
             <a
               href="/api/auth/signout"
-              role="menuitem"
               className="flex items-center gap-2.5 rounded-control px-2 py-2 text-[13px] text-content-body transition-colors duration-fast hover:bg-gray-50"
             >
               <svg

@@ -122,7 +122,8 @@ export function Composer({
           setDragging(false);
           void ingest([...e.dataTransfer.files]);
         }}
-        className={`flex flex-col gap-2 rounded-card border bg-surface-card py-[9px] pl-[15px] pr-[9px] shadow-sm transition-colors duration-fast ${
+        // The textarea hides its own outline, so the box carries the focus ring.
+        className={`flex flex-col gap-2 rounded-card border bg-surface-card py-[9px] pl-[15px] pr-[9px] shadow-sm transition-colors duration-fast has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-[var(--focus-ring)] ${
           dragging ? "border-accent" : "border-hairline"
         }`}
       >

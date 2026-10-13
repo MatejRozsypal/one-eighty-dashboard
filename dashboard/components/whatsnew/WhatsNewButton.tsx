@@ -76,7 +76,6 @@ export function WhatsNewMenuItem({
   return (
     <button
       type="button"
-      role="menuitem"
       onClick={() => {
         onOpen();
         // Put focus somewhere real before the menu unmounts, so the tour has

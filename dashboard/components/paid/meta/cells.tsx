@@ -44,7 +44,7 @@ export function LowVolumeFig({ children, low }: { children: string; low: boolean
         role="img"
         aria-label="Low volume"
         title="Low volume"
-        className="h-[6px] w-[6px] flex-none rounded-full bg-warning-300"
+        className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
       />
       <Fig muted>{children}</Fig>
     </span>

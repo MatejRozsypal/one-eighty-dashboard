@@ -19,8 +19,12 @@ export const THIRD_ROW =
 
 export const SUB_ROW_ACTIVE = "bg-growth-500/[0.14] font-semibold text-growth-300";
 export const SUB_ROW_IDLE = "text-gray-300 hover:bg-white/[0.06] hover:text-gray-250";
-export const SUB_ROW_MUTED = "text-gray-400 hover:bg-white/[0.06] hover:text-gray-300";
+export const SUB_ROW_MUTED = "text-gray-300 hover:bg-white/[0.06] hover:text-gray-250";
 
-/** A group label inside an open product (Profitability, Pinned, ...). */
+/**
+ * A group label inside an open product (Profitability, Pinned, ...).
+ * gray-300 on the ink sidebar is 6.8:1; gray-400 was 3.7:1, under the 4.5:1
+ * WCAG AA asks of text this small.
+ */
 export const SUB_HEAD =
-  "flex h-6 items-end pb-1 pl-[36px] pr-2 font-mono text-[9.5px] uppercase tracking-eyebrow text-gray-400";
+  "flex h-6 items-end pb-1 pl-[36px] pr-2 font-mono text-[9.5px] uppercase tracking-eyebrow text-gray-300";

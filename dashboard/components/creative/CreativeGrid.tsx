@@ -242,30 +242,41 @@ function Tile({
   // Green is for read winners only (`classify`, the test every surface shares);
   // an ad that clears the target without being one yet is "promising".
   const tone = roasTone(ad, { directionalPurchases, targetRoas, killRoas });
+  // Winner and promising share the legible green text step; the winner is the
+  // heavier weight, so the two still read apart without a lighter, illegible
+  // green for the second one.
   const roasColour =
     tone === "muted"
-      ? "text-content-muted"
+      ? "font-medium text-content-muted"
       : tone === "winner"
-        ? "text-positive-text"
+        ? "font-semibold text-positive-text"
         : tone === "promising"
-          ? "text-positive/70"
+          ? "font-medium text-positive-text"
           : tone === "negative"
-            ? "text-negative-text"
-            : "text-content-strong";
+            ? "font-medium text-negative-text"
+            : "font-medium text-content-strong";
+  // The colour of the figure and of the spend bar is the verdict, so it is
+  // also said in words: as the hover title and to a screen reader. The row
+  // already carries the confidence chip, so a visible label would crowd it.
+  const roasVerdict =
+    tone === "winner"
+      ? "Winner"
+      : tone === "promising"
+        ? "Promising, above target ROAS"
+        : tone === "negative"
+          ? "Below kill ROAS"
+          : tone === "muted"
+            ? "Too few purchases to judge"
+            : null;
 
   return (
+    // The tile opens the detail on a click anywhere, but its keyboard and
+    // screen-reader control is the ad name, a real button. The tile used to be
+    // one role="button", which made a screen reader read only "Open {ad}" and
+    // skip every figure inside it, and put the play button inside a button.
     <article
-      role="button"
-      tabIndex={0}
       onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      aria-label={`Open ${ad.adName}`}
-      className="glass glass-lift flex cursor-pointer flex-col overflow-hidden"
+      className="glass glass-lift flex cursor-pointer flex-col overflow-hidden has-[button[data-open]:focus-visible]:ring-2 has-[button[data-open]:focus-visible]:ring-[var(--focus-ring)]"
     >
       {/* ── A square crop, deliberately ──────────────────────────────────
           The wall is for comparison, and comparison needs one shape. It was
@@ -324,9 +335,20 @@ function Tile({
           Now every row is the same height and the labels form a column, which
           is what lets you read down four tiles instead of across one. */}
       <div className="relative flex flex-1 flex-col gap-2 px-3 pb-3 pt-2.5">
-        <div className="line-clamp-2 break-words text-[12.5px] font-medium leading-[1.3] text-content-strong">
-          {ad.adName}
-        </div>
+        <button
+          type="button"
+          data-open=""
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
+          aria-label={`Open ${ad.adName}`}
+          className="text-left focus-visible:outline-none"
+        >
+          <span className="line-clamp-2 break-words text-[12.5px] font-medium leading-[1.3] text-content-strong">
+            {ad.adName}
+          </span>
+        </button>
 
         <dl className="m-0 flex flex-col gap-1">
           <Row label="Spend" trailing={pct(ad.spendShare)}>
@@ -334,14 +356,20 @@ function Tile({
               {money(ad.spend, currency)}
             </span>
           </Row>
+        </dl>
+        {/* Outside the list: a <dl> may only hold term and value groups. */}
+        <div className="-my-1">
           <SpendBar fraction={ad.spend / maxSpend} tone={tone} />
+        </div>
+        <dl className="m-0 flex flex-col gap-1">
           <Row
             label="ROAS (adj.)"
             hint={`Adjusted toward the account average for few purchases. Raw ${roas(ad.roasRaw)}.`}
             trailing={null}
           >
-            <span className={`font-mono text-[13px] font-medium tabular ${roasColour}`}>
+            <span title={roasVerdict ?? undefined} className={`font-mono text-[13px] tabular ${roasColour}`}>
               {roas(ad.roas)}
+              {roasVerdict && <span className="sr-only">, {roasVerdict}</span>}
             </span>
             <ConfidenceChip level={ad.confidence} />
           </Row>

@@ -213,10 +213,26 @@ export default async function ProductionPage({
                 }`}>
                   {r.net === null ? NO_VALUE : money(r.net, currency)}
                 </td>
-                <td className={`border-b border-hairline px-3.5 py-2.5 text-right font-mono text-[13px] font-medium tabular ${
-                  r.ret === null ? "text-content-muted" : r.ret >= 1 ? "text-positive-text" : "text-negative-text"
-                }`}>
-                  {r.ret === null ? NO_VALUE : `${r.ret.toFixed(2)}×`}
+                {/* Red and green alone would carry the verdict, so the cell
+                    also has the arrow the delta chips use and says "above" or
+                    "below 1×" in words, as the hover title and to a screen reader. */}
+                <td
+                  title={r.ret === null ? undefined : r.ret >= 1 ? "Returns at least the production cost (1× or more)" : "Returns less than the production cost (below 1×)"}
+                  className={`border-b border-hairline px-3.5 py-2.5 text-right font-mono text-[13px] font-medium tabular ${
+                    r.ret === null ? "text-content-muted" : r.ret >= 1 ? "text-positive-text" : "text-negative-text"
+                  }`}
+                >
+                  {r.ret === null ? (
+                    NO_VALUE
+                  ) : (
+                    <>
+                      <span aria-hidden="true" className="mr-[5px] text-[9px]">
+                        {r.ret >= 1 ? "▲" : "▼"}
+                      </span>
+                      {`${r.ret.toFixed(2)}×`}
+                      <span className="sr-only">{r.ret >= 1 ? " (1× or above)" : " (below 1×)"}</span>
+                    </>
+                  )}
                 </td>
                 <td className="border-b border-hairline px-3.5 py-2.5">
                   <ConfidenceChip level={r.confidence} />

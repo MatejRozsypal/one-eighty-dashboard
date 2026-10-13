@@ -23,9 +23,11 @@ import { KpiWidget } from "./KpiWidget";
 import { RankedWidget } from "./RankedWidget";
 import { TableWidget } from "./TableWidget";
 import type { ChartWidgetProps, WidgetProps } from "./types";
+import { WidgetSkeleton } from "./WidgetSkeleton";
 
+/** Shown while the Recharts bundle downloads: the same outline as a chart waiting for data. */
 function ChartPlaceholder() {
-  return <div className="h-full w-full" aria-busy="true" />;
+  return <WidgetSkeleton type="line" />;
 }
 
 export const LineWidget = dynamic<ChartWidgetProps>(() => import("./LineWidget").then((m) => m.LineWidget), {

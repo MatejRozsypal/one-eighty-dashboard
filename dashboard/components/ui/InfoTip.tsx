@@ -9,7 +9,9 @@
  *
  * A click opens the tip and keeps it open (so it works on touch and after a
  * hover). It never closes a tip that hover opened. It closes on Escape, on a
- * press outside, or when the pointer leaves an unpinned tip.
+ * press outside, or when the pointer leaves an unpinned tip. Leaving waits
+ * `CLOSE_DELAY` and the tip itself counts as hover, so the pointer can cross
+ * the gap and rest on the text (WCAG 1.4.13, hoverable).
  *
  * ── Placement ──────────────────────────────────────────────────────────────
  * The tip is portalled to <body> with `position: fixed`, so no parent with
@@ -24,6 +26,8 @@ import { createPortal } from "react-dom";
 
 const EDGE = 8;
 const GAP = 6;
+/** Grace period after the pointer leaves the (i) or the tip, in ms. */
+export const CLOSE_DELAY = 150;
 
 interface Position {
   top: number;
@@ -54,6 +58,22 @@ export function InfoTip({ text, label = "More info" }: { text: string; label?: s
   const id = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
   const tipRef = useRef<HTMLSpanElement>(null);
+  const closeTimer = useRef<number | null>(null);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+  const closeSoon = useCallback(() => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => {
+      closeTimer.current = null;
+      setOpen(false);
+    }, CLOSE_DELAY);
+  }, [cancelClose]);
+  useEffect(() => cancelClose, [cancelClose]);
 
   const measure = useCallback(() => {
     const tip = tipRef.current;
@@ -111,11 +131,17 @@ export function InfoTip({ text, label = "More info" }: { text: string; label?: s
         aria-label={label}
         aria-describedby={open ? id : undefined}
         aria-expanded={open}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => {
-          if (!pinned) setOpen(false);
+        onMouseEnter={() => {
+          cancelClose();
+          setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        onMouseLeave={() => {
+          if (!pinned) closeSoon();
+        }}
+        onFocus={() => {
+          cancelClose();
+          setOpen(true);
+        }}
         onBlur={() => {
           setOpen(false);
           setPinned(false);
@@ -125,6 +151,7 @@ export function InfoTip({ text, label = "More info" }: { text: string; label?: s
           e.stopPropagation();
           // Opens, never closes: a click right after a hover must not hide
           // the tip the hover just showed.
+          cancelClose();
           setOpen(true);
           setPinned(true);
         }}
@@ -140,6 +167,10 @@ export function InfoTip({ text, label = "More info" }: { text: string; label?: s
             ref={tipRef}
             id={id}
             role="tooltip"
+            onMouseEnter={cancelClose}
+            onMouseLeave={() => {
+              if (!pinned) closeSoon();
+            }}
             style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? "visible" : "hidden" }}
             className="pointer-events-auto fixed z-[90] block w-[260px] max-w-[calc(100vw-16px)] whitespace-normal rounded-md border border-hairline-inverse bg-bg-inverse p-[11px_13px] text-left font-sans text-[12px] font-normal normal-case leading-[1.5] tracking-normal text-gray-250 shadow-lg"
           >

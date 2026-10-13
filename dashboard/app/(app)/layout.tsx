@@ -125,6 +125,18 @@ export default async function AppLayout({
     <HistoryProvider>
     <ChatSessionProvider>
     <div className="flex min-h-screen items-start bg-bg-subtle">
+      {/*
+        The first focusable element: past the sidebar and the top bar to the
+        page. It targets the wrapper around `children` below rather than each
+        page's own <main>, so no page has to carry the id.
+      */}
+      <a
+        href="#content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-control focus:bg-paper focus:px-3 focus:py-2 focus:text-[13px] focus:font-semibold focus:text-content-strong focus:shadow-lg"
+      >
+        Skip to content
+      </a>
+
       <Sidebar
         clients={clients}
         role={session.user.role}
@@ -166,7 +178,11 @@ export default async function AppLayout({
 
           Bottom padding clears the home indicator.
         */}
-        <div className="flex min-w-0 flex-1 flex-col bg-bg-subtle pb-[calc(1.5rem+var(--safe-bottom))] lg:pb-0">
+        <div
+          id="content"
+          tabIndex={-1}
+          className="flex min-w-0 flex-1 flex-col bg-bg-subtle pb-[calc(1.5rem+var(--safe-bottom))] focus:outline-none lg:pb-0"
+        >
           {/*
             Pulses the figures, and only the figures, while a control's
             navigation is in flight, so a stale number never sits there looking

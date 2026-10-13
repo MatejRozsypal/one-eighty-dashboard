@@ -34,6 +34,7 @@ import { getSession } from "@/lib/auth";
 import { requireInternalRole } from "@/lib/authz";
 import { firstName } from "@/lib/home/greeting";
 import { Header } from "@/components/shell/Header";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { AssistantBox } from "@/components/home/shopify/Hero";
 import { WeatherChip } from "@/components/home/shopify/WeatherChip";
 import { GreetingHeader } from "@/components/home/final/GreetingHeader";
@@ -97,7 +98,8 @@ export default async function HomePage() {
                   <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
                 </svg>
                 Last 30 days
-                <Suspense fallback={null}>
+                {/* Holds the "to 8 Oct" slot so the pill does not grow when it lands. */}
+                <Suspense fallback={<Skeleton className="h-3 w-[70px] rounded-pill" />}>
                   <StripThrough />
                 </Suspense>
               </span>

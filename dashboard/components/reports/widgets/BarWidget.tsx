@@ -18,9 +18,10 @@
  * Owner: RS7 (widgets). Design 1.9, 1.13, 2.10, 5.2.
  */
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Rectangle, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis, type TooltipProps } from "recharts";
 import { NO_VALUE } from "@/lib/format";
+import { ChartSummary } from "@/components/ui/ChartSummary";
 import type { MetricId } from "@/lib/reports/registry/ids";
 import type { MetricReference } from "@/lib/reports/registry/types";
 import { BenchmarkStrip } from "./BenchmarkHover";
@@ -53,6 +54,7 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
   const metric = metrics.find((m) => m.id === chosen) ?? metrics[0];
   const styles = useMemo(() => assignSeriesStyles(result.series), [result.series]);
   const hatch = useHatch();
+  const summaryId = useId();
 
   if (!metric) return <div className="h-full" />;
 
@@ -149,7 +151,7 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
     return (
       <div className="flex h-full min-h-0 flex-col gap-2">
         {header}
-        <div className="min-h-0 flex-1" role="img" aria-label={`${metric.label} by series`}>
+        <div className="min-h-0 flex-1" role="img" aria-label={`${metric.label} by series`} aria-describedby={summaryId}>
           <ChartFrame size={size}>
             <BarChart data={data} layout="vertical" margin={margin} barCategoryGap="28%">
               {hatch.defs}
@@ -189,6 +191,13 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
             </BarChart>
           </ChartFrame>
         </div>
+        <ChartSummary
+          id={summaryId}
+          series={[{ name: metric.label, values: data.map((d) => (d.gap ? null : d.v)) }]}
+          labels={data.map((d) => d.name)}
+          format={fmt}
+          categories
+        />
         {matches.length > 0 && <BenchmarkStrip matches={matches} metric={metric} currency={result.currency} />}
       </div>
     );
@@ -230,7 +239,12 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       {header}
-      <div className="min-h-0 flex-1" role="img" aria-label={`${metric.label} by period`}>
+      <div
+        className="min-h-0 flex-1"
+        role="img"
+        aria-label={`${metric.label} by period`}
+        aria-describedby={drawn.length > 0 ? summaryId : undefined}
+      >
         {drawn.length === 0 ? (
           <div className="grid h-full place-items-center">
             <span className="text-content-muted">{NO_VALUE}</span>
@@ -289,6 +303,14 @@ export function BarWidget({ result, metrics, caveatTexts, view, size }: ChartWid
           </ChartFrame>
         )}
       </div>
+      {drawn.length > 0 && (
+        <ChartSummary
+          id={summaryId}
+          series={drawn.map(({ s, cell }) => ({ name: s.label, values: cell?.points ?? [] }))}
+          labels={result.buckets.map((b) => formatBucket(b, result.grain))}
+          format={fmt}
+        />
+      )}
       {matches.length > 0 && <BenchmarkStrip matches={matches} metric={metric} currency={result.currency} />}
     </div>
   );

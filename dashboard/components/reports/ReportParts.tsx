@@ -11,8 +11,8 @@
 
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { Skeleton } from "@/components/ui/Skeleton";
 import { WidgetBody } from "@/components/reports/widgets";
+import { WidgetSkeleton } from "@/components/reports/widgets/WidgetSkeleton";
 import { nameSingleClientRollups } from "@/components/reports/widgets/format";
 import type { CaveatTexts, WidgetMetric } from "@/components/reports/widgets";
 import { WidgetConfigPanel } from "@/components/reports/pickers/WidgetConfigPanel";
@@ -85,13 +85,7 @@ export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit,
     );
   }
 
-  if (!result) {
-    return (
-      <div aria-busy="true" aria-label="Loading" className="h-full w-full">
-        <Skeleton className="h-full w-full rounded-md" />
-      </div>
-    );
-  }
+  if (!result) return <WidgetSkeleton type={config.view.type} />;
 
   const metrics = config.query.metrics.map((id) => widgetMetrics[id]).filter((m): m is WidgetMetric => m !== undefined);
 
@@ -100,13 +94,7 @@ export function WidgetCell({ config, state, widgetMetrics, caveatTexts, canEdit,
   // draw a skeleton per cell; a chart has no cell to hold one, so it draws the
   // whole-widget skeleton until the new result lands.
   const awaitingMetric = loading && metrics.some((m) => result.series.some((s) => s.cells[m.id] === undefined));
-  if (awaitingMetric && CHART_TYPES.has(config.view.type)) {
-    return (
-      <div aria-busy="true" aria-label="Loading" className="h-full w-full">
-        <Skeleton className="h-full w-full rounded-md" />
-      </div>
-    );
-  }
+  if (awaitingMetric && CHART_TYPES.has(config.view.type)) return <WidgetSkeleton type={config.view.type} />;
 
   // What is on screen answers an older request: dim it harder than a plain
   // refresh so it cannot be read as current while another widget has updated.

@@ -45,7 +45,7 @@ export function MarketFilter({
   kind: "country" | "currency";
   active: string[];
 }) {
-  const { open, setOpen, wrapRef } = usePopover();
+  const { open, setOpen, wrapRef, triggerRef, panelId } = usePopover();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isPending, navigate, baseQuery } = useNavigation();
@@ -92,17 +92,20 @@ export function MarketFilter({
         icon={<MarketIcon />}
         label={pillLabel}
         open={open}
+        triggerRef={triggerRef}
+        panelId={panelId}
         onClick={() => setOpen((v) => !v)}
         pending={isPending}
         title={kind === "country" ? "First-order country" : "First-order currency"}
       />
       {open && (
         <Popover
+          id={panelId}
           label={kind === "country" ? "First-order country" : "First-order currency"}
           onClose={() => setOpen(false)}
           className="sm:w-[280px]"
         >
-          <div role="menu" className="flex max-h-[60dvh] flex-col gap-0.5 overflow-y-auto p-2">
+          <div className="flex max-h-[60dvh] flex-col gap-0.5 overflow-y-auto p-2">
             <MenuRow selected={selected.length === 0} onClick={clear}>
               All
             </MenuRow>

@@ -1048,9 +1048,6 @@ export function StaticSummary({
       >
         What changed in the dashboard
       </h2>
-      <p className="mt-1.5 max-w-[52ch] text-[13.5px] leading-[1.5] text-content-muted">
-        Five changes, before and after.
-      </p>
 
       <ol className="mt-4 flex list-none flex-col gap-3 p-0">
         {BEATS.map((beat) => (

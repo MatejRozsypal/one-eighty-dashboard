@@ -86,6 +86,9 @@ export function DeltaChip({
   }[sentiment];
 
   const arrow = { up: "▲", down: "▼", flat: "→" }[direction];
+  // The arrow is hidden from screen readers and the magnitude is unsigned, so
+  // the direction is spoken here; otherwise it would live in the color only.
+  const spoken = { up: "increase", down: "decrease", flat: "no change" }[direction];
 
   return (
     <>
@@ -102,6 +105,7 @@ export function DeltaChip({
           {arrow}
         </span>
         {parts.magnitude}
+        <span className="sr-only"> {spoken}</span>
       </span>
       {after}
     </>

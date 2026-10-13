@@ -12,16 +12,18 @@
 export const OTHER_PRODUCT = "Other products";
 
 /**
- * Validated with the design system's palette checker, all-pairs, light surface:
- * lightness band PASS, chroma floor PASS, CVD separation PASS (worst 9.2),
- * normal-vision floor PASS (worst 20.5). Green is slot one, so the highest
- * volume product, the main path, carries the brand colour.
+ * The first four category slots of the design system (`--series-1` to
+ * `--series-4`, styles/tokens/colors.css) and the benchmark grey for the rest,
+ * as CSS variables: the diagram draws them as SVG fills and CSS backgrounds,
+ * both of which resolve `var()`. Green is slot one, so the highest volume
+ * product, the main path, carries the brand colour.
  *
- * The checker warns that green is below 3:1 against the surface, which obliges
- * visible labels or a table view. The page has both.
+ * The series set is validated pair by adjacent pair, not all-pairs, and four
+ * products in a flow diagram can sit next to any other, so the colours are
+ * not the only cue: the page labels every node and has a table view.
  */
-export const JOURNEY_COLORS = ["#12b76a", "#0866ff", "#db2777", "#a16207"];
-export const OTHER_COLOR = "#9797a0";
+export const JOURNEY_COLORS = ["var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)"];
+export const OTHER_COLOR = "var(--benchmark)";
 
 export interface JourneyLink {
   fromStep: number;

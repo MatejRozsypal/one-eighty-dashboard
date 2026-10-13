@@ -36,6 +36,7 @@ import {
   unitMoney,
 } from "@/components/creative/primitives";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { conceptLabel } from "@/lib/creative/display";
 import { formatNumber, isNoValue, NO_VALUE } from "@/lib/format";
 
@@ -295,6 +296,49 @@ export function AdDetail({
 // ---------------------------------------------------------------------------
 
 /**
+ * The Notes tab while the ClickUp thread loads: the activity card (two dated
+ * lines over the status list) and three notes (author and date, two lines of
+ * text), on the same frames the loaded tab draws.
+ */
+function NotesSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading notes" className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2 rounded-card border border-hairline bg-paper/60 px-3.5 py-3">
+        <Skeleton className="h-[8px] w-[56px] rounded-pill" />
+        {[132, 96].map((w, i) => (
+          <div key={i} className="flex items-center justify-between gap-3">
+            <Skeleton className="h-[10px] rounded-pill" style={{ width: w }} />
+            <Skeleton className="h-[10px] w-[64px] rounded-pill" />
+          </div>
+        ))}
+        <div className="mt-1 flex flex-col gap-2 border-t border-hairline pt-2">
+          {[88, 72, 104].map((w, i) => (
+            <div key={i} className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2">
+                <Skeleton className="h-1.5 w-1.5 rounded-full" />
+                <Skeleton className="h-[10px] rounded-pill" style={{ width: w }} />
+              </span>
+              <Skeleton className="h-[10px] w-[40px] rounded-pill" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex flex-col gap-2 rounded-card border border-hairline bg-paper/60 px-3.5 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <Skeleton className="h-[11px] w-[96px] rounded-pill" />
+            <Skeleton className="h-[9px] w-[72px] rounded-pill" />
+          </div>
+          <Skeleton className="h-[10px] w-[92%] rounded-pill" />
+          <Skeleton className="h-[10px] w-[58%] rounded-pill" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * The note thread, which is ClickUp's thread.
  *
  * ── Why it is not our own comment box ─────────────────────────────────────
@@ -360,7 +404,7 @@ function Notes({
           {unavailable}
         </p>
       ) : notes === null ? (
-        <p className="m-0 text-[13px] text-content-muted">Loading…</p>
+        <NotesSkeleton />
       ) : (
         <div className="flex flex-col gap-4">
           {/* ── What the task itself records ──────────────────────────────
@@ -1226,16 +1270,7 @@ function Breakdowns({
       </section>
     );
   }
-  if (!data) {
-    return (
-      <section>
-        <SectionHeading title="Delivery" />
-        <div className={`${CARD} px-5 py-4`}>
-          <p className="m-0 text-[13.5px] text-content-muted">Loading…</p>
-        </div>
-      </section>
-    );
-  }
+  if (!data) return <BreakdownsSkeleton />;
   if (data.ages.length === 0 && data.placements.length === 0) {
     return (
       <section>
@@ -1369,6 +1404,54 @@ function Breakdowns({
               </div>
             );
           })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * The Breakdowns tab while the breakdowns load: the two cards on their real
+ * grids, an age bucket as two stacked bars and a share, a placement as a bar and
+ * three figures, so the tab does not change shape when the numbers land.
+ */
+function BreakdownsSkeleton() {
+  const ages = [62, 88, 74, 48, 30, 16];
+  const places = [92, 58, 34, 18];
+  return (
+    <div aria-busy="true" aria-label="Loading breakdowns" className="flex flex-col gap-8">
+      <section>
+        <SectionHeading title="Demographics" />
+        <div className={`${CARD} px-6 py-2`}>
+          {ages.map((w, i) => (
+            <div key={i} className="grid grid-cols-[56px_1fr_auto] items-center gap-5 border-b border-hairline py-3.5">
+              <Skeleton className="h-3 w-[40px] rounded-pill" />
+              <span className="flex flex-col gap-1.5">
+                <Skeleton className="h-[10px] rounded-full" style={{ width: `${w}%` }} />
+                <Skeleton className="h-[10px] rounded-full" style={{ width: `${Math.round(w * 0.55)}%` }} />
+              </span>
+              <Skeleton className="h-3 w-[44px] justify-self-end rounded-pill" />
+            </div>
+          ))}
+          <div className="flex items-center justify-between py-3.5">
+            <Skeleton className="h-[9px] w-[148px] rounded-pill" />
+            <Skeleton className="h-[9px] w-[72px] rounded-pill" />
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <SectionHeading title="Placement" />
+        <div className={`${CARD} px-6 py-2`}>
+          {places.map((w, i) => (
+            <div key={i} className="grid grid-cols-[minmax(110px,1fr)_1.5fr_auto_auto_auto] items-center gap-4 border-b border-hairline py-3.5 last:border-b-0">
+              <Skeleton className="h-3 w-[70%] rounded-pill" />
+              <Skeleton className="h-[10px] rounded-full" style={{ width: `${w}%` }} />
+              <Skeleton className="h-3 w-[44px] rounded-pill" />
+              <Skeleton className="h-3 w-[52px] rounded-pill" />
+              <Skeleton className="h-3 w-[56px] rounded-pill" />
+            </div>
+          ))}
         </div>
       </section>
     </div>

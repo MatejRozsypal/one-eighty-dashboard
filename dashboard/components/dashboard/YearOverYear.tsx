@@ -87,7 +87,7 @@ export function YearOverYear({
                     goodWhen="up"
                     fallback={
                       <span
-                        className="font-mono text-[12px] text-gray-300"
+                        className="font-mono text-[12px] text-content-muted"
                         title="No prior year data"
                       >
                         {NO_VALUE}
@@ -106,7 +106,7 @@ export function YearOverYear({
                     money(y.revenue)
                   ) : (
                     <span
-                      className="text-gray-300"
+                      className="text-content-muted"
                       title={`Only ${y.monthsWithData} month${y.monthsWithData === 1 ? "" : "s"} held for ${y.year}`}
                     >
                       {y.isCurrent

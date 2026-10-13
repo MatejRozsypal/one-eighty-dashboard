@@ -95,7 +95,7 @@ export function DecisionLog({
                     {d.finalVerdict}
                   </span>
                   {d.overridden && (
-                    <span className="rounded-xs bg-warning/10 px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.08em] text-warning">
+                    <span className="rounded-xs bg-warning/10 px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.08em] text-warning-700">
                       overrode {d.computedVerdict}
                     </span>
                   )}
@@ -214,7 +214,7 @@ function ReviewItem({
             </button>
 
             {overriding && (
-              <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-warning">
+              <span className="font-mono text-[10.5px] uppercase tracking-eyebrow text-warning-700">
                 overriding {row.verdictLabel}
               </span>
             )}

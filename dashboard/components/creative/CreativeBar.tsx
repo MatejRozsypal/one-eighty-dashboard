@@ -81,7 +81,7 @@ export function UnmappedPill({ count, href }: { count: number; href: string }) {
   return (
     <AppLink
       href={href}
-      className="inline-flex items-center gap-2 rounded-pill border border-warning/25 bg-warning/10 px-3 py-1 text-[12.5px] font-medium text-warning transition-colors duration-fast hover:bg-warning/20"
+      className="inline-flex items-center gap-2 rounded-pill border border-warning/25 bg-warning/10 px-3 py-1 text-[12.5px] font-medium text-warning-700 transition-colors duration-fast hover:bg-warning/20"
     >
       <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
       {count} {count === 1 ? "ad" : "ads"} unmapped

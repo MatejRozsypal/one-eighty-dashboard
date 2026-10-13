@@ -100,7 +100,7 @@ export default async function StockHealthPage({
   });
 
   const buckets: Array<{ label: string; value: number; tone: string; info?: string }> = [
-    { label: "Healthy", value: summary.valueHealthy, tone: "text-growth-700" },
+    { label: "Healthy", value: summary.valueHealthy, tone: "text-positive-text" },
     {
       label: "At risk",
       value: summary.valueAtRisk,
@@ -156,7 +156,7 @@ export default async function StockHealthPage({
                 >
                   {money(b.value)}
                 </span>
-                <span className="text-[11.5px] text-gray-300">
+                <span className="text-[11.5px] text-content-muted">
                   {formatPercent(safeDiv(b.value, summary.stockValueAtCost), {
                     decimals: 0,
                   })}

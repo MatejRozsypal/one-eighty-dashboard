@@ -2,8 +2,8 @@
  * Quarter view: promo windows and checkpoints on one strip, then a card each.
  *
  * Strip: one lane per item across the quarter, the bar tinted by the item's
- * order status, a line at as of. Checkpoints are thin bars ending in a mark on
- * the check day.
+ * order status in the same tone as its chip, a line at as of. Checkpoints are
+ * thin bars ending in a mark on the check day.
  *
  * Card: window, status, the whole store in the window against the window's
  * slice of the curve (the number that adds up to the month), and the orders
@@ -24,18 +24,9 @@ import { NO_VALUE, formatMoney } from "@/lib/format";
 import { daysBetween, fmtDay, fmtRange, monthStart, addMonths, monthEnd } from "@/lib/plan/dates";
 import { METRIC_LABEL, fmtCount, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
 import { gateConditions, headlineMetric, type TimelineItem } from "@/lib/plan/model";
-import type { PacingRow, RowStatus } from "@/lib/plan/types";
+import { toneOfRow, toneVars } from "@/lib/plan/health";
+import type { PacingRow } from "@/lib/plan/types";
 
-const BAR: Record<RowStatus, string> = {
-  ahead: "bg-info/70",
-  on_track: "bg-growth-500/70",
-  behind: "bg-warning/80",
-  off_track: "bg-negative/75",
-  not_started: "bg-gray-250",
-  closed: "bg-gray-400",
-  no_target: "bg-gray-250",
-  not_measured: "bg-gray-250",
-};
 
 function Muted({ text }: { text: string }) {
   return <span className={text === NO_VALUE ? "text-content-muted" : "text-content-strong"}>{text}</span>;
@@ -93,7 +84,10 @@ export function PromoTimeline({
             {items.map((item) => {
               const s = item.start < start ? start : item.start;
               const e = item.end > end ? end : item.end;
-              const status = item.byMetric.orders?.status ?? "not_started";
+              // The bar takes its colour from the same mapping as the card's
+              // chip (lib/plan/health.ts), so the two cannot disagree: ad spend
+              // under plan is blue on both, a closed window is met or missed.
+              const barColour = toneVars(toneOfRow(item.byMetric.orders)).graphic;
               const left = pct(s, start, span);
               const width = Math.max(1.2, ((daysBetween(s, e) + 1) / span) * 100);
               return (
@@ -103,9 +97,13 @@ export function PromoTimeline({
                     <span
                       title={`${item.code} · ${item.name}, ${fmtRange(item.start, item.end)}`}
                       className={`absolute top-1/2 -translate-y-1/2 rounded-[4px] ${
-                        item.kind === "gate" ? "h-[6px] bg-content-strong/30" : `h-[14px] ${BAR[status]}`
+                        item.kind === "gate" ? "h-[6px] bg-content-strong/30" : "h-[14px]"
                       } ${item.planStatus === "planning" ? "opacity-50" : ""}`}
-                      style={{ left: `${left}%`, width: `${width}%` }}
+                      style={{
+                        left: `${left}%`,
+                        width: `${width}%`,
+                        ...(item.kind === "gate" ? {} : { backgroundColor: barColour }),
+                      }}
                     />
                     {item.kind === "gate" && (
                       <span

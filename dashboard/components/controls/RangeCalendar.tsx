@@ -26,6 +26,17 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type Month = { year: number; month: number };
 
+/** "15 October 2026": what a day button is called, the visible "15" alone says too little. */
+function dayName(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function monthOf(date: string): Month {
   const [y, m] = date.split("-").map(Number);
   return { year: y, month: m - 1 };
@@ -155,6 +166,9 @@ export function RangeCalendar({
                         type="button"
                         disabled={disabled}
                         onClick={() => onPick(day)}
+                        aria-label={
+                          dayName(day) + (isStart && isEnd ? "" : isStart ? ", range start" : isEnd ? ", range end" : "")
+                        }
                         aria-pressed={isStart || isEnd || inRange}
                         className={`h-9 w-full text-[13.5px] tabular transition-colors duration-fast ${
                           isStart || isEnd

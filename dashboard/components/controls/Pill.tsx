@@ -20,18 +20,31 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 
 const PHONE = "(max-width: 639.98px)";
+const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
-/** Open state, closed by an outside click or Escape; locks page scroll on phones. */
+/**
+ * Open state, closed by an outside click or Escape; locks page scroll on phones.
+ *
+ * Also owns focus: opening moves it onto the selected row (or the first
+ * control) in the panel, and any close hands it back to the pill, so Escape or
+ * picking a row never drops a keyboard user at the top of the page. Pass
+ * `triggerRef` and `panelId` to `Pill`, and `panelId` to `Popover`.
+ */
 export function usePopover() {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+  const panelId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -49,6 +62,26 @@ export function usePopover() {
     };
   }, [open]);
 
+  useEffect(() => {
+    if (open) {
+      wasOpen.current = true;
+      const panel = document.getElementById(panelId);
+      const target =
+        panel?.querySelector<HTMLElement>('[aria-pressed="true"]:not(:disabled)') ??
+        panel?.querySelector<HTMLElement>(FOCUSABLE);
+      target?.focus();
+      return;
+    }
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
+    // Only reclaim focus that the panel was holding (it lands on body when the
+    // focused row unmounts). A click elsewhere keeps whatever it focused.
+    const active = document.activeElement;
+    if (!active || active === document.body || wrapRef.current?.contains(active)) {
+      triggerRef.current?.focus();
+    }
+  }, [open, panelId]);
+
   // A tall sheet over a scrollable page invites scrolling the page behind it.
   useEffect(() => {
     if (!open || typeof window === "undefined") return;
@@ -60,7 +93,7 @@ export function usePopover() {
     };
   }, [open]);
 
-  return { open, setOpen, wrapRef };
+  return { open, setOpen, wrapRef, triggerRef, panelId };
 }
 
 export function Pill({
@@ -71,6 +104,8 @@ export function Pill({
   pending = false,
   title,
   ariaLabel,
+  triggerRef,
+  panelId,
 }: {
   icon: ReactNode;
   label: ReactNode;
@@ -79,13 +114,19 @@ export function Pill({
   pending?: boolean;
   title?: string;
   ariaLabel?: string;
+  /** From `usePopover`, so closing can return focus here. */
+  triggerRef?: RefObject<HTMLButtonElement>;
+  /** From `usePopover`: the open panel's id. */
+  panelId?: string;
 }) {
   return (
     <button
+      ref={triggerRef}
       type="button"
       onClick={onClick}
       aria-expanded={open}
       aria-haspopup="dialog"
+      aria-controls={open ? panelId : undefined}
       aria-busy={pending}
       aria-label={ariaLabel}
       title={title}
@@ -109,11 +150,14 @@ export function Pill({
  * ref), so a click inside it is not an outside click.
  */
 export function Popover({
+  id,
   label,
   onClose,
   className = "",
   children,
 }: {
+  /** `usePopover`'s `panelId`, the target of the pill's aria-controls. */
+  id?: string;
   label: string;
   onClose: () => void;
   /** Width and layout of the panel from `sm` up. */
@@ -161,6 +205,7 @@ export function Popover({
       />
       <div
         ref={panelRef}
+        id={id}
         role="dialog"
         aria-label={label}
         style={{ left: shift }}
@@ -172,7 +217,11 @@ export function Popover({
   );
 }
 
-/** One row of a popover list: grey fill and bold when selected. */
+/**
+ * One row of a popover list: grey fill and bold when selected. A plain toggle
+ * button with aria-pressed, not a menu item: the list has no arrow-key
+ * handling, so menu roles would promise keyboard behaviour it does not have.
+ */
 export function MenuRow({
   selected,
   disabled = false,
@@ -189,8 +238,7 @@ export function MenuRow({
   return (
     <button
       type="button"
-      role="menuitemradio"
-      aria-checked={selected}
+      aria-pressed={selected}
       disabled={disabled}
       title={title}
       onClick={onClick}

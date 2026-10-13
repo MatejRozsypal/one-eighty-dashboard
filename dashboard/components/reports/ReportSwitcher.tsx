@@ -145,7 +145,7 @@ export function ReportSwitcher() {
           placeholder="Search reports"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="w-full border-b border-hairline bg-transparent px-4 py-3 text-[14px] text-content-strong outline-none placeholder:text-content-muted"
+          className="w-full border-b border-hairline bg-transparent px-4 py-3 text-[14px] text-content-strong outline-none placeholder:text-content-muted focus-visible:shadow-[inset_0_-2px_0_var(--focus-ring)]"
         />
         <div id={listId} role="listbox" aria-label="Reports" className="max-h-[360px] overflow-y-auto p-1.5">
           {options.length === 0 && <p className="px-3 py-3 text-[13px] text-content-muted">No reports.</p>}
@@ -164,7 +164,9 @@ export function ReportSwitcher() {
                   onMouseEnter={() => setActive(i)}
                   onClick={() => go(o.entry)}
                   className={`cursor-pointer truncate rounded-sm px-3 py-2 text-[13.5px] ${
-                    i === active ? "bg-gray-100 text-content-strong" : "text-content-body"
+                    // The active option is the keyboard focus (aria-activedescendant), so it
+                    // gets the focus ring, not just a tint.
+                    i === active ? "bg-gray-100 text-content-strong shadow-[inset_0_0_0_2px_var(--focus-ring)]" : "text-content-body"
                   }`}
                 >
                   {o.entry.name}

@@ -344,7 +344,8 @@ for (const dir of pageDirs) {
   const parts = read(join(ROOT, "components", "reports", "ReportParts.tsx"));
   check("widget cell pulses on refreshing", parts.includes("|| refreshing"));
   check("widget cell pulses stale figures", parts.includes('loading ? "oe-pulse"'));
-  check("widget cell first load is a Skeleton", parts.includes("<Skeleton"));
+  // WidgetSkeleton draws the shape of the widget type from the same Skeleton primitive.
+  check("widget cell first load is a Skeleton", parts.includes("<Skeleton") || parts.includes("<WidgetSkeleton"));
 }
 
 // ---------------------------------------------------------------------------

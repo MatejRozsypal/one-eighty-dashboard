@@ -303,7 +303,9 @@ export function TodayInbox({
     setMode("client");
     setRule(null);
     setFocusClient(clientId);
-    listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Reduced motion jumps instead of gliding: a scripted scroll ignores the preference.
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    listRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
   };
 
   const naSources = sources.filter((s) => s.status === "na");

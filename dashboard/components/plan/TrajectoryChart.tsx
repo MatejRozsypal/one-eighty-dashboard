@@ -7,9 +7,11 @@
  * the month in flight as a hatched bar.
  */
 
+import { useId } from "react";
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartFrame, TooltipCard, TooltipRow, useHatch } from "@/components/reports/widgets/ChartFrame";
 import { AXIS_TICK, BAR_RADIUS, GRID_STROKE, MUTED_FILL, TEXT_MUTED, TEXT_STRONG, axisWidth, edgeMargin, seriesColor } from "@/components/reports/widgets/chartTheme";
+import { ChartSummary } from "@/components/ui/ChartSummary";
 import { formatMoney } from "@/lib/format";
 import type { TrajectoryPoint } from "@/lib/plan/model";
 
@@ -21,6 +23,7 @@ interface Row extends TrajectoryPoint {
 
 export function TrajectoryChart({ points, goal, currency }: { points: TrajectoryPoint[]; goal: number | null; currency: string }) {
   const { id: hatchId, defs } = useHatch();
+  const summaryId = useId();
   const rows: Row[] = points.map((p) => ({ ...p, bar: p.actual ?? p.projected }));
   const fmt = (v: number | null | undefined) => formatMoney(v, currency);
   const fmtAxis = (v: number) => formatMoney(v, currency, { compact: true });
@@ -44,7 +47,7 @@ export function TrajectoryChart({ points, goal, currency }: { points: Trajectory
           Month plan
         </span>
       </div>
-      <div className="h-[240px] w-full sm:h-[300px]" role="img" aria-label="Monthly revenue against the trajectory to the target state">
+      <div className="h-[240px] w-full sm:h-[300px]" role="img" aria-label="Monthly revenue against the trajectory to the target state" aria-describedby={summaryId}>
         <ChartFrame>
           <ComposedChart data={rows} margin={{ top: 8, right: rightMargin, bottom: 0, left: 4 }} barCategoryGap="28%">
             {defs}
@@ -63,6 +66,17 @@ export function TrajectoryChart({ points, goal, currency }: { points: Trajectory
           </ComposedChart>
         </ChartFrame>
       </div>
+      <ChartSummary
+        id={summaryId}
+        series={[
+          { name: "Actual", values: rows.map((r) => r.actual) },
+          { name: "Projected", values: rows.map((r) => r.projected) },
+          { name: "Trajectory", values: rows.map((r) => r.trajectory) },
+          { name: "Month plan", values: rows.map((r) => r.plan) },
+        ]}
+        labels={rows.map((r) => r.label)}
+        format={fmt}
+      />
     </div>
   );
 }

@@ -107,6 +107,7 @@ export function PeopleList({
                     <select
                       name="role"
                       defaultValue={user.role}
+                      aria-label={`Role for ${user.email}`}
                       className="rounded-control border border-hairline-strong bg-paper px-2.5 py-1.5 text-[12.5px]"
                     >
                       {Object.entries(ROLE_COPY).map(([value, copy]) => (
@@ -119,6 +120,7 @@ export function PeopleList({
                     <select
                       name="clientId"
                       defaultValue={user.clientId ?? ""}
+                      aria-label={`Client for ${user.email}`}
                       className="rounded-control border border-hairline-strong bg-paper px-2.5 py-1.5 text-[12.5px]"
                     >
                       <option value="">No client</option>

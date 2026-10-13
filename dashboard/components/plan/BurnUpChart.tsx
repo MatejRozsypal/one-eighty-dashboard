@@ -23,7 +23,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useId } from "react";
 import { ChartFrame, TooltipCard, TooltipRow } from "@/components/reports/widgets/ChartFrame";
+import { ChartSummary } from "@/components/ui/ChartSummary";
 import { AXIS_TICK, GRID_STROKE, MUTED_FILL, TEXT_MUTED, axisWidth, edgeMargin, seriesColor } from "@/components/reports/widgets/chartTheme";
 import { fmtValue, METRIC_LABEL } from "@/lib/plan/format";
 import { fmtDay } from "@/lib/plan/dates";
@@ -48,6 +50,7 @@ export function BurnUpChart({
   currency: string;
   target: number | null;
 }) {
+  const summaryId = useId();
   const fmt = (v: number | null | undefined) => fmtValue(v, metric, currency);
   const fmtAxis = (v: number) => fmtValue(v, metric, currency, { compact: true });
   const top = Math.max(
@@ -69,6 +72,7 @@ export function BurnUpChart({
         className="h-[240px] w-full sm:h-[300px]"
         role="img"
         aria-label={`Cumulative ${METRIC_LABEL[metric].toLowerCase()}: actual against the target curve, with the projected end`}
+        aria-describedby={summaryId}
       >
         <ChartFrame>
           <ComposedChart data={points} margin={{ top: 18, right: rightMargin, bottom: 0, left: 4 }}>
@@ -147,6 +151,16 @@ export function BurnUpChart({
           </ComposedChart>
         </ChartFrame>
       </div>
+      <ChartSummary
+        id={summaryId}
+        series={[
+          { name: "Actual to date", values: points.map((p) => p.cumActual) },
+          { name: "Target curve", values: points.map((p) => p.cumTarget) },
+          { name: "Projection", values: points.map((p) => p.projection) },
+        ]}
+        labels={points.map((p) => fmtDay(p.date))}
+        format={fmt}
+      />
     </div>
   );
 }

@@ -25,7 +25,7 @@ export function Markdown({ text }: { text: string }) {
           h3: ({ children }) => <h3 className="m-0 text-[14.5px] font-semibold">{children}</h3>,
           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
           a: ({ children, href }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="text-accent underline">
+            <a href={href} target="_blank" rel="noreferrer" className="text-content-accent underline">
               {children}
             </a>
           ),

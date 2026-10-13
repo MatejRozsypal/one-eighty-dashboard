@@ -40,47 +40,56 @@ export function SettingsSection({
   children: ReactNode;
   defaultOpen?: boolean;
 }) {
+  // The (i) sits outside <summary>: a button inside it is a control nested in
+  // a control, which screen readers announce badly and axe flags. Content after
+  // <summary> is hidden while closed, so it is placed over the card instead.
   return (
-    <details
-      open={defaultOpen}
-      className="group rounded-card border border-hairline bg-surface-card shadow-sm"
-    >
-      <summary className="flex cursor-pointer list-none items-center gap-3 p-[18px_20px] lg:p-[18px_26px] [&::-webkit-details-marker]:hidden">
-        <svg
-          viewBox="0 0 24 24"
-          width="13"
-          height="13"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-          className="flex-none text-content-muted transition-transform duration-fast group-open:rotate-90"
-        >
-          <path d="M9 18l6-6-6-6" />
-        </svg>
+    <div className="relative">
+      <details
+        open={defaultOpen}
+        className="group rounded-card border border-hairline bg-surface-card shadow-sm"
+      >
+        <summary className={`flex cursor-pointer list-none items-center gap-3 p-[18px_20px] lg:p-[18px_26px] [&::-webkit-details-marker]:hidden ${description ? "pr-12 lg:pr-14" : ""}`}>
+          <svg
+            viewBox="0 0 24 24"
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className="flex-none text-content-muted transition-transform duration-fast group-open:rotate-90"
+          >
+            <path d="M9 18l6-6-6-6" />
+          </svg>
 
-        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
-            {title}
-          </span>
-          {description && <InfoTip text={description} label={`About ${title}`} />}
-          {/*
-            Hidden once open: the panel below then states everything this line
-            summarised, and leaving it visible reads as a stale duplicate.
-          */}
-          {summary !== undefined && (
-            <span className="truncate text-[12.5px] text-content-body group-open:hidden">
-              {summary}
+          <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-content-muted">
+              {title}
             </span>
-          )}
-        </span>
-      </summary>
+            {/*
+              Hidden once open: the panel below then states everything this line
+              summarised, and leaving it visible reads as a stale duplicate.
+            */}
+            {summary !== undefined && (
+              <span className="truncate text-[12.5px] text-content-body group-open:hidden">
+                {summary}
+              </span>
+            )}
+          </span>
+        </summary>
 
-      <div className="flex flex-col gap-4 border-t border-hairline p-[18px_20px_22px] lg:p-[18px_26px_22px]">
-        {children}
-      </div>
-    </details>
+        <div className="flex flex-col gap-4 border-t border-hairline p-[18px_20px_22px] lg:p-[18px_26px_22px]">
+          {children}
+        </div>
+      </details>
+      {description && (
+        <span className="absolute right-5 top-[17px] lg:right-[26px]">
+          <InfoTip text={description} label={`About ${title}`} />
+        </span>
+      )}
+    </div>
   );
 }

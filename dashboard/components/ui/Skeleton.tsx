@@ -119,10 +119,37 @@ export function SkeletonList({ rows = 5 }: { rows?: number }) {
   );
 }
 
+/** Row widths for nav rows, so a column of them reads as names, not a grid. */
+const NAV_WIDTHS = [64, 48, 58, 42, 54];
+
+/**
+ * Rows in the dark sidebar's second level (the report list, the Assistant's
+ * history), on the `SUB_ROW` indent and height. The block colour is re-pointed
+ * at an ink step for this subtree only: the page's grey would glare on the ink
+ * ground. `head` adds a group label above the rows (Pinned, History).
+ */
+export function SkeletonNavRows({ rows = 4, head = false }: { rows?: number; head?: boolean }) {
+  return (
+    <div aria-busy="true" aria-label="Loading" className="flex flex-col gap-px [--skeleton-bg:var(--ink-500)]">
+      {head && (
+        <div className="flex h-6 items-end pb-1.5 pl-[36px] pr-2">
+          <Skeleton className="h-[7px] w-[52px] rounded-pill" />
+        </div>
+      )}
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex h-7 items-center pl-[36px] pr-2">
+          <Skeleton className="h-[9px] rounded-pill" style={{ width: `${NAV_WIDTHS[i % NAV_WIDTHS.length]}%` }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export type SkeletonBlock =
   | "kpi"
   | "kpi-6"
   | "kpi-8"
+  | "kpi-5"
   | "chart"
   | "split"
   | "table"
@@ -139,6 +166,18 @@ function renderBlock(block: SkeletonBlock, key: number): ReactNode {
       return <SkeletonKpiRow key={key} count={6} />;
     case "kpi-8":
       return <SkeletonKpiRow key={key} count={8} />;
+    case "kpi-5":
+      // A titled row of five, as `AcquisitionEconomics` draws it on Snapshot.
+      return (
+        <div key={key} className="flex flex-col gap-4">
+          <Skeleton className="h-[15px] w-[168px] rounded-xs" />
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            {Array.from({ length: 5 }, (_, i) => (
+              <SkeletonMetric key={i} />
+            ))}
+          </div>
+        </div>
+      );
     case "chart":
       return <SkeletonChart key={key} />;
     case "split":

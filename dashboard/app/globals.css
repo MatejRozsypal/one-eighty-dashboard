@@ -59,6 +59,13 @@
     monospace;
 
   /*
+   * Green as type. The handoff points --text-accent at growth-600, 3.4:1 on
+   * white, under the 4.5:1 WCAG AA asks of small text; growth-700 is 5.3:1.
+   * Fills and bars keep --accent. Overridden here so a new handoff keeps it.
+   */
+  --text-accent: var(--growth-700);
+
+  /*
    * iPhone safe areas. `viewportFit: "cover"` (app/layout.tsx) lets the page
    * paint edge to edge, which is what makes an installed PWA look like an app,
    * and also what puts our own header underneath the clock and the battery.

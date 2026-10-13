@@ -80,9 +80,13 @@ export function FlameStreak({
       </svg>
       <div className="flex flex-col leading-tight">
         <span className="inline-flex items-baseline gap-1.5">
+          {/* The flame keeps its #FF9600, but as type that is 2.2:1 on white.
+              The number takes a darker step of the same orange, #CC6A00:
+              3.7:1 on white and 3.3:1 on --gray-100, which clears 3:1 for
+              26px extrabold (large text). */}
           <span
-            className="text-[26px] font-extrabold tabular"
-            style={{ color: live ? "#FF9600" : "var(--content-muted, #8a8a8a)" }}
+            className={`text-[26px] font-extrabold tabular ${live ? "" : "text-content-muted"}`}
+            style={live ? { color: "#CC6A00" } : undefined}
           >
             {row.currentStreak}
           </span>

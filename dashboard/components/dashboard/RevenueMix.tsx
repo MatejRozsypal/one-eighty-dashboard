@@ -299,7 +299,8 @@ export function RevenueMix({
             y={0}
             width={dayWidth}
             height={H}
-            fill="rgba(245,166,35,0.10)"
+            fill="var(--warning)"
+            fillOpacity={0.1}
           />
         )}
       </svg>

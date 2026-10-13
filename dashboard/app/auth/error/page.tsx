@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
 // NOTE: access is decided by the `app_users` table, not by email domain, see
@@ -18,6 +19,8 @@ import { Logo } from "@/components/ui/Logo";
  */
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "Sign-in problem" };
 
 export default function AuthErrorPage({
   searchParams,

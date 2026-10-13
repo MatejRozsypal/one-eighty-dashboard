@@ -38,7 +38,7 @@ export function Td({
     <td
       className={`whitespace-nowrap border-b border-hairline px-2.5 py-2.5 text-[13px] ${
         left ? "text-left font-medium text-content-strong" : "text-right font-mono tabular"
-      } ${muted ? "text-content-muted" : tone === "warn" ? "text-warning" : left ? "" : "text-content-body"}`}
+      } ${muted ? "text-content-muted" : tone === "warn" ? "text-warning-700" : left ? "" : "text-content-body"}`}
     >
       {children}
     </td>

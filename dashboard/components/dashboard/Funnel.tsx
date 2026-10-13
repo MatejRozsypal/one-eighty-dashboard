@@ -107,7 +107,7 @@ export function Funnel({
                       {formatNumber(step.value)}
                     </span>
                   </span>
-                  <span className="font-mono text-[10.5px] tabular text-gray-300">
+                  <span className="font-mono text-[10.5px] tabular text-content-muted">
                     {i === 0
                       ? "top of funnel"
                       : `${formatPercent(stepRate, { decimals: 1 })} of previous`}

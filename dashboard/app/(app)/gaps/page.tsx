@@ -113,7 +113,7 @@ export default async function GapsPage({
               <span className="font-mono text-[20px] font-semibold tracking-heading tabular text-content-strong">
                 {formatNumber(stats.totalGaps)}
               </span>
-              <span className="text-[11.5px] text-gray-300">{stats.windowLabel}</span>
+              <span className="text-[11.5px] text-content-muted">{stats.windowLabel}</span>
             </span>
           </div>
         </section>

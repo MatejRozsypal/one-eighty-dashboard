@@ -28,8 +28,11 @@ export function Header({
   /** Deprecated and ignored. Pages drop it in wave 2. */
   eyebrow?: string;
 }) {
+  // Below lg the bar is visually hidden rather than `hidden`, so the page keeps
+  // its only <h1> for screen readers on a phone. `lg:not-sr-only` resets
+  // position, height and padding, so the bar's own are restated after it at lg.
   return (
-    <header className="sticky top-0 z-30 hidden h-[var(--header-h)] items-center border-b border-hairline-strong bg-paper/[0.86] pt-[var(--safe-top)] backdrop-blur-[12px] lg:flex">
+    <header className="sr-only top-0 z-30 items-center border-b border-hairline-strong bg-paper/[0.86] backdrop-blur-[12px] lg:not-sr-only lg:sticky lg:flex lg:h-[var(--header-h)] lg:pt-[var(--safe-top)]">
       <div className="page-frame flex items-center gap-3 px-5 lg:px-8 lg:pr-[var(--account-reserve)]">
         <h1 className="m-0 min-w-0 truncate text-[17px] font-bold tracking-heading text-content-strong">
           {title}

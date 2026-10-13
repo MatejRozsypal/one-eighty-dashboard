@@ -183,7 +183,7 @@ function FrameMenu({ items, label }: { items: readonly FrameMenuItem[]; label: s
                     item.onSelect();
                   }}
                   className={cx(
-                    "flex w-full items-center rounded-xs px-3 py-1.5 text-left text-body-sm outline-none hover:bg-gray-100 focus-visible:bg-gray-100",
+                    "flex w-full items-center rounded-xs px-3 py-1.5 text-left text-body-sm outline-none hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:shadow-[inset_0_0_0_2px_var(--focus-ring)]",
                     item.danger ? "text-negative-700" : "text-content-strong",
                   )}
                 >

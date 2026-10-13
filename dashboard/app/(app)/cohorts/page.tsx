@@ -296,7 +296,7 @@ export default async function CohortsPage({
                     </span>,
                     <span
                       className={`font-mono text-[12px] tabular ${
-                        c.isMature ? "text-content-muted" : "text-warning"
+                        c.isMature ? "text-content-muted" : "text-warning-700"
                       }`}
                       title={
                         c.isMature

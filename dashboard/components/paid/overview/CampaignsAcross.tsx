@@ -82,6 +82,7 @@ export function CampaignsAcross({
 
     const lowDot = low ? (
       <span
+        role="img"
         title="Low volume"
         aria-label="Low volume"
         className="mr-1.5 inline-block h-[6px] w-[6px] rounded-full bg-warning align-middle"

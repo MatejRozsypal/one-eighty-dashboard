@@ -55,7 +55,10 @@ export function Conversation({ staged = false }: { staged?: boolean }) {
       if (el) el.scrollTop = el.scrollHeight;
       return;
     }
-    tail.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    // Reduced motion jumps instead of gliding; the browser does not apply the
+    // preference to a scroll asked for from script.
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    tail.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "end" });
   }, [messages, pending, streamText, activity, staged]);
 
   function submit() {

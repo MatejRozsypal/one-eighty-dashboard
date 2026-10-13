@@ -18,6 +18,7 @@
 import { AppLink } from "@/components/ui/AppLink";
 import { usePathname } from "next/navigation";
 import { NavSlotFill } from "@/components/shell/NavSlot";
+import { SkeletonNavRows } from "@/components/ui/Skeleton";
 import { SUB_HEAD, SUB_ROW, SUB_ROW_ACTIVE, SUB_ROW_IDLE, SUB_ROW_MUTED } from "@/components/shell/navStyles";
 import { useGroupedReports, type DirectoryEntry } from "./ReportsDirectory";
 
@@ -70,7 +71,7 @@ export function ReportListPanel() {
       <div className="flex flex-col gap-2">
         <Section label="Pinned" entries={pinned.slice(0, MAX_PINNED)} activeId={activeId} />
         <Section label="Recent" entries={recent.slice(0, MAX_RECENT)} activeId={activeId} />
-        {total === 0 && <span className={`${SUB_ROW} text-gray-400`}>No reports.</span>}
+        {total === 0 && <span className={`${SUB_ROW} text-gray-300`}>No reports.</span>}
         <ul className="m-0 flex list-none flex-col gap-px p-0">
           {listed < total && (
             <li>
@@ -86,6 +87,18 @@ export function ReportListPanel() {
           </li>
         </ul>
       </div>
+    </NavSlotFill>
+  );
+}
+
+/**
+ * The panel while the layout reads the list: a group label and a few rows in the
+ * same slot, so the sidebar does not jump when the names land.
+ */
+export function ReportListPanelSkeleton() {
+  return (
+    <NavSlotFill id="reports">
+      <SkeletonNavRows head rows={4} />
     </NavSlotFill>
   );
 }

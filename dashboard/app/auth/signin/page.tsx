@@ -69,14 +69,18 @@ export default function SignInPage() {
 
         <div className="flex items-center gap-3">
           <span className="h-px flex-1 bg-white/[0.12]" />
-          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400">
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-300">
             or
           </span>
           <span className="h-px flex-1 bg-white/[0.12]" />
         </div>
 
         <form action={signInWithPassword} className="flex flex-col gap-2.5">
+          <label htmlFor="signin-email" className="sr-only">
+            Email
+          </label>
           <input
+            id="signin-email"
             name="email"
             type="email"
             required
@@ -84,7 +88,11 @@ export default function SignInPage() {
             placeholder="Email"
             className="rounded-control border border-white/[0.14] bg-white/[0.06] px-3 py-2.5 text-[14px] text-content-inverse placeholder:text-gray-400"
           />
+          <label htmlFor="signin-password" className="sr-only">
+            Password
+          </label>
           <input
+            id="signin-password"
             name="password"
             type="password"
             required

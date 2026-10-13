@@ -15,7 +15,8 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { setOwnPassword } from "@/lib/users/store";
+import { setOwnPassword, verifyPassword } from "@/lib/users/store";
+import { MAX_BYTES, MIN_LENGTH, PASSWORD_PROBLEMS, passwordProblem } from "@/lib/users/passwordPolicy";
 import { Logo } from "@/components/ui/Logo";
 
 export const dynamic = "force-dynamic";
@@ -34,11 +35,15 @@ async function changePassword(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
 
-  if (password.length < 10) {
-    redirect("/auth/change-password?error=short");
-  }
   if (password !== confirm) {
     redirect("/auth/change-password?error=mismatch");
+  }
+  // Rules and the breach check: lib/users/passwordPolicy.ts.
+  const problem = await passwordProblem(password, email);
+  if (problem) redirect(`/auth/change-password?error=${problem}`);
+  // The temporary password was seen by the admin who issued it, so it cannot stay.
+  if (await verifyPassword(email, password)) {
+    redirect("/auth/change-password?error=reused");
   }
 
   await setOwnPassword(email, password);
@@ -46,8 +51,9 @@ async function changePassword(formData: FormData) {
 }
 
 const ERRORS: Record<string, string> = {
-  short: "Use at least 10 characters.",
+  ...PASSWORD_PROBLEMS,
   mismatch: "The two passwords don't match.",
+  reused: "Choose a new password, not the temporary one.",
 };
 
 export default async function ChangePasswordPage({
@@ -73,7 +79,9 @@ export default async function ChangePasswordPage({
             Choose a password
           </h1>
           <p className="text-[13.5px] leading-[1.6] text-gray-300">
-            Choose your own password.
+            Choose your own password: at least {MIN_LENGTH} characters, not your
+            email address, and not one that has leaked in a data breach. A
+            short sentence is easier to remember than a jumble of symbols.
           </p>
         </div>
 
@@ -82,7 +90,8 @@ export default async function ChangePasswordPage({
             name="password"
             type="password"
             required
-            minLength={10}
+            minLength={MIN_LENGTH}
+            maxLength={MAX_BYTES}
             autoComplete="new-password"
             placeholder="New password"
             className={field}
@@ -91,7 +100,8 @@ export default async function ChangePasswordPage({
             name="confirm"
             type="password"
             required
-            minLength={10}
+            minLength={MIN_LENGTH}
+            maxLength={MAX_BYTES}
             autoComplete="new-password"
             placeholder="Repeat it"
             className={field}

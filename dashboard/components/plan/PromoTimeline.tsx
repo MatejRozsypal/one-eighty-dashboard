@@ -24,7 +24,7 @@ import { NO_VALUE, formatMoney } from "@/lib/format";
 import { daysBetween, fmtDay, fmtRange, monthStart, addMonths, monthEnd } from "@/lib/plan/dates";
 import { METRIC_LABEL, fmtCount, fmtMer, fmtPace, fmtValue } from "@/lib/plan/format";
 import { gateConditions, headlineMetric, type TimelineItem } from "@/lib/plan/model";
-import { toneOfRow, toneVars } from "@/lib/plan/health";
+import { draftLabel, toneOfRow, toneVars } from "@/lib/plan/health";
 import type { PacingRow } from "@/lib/plan/types";
 
 
@@ -98,7 +98,7 @@ export function PromoTimeline({
                       title={`${item.code} · ${item.name}, ${fmtRange(item.start, item.end)}`}
                       className={`absolute top-1/2 -translate-y-1/2 rounded-[4px] ${
                         item.kind === "gate" ? "h-[6px] bg-content-strong/30" : "h-[14px]"
-                      } ${item.planStatus === "planning" ? "opacity-50" : ""}`}
+                      } ${draftLabel(item.planStatus) ? "opacity-50" : ""}`}
                       style={{
                         left: `${left}%`,
                         width: `${width}%`,
@@ -177,7 +177,7 @@ function TimelineCard({ item, currency }: { item: TimelineItem; currency: string
           </span>
           <span className="text-[12.5px] text-content-muted">
             {item.kind === "gate" ? `Check ${fmtDay(item.end)}` : fmtRange(item.start, item.end)}
-            {item.planStatus === "planning" && " · planning"}
+            {draftLabel(item.planStatus) && ` · ${draftLabel(item.planStatus)!.toLowerCase()}`}
           </span>
         </div>
         {head && <StatusChip row={head} />}

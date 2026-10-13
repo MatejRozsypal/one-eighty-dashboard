@@ -227,3 +227,14 @@ export function planStatusTone(status: RowStatus, metric: string, result: Pacing
 export function toneOfRow(row: StatusBits | undefined): HealthTone {
   return row ? planStatusTone(row.status, row.metric, row.result) : "neutral";
 }
+
+/**
+ * A plan task not approved yet, from its ClickUp status: shown (faded, with a
+ * label), never counted in the target curve (warehouse 283). Null when the
+ * task is approved, running or complete.
+ */
+export function draftLabel(planStatus: string | null | undefined): string | null {
+  if (planStatus === "planning") return "Planning";
+  if (planStatus === "ready for review") return "In review";
+  return null;
+}

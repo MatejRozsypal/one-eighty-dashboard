@@ -20,7 +20,7 @@ import { PLAN_METRICS, type PlanData, type PlanMetric, type PlanView } from "@/l
 import { NoData } from "@/components/ui/EmptyState";
 import { GoalArcMark, OnPlanMark } from "@/components/plan/GoalRing";
 import { SectionTitle } from "@/components/plan/SectionTitle";
-import { toneOfRow, type HealthTone } from "@/lib/plan/health";
+import { draftLabel, toneOfRow, type HealthTone } from "@/lib/plan/health";
 import { PlanTiles } from "@/components/plan/PlanTiles";
 import { PlanCharts } from "@/components/plan/PlanCharts";
 import { PromoTimeline } from "@/components/plan/PromoTimeline";
@@ -52,9 +52,9 @@ function PeriodHeading({ period, asOf, planStatus }: { period: PeriodOption; asO
           {period.label}
         </h2>
         <span className="text-[13px] text-content-muted">{periodLine(period, asOf)}</span>
-        {planStatus === "planning" && (
+        {draftLabel(planStatus) && (
           <span className="rounded-pill bg-gray-100 px-2.5 py-[3px] text-[11.5px] font-semibold text-content-muted">
-            Planning
+            {draftLabel(planStatus)}
           </span>
         )}
       </div>

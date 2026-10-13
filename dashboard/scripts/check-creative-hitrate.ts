@@ -59,12 +59,11 @@ const ok = (name: string, pass: boolean, detail = "") => {
   console.log(`${pass ? "ok  " : "FAIL"}  ${name}${detail ? `: ${detail}` : ""}`);
 };
 
-/** Manami's proposed bar: 15 purchases to be read, real ROAS 2.25 to win. */
+/** Manami's proposed bar: real ROAS 2.25 to win, whatever the purchase count. */
 const T: CreativeThresholds = {
   killRoas: 1.8, targetRoas: 2.25, targetCpa: 527, grossMargin: 0.684,
   scaleMultiplier: 1.2, aggressiveMultiplier: 2.0,
   holdGateX: 1, iterateGateX: 2, killGateX: 3,
-  readPurchases: 15, directionalPurchases: 6, maxCiHalfWidth: 0.25,
   hookRateFloor: 0.2, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3,
   noTouchDays: 14, minAdsetBudgetDaily: null, perAdFloorDaily: null, tier: null,
 };
@@ -83,21 +82,28 @@ function ad(over: Partial<LaunchRow> = {}): LaunchRow {
 }
 const revenueFor = (spend: number, roas: number) => spend * roas;
 
-// ── n < N is never a winner ──────────────────────────────────────────────────
+// ── Pure numbers: no purchase count gates a winner (owner, 2026-10-13) ──────
 {
   const huge = ad({ purchases: 14, spend: 1000, revenue: 20000 });
-  ok("14 purchases at raw 20.00x is not a winner (N = 15)", launchStatus(huge, T) !== "winner");
+  ok("14 purchases at 20.00x is a winner (no read-purchases gate)", launchStatus(huge, T) === "winner");
+  const one = ad({ purchases: 1, spend: 300, revenue: 900 });
+  ok("1 purchase at 3.00x, 90 days old, is a winner", launchStatus(one, T) === "winner");
   const exactly = ad({ purchases: 15 });
-  ok("15 purchases at raw 2.80x is a winner", launchStatus(exactly, T) === "winner");
-  ok("0 purchases is not a winner", launchStatus(ad({ purchases: 0, revenue: 0 }), T) !== "winner");
+  ok("15 purchases at 2.80x is a winner", launchStatus(exactly, T) === "winner");
+  ok("0 purchases is a real 0.00x, not a winner", launchStatus(ad({ purchases: 0, revenue: 0 }), T) !== "winner");
   ok("no spend is not a winner", launchStatus(ad({ spend: 0, revenue: 0, purchases: 20 }), T) !== "winner");
+  ok("classify: 1 purchase above kill and under target is a carrier", classify({ ...ZERO, spend: 500, revenue: 1000, purchases: 1 }, T, 90) === "carrier");
+  ok("classify: 0 purchases past the 3x CPA kill gate is a loser", classify({ ...ZERO, spend: 1600, revenue: 0, purchases: 0 }, T, 90) === "loser");
+  ok("classify: 0 purchases under the 3x CPA kill gate is open", classify({ ...ZERO, spend: 900, revenue: 0, purchases: 0 }, T, 90) === "open");
+  ok("classify: 2 purchases at 1.00x past the kill gate is a loser (no directional gate)", classify({ ...ZERO, spend: 2000, revenue: 2000, purchases: 2 }, T, 90) === "loser");
+  ok("classify: without a CPA (0) nothing is a loser", classify({ ...ZERO, spend: 5000, revenue: 0, purchases: 0 }, { ...T, targetCpa: 0 }, 90) === "open");
 }
 
 // ── classify() judges the real ROAS, no shrinkage ───────────────────────────
 {
-  // Revenue over spend, as it is: 2.25 exactly clears 2.25 at n = N = 15.
+  // Revenue over spend, as it is: 2.25 exactly clears 2.25.
   const onTheLine = ad({ purchases: 15, spend: 1000, revenue: revenueFor(1000, 2.25) });
-  ok("real 2.25 exactly at n = N = 15 wins", launchStatus(onTheLine, T) === "winner");
+  ok("real 2.25 exactly wins", launchStatus(onTheLine, T) === "winner");
   const justUnder = ad({ purchases: 15, spend: 1000, revenue: revenueFor(1000, 2.24) });
   ok("real 2.24 does not win", launchStatus(justUnder, T) !== "winner");
   // Shrunk toward a 1.00 average this ad used to read 1.93 and lose. Real: 2.40, a winner.
@@ -116,8 +122,8 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
       const spend = 800;
       const row = ad({ purchases, spend, revenue: spend * roas, ageDays: 200 });
       const direct = classify({ ...ZERO, spend, revenue: spend * roas, purchases }, T) === "winner";
-      // And the winner test is exactly: enough purchases and real ROAS at target.
-      const byHand = purchases >= T.readPurchases && roas >= T.targetRoas;
+      // And the winner test is exactly: real ROAS at target, whatever the purchases.
+      const byHand = roas >= T.targetRoas;
       cells += 1;
       if ((launchStatus(row, T) === "winner") === direct && direct === byHand) agree += 1;
     }
@@ -184,7 +190,8 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   const t = tileText(hitRate(rows, T), T, 0.074);
   ok("9 of 122, 18 open reads '7.4%'", t.value === "7.4%", String(t.value));
   ok("sub '9 of 122 launched · 18 open'", t.sub === "9 of 122 launched · 18 open", t.sub);
-  ok("info names the client's own bar, the age rule and the client's own reference", t.info.includes("15+ purchases") && t.info.includes("2.25+") && t.info.includes("14+ days") && t.info.includes(`${HIT_RATE_REFERENCE_LABEL}: 7.4%`), t.info);
+  ok("info names the client's own bar, the age rule and the client's own reference", t.info.includes("ROAS 2.25+") && t.info.includes("14+ days") && t.info.includes(`${HIT_RATE_REFERENCE_LABEL}: 7.4%`), t.info);
+  ok("info states no purchase bar", !/purchases/i.test(t.info), t.info);
   ok("ME3 C10: no fixed 5% anywhere in the tile text", !tileText(hitRate(rows, T), T, null).info.includes("5%") && !tileText(hitRate(rows, T), T, null).info.includes("Reference"));
   ok("info is at most 40 words", t.info.split(/\s+/).length <= 40);
   const noOpen = tileText(hitRate(rows.slice(0, 104), T), T);
@@ -329,16 +336,16 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   ok("ME3 C3: tile, grid and scorecard agree on every age x purchases x ROAS cell", same === cells, `${same}/${cells}`);
 }
 
-// ── ME3 C3: the grid colour follows classify(), directional gets 'promising' ─
+// ── ME3 C3: the grid colour follows classify() and the real number only ────
 {
-  const lines = { directionalPurchases: 6, targetRoas: 2.25, killRoas: 1.8 };
-  ok("tone: a read winner is winner", roasTone({ purchases: 40, roas: 2.6, outcome: "winner" }, lines) === "winner");
-  ok("tone: above target but not a winner (directional) is promising, not winner", roasTone({ purchases: 9, roas: 3.1, outcome: "open" }, lines) === "promising");
-  ok("tone: above target and read but too young is promising", roasTone({ purchases: 30, roas: 2.6, outcome: "open" }, lines) === "promising");
-  ok("tone: under the directional gate is muted whatever the ROAS", roasTone({ purchases: 3, roas: 9, outcome: "open" }, lines) === "muted");
-  ok("tone: below the kill line is negative, between the lines neutral", roasTone({ purchases: 40, roas: 1.2, outcome: "loser" }, lines) === "negative" && roasTone({ purchases: 40, roas: 2.0, outcome: "carrier" }, lines) === "neutral");
+  const lines = { targetRoas: 2.25, killRoas: 1.8 };
+  ok("tone: a winner is winner", roasTone({ roas: 2.6, outcome: "winner" }, lines) === "winner");
+  ok("tone: above target but too young is promising, not winner", roasTone({ roas: 2.6, outcome: "open" }, lines) === "promising");
+  ok("tone: 3 purchases at 9.00x is coloured by its number, never muted", roasTone({ roas: 9, outcome: classify({ ...ZERO, spend: 100, revenue: 900, purchases: 3 }, T, 40) }, lines) === "winner");
+  ok("tone: spend and no purchases (0.00x) is negative", roasTone({ roas: 0, outcome: "open" }, lines) === "negative");
+  ok("tone: below the kill line is negative, between the lines neutral", roasTone({ roas: 1.2, outcome: "loser" }, lines) === "negative" && roasTone({ roas: 2.0, outcome: "carrier" }, lines) === "neutral");
   const display = { ...T, targetRoas: Number.POSITIVE_INFINITY, killRoas: 0 };
-  ok("tone: with no lines set nothing is coloured", roasTone({ purchases: 40, roas: 9, outcome: classify({ ...ZERO, spend: 1000, revenue: 9000, purchases: 40 }, display, 99) }, { directionalPurchases: 6, targetRoas: Infinity, killRoas: 0 }) === "neutral");
+  ok("tone: with no lines set nothing is coloured", roasTone({ roas: 9, outcome: classify({ ...ZERO, spend: 1000, revenue: 9000, purchases: 40 }, display, 99) }, { targetRoas: Infinity, killRoas: 0 }) === "neutral");
 }
 
 // ── ME3 C4: hit rate independent of Target CPA, CPA unit, no 'Body problem' at CPA 0 ─
@@ -353,11 +360,12 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   };
   ok("no CPA: verdict thresholds stay null (verdicts and spend gates need it)", toThresholds(base) === null);
   const hit = toHitRateThresholds(base);
-  ok("no CPA: the hit rate still has thresholds (target + read threshold)", hit !== null && hit.targetRoas === 2.1 && hit.readPurchases === 10);
+  ok("no CPA: the hit rate still has thresholds (target only)", hit !== null && hit.targetRoas === 2.1);
+  ok("the thresholds carry no purchase gate any more", hit !== null && !("readPurchases" in hit) && !("directionalPurchases" in hit) && !("maxCiHalfWidth" in hit));
   ok("no target: no hit rate thresholds", toHitRateThresholds({ ...base, targetRoas: null }) === null);
   ok("no kill line: hit rate thresholds still exist, kill reads 0", toHitRateThresholds({ ...base, killRoas: null })?.killRoas === 0);
   const full = toThresholds({ ...base, targetCpa: 783 })!;
-  ok("with a CPA the hit rate and verdict thresholds agree on every winner input", hit !== null && hit.targetRoas === full.targetRoas && hit.readPurchases === full.readPurchases);
+  ok("with a CPA the hit rate and verdict thresholds agree on every winner input", hit !== null && hit.targetRoas === full.targetRoas);
   const row = ad({ purchases: 12, spend: 1000, revenue: 2900 });
   ok("a winner is a winner with or without a CPA", launchStatus(row, hit!) === launchStatus(row, full));
   ok("hit rate without CPA is a number", hitRate([row, ad({ purchases: 1, revenue: 5 })], hit!).rate === 0.5);

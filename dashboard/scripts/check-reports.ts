@@ -552,10 +552,10 @@ if (real.registry) {
         return /date predicate/.test(String(error));
       }
     })());
-    const T = (targetRoas: number, readPurchases: number) => ({ killRoas: 1.8, targetRoas, targetCpa: 500, grossMargin: null, scaleMultiplier: 1.2, aggressiveMultiplier: 2, holdGateX: 1, iterateGateX: 2, killGateX: 3, readPurchases, directionalPurchases: 6, maxCiHalfWidth: 0.25, hookRateFloor: 0.2, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3, noTouchDays: 14, minAdsetBudgetDaily: null, perAdFloorDaily: null, tier: null });
+    const T = (targetRoas: number) => ({ killRoas: 1.8, targetRoas, targetCpa: 500, grossMargin: null, scaleMultiplier: 1.2, aggressiveMultiplier: 2, holdGateX: 1, iterateGateX: 2, killGateX: 3, hookRateFloor: 0.2, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3, noTouchDays: 14, minAdsetBudgetDaily: null, perAdFloorDaily: null, tier: null });
     const withT = (t: ReturnType<typeof T> | null) => realCompile({ ...w, clients: w.clients.map((c) => ({ ...c, creativeThresholds: t })) });
-    const a = withT(T(2.25, 15));
-    const b = withT(T(3, 25));
+    const a = withT(T(2.25));
+    const b = withT(T(3));
     const n = withT(null);
     check("HR3: changing thresholds leaves SQL and cache key byte-identical", a.sql === q.sql && b.sql === q.sql && n.sql === q.sql && a.key === q.key && b.key === q.key && n.key === q.key && JSON.stringify(a.params) === JSON.stringify(b.params));
     check("HR3: no threshold value anywhere in SQL or params", !/2\.25|readPurchases|target/i.test(a.sql + JSON.stringify(a.params)));

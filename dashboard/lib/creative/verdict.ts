@@ -2,38 +2,31 @@
  * The decision engine.
  *
  * Gate order comes from `agency/_processes/meta-creative-engine/07-analyzing.md`
- * and is not re-derived here, it is executed. What this file adds in front of
- * it is the honesty ladder: five states the tool can be in *before* it is
- * entitled to say scale or kill.
+ * and is not re-derived here, it is executed. In front of it sit the states in
+ * which the tool declines to say scale or kill: no delivery, inside the
+ * no-touch window, and below the spend gate, where "needs more data" carries a
+ * price in spend.
  *
- * ── Why the ladder matters more than the gates ─────────────────────────────
- * The gates were written for accounts with enough purchases to read. At
- * The pilot client's volume most rows never reach that, so a tool that always emits one
- * of SCALE / HOLD / ITERATE / KILL is guessing four times out of five while
- * looking equally confident each time. The ladder makes "we cannot tell yet" a
- * first-class answer, and `NEEDS MORE DATA` carries a price, which turns it
- * from an excuse into a decision somebody can take.
+ * ── Pure numbers (owner decision, 2026-10-13) ───────────────────────────────
+ * The verdict is a plain comparison of the real ROAS (revenue over spend) with
+ * the client's lines. No purchase count, confidence interval or learning-phase
+ * count gates it. What still gates it is time (the no-touch window) and money
+ * (the hold, iterate and kill gates in multiples of target CPA). Zero
+ * purchases on real spend is a ROAS of 0.00, judged like any other value.
  *
  * ── The rule that separates the two halves of the product ──────────────────
- * AD LEVEL NEVER PRODUCES A MONEY VERDICT. Impression-based metrics have 50 to
- * 100 times more samples than purchase-based ones for the same spend, so at
- * 3 000 Kč of the pilot client spend hook rate is readable to ±1.4% while ROAS is
- * readable to ±96%. The fast loop therefore produces iteration instructions,
- * and the slow loop, ad set and above, produces money.
+ * AD LEVEL NEVER PRODUCES A MONEY VERDICT. The fast loop, one ad, produces
+ * iteration instructions from attention metrics, and the slow loop, ad set and
+ * above, produces money.
  *
- * There is a second reason, and it is the one that costs money when ignored:
- * last-click ROAS hides Meta's multi-view sequencing, so a low-ROAS ad inside a
- * working ad set is likely the opener driving the converters above it. Turning
- * it off destroys the sequence. `07-analyzing.md` states it plainly and the
- * learnings file has three measured cases of it.
+ * The reason is the one that costs money when ignored: last-click ROAS hides
+ * Meta's multi-view sequencing, so a low-ROAS ad inside a working ad set is
+ * likely the opener driving the converters above it. Turning it off destroys
+ * the sequence. `07-analyzing.md` states it plainly and the learnings file has
+ * three measured cases of it.
  */
 
-import {
-  interval,
-  purchasesToClear,
-  spendToDecide,
-  type CreativeThresholds,
-} from "@/lib/creative/stats";
+import type { CreativeThresholds } from "@/lib/creative/stats";
 import type { Components } from "@/lib/creative/model";
 import { derive } from "@/lib/creative/model";
 import { hasVideoMetrics } from "@/lib/creative/vocabulary";
@@ -48,7 +41,6 @@ export type VerdictCode =
   | "data-missing"
   | "too-early"
   | "needs-more-data"
-  | "not-separable"
   | "scale"
   | "aggressive-scale"
   | "hold"
@@ -60,23 +52,14 @@ export interface Verdict {
   label: string;
   /** One line of plain text. No prose beyond this, it is software, not a memo. */
   say: string;
-  /** Present on `needs-more-data`: what finding out costs. */
+  /** Present on `needs-more-data`: the spend still short of the hold gate. */
   costToDecide: number | null;
-  /** Present on `needs-more-data`: how many more purchases. */
-  purchasesShort: number | null;
   /** True when the engine is explicitly declining to decide. */
   undecided: boolean;
 }
 
 export interface VerdictInput {
-  /**
-   * Which grain this is. Only `adset` is subject to Meta's learning phase,
-   * see the gate below.
-   */
-  level?: "adset" | "concept";
   components: Components;
-  /** The real ROAS (revenue over spend, not adjusted). Null with no purchases. */
-  roas: number | null;
   /** Days since launch. Null when unknown, treated as outside the window. */
   ageDays: number | null;
   /** Set when the no-touch window has a known end date, for the message. */
@@ -106,50 +89,29 @@ export function unjudgedVerdict(): Verdict {
     label: "Not judged",
     say: "Set targets to see verdicts.",
     costToDecide: null,
-    purchasesShort: null,
     undecided: true,
   };
 }
 
 /**
- * How many times its own spend a row may need before "spend more to find out"
- * stops being advice. Ten is a judgement: it keeps "this cost 6x what it has
- * already spent to settle", a real decision somebody might take, and drops
- * the ones that would cost hundreds of times the entity's whole history.
- */
-const UNRESOLVABLE_MULTIPLE = 10;
-
-/**
- * Judge one ad set or concept.
+ * Judge one ad set or concept on its real ROAS.
  *
- * Order is the SOP's, with the ladder interleaved where each rung actually
- * applies rather than bolted on at the front:
- *
- *   0  DATA MISSING     no rows, or zero conversions past the investigate gate
- *   1  TOO EARLY        inside the no-touch window, or still in learning
- *   2  NEEDS MORE DATA  below the hold gate, or interval too wide to act on
- *   3  NOT SEPARABLE    past the gates, interval still spans a decision line
- *   4  the verdict
+ *   0  NO DATA          no delivery in the window
+ *   1  TOO EARLY        inside the no-touch window
+ *   2  NEEDS MORE DATA  below the hold gate (spend under 1x target CPA)
+ *   3  the SOP gates    kill, scale hard, scale, hold, iterate
  */
 export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdict {
   const c = input.components;
-  const roas = input.roas;
 
-  // ── 0. DATA MISSING ──────────────────────────────────────────────────────
+  // ── 0. NO DATA ───────────────────────────────────────────────────────────
+  // The one case with no ROAS at all: revenue over zero spend does not exist.
   if (c.spend <= 0) {
     return v("data-missing", "No data", "No delivery in this window.", true);
   }
-  // Zero conversions at 1.5x CPA is the classic broken-pixel signature. It is
-  // deliberately NOT a kill: killing here throws away a concept because a UTM
-  // was wrong, and that mistake is invisible afterwards.
-  if (c.purchases === 0 && c.spend >= 1.5 * t.targetCpa) {
-    return v(
-      "data-missing",
-      "Check tracking",
-      "Spent, no purchases. Check tracking.",
-      true
-    );
-  }
+  // The real ratio. With spend and no purchases this is 0.00, a number like
+  // any other: below the kill line it is killed at the kill gate.
+  const roas = c.revenue / c.spend;
 
   // ── 1. TOO EARLY ─────────────────────────────────────────────────────────
   if (input.ageDays !== null && input.ageDays < t.noTouchDays) {
@@ -163,12 +125,8 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
   }
 
   // ── 2. NEEDS MORE DATA, below the spend gate ────────────────────────────
-  // Checked BEFORE the learning gate on purpose, even though the SOP lists
-  // learning first. A row with one purchase and 300 Kč of spend is not "in
-  // Meta's learning phase" in any useful sense; it simply has not been given
-  // enough money to say anything. Telling someone what it costs to find out is
-  // an instruction. Telling them it is in learning is a fact they can do
-  // nothing with.
+  // A row with 300 Kč of spend has not been given enough money to say
+  // anything. Telling someone what it costs to find out is an instruction.
   if (c.spend < t.holdGateX * t.targetCpa) {
     const short = Math.max(0, t.holdGateX * t.targetCpa - c.spend);
     return {
@@ -176,101 +134,18 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
       label: "Needs more data",
       say: `Needs ${money(short)} more spend.`,
       costToDecide: short,
-      purchasesShort: null,
       undecided: true,
     };
-  }
-
-  // Meta's learning phase, AD SET LEVEL ONLY.
-  //
-  // The 50-conversion threshold is a property of an ad set's delivery
-  // optimisation, not of a creative idea. A concept running across a mature ad
-  // set and a fresh one is not "in learning": part of it is, and the mature
-  // part is perfectly readable. Applying this gate at concept level produced
-  // the contradiction it was meant to prevent, a row labelled Read confidence
-  // on 40 purchases, sitting next to a verdict saying nothing about it was
-  // stable yet.
-  if (input.level !== "concept" && c.purchases < 50) {
-    return v(
-      "too-early",
-      "Learning",
-      `Still learning (${c.purchases} of 50).`,
-      true
-    );
-  }
-
-  if (roas === null) {
-    return v("data-missing", "No data", "No revenue attributed in this window.", true);
-  }
-
-  const [lo, hi] = interval(roas, c.purchases);
-
-  // ── 3. NOT SEPARABLE, past the gate, interval still spans the kill line ──
-  //
-  // This is the state the whole product exists to be able to report, and it
-  // deliberately blocks only the DANGEROUS direction.
-  //
-  // A row above the kill line whose interval still reaches down through it
-  // cannot be told apart from break-even, so it gets no verdict, but it does
-  // get a price, because "this costs 4 200 Kč to find out" is a decision
-  // somebody can take and "insufficient data" is not.
-  //
-  // The asymmetry below is the point: a wrong SCALE costs a 20% budget
-  // increase and is reversible next Monday. A wrong KILL throws away a winner
-  // and is not reversible at all, the creative loses its social proof, its
-  // post engagement and its delivery history, and the learnings file has three
-  // measured cases of a re-uploaded winner returning a third to a half of what
-  // it made in place. Asymmetric costs justify asymmetric evidence bars, so a
-  // wide interval blocks a kill and does not block a scale.
-  if (roas > t.killRoas && lo <= t.killRoas) {
-    const needed = purchasesToClear(roas, t.killRoas);
-    const cost = spendToDecide(roas, c.purchases, t.killRoas, t.targetCpa);
-    const short = needed === null ? null : Math.max(0, needed - c.purchases);
-
-    // Above the aggressive-scale line the point estimate is far enough clear
-    // that waiting costs more than acting. Fall through to the verdict.
-    if (roas < t.targetRoas * t.scaleMultiplier) {
-      // ── When the price is not a price ──────────────────────────────────
-      // The closer an estimate sits to the line, the more data separating them
-      // takes, and the cost runs to infinity as the two converge. A row at 1.83
-      // against a 1.80 kill line needs about twenty thousand more purchases,
-      // arithmetically correct, and useless as an instruction. Printing
-      // "$524,498 settles it" next to a concept that has spent $884 turns the
-      // most useful number on the screen into an obviously silly one, and a
-      // reader who sees one silly number stops trusting the others.
-      //
-      // So past a point the honest answer changes shape: it is not that we need
-      // more data, it is that this thing is sitting ON the line and no amount
-      // of spend anybody would authorise will move it off.
-      const unresolvable = cost === null || cost > c.spend * UNRESOLVABLE_MULTIPLE;
-
-      return {
-        code: "not-separable",
-        label: "Not separable",
-        say: unresolvable
-          ? `${fmt(roas)} sits on the ${fmt(t.killRoas)} kill line. Treat as break-even. Decide at ad set level.`
-          : `${fmt(roas)}, true value ${fmt(lo)} to ${fmt(hi)}. ${short} more purchases, about ${money(cost!)}, settles it.`,
-        costToDecide: unresolvable ? null : cost,
-        purchasesShort: unresolvable ? null : short,
-        undecided: true,
-      };
-    }
   }
 
   // ── 3. the SOP gates ─────────────────────────────────────────────────────
   // Kill first: a row below the line past the 3x CPA gate is losing money on
   // every sale, and every day it keeps its budget is a day the money is gone.
   if (roas <= t.killRoas && c.spend >= t.killGateX * t.targetCpa) {
-    // Say which of the two situations this is. "Interval 0.94-1.62, entirely
-    // below the line" and "1.55, but the interval still reaches 2.10" justify
-    // the same action and deserve very different learning notes.
-    const clear = hi < t.killRoas;
     return v(
       "kill",
       "Kill",
-      clear
-        ? `Below the ${fmt(t.killRoas)} kill line. Pause it.`
-        : `Past the ${t.killGateX}x CPA gate. Pause it.`,
+      `${fmt(roas)}, below the ${fmt(t.killRoas)} kill line past the ${t.killGateX}x CPA gate. Pause it.`,
       false
     );
   }
@@ -311,18 +186,20 @@ export function moneyVerdict(input: VerdictInput, t: CreativeThresholds): Verdic
     );
   }
 
-  // Above the kill line, under the iterate spend gate, nothing else applies.
-  // Holding is the SOP's answer below 2x CPA and it is also the honest one.
+  // Under a spend gate, nothing else applies. Holding is the SOP's answer
+  // below 2x CPA, and below the kill line it holds until the 3x CPA kill gate.
   return v(
     "hold",
     "Hold",
-    "Too noisy to iterate yet.",
+    roas <= t.killRoas
+      ? `${fmt(roas)}, below the kill line, under the ${t.killGateX}x CPA kill gate. Let it run.`
+      : `Under the ${t.iterateGateX}x CPA iterate gate. Let it run.`,
     false
   );
 }
 
 function v(code: VerdictCode, label: string, say: string, undecided: boolean): Verdict {
-  return { code, label, say, costToDecide: null, purchasesShort: null, undecided };
+  return { code, label, say, costToDecide: null, undecided };
 }
 
 function fmt(n: number): string {

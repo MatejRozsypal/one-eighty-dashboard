@@ -4,14 +4,14 @@
  * Hand-drawn SVG rather than Recharts, for the same reason as the retention
  * curve: both of these are unusual shapes with rules a chart library does not
  * have. The first pairs two bars per row on one shared scale; the second plots
- * confidence intervals against three shaded decision zones. Bending a library
+ * each row's real ROAS against three shaded decision zones. Bending a library
  * into either costs more code than drawing it.
  *
  * Server components, they take numbers and emit markup, and nothing here
  * responds to a click.
  */
 
-import { SEPARATION_LABELS, type Confidence } from "@/lib/creative/stats";
+import { ZONE_LABELS, zoneOf } from "@/lib/creative/stats";
 import { formatNumber, NO_VALUE } from "@/lib/format";
 
 export interface BreakdownRow {
@@ -24,11 +24,8 @@ export interface BreakdownRow {
   revenue: number;
   purchases: number;
   cpa: number | null;
+  /** Real ROAS. 0.00 with spend and no purchases; null only with no spend. */
   roas: number | null;
-  ciLow: number | null;
-  ciHigh: number | null;
-  confidence: Confidence;
-  readable: boolean;
   /**
    * What the Creatives grid filters on to show this row's ads. Null for the
    * untagged row, which is a residue rather than a value, there is no filter
@@ -82,15 +79,13 @@ export function SpendRevenueBars({
   // and an infinite target happen to fall out to.
   const judged = killRoas !== null && targetRoas !== null;
   const revColour = (r: BreakdownRow) =>
-    !r.readable
-      ? "var(--text-muted)"
-      : !judged
-        ? "var(--info)"
-        : r.roas !== null && r.roas >= targetRoas
-          ? "var(--accent)"
-          : r.roas !== null && r.roas < killRoas
-            ? "var(--negative)"
-            : "var(--info)";
+    !judged
+      ? "var(--info)"
+      : r.roas !== null && r.roas >= targetRoas
+        ? "var(--accent)"
+        : r.roas !== null && r.roas < killRoas
+          ? "var(--negative)"
+          : "var(--info)";
 
   return (
     <svg
@@ -123,7 +118,6 @@ export function SpendRevenueBars({
         const col = revColour(r);
         const wS = Math.max(2, (r.spend / maxV) * track);
         const wR = Math.max(2, (r.revenue / maxV) * track);
-        const dim = r.readable ? 1 : 0.45;
         return (
           <g key={r.key}>
             <text
@@ -131,7 +125,7 @@ export function SpendRevenueBars({
               y={y + 2}
               fontFamily="var(--font-sans)"
               fontSize="13"
-              fill={r.readable ? "var(--text-body)" : "var(--text-muted)"}
+              fill="var(--text-body)"
             >
               {clip(r.label, 26)}
             </text>
@@ -148,9 +142,9 @@ export function SpendRevenueBars({
             <rect x={LAB} y={y - 8} width={track} height={BH * 2 + GAP} rx="4"
                   fill="var(--gray-100)" opacity="0.5" />
             <rect x={LAB} y={y - 8} width={wS.toFixed(1)} height={BH} rx="3"
-                  fill="var(--text-muted)" opacity={0.8 * dim} />
+                  fill="var(--text-muted)" opacity={0.8} />
             <rect x={LAB} y={y - 8 + BH + GAP} width={wR.toFixed(1)} height={BH} rx="3"
-                  fill={col} opacity={0.9 * dim} />
+                  fill={col} opacity={0.9} />
 
             <text x={cV} y={y + 2} textAnchor="end" fontFamily="var(--font-mono)"
                   fontSize="12.5" fill="var(--text-muted)">
@@ -161,12 +155,12 @@ export function SpendRevenueBars({
               {fmtInt(r.revenue)}
             </text>
             <text x={cP} y={y + 11} textAnchor="end" fontFamily="var(--font-mono)"
-                  fontSize="13" fill={r.readable ? "var(--text-body)" : "var(--text-muted)"}>
+                  fontSize="13" fill="var(--text-body)">
               {r.purchases}
             </text>
             <text x={cR} y={y + 11} textAnchor="end" fontFamily="var(--font-mono)"
                   fontSize="13" fontWeight="500"
-                  fill={!r.readable ? "var(--text-muted)" : col === "var(--info)" ? "var(--text-strong)" : col}>
+                  fill={col === "var(--info)" ? "var(--text-strong)" : col}>
               {r.roas === null ? NO_VALUE : r.roas.toFixed(2)}
             </text>
           </g>
@@ -177,33 +171,28 @@ export function SpendRevenueBars({
 }
 
 /**
- * What we can and cannot tell apart.
+ * Each row's real ROAS against the two lines.
  *
- * The most important chart in the product. Each row is its 95% interval drawn
- * across three shaded zones, losing money, profitable but under target, at or
- * above target, with a plain-language readout on the right.
- *
- * The readout is the payload. "2.15" invites a decision; "2.15, and the true
- * value is somewhere between 1.42 and 2.88, so we cannot separate it from the
- * kill line" prevents one. At this account's volume the second sentence is true
- * far more often than the first, and a chart that only drew the point estimate
- * would hide that completely.
+ * One dot per row across three shaded zones, losing money, profitable but
+ * under target, at or above target, with the zone it falls in written on the
+ * right. A plain comparison of the number with the lines, the same one every
+ * verdict makes (owner decision 2026-10-13: pure numbers, no intervals).
  */
-export function IntervalChart({
+export function RoasChart({
   rows,
   killRoas,
   targetRoas,
 }: {
   rows: BreakdownRow[];
   /**
-   * Null when the client has set no lines. The intervals still draw, how far
-   * apart two rows are is a measurement, but the three zones, the two vertical
-   * lines and the verdict wording on the right all come off, because each of
-   * them is a claim about a threshold that does not exist.
+   * Null when the client has set no lines. The dots still draw, how far apart
+   * two rows are is a measurement, but the three zones, the two vertical lines
+   * and the zone wording on the right all come off, because each of them is a
+   * claim about a threshold that does not exist.
    *
    * Passing the display stand-ins here instead would put `targetRoas` at
    * Infinity, and `maxR` is derived from it: the x-scale would collapse and
-   * every bar would render at zero width.
+   * every dot would sit at zero.
    */
   killRoas: number | null;
   targetRoas: number | null;
@@ -218,7 +207,7 @@ export function IntervalChart({
   const R = 176;
   const maxR = judged
     ? Math.max(4.5, targetRoas * 1.8)
-    : Math.max(4.5, ...top.map((r) => (r.ciHigh ?? r.roas ?? 0) * 1.1));
+    : Math.max(4.5, ...top.map((r) => (r.roas ?? 0) * 1.1));
   const h = top.length * RH + 44;
   const plotB = top.length * RH + 8;
   const X = (v: number) => L + Math.min(1, v / maxR) * (W - L - R);
@@ -232,8 +221,8 @@ export function IntervalChart({
   return (
     <svg viewBox={`0 0 ${W} ${h}`} className="h-auto w-full" role="img"
          aria-label={judged
-           ? "ROAS with 95% intervals against the kill line and the target"
-           : "ROAS with 95% intervals. No kill line or target is set for this client."}>
+           ? "ROAS of each row against the kill line and the target"
+           : "ROAS of each row. No kill line or target is set for this client."}>
       {judged && (
         <>
           <rect x={X(0)} y="4" width={X(killRoas) - X(0)} height={plotB - 4}
@@ -248,7 +237,7 @@ export function IntervalChart({
       {/* ── The scale ────────────────────────────────────────────────────
           Without these the axis has two labelled points at most, both of them
           policy rather than measurement, and a reader cannot tell where 2.0
-          sits on the bar in front of them. Whole numbers, minus any that would
+          sits on the row in front of them. Whole numbers, minus any that would
           collide with the kill or target label, a tick printed on top of
           "kill 1.80" is worse than no tick. */}
       {ticks.map((v) => (
@@ -278,62 +267,42 @@ export function IntervalChart({
 
       {top.map((r, i) => {
         const y = i * RH + 22;
-        const lo = r.ciLow ?? 0;
-        const hi = Math.min(r.ciHigh ?? 0, maxR);
         const point = r.roas ?? 0;
-
-        let say: string;
-        let colour: string;
-        if (!judged) {
-          // The width of the interval is still worth stating: it is the one
-          // thing here that does not depend on a threshold.
-          say = r.readable
-            ? `${lo.toFixed(2)} to ${hi.toFixed(2)}`
-            : SEPARATION_LABELS["too-little-data"];
-          colour = "var(--text-muted)";
-        } else if (!r.readable) {
-          say = SEPARATION_LABELS["too-little-data"];
-          colour = "var(--text-muted)";
-        } else if (lo >= targetRoas) {
-          say = SEPARATION_LABELS["above-target"];
-          colour = "var(--growth-700)";
-        } else if ((r.ciHigh ?? 0) < killRoas) {
-          say = SEPARATION_LABELS["below-kill"];
-          colour = "var(--negative-text)";
-        } else if (lo >= killRoas) {
-          say = SEPARATION_LABELS["profitable-under-target"];
-          colour = "var(--text-body)";
-        } else {
-          say = SEPARATION_LABELS["cannot-tell"];
-          colour = "var(--text-muted)";
-        }
-
-        const dot = !judged
-          ? "var(--text-strong)"
-          : point >= targetRoas
+        const zone = judged ? zoneOf(point, { killRoas, targetRoas }) : null;
+        const say = zone ? ZONE_LABELS[zone] : null;
+        const colour =
+          zone === "above-target"
+            ? "var(--growth-700)"
+            : zone === "below-kill"
+              ? "var(--negative-text)"
+              : "var(--text-body)";
+        const dot =
+          zone === "above-target"
             ? "var(--accent)"
-            : point < killRoas
+            : zone === "below-kill"
               ? "var(--negative)"
               : "var(--text-strong)";
 
         return (
-          <g key={r.key} opacity={r.readable ? 1 : 0.5}>
+          <g key={r.key}>
             <text x="0" y={y + 4} fontFamily="var(--font-sans)" fontSize="12.5"
-                  fill={r.readable ? "var(--text-body)" : "var(--text-muted)"}>
+                  fill="var(--text-body)">
               {clip(r.label, 32)}
             </text>
-            <line x1={X(lo)} x2={X(hi)} y1={y} y2={y} stroke="var(--border-strong)"
-                  strokeWidth="8" strokeLinecap="round" />
+            <line x1={X(0)} x2={X(point)} y1={y} y2={y} stroke="var(--border-strong)"
+                  strokeWidth="2" strokeLinecap="round" />
             <circle cx={X(point)} cy={y} r="5" fill={dot} />
             <text x={X(point)} y={y - 11} textAnchor="middle"
                   fontFamily="var(--font-mono)" fontSize="11"
-                  fill={r.readable ? "var(--text-strong)" : "var(--text-muted)"}>
+                  fill="var(--text-strong)">
               {point.toFixed(2)}
             </text>
-            <text x={W} y={y + 4} textAnchor="end" fontFamily="var(--font-sans)"
-                  fontSize="12" fill={colour}>
-              {say}
-            </text>
+            {say && (
+              <text x={W} y={y + 4} textAnchor="end" fontFamily="var(--font-sans)"
+                    fontSize="12" fill={colour}>
+                {say}
+              </text>
+            )}
           </g>
         );
       })}

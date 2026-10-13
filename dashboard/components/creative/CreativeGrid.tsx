@@ -25,7 +25,7 @@ import { UNTAGGED } from "@/lib/creative/model";
 import { NO_VALUE } from "@/lib/format";
 import { AdDetail } from "@/components/creative/AdDetail";
 import type { RangeLabel } from "@/lib/params";
-import { ConfidenceChip, SpendBar, Tag, money, pct, ratePct, roas } from "@/components/creative/primitives";
+import { SpendBar, Tag, money, pct, ratePct, roas } from "@/components/creative/primitives";
 
 const ALL = "*";
 
@@ -69,7 +69,6 @@ export function CreativeGrid({
   killRoas,
   targetRoas,
   targetCpa,
-  directionalPurchases,
   focus,
   rangeLabel,
 }: {
@@ -79,7 +78,6 @@ export function CreativeGrid({
   killRoas: number;
   targetRoas: number;
   targetCpa: number;
-  directionalPurchases: number;
   focus?: GridFocus | null;
   /** The period the grid is showing, passed on to the detail panel's header. */
   rangeLabel?: RangeLabel | null;
@@ -197,7 +195,6 @@ export function CreativeGrid({
               currency={currency}
               killRoas={killRoas}
               targetRoas={targetRoas}
-              directionalPurchases={directionalPurchases}
               onOpen={() => setOpen(ad)}
             />
           ))}
@@ -225,7 +222,6 @@ function Tile({
   currency,
   killRoas,
   targetRoas,
-  directionalPurchases,
   onOpen,
 }: {
   ad: AdView;
@@ -234,30 +230,26 @@ function Tile({
   currency: string;
   killRoas: number;
   targetRoas: number;
-  directionalPurchases: number;
   onOpen: () => void;
 }) {
-  // A row the engine cannot read gets a grey bar and a muted figure. Colouring
-  // a three-purchase ad green would be the single most misleading pixel here.
-  // Green is for read winners only (`classify`, the test every surface shares);
-  // an ad that clears the target without being one yet is "promising".
-  const tone = roasTone(ad, { directionalPurchases, targetRoas, killRoas });
+  // The real ROAS decides the colour, whatever the purchase count. Green is
+  // for winners only (`classify`, the test every surface shares); an ad that
+  // clears the target without being one yet (too young) is "promising".
+  const tone = roasTone(ad, { targetRoas, killRoas });
   // Winner and promising share the legible green text step; the winner is the
   // heavier weight, so the two still read apart without a lighter, illegible
   // green for the second one.
   const roasColour =
-    tone === "muted"
-      ? "font-medium text-content-muted"
-      : tone === "winner"
-        ? "font-semibold text-positive-text"
-        : tone === "promising"
-          ? "font-medium text-positive-text"
-          : tone === "negative"
-            ? "font-medium text-negative-text"
-            : "font-medium text-content-strong";
+    tone === "winner"
+      ? "font-semibold text-positive-text"
+      : tone === "promising"
+        ? "font-medium text-positive-text"
+        : tone === "negative"
+          ? "font-medium text-negative-text"
+          : "font-medium text-content-strong";
   // The colour of the figure and of the spend bar is the verdict, so it is
-  // also said in words: as the hover title and to a screen reader. The row
-  // already carries the confidence chip, so a visible label would crowd it.
+  // also said in words: as the hover title and to a screen reader. A visible
+  // label would crowd the row.
   const roasVerdict =
     tone === "winner"
       ? "Winner"
@@ -265,9 +257,7 @@ function Tile({
         ? "Promising, above target ROAS"
         : tone === "negative"
           ? "Below kill ROAS"
-          : tone === "muted"
-            ? "Too few purchases to judge"
-            : null;
+          : null;
 
   return (
     // The tile opens the detail on a click anywhere, but its keyboard and
@@ -367,7 +357,6 @@ function Tile({
               {roas(ad.roas)}
               {roasVerdict && <span className="sr-only">, {roasVerdict}</span>}
             </span>
-            <ConfidenceChip level={ad.confidence} />
           </Row>
           {/* Attention for video, conversions for a static. A static reports no
               hook rate at all, and an empty one would read as missing data

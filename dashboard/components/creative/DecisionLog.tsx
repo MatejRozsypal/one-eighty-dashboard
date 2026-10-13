@@ -34,8 +34,6 @@ export interface ReviewRow {
   spend: number;
   purchases: number;
   roas: number | null;
-  ciLow: number | null;
-  ciHigh: number | null;
   ageDays: number | null;
   verdictCode: string;
   verdictLabel: string;
@@ -148,11 +146,6 @@ function ReviewItem({
           <span>{money(row.spend, currency)}</span>
           <span>{row.purchases} purchases</span>
           <span className="text-content-strong">ROAS {roas(row.roas)}</span>
-          {row.ciLow !== null && row.ciHigh !== null && (
-            <span>
-              {roas(row.ciLow)} to {roas(row.ciHigh)}
-            </span>
-          )}
           {row.ageDays !== null && <span>{row.ageDays}d</span>}
         </span>
       </div>
@@ -202,8 +195,6 @@ function ReviewItem({
                     spend: row.spend,
                     purchases: row.purchases,
                     roas: row.roas,
-                    ciLow: row.ciLow,
-                    ciHigh: row.ciHigh,
                   });
                   setResult(r);
                 })

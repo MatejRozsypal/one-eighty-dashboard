@@ -519,7 +519,7 @@ export const METRICS: MetricRegistry = defineMetrics({
   // = sum of winners / sum of launched, each client judged by its own bar.
   hit_rate: ratio("Hit rate", "creative", [t("ad_launch.winners")], [t("ad_launch.launched")], {
     ...PCT_UP,
-    description: "Winners among Meta ads first delivered in the period, relaunches excluded. Winner: the client's purchase and ROAS bar on 7-day click + 1-day view, lifetime to date, at least 14 days after first delivery.",
+    description: "Winners among Meta ads first delivered in the period, relaunches excluded. Winner: the client's target ROAS on 7-day click + 1-day view, lifetime to date, at least 14 days after first delivery.",
     benchmarkable: false,
     caveats: ["cohort_maturing", "lifetime_to_date"],
     aliases: ["creative hit rate", "winner rate"],

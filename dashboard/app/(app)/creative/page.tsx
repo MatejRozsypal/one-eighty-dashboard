@@ -16,8 +16,8 @@
  *
  * ── One winner test ────────────────────────────────────────────────────────
  * Every count and colour on this page comes from the same `classify()` as the
- * hit rate: the client's read threshold, real ROAS (revenue over spend, not
- * adjusted) against target, and 14 days of age. The scorecard counts ads WITH
+ * hit rate: real ROAS (revenue over spend, not adjusted) against target, and
+ * 14 days of age, whatever the purchase count. The scorecard counts ads WITH
  * DELIVERY in the window; the hit rate counts ads FIRST DELIVERED in it.
  */
 
@@ -139,8 +139,8 @@ export default async function CreativesPage({
   const formatParam = one(searchParams.hrfmt);
   const format: FormatFilter = FORMAT_FILTERS.find((f) => f === formatParam) ?? "all";
   const launched = launches && launches.state === "ready" ? launches : null;
-  // The hit rate needs a target ROAS and a read threshold, not a Target CPA
-  // (`hitThresholds`), so a client without a CPA still gets one.
+  // The hit rate needs a target ROAS, not a Target CPA (`hitThresholds`), so a
+  // client without a CPA still gets one.
   const hit = launched ? hitRate(inRange(launched.rows, ctx.params.range), hitThresholds) : null;
   // The reference is the client's own hit rate over its trailing 365 days of
   // launches. There is no fixed benchmark.
@@ -244,7 +244,7 @@ export default async function CreativesPage({
       label: "Winners with delivery in period",
       value: w ? String(w.winners) : NO_VALUE,
       sub: w ? `${w.decided} decided` : undefined,
-      info: `Ads with delivery in the period at or above target ROAS, with enough purchases to read and ${WINNER_MIN_AGE_DAYS}+ days since first delivery.`,
+      info: `Ads with delivery in the period at or above target ROAS and ${WINNER_MIN_AGE_DAYS}+ days since first delivery.`,
     },
     {
       label: "Carriers",
@@ -254,7 +254,9 @@ export default async function CreativesPage({
     {
       label: "Losers",
       value: w ? String(w.losers) : NO_VALUE,
-      info: "Below the kill line.",
+      info: thresholds
+        ? `Below the kill line, with at least ${thresholds.killGateX}x target CPA spent.`
+        : "Below the kill line.",
     },
     // Not winners over ads with delivery: that moves with how many old ads
     // are still running. Winners over ads FIRST delivered in the period.
@@ -332,7 +334,6 @@ export default async function CreativesPage({
               killRoas={display.killRoas}
               targetRoas={display.targetRoas}
               targetCpa={display.targetCpa}
-              directionalPurchases={display.directionalPurchases}
               focus={focus}
               rangeLabel={rangeLabel(ctx.params)}
             />

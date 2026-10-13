@@ -23,7 +23,6 @@ import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
 import { PageControls } from "@/components/controls/PageControls";
 import {
-  ConfidenceChip,
   CreativeNotConnected,
   Scorecard,
   SectionHead,
@@ -40,7 +39,6 @@ import { HIT_RATE_REFERENCE_LABEL, formatRate, hitRate, inRange, referenceRate }
 import { getCreatorTerms, getProductionRates } from "@/lib/creative/store";
 import { adCost, contributionMargin, type CreatorTerms, type ProductionRate } from "@/lib/creative/cost";
 import { classify, groupBy, sum } from "@/lib/creative/model";
-import { confidenceOf } from "@/lib/creative/stats";
 import { isNetNew } from "@/lib/creative/velocity";
 
 export const metadata: Metadata = { title: "Production ROI" };
@@ -123,7 +121,6 @@ export default async function ProductionPage({
       winners: judged
         ? g.ads.filter((a) => classify(a.components, thresholds, ageOf(ctx, a.adId)) === "winner").length
         : 0,
-      confidence: confidenceOf(components.purchases, display),
     };
   });
 
@@ -181,12 +178,11 @@ export default async function ProductionPage({
                   ["Contribution", "n/a when no gross margin is set."],
                   ["Net of production"],
                   ["Return"],
-                  ["Confidence"],
                 ] as Array<[string, string?]>
               ).map(([h, info], i) => (
                 <th key={h}
                     className={`border-b border-hairline bg-gray-50/60 px-3.5 py-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-content-muted ${
-                      i === 0 || i === 9 ? "text-left" : "text-right"
+                      i === 0 ? "text-left" : "text-right"
                     }`}>
                   <span className="inline-flex items-center gap-1.5">
                     {h}
@@ -198,7 +194,7 @@ export default async function ProductionPage({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.key} className={r.purchases >= display.directionalPurchases ? "" : "row-unreadable"}>
+              <tr key={r.key}>
                 <td className="border-b border-hairline px-3.5 py-2.5 text-[13px] font-medium text-content-strong">
                   {r.label}
                 </td>
@@ -233,9 +229,6 @@ export default async function ProductionPage({
                       <span className="sr-only">{r.ret >= 1 ? " (1× or above)" : " (below 1×)"}</span>
                     </>
                   )}
-                </td>
-                <td className="border-b border-hairline px-3.5 py-2.5">
-                  <ConfidenceChip level={r.confidence} />
                 </td>
               </tr>
             ))}

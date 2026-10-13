@@ -59,15 +59,16 @@ async function main() {
     ...extra,
   });
   const thresholds = {
-    targetRoas: 2.5, targetCpa: 300, killRoas: 1, readPurchases: 15, directionalPurchases: 8,
+    targetRoas: 2.5, targetCpa: 300, killRoas: 1,
   } as unknown as Parameters<typeof hitRate>[1];
-  const rows = [launch("a", "2026-09-05"), launch("b", "2026-09-10", { purchases: 5 })];
+  // b is under target (0.50x): purchases no longer decide, the ROAS does.
+  const rows = [launch("a", "2026-09-05"), launch("b", "2026-09-10", { purchases: 5, revenue: 500 })];
   const cur = hitRate(inRange(rows, { from: "2026-09-01", to: "2026-09-30" }), thresholds);
   const prevEmpty = hitRate(inRange(rows, { from: "2026-08-01", to: "2026-08-31" }), thresholds);
   check("hit rate: current period has launches", cur.launched === 2);
   check("hit rate: empty comparison period has 0 launched and a null rate", prevEmpty.launched === 0 && prevEmpty.rate === null);
   check("hit rate: empty comparison period gives no change", rateChange(cur.rate, prevEmpty.rate, prevEmpty.launched) === null);
-  const withPrev = [...rows, launch("c", "2026-08-12"), launch("d", "2026-08-20", { purchases: 5 })];
+  const withPrev = [...rows, launch("c", "2026-08-12"), launch("d", "2026-08-20", { purchases: 5, revenue: 500 })];
   const prevFull = hitRate(inRange(withPrev, { from: "2026-08-01", to: "2026-08-31" }), thresholds);
   check("hit rate: comparison period with launches gives a change", prevFull.launched === 2 && rateChange(cur.rate, prevFull.rate, prevFull.launched) !== null);
 

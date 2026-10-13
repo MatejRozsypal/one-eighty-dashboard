@@ -9,17 +9,18 @@
  *   launched  = ads whose first delivery falls in the period, not pre-existing
  *               when the client's Meta history starts, and not a relaunch of an
  *               asset that already ran
- *   winner    = `classify()` over the ad's LIFETIME totals: purchases >=
- *               readPurchases, real ROAS (revenue over spend, not adjusted)
- *               >= target, and at least `WINNER_MIN_AGE_DAYS` since first
- *               delivery. The scorecard, the grid, Concepts, Production, Paid
- *               and Reports call the same `classify()` with the same age rule.
+ *   winner    = `classify()` over the ad's LIFETIME totals: real ROAS
+ *               (revenue over spend, not adjusted) >= target and at least
+ *               `WINNER_MIN_AGE_DAYS` since first delivery, whatever the
+ *               purchase count. The scorecard, the grid, Concepts,
+ *               Production, Paid and Reports call the same `classify()` with
+ *               the same age rule.
  *   open      = not a winner and younger than 60 days. It may still qualify
  *   hit rate  = winners / launched, pooled (sum over sum) for any rollup
  *   reference = the client's OWN hit rate over its trailing 365 days of
  *               launches ("Your 12-mo rate"). There is no fixed benchmark.
  *
- * Needs a target ROAS and a read threshold only, never a Target CPA (C4).
+ * Needs a target ROAS only, never a Target CPA (C4).
  *
  * Thresholds are read from the existing creative settings and applied here, in
  * TypeScript. They never reach SQL.
@@ -356,9 +357,9 @@ export function conceptSplit(
 // Words
 // ---------------------------------------------------------------------------
 
-/** "15+ purchases, ROAS 2.25+" from the client's own settings. */
+/** "ROAS 2.25+" from the client's own settings. */
 export function winnerBar(t: CreativeThresholds): string {
-  return `${t.readPurchases}+ purchases, ROAS ${t.targetRoas.toFixed(2)}+`;
+  return `ROAS ${t.targetRoas.toFixed(2)}+`;
 }
 
 /** Whole-number-of-tenths percent: "7.4%". Null reads as the caller's NO_VALUE. */

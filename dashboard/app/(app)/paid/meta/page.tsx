@@ -113,7 +113,7 @@ export default async function PaidMetaPage({
     );
   }
 
-  // The hit rate needs a target ROAS and a read threshold, not a Target CPA.
+  // The hit rate needs a target ROAS, not a Target CPA.
   const thresholds = toHitRateThresholds(creativeSettings);
   const launched = launches.state === "ready" ? launches : null;
   const hit = launched ? hitRate(inRange(launched.rows, params.range), thresholds) : null;

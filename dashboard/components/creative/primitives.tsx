@@ -25,7 +25,6 @@ import {
 import { Header } from "@/components/shell/Header";
 import { NotConnected } from "@/components/ui/EmptyState";
 import { InfoTip } from "@/components/ui/InfoTip";
-import { CONFIDENCE_LABELS, type Confidence } from "@/lib/creative/stats";
 import type { VerdictCode } from "@/lib/creative/verdict";
 import { DeltaChip, type GoodWhen } from "@/components/ui/Delta";
 
@@ -58,32 +57,8 @@ export const unitMoney = (v: number | null, currency: string): string =>
 // Chips
 // ---------------------------------------------------------------------------
 
-const CONFIDENCE_STYLES: Record<Confidence, string> = {
-  read: "bg-accent-soft text-growth-700",
-  directional: "bg-info/10 text-info",
-  noise: "bg-gray-100 text-content-muted",
-};
-
 /**
- * How much weight this row's number can carry.
- *
- * Separate from the verdict on purpose: "Read" and "Kill" are two different
- * statements, and collapsing them into one chip would let a confident-looking
- * verdict borrow authority from a number that has none.
- */
-export function ConfidenceChip({ level }: { level: Confidence }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-2 whitespace-nowrap rounded-pill px-3 py-1.5 font-mono text-[12px] font-medium uppercase tracking-[0.08em] ${CONFIDENCE_STYLES[level]}`}
-    >
-      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
-      {CONFIDENCE_LABELS[level]}
-    </span>
-  );
-}
-
-/**
- * The three "no verdict" states are outlined rather than filled: they say the
+ * The two "no verdict" states are outlined rather than filled: they say the
  * engine declined to judge, and a filled chip would borrow the authority of a
  * real verdict. The outline is solid. Dashed borders are reserved for the empty
  * states (components/ui/EmptyState), so a dashed box always means "nothing here".
@@ -100,7 +75,6 @@ const VERDICT_STYLES: Record<VerdictCode, string> = {
   "too-early": "bg-info/10 text-info",
   "data-missing": "bg-negative/10 text-negative-700",
   "needs-more-data": OUTLINE,
-  "not-separable": OUTLINE,
 };
 
 export function VerdictChip({ code, label }: { code: VerdictCode; label: string }) {
@@ -346,18 +320,16 @@ export function SectionHead({
 }
 
 /**
- * A spend bar, coloured by where the row sits against the two lines.
- *
- * Grey when the row cannot be read: colouring a two-purchase row green would be
- * the single most misleading pixel in the product.
+ * A spend bar, coloured by where the row's real ROAS sits against the two
+ * lines.
  */
 export function SpendBar({
   fraction,
   tone,
 }: {
   fraction: number;
-  /** `winner` is the green of a read winner; `promising` a lighter tone for one that clears the target without being a winner yet. `accent` is the same green as `winner`. */
-  tone: "accent" | "winner" | "promising" | "negative" | "neutral" | "muted";
+  /** `winner` is the green of a winner; `promising` a lighter tone for one that clears the target without being a winner yet. `accent` is the same green as `winner`. */
+  tone: "accent" | "winner" | "promising" | "negative" | "neutral";
 }) {
   const fill =
     tone === "accent" || tone === "winner"
@@ -365,10 +337,8 @@ export function SpendBar({
       : tone === "promising"
         ? "bg-accent/45"
         : tone === "negative"
-        ? "bg-negative"
-        : tone === "neutral"
-          ? "bg-content-muted"
-          : "bg-gray-200";
+          ? "bg-negative"
+          : "bg-content-muted";
   return (
     <div className="h-[5px] min-w-[40px] overflow-hidden rounded-xs bg-gray-100">
       <div

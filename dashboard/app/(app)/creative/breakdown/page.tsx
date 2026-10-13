@@ -11,10 +11,11 @@
  * it would be its own kind of dishonesty, but it says so at the top and it says
  * so with the measured number rather than a recollection of it.
  *
- * ── Rows nobody can read are greyed and hatched, never hidden ──────────────
- * Dropping them would silently rebase every share-of-spend percentage on a
- * denominator that excludes them, and every remaining figure would still look
- * entirely reasonable.
+ * ── Every row shows its real numbers, however few purchases ───────────────
+ * Pure numbers (owner decision 2026-10-13): no row is greyed, hatched or
+ * relabelled "too little data". A row with spend and no purchases reads 0.00x.
+ * Dropping or muting small rows would also silently rebase the reader's sense
+ * of where the spend went.
  */
 
 import type { Metadata } from "next";
@@ -22,13 +23,12 @@ import { Header } from "@/components/shell/Header";
 import { CreativeBar } from "@/components/creative/CreativeBar";
 import { PageControls } from "@/components/controls/PageControls";
 import {
-  IntervalChart,
+  RoasChart,
   ShareOverTime,
   SpendRevenueBars,
   type BreakdownRow,
 } from "@/components/creative/BreakdownCharts";
 import {
-  ConfidenceChip,
   CreativeNotConnected,
   SectionHead,
   SpendBar,
@@ -40,8 +40,7 @@ import {
 import { NoData, NotConnected } from "@/components/ui/EmptyState";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Notice } from "@/components/ui/Notice";
-import { NO_VALUE } from "@/lib/format";
-import { SEPARATION_LABELS } from "@/lib/creative/stats";
+import { ZONE_LABELS } from "@/lib/creative/stats";
 import { conceptLabel } from "@/lib/creative/display";
 import { loadCreative, type CreativeContext } from "@/lib/creative/page";
 import { groupBy, read, sum, tagCoverage } from "@/lib/creative/model";
@@ -85,11 +84,11 @@ export default async function BreakdownPage({
     return <CreativeNotConnected title="Breakdown" source={loaded.source} />;
   }
   const { ctx } = loaded;
-  const { client, currency, data, thresholds, display, account } = ctx;
-  // A breakdown is arithmetic on delivery: which angle took the spend, what it
-  // returned, how wide the interval is. None of that needs a kill line. Only
-  // the colour coding and the three zones on the interval chart do, and those
-  // come off rather than the whole screen.
+  const { currency, data, thresholds, account } = ctx;
+  // A breakdown is arithmetic on delivery: which angle took the spend and what
+  // it returned. None of that needs a kill line. Only the colour coding and
+  // the three zones on the ROAS chart do, and those come off rather than the
+  // whole screen.
   const judged = thresholds !== null;
 
   const raw = Array.isArray(searchParams.by) ? searchParams.by[0] : searchParams.by;
@@ -121,7 +120,7 @@ export default async function BreakdownPage({
           | string
           | null
           | undefined) ?? null;
-    const r = read(c, account.spend, display);
+    const r = read(c, account.spend);
     return {
       key: g.key,
       label: g.label,
@@ -133,10 +132,6 @@ export default async function BreakdownPage({
       purchases: c.purchases,
       cpa: c.purchases > 0 ? c.spend / c.purchases : null,
       roas: r.roas,
-      ciLow: r.ciLow,
-      ciHigh: r.ciHigh,
-      confidence: r.confidence,
-      readable: c.purchases >= display.directionalPurchases,
       focusValue,
     };
   });
@@ -211,9 +206,9 @@ export default async function BreakdownPage({
           {(judged
             ? [
                 ["var(--text-muted)", "Spend"],
-                ["var(--accent)", SEPARATION_LABELS["above-target"]],
-                ["var(--info)", SEPARATION_LABELS["profitable-under-target"]],
-                ["var(--negative)", SEPARATION_LABELS["below-kill"]],
+                ["var(--accent)", ZONE_LABELS["above-target"]],
+                ["var(--info)", ZONE_LABELS["under-target"]],
+                ["var(--negative)", ZONE_LABELS["below-kill"]],
               ]
             : [
                 ["var(--text-muted)", "Spend"],
@@ -231,23 +226,18 @@ export default async function BreakdownPage({
 
       <div className="glass p-5">
         <h4 className="m-0 mb-3 flex items-center gap-1.5 text-[13px] font-semibold tracking-heading text-content-strong">
-          ROAS range
+          ROAS against the lines
           <InfoTip
-            text="Each bar is the range the true ROAS could fall in. A wide bar means less certainty about that row."
-            label="About ROAS range"
+            text="Each dot is the row's real ROAS, revenue over spend, against the kill line and the target."
+            label="About ROAS against the lines"
           />
         </h4>
-        <IntervalChart
+        <RoasChart
           rows={rows}
           killRoas={judged ? thresholds.killRoas : null}
           targetRoas={judged ? thresholds.targetRoas : null}
         />
         {/*
-          The bar is the payload of this chart and nothing on it says so.
-          Without this line a reader takes the bar for a magnitude, a longer
-          bar reading as a better row, when it means the opposite: a wide bar
-          is a row we know less about.
-
           The swatches are the zones as the chart actually paints them: the
           same colour at the same low alpha, with a solid hairline of the full
           colour so a 6% fill is still visible at 9 pixels.
@@ -255,9 +245,9 @@ export default async function BreakdownPage({
         <div className="mt-2.5 flex flex-wrap gap-4 text-[12px] text-content-muted">
           {(judged
             ? [
-                [`${SEPARATION_LABELS["below-kill"]} ${thresholds.killRoas.toFixed(2)}`, "var(--negative)", 0.06],
-                [SEPARATION_LABELS["profitable-under-target"], "var(--text-muted)", 0.05],
-                [`${SEPARATION_LABELS["above-target"]} ${thresholds.targetRoas.toFixed(2)}`, "var(--accent)", 0.07],
+                [`${ZONE_LABELS["below-kill"]} ${thresholds.killRoas.toFixed(2)}`, "var(--negative)", 0.06],
+                [ZONE_LABELS["under-target"], "var(--text-muted)", 0.05],
+                [`${ZONE_LABELS["above-target"]} ${thresholds.targetRoas.toFixed(2)}`, "var(--accent)", 0.07],
               ]
             : []
           ).map(([label, colour, alpha]) => (
@@ -279,8 +269,8 @@ export default async function BreakdownPage({
       {/*
         The same sortable, resizable table every other screen in the app uses.
         A breakdown is read by ordering it, by spend to see where the money
-        went, by ROAS to see what came back, by purchases to see what is even
-        readable, and a fixed sort by spend answers only the first of those.
+        went, by ROAS to see what came back, by purchases to see how many sales
+        stand behind it, and a fixed sort by spend answers only the first.
 
         The dimension cell is a link into the Creatives grid, filtered to this
         row. "Curiosity gap returns 1.25" is not a finding until you have seen
@@ -288,7 +278,7 @@ export default async function BreakdownPage({
         the other that does not involve retyping a filter.
       */}
       <DataTable
-        gridClass="grid grid-cols-[2.4fr_0.5fr_0.9fr_1fr_0.6fr_0.8fr_0.7fr_1.2fr_1fr] items-center gap-2"
+        gridClass="grid grid-cols-[2.4fr_0.5fr_0.9fr_1fr_0.6fr_0.8fr_0.7fr] items-center gap-2"
         columns={[
           { key: "dim", label },
           { key: "ads", label: "Ads", align: "right" },
@@ -297,8 +287,6 @@ export default async function BreakdownPage({
           { key: "purch", label: "Purch.", align: "right" },
           { key: "cpa", label: "CPA", align: "right" },
           { key: "roas", label: "ROAS", align: "right" },
-          { key: "ci", label: "95% interval" },
-          { key: "conf", label: "Confidence", sortable: false },
         ]}
         rows={rows.map((r) => ({
           key: r.key,
@@ -310,19 +298,9 @@ export default async function BreakdownPage({
             r.purchases,
             r.cpa,
             r.roas,
-            r.ciHigh !== null && r.ciLow !== null ? r.ciHigh - r.ciLow : null,
-            null,
           ],
           cells: [
-            <span
-              key="d"
-              className={r.readable ? "" : "opacity-60"}
-              title={
-                r.readable
-                  ? undefined
-                  : "Too few purchases to decide."
-              }
-            >
+            <span key="d">
               {r.focusValue ? (
                 <AppLink
                   href={linkTo(r.focusValue)}
@@ -346,15 +324,13 @@ export default async function BreakdownPage({
               <SpendBar
                 fraction={r.spend / maxSpend}
                 tone={
-                  !r.readable
-                    ? "muted"
-                    : !judged
-                      ? "neutral"
-                      : r.roas !== null && r.roas >= thresholds.targetRoas
-                        ? "accent"
-                        : r.roas !== null && r.roas < thresholds.killRoas
-                          ? "negative"
-                          : "neutral"
+                  !judged
+                    ? "neutral"
+                    : r.roas !== null && r.roas >= thresholds.targetRoas
+                      ? "accent"
+                      : r.roas !== null && r.roas < thresholds.killRoas
+                        ? "negative"
+                        : "neutral"
                 }
               />
               <span className="font-mono text-[11px] text-content-muted">{pct(r.spendShare)}</span>
@@ -362,10 +338,6 @@ export default async function BreakdownPage({
             <span key="p" className="font-mono text-[13px] tabular text-content-body">{r.purchases}</span>,
             <span key="c" className="font-mono text-[13px] tabular text-content-body">{unitMoney(r.cpa, currency)}</span>,
             <span key="r" className="font-mono text-[13px] font-medium tabular text-content-strong">{roas(r.roas)}</span>,
-            <span key="ci" className="font-mono text-[12px] tabular text-content-muted">
-              {r.ciLow !== null && r.ciHigh !== null ? `${roas(r.ciLow)} to ${roas(r.ciHigh)}` : NO_VALUE}
-            </span>,
-            <ConfidenceChip key="cf" level={r.confidence} />,
           ],
         }))}
       />

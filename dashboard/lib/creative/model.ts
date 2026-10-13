@@ -14,7 +14,7 @@
  * ROAS, moves like ROAS, and is not ROAS.
  */
 
-import { confidenceOf, interval, type Confidence, type CreativeThresholds } from "@/lib/creative/stats";
+import type { CreativeThresholds } from "@/lib/creative/stats";
 
 // ---------------------------------------------------------------------------
 // Components, the only things allowed to cross a join or a GROUP BY
@@ -279,35 +279,18 @@ export function groupBy(
 export interface Reading {
   /**
    * The real ROAS, attributed revenue over spend, never adjusted. The number
-   * that shows, sorts and colours. Null with no purchases (see below).
+   * that shows, sorts and colours. 0.00x with spend and no purchases; null
+   * only with no spend, where the ratio does not exist.
    */
   roas: number | null;
-  ciLow: number | null;
-  ciHigh: number | null;
-  confidence: Confidence;
   purchases: number;
   spend: number;
   spendShare: number;
 }
 
-export function read(
-  c: Components,
-  accountSpend: number,
-  t: CreativeThresholds
-): Reading {
-  // ── Zero purchases reports no ROAS ────────────────────────────────────────
-  // As in Ads Manager: with no conversions there is no purchase ROAS and no
-  // interval around one, so the cell reads n/a. The tile still shows the
-  // spend, the CTR and "0 purchases", which is the whole of what is known.
-  // Too few purchases never changes the number; the confidence chip and the
-  // read threshold in `classify` say how far it can be trusted.
-  const roas = c.purchases > 0 ? div(c.revenue, c.spend) : null;
-  const [lo, hi] = roas === null ? [null, null] : interval(roas, c.purchases);
+export function read(c: Components, accountSpend: number): Reading {
   return {
-    roas,
-    ciLow: lo,
-    ciHigh: hi,
-    confidence: confidenceOf(c.purchases, t),
+    roas: div(c.revenue, c.spend),
     purchases: c.purchases,
     spend: c.spend,
     spendShare: accountSpend > 0 ? c.spend / accountSpend : 0,
@@ -321,17 +304,14 @@ export function read(
 /**
  * The four buckets on the Creatives scorecard.
  *
- * `winner` requires Read confidence, not just a high number. That is the whole
- * point: a hit rate only means anything if "winner" is a defensible category
- * rather than whatever happened to sort first.
- *
  * ── One winner test for every surface ──────────────────────────────────────
  * The Creative tile and trend, the scorecard, the grid, Concepts, Production,
- * the Paid tile and Reports all decide "winner" here: purchases >= the client's
- * read threshold, real ROAS (revenue over spend, not adjusted) >= target, AND
- * at least `WINNER_MIN_AGE_DAYS` since first delivery. The read threshold is
- * the noise protection: below it an ad is never a winner or a carrier however
- * well it reads, it stays `open`.
+ * the Paid tile and Reports all decide "winner" here: real ROAS (revenue over
+ * spend, not adjusted) >= target AND at least `WINNER_MIN_AGE_DAYS` since
+ * first delivery. Pure numbers (owner decision 2026-10-13): no purchase count
+ * gates any bucket, an ad with one purchase at 4x is a winner once it is old
+ * enough, and an ad with spend and no purchases sits at 0.00x like any other
+ * number.
  */
 export type Outcome = "winner" | "carrier" | "loser" | "open";
 
@@ -356,19 +336,14 @@ export function classify(
   const roas = div(c.revenue, c.spend);
   if (roas === null) return "open";
 
-  if (c.purchases >= t.readPurchases && roas >= t.targetRoas) {
+  if (roas >= t.targetRoas) {
     return ageDays !== null && ageDays < WINNER_MIN_AGE_DAYS ? "open" : "winner";
   }
-  if (c.purchases >= t.readPurchases && roas >= t.killRoas) return "carrier";
-  // A loser has to have been given a fair run: past the 3x CPA kill gate, and
-  // with enough purchases to be more than an unlucky week.
-  if (
-    c.purchases >= t.directionalPurchases &&
-    roas < t.killRoas &&
-    c.spend >= t.killGateX * t.targetCpa
-  ) {
-    return "loser";
-  }
+  if (roas >= t.killRoas) return "carrier";
+  // A loser has to have been given a fair run: past the 3x CPA kill gate. A
+  // missing Target CPA arrives as 0 (the hit-rate thresholds), and a gate of
+  // zero is no gate, so without a CPA nothing is a loser.
+  if (t.targetCpa > 0 && c.spend >= t.killGateX * t.targetCpa) return "loser";
   return "open";
 }
 

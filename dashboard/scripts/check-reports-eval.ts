@@ -886,10 +886,9 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
 // 4.16 Creative hit rate (HR3): entity mart classified per ad against each client's own thresholds.
 {
   const TOTAL = "1970-01-01";
-  const T = (targetRoas: number, readPurchases: number): CreativeThresholds => ({
+  const T = (targetRoas: number): CreativeThresholds => ({
     killRoas: 1.8, targetRoas, targetCpa: 500, grossMargin: null,
     scaleMultiplier: 1.2, aggressiveMultiplier: 2, holdGateX: 1, iterateGateX: 2, killGateX: 3,
-    readPurchases, directionalPurchases: Math.max(5, Math.round(readPurchases * 0.4)), maxCiHalfWidth: 0.25,
     hookRateFloor: 0.2, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3,
     noTouchDays: 14, minAdsetBudgetDaily: null, perAdFloorDaily: null, tier: null,
   });
@@ -920,7 +919,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
 
   // Classifier = launchStatus() of the Creative tile, row for row, across a grid; input rows untouched.
   {
-    const t = T(2.25, 15);
+    const t = T(2.25);
     const client = { ...alpha, creativeThresholds: t };
     const grid: Ad[] = [];
     for (const p of [0, 5, 14, 15, 16, 40]) for (const roas of [0, 1.5, 2.2, 2.25, 2.4, 3.5]) for (const age of [10, 59, 60, 200]) grid.push({ p, spend: 1000, rev: 1000 * roas, age });
@@ -946,8 +945,8 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     check("HR3: rows without an entity mart pass through as the same object", classifyEntityRows([kpiRow], new Map())[0] === kpiRow);
   }
 
-  // alpha (Manami-like bar 2.25 / 15): 4 ads, 2 winners, 1 open; delta (bar 3.00 / 25): 3 ads, 1 winner; bravo: no thresholds, 2 ads.
-  const clients = FIXTURE_CLIENTS.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: T(2.25, 15) } : c.id === "delta" ? { ...c, creativeThresholds: T(3, 25) } : c.id === "bravo" ? { ...c, creativeThresholds: null } : c));
+  // alpha (Manami-like bar 2.25): 4 ads, 2 winners, 1 open; delta (bar 3.00): 3 ads, 2 winners; bravo: no thresholds, 2 ads.
+  const clients = FIXTURE_CLIENTS.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: T(2.25) } : c.id === "delta" ? { ...c, creativeThresholds: T(3) } : c.id === "bravo" ? { ...c, creativeThresholds: null } : c));
   const ids = { clients: { mode: "list" as const, ids: ["alpha", "bravo", "delta"] }, compare: "none" as const };
   const curRows = [
     rowL("alpha", "cur", TOTAL, { p: 20, spend: 1000, rev: 3000, age: 90 }), // winner
@@ -955,15 +954,15 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     rowL("alpha", "cur", TOTAL, { p: 3, spend: 500, rev: 600, age: 20 }), // open
     rowL("alpha", "cur", TOTAL, { p: 3, spend: 500, rev: 600, age: 80 }), // settled
     rowL("delta", "cur", TOTAL, { p: 30, spend: 1000, rev: 4000, age: 100 }), // winner
-    rowL("delta", "cur", TOTAL, { p: 20, spend: 1000, rev: 4000, age: 100 }), // n < 25: never a winner
-    rowL("delta", "cur", TOTAL, { p: 0, spend: 100, rev: 0, age: 100 }),
+    rowL("delta", "cur", TOTAL, { p: 2, spend: 1000, rev: 4000, age: 100 }), // 2 purchases at 4.00: a winner, no purchase gate
+    rowL("delta", "cur", TOTAL, { p: 0, spend: 100, rev: 0, age: 100 }), // a real 0.00: not a winner
     rowL("bravo", "cur", TOTAL, { p: 90, spend: 1000, rev: 9000, age: 100 }),
     rowL("bravo", "cur", TOTAL, { p: 0, spend: 100, rev: 0, age: 100 }),
   ];
   const rc = evalW(widget(["hit_rate", "winners", "ads_launched"], { filters: ids, clients }), curRows);
-  check("HR3: per client hit rate, winners, launched", close(cell(rc, "alpha", "hit_rate").total, 0.5) && cell(rc, "alpha", "winners").total === 2 && cell(rc, "alpha", "ads_launched").total === 4 && close(cell(rc, "delta", "hit_rate").total, 1 / 3));
-  check("HR4: hit rate carries its counts (winners of launched, ads), winners and ads launched carry none", eqJson(cell(rc, "alpha", "hit_rate").counts, { part: 2, whole: 4, noun: "ads" }) && eqJson(cell(rc, "delta", "hit_rate").counts, { part: 1, whole: 3, noun: "ads" }) && cell(rc, "alpha", "winners").counts === undefined && cell(rc, "alpha", "ads_launched").counts === undefined);
-  check("HR3: n < readPurchases is never a winner, whatever the ROAS", cell(rc, "delta", "winners").total === 1);
+  check("HR3: per client hit rate, winners, launched", close(cell(rc, "alpha", "hit_rate").total, 0.5) && cell(rc, "alpha", "winners").total === 2 && cell(rc, "alpha", "ads_launched").total === 4 && close(cell(rc, "delta", "hit_rate").total, 2 / 3));
+  check("HR4: hit rate carries its counts (winners of launched, ads), winners and ads launched carry none", eqJson(cell(rc, "alpha", "hit_rate").counts, { part: 2, whole: 4, noun: "ads" }) && eqJson(cell(rc, "delta", "hit_rate").counts, { part: 2, whole: 3, noun: "ads" }) && cell(rc, "alpha", "winners").counts === undefined && cell(rc, "alpha", "ads_launched").counts === undefined);
+  check("HR3: no purchase gate: 2 purchases at 4.00 wins against 3.00, 0 purchases (0.00) does not", cell(rc, "delta", "winners").total === 2);
   const nb = cell(rc, "bravo", "hit_rate");
   check("HR3: no thresholds: not_measured 'No thresholds', never 0", nb.status === "not_measured" && nb.reason === NO_THRESHOLDS && nb.total === null && cell(rc, "bravo", "winners").reason === NO_THRESHOLDS);
   check("HR3: ads launched needs no thresholds", cell(rc, "bravo", "ads_launched").status === "ok" && cell(rc, "bravo", "ads_launched").total === 2);
@@ -971,14 +970,14 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
 
   const rk = evalW(widget(["hit_rate", "winners", "ads_launched"], { split: "combined", filters: ids, clients }), curRows);
   const ck = cell(rk, "combined", "hit_rate");
-  check("HR3: combined = sum of winners / sum of launched (3 of 7), not a mean of rates", close(ck.total, 3 / 7) && !close(ck.total, (0.5 + 1 / 3) / 2));
-  check("HR4: combined counts sum the kept clients only (no-threshold client left out)", eqJson(ck.counts, { part: 3, whole: 7, noun: "ads" }) && ck.total !== null && close(ck.total, ck.counts!.part / ck.counts!.whole));
+  check("HR3: combined = sum of winners / sum of launched (4 of 7), not a mean of rates", close(ck.total, 4 / 7) && !close(ck.total, (0.5 + 2 / 3) / 2));
+  check("HR4: combined counts sum the kept clients only (no-threshold client left out)", eqJson(ck.counts, { part: 4, whole: 7, noun: "ads" }) && ck.total !== null && close(ck.total, ck.counts!.part / ck.counts!.whole));
   check("HR3: no-threshold client left out of the combined with a coverage note", eqJson(ck.coverage, { included: 2, of: 3 }) && eqJson(ck.excluded, [{ id: "bravo", name: bravo.name, reason: NO_THRESHOLDS }]));
-  check("HR3: combined winners 3 of 3 clients' bars, combined launched sums all 3 clients", cell(rk, "combined", "winners").total === 3 && cell(rk, "combined", "ads_launched").total === 9 && eqJson(cell(rk, "combined", "ads_launched").coverage, { included: 3, of: 3 }));
+  check("HR3: combined winners 4 of 3 clients' bars, combined launched sums all 3 clients", cell(rk, "combined", "winners").total === 4 && cell(rk, "combined", "ads_launched").total === 9 && eqJson(cell(rk, "combined", "ads_launched").coverage, { included: 3, of: 3 }));
   check("HR3: combined carries the maturing caveat when a member is maturing", rk.series[0].caveats.includes("cohort_maturing"));
 
   // Thresholds change the evaluation only (SQL and key are asserted in check:reports).
-  const strict = clients.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: T(2.75, 15) } : c));
+  const strict = clients.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: T(2.75) } : c));
   check("HR3: a stricter target changes the result at once (Settings edit, no cache change)", close(cell(evalW(widget(["hit_rate"], { filters: ids, clients: strict }), curRows), "alpha", "hit_rate").total, 0.25));
 
   // Comparison: a maturing current cohort against a settled previous one has no delta.
@@ -1025,7 +1024,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
 
   // Parity with the Creative tile: random launches, Reports total = hitRate() of lib/creative/hitRate.ts.
   {
-    const t = T(2.25, 15);
+    const t = T(2.25);
     let seed = 11;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     const launches: LaunchRow[] = Array.from({ length: 150 }, (_, i) => {

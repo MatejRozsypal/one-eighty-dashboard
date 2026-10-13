@@ -67,8 +67,9 @@ export async function saveCreativeSettingsAction(formData: FormData): Promise<vo
       perAdFloorDaily: numberOrNull("perAdFloorDaily"),
       noTouchDays: numberOr("noTouchDays", 14),
       tier: String(formData.get("tier") ?? "").trim() || null,
+      // Velocity planning input only. `directionalPurchases` is not on the
+      // form any more and is left out, so its stored value is not overwritten.
       readPurchases: numberOr("readPurchases", 25),
-      directionalPurchases: numberOr("directionalPurchases", 10),
       maxCiHalfWidth: maxCiPct === null ? 0.25 : maxCiPct / 100,
       hookRateFloor: hookPct === null ? 0.2 : hookPct / 100,
       holdRateFloor: holdPct === null ? 0.05 : holdPct / 100,

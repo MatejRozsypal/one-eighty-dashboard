@@ -44,7 +44,7 @@ export interface VelocityLite {
   name: string;
   /** The Meta account currency: every amount here is in it. */
   currency: string;
-  /** Purchases a pack needs for a verdict (Creative Settings, read at). */
+  /** Purchases a pack needs for a verdict (Creative Settings, purchases to verdict). */
   verdictN: number | null;
   /** 90-day CPA, or the saved Plan input. */
   cpa: number | null;

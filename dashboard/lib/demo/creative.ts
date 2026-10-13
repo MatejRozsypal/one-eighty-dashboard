@@ -268,8 +268,8 @@ function monthly(seed: Seed): MonthlySpend[] {
  *
  * The seeds carry six months of monthly spend and a lifetime total. A shorter
  * range takes proportionally less, which reproduces the effect the range picker
- * exists to show: every interval widens and most rows stop being readable. Six
- * months is the whole seed, so anything at or beyond it returns everything.
+ * exists to show: every row rests on fewer purchases. Six months is the whole
+ * seed, so anything at or beyond it returns everything.
  */
 function rangeShare(range: DateRange): number {
   const days = daysInRange(range);

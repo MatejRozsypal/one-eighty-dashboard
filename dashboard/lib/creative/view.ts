@@ -4,7 +4,7 @@
  * ── Why there is a view model at all ───────────────────────────────────────
  * Filtering the grid and opening the detail panel are interactions, so those
  * components run on the client. Everything they display, the ROAS, the
- * interval, the diagnosis, the signed asset URL, is computed on the server,
+ * outcome, the diagnosis, the signed asset URL, is computed on the server,
  * because the thresholds come from Postgres, the asset URLs are signed with a
  * private key, and none of that belongs in a browser bundle.
  *
@@ -22,7 +22,7 @@ import {
   type Components,
   type Outcome,
 } from "@/lib/creative/model";
-import type { Confidence, CreativeThresholds } from "@/lib/creative/stats";
+import type { CreativeThresholds } from "@/lib/creative/stats";
 import { diagnose, moneyVerdict, type Verdict } from "@/lib/creative/verdict";
 import type { CreativeAsset } from "@/lib/queries/creative";
 import type { Proposal } from "@/lib/creative/matching";
@@ -51,10 +51,8 @@ export interface AdView {
   impressions: number;
   reach: number;
 
+  /** Real ROAS. 0.00 with spend and no purchases; null only with no spend. */
   roas: number | null;
-  ciLow: number | null;
-  ciHigh: number | null;
-  confidence: Confidence;
   outcome: Outcome;
 
   cpa: number | null;
@@ -185,7 +183,7 @@ export function toAdView(
   /** Days since first delivery, for the 14-day winner rule. Null when unknown. */
   ageDays: number | null = null
 ): AdView {
-  const r = read(ad.components, accountSpend, t);
+  const r = read(ad.components, accountSpend);
   const d = derive(ad.components);
   const format = ad.tags.format ?? inferFormat(asset);
   const diag = diagnose(ad.components, format, t);
@@ -205,9 +203,6 @@ export function toAdView(
     reach: ad.components.reach,
 
     roas: r.roas,
-    ciLow: r.ciLow,
-    ciHigh: r.ciHigh,
-    confidence: r.confidence,
     outcome: classify(ad.components, t, ageDays),
 
     cpa: d.cpa,
@@ -308,10 +303,7 @@ export interface AdsetView {
   spendShare: number;
   purchases: number;
   roas: number | null;
-  ciLow: number | null;
-  ciHigh: number | null;
   cpa: number | null;
-  confidence: Confidence;
   ageDays: number | null;
   frequency: number | null;
   verdict: VerdictView;
@@ -324,12 +316,9 @@ export function toAdsetView(
   accountSpend: number,
   t: CreativeThresholds
 ): AdsetView {
-  const r = read(set.components, accountSpend, t);
+  const r = read(set.components, accountSpend);
   const d = derive(set.components);
-  const verdict = moneyVerdict(
-    { components: set.components, roas: r.roas, ageDays: set.ageDays },
-    t
-  );
+  const verdict = moneyVerdict({ components: set.components, ageDays: set.ageDays }, t);
   return {
     adsetId: set.adsetId,
     adsetName: set.adsetName,
@@ -338,10 +327,7 @@ export function toAdsetView(
     spendShare: r.spendShare,
     purchases: r.purchases,
     roas: r.roas,
-    ciLow: r.ciLow,
-    ciHigh: r.ciHigh,
     cpa: d.cpa,
-    confidence: r.confidence,
     ageDays: set.ageDays,
     frequency: set.frequencyLatest,
     verdict: toVerdictView(verdict),

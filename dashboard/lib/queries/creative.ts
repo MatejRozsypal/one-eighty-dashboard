@@ -12,8 +12,8 @@ import "server-only";
  * purchases even though no single month reaches 20, and 20 purchases carries a
  * ±51% interval while 80 carries ±26%. Accumulation is how a small account buys
  * statistical power, and defaulting to a month would throw it away every month.
- * A shorter range is still one click away, and every interval on screen widens
- * when it is chosen: which is the honest depiction of what was given up.
+ * A shorter range is still one click away, and every figure on screen then
+ * rests on fewer purchases: which is the honest depiction of what was given up.
  *
  * ── Purchases and revenue: 7-day click + 1-day view ─────────────────────────
  * ME5. The ad grid and the account totals sum `purchases_7dc_1dv` and

@@ -16,9 +16,7 @@
 
 import { AppLink } from "@/components/ui/AppLink";
 import type { AdView, VerdictView } from "@/lib/creative/view";
-import type { Confidence } from "@/lib/creative/stats";
 import {
-  ConfidenceChip,
   StatusChip,
   VerdictChip,
   money,
@@ -54,7 +52,6 @@ export interface ConceptCardData {
   purchases: number;
   cpa: number | null;
   roas: number | null;
-  confidence: Confidence;
   verdict: VerdictView;
   ageDays: number | null;
   frequency: number | null;
@@ -204,15 +201,12 @@ export function ConceptCard({
       </div>
 
       {/* Fixed width and pushed right, rather than a flex item that grows.
-          A long "not separable" sentence used to make this wrap onto its own
+          A long verdict sentence used to make this wrap onto its own
           full-width row, so one card in a column of otherwise identical cards
           was laid out differently, which reads as a rendering bug rather than
           as a longer message. */}
       <div className="ml-auto flex w-full flex-none flex-col items-end gap-1.5 text-right lg:w-[280px]">
-        <span className="flex gap-1.5">
-          <ConfidenceChip level={data.confidence} />
-          <VerdictChip code={data.verdict.code as VerdictCode} label={data.verdict.label} />
-        </span>
+        <VerdictChip code={data.verdict.code as VerdictCode} label={data.verdict.label} />
         <span className="text-[12.5px] leading-[1.45] text-content-muted">
           {data.verdict.say}
         </span>

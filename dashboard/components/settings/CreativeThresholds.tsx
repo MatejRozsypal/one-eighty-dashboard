@@ -5,10 +5,14 @@
  * are edited at different times by different people:
  *
  *   The lines      what counts as winning and losing. Set with the client at
- *                  kickoff, and moved almost never.
- *   Reading        how much evidence the tool demands before it will answer.
- *                  Set once and left alone, see the warning on max interval.
+ *                  kickoff, and moved almost never. Verdicts compare the real
+ *                  ROAS with these and nothing else (pure numbers, 2026-10-13).
+ *   Planning       inputs that size tests and capacity, plus the diagnostic
+ *                  hook and hold floors. None of them gates a verdict.
  *   The pack       how creative testing is funded and paced.
+ *
+ * `directionalPurchases` has no field any more: nothing reads it. The column
+ * and its stored value stay, and the save action leaves them untouched.
  *
  * Everything derived is shown as derived rather than as an empty box: the two
  * budget floors are 2x and 0.5x CPA unless overridden, and printing the derived
@@ -105,16 +109,14 @@ export function CreativeThresholds({
 
       <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
         <legend className="mb-1 p-0 font-mono text-[10px] uppercase tracking-eyebrow text-content-muted">
-          Evidence needed
+          Planning
         </legend>
         <div className="flex flex-wrap items-start gap-3">
-          <Field name="readPurchases" label="Read at" value={settings.readPurchases}
-                 hint="Purchases before a row is Read confidence, and before an ad can be a winner." />
-          <Field name="directionalPurchases" label="Directional at" value={settings.directionalPurchases}
-                 hint="Below this a row is greyed and hatched." />
-          <Field name="maxCiHalfWidthPct" label="Max interval %"
+          <Field name="readPurchases" label="Purchases to verdict" value={settings.readPurchases}
+                 hint="Velocity planning input: purchases a test needs (V = N x CPA). Never gates a winner, loser or verdict." />
+          <Field name="maxCiHalfWidthPct" label="Persona precision %"
                  value={+(settings.maxCiHalfWidth * 100).toFixed(0)}
-                 hint={`Currently ${needed} purchases to read a tag to this precision. Set once per client.`} />
+                 hint={`Concepts persona capacity only: ${needed} purchases to read a persona to this precision. Never gates a verdict.`} />
           <Field name="hookRateFloorPct" label="Hook rate floor %"
                  value={+(settings.hookRateFloor * 100).toFixed(1)} />
           <Field name="holdRateFloorPct" label="Hold rate floor %"

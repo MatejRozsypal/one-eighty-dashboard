@@ -52,7 +52,7 @@ export interface CapacityInputs {
   /** Share of spend on new creative, 0..1. */
   share: number | null;
   cpa: number | null;
-  /** Purchases a pack needs for a verdict (Settings "read at"). */
+  /** Purchases a pack needs for a verdict (Settings "Purchases to verdict"). */
   verdictN: number | null;
   adsPerPack: number | null;
   /** Winners per launched ad, 0..1 (client's trailing 12 months). */

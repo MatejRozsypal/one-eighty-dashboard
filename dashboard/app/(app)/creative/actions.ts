@@ -184,8 +184,6 @@ export async function logDecision(input: {
   spend: number | null;
   purchases: number | null;
   roas: number | null;
-  ciLow: number | null;
-  ciHigh: number | null;
 }): Promise<LogResult> {
   const { email } = await actor();
   const c = await client(input.clientId);
@@ -204,8 +202,6 @@ export async function logDecision(input: {
       spend: input.spend,
       purchases: input.purchases,
       roas: input.roas,
-      ciLow: input.ciLow,
-      ciHigh: input.ciHigh,
       decidedBy: email,
     });
 

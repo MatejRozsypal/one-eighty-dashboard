@@ -19,7 +19,7 @@
  * Exits non-zero on a mismatch.
  */
 
-import { interval, purchasesToClear, purchasesForPrecision, spendToDecide, separation, Z } from "@/lib/creative/stats";
+import { purchasesForPrecision, zoneOf, ZONE_LABELS } from "@/lib/creative/stats";
 import { propose, tokenise, type Candidate } from "@/lib/creative/matching";
 import { ANGLES } from "@/lib/creative/vocabulary";
 import { presetRange, comparisonRange, daysInRange, addDays } from "@/lib/period";
@@ -33,27 +33,24 @@ import { cadenceTicks, LaunchCadence } from "@/components/creative/LaunchCadence
 import { focusLabel } from "@/lib/creative/vocabulary";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { IntervalChart, SpendRevenueBars } from "@/components/creative/BreakdownCharts";
+import { RoasChart, SpendRevenueBars } from "@/components/creative/BreakdownCharts";
 
 const T = {
   killRoas: 1.8, targetRoas: 2.5, targetCpa: 527, grossMargin: 0.684,
   scaleMultiplier: 1.2, aggressiveMultiplier: 2.0,
   holdGateX: 1, iterateGateX: 2, killGateX: 3,
-  readPurchases: 25, directionalPurchases: 10, maxCiHalfWidth: 0.25,
   hookRateFloor: 0.20, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3,
   noTouchDays: 14, minAdsetBudgetDaily: 860, perAdFloorDaily: 215, tier: "MID",
 };
 
-/** Two rows with real shapes: one readable, one under the directional gate. */
+/** Three rows with real shapes: many purchases, four purchases, none at all. */
 const CHART_ROWS = [
   { key: "a", label: "Problem agitation", untagged: false, ads: 6, spend: 41000,
-    spendShare: 0.42, revenue: 92000, purchases: 78, cpa: 526, roas: 2.24,
-    ciLow: 1.66, ciHigh: 2.82, confidence: "directional" as const,
-    readable: true },
+    spendShare: 0.42, revenue: 92000, purchases: 78, cpa: 526, roas: 2.24 },
   { key: "b", label: "Curiosity gap", untagged: false, ads: 3, spend: 9000,
-    spendShare: 0.09, revenue: 14000, purchases: 4, cpa: 2250, roas: 1.56,
-    ciLow: 0, ciHigh: 3.35, confidence: "noise" as const,
-    readable: false },
+    spendShare: 0.09, revenue: 14000, purchases: 4, cpa: 2250, roas: 1.56 },
+  { key: "c", label: "Founder story", untagged: false, ads: 2, spend: 1200,
+    spendShare: 0.01, revenue: 0, purchases: 0, cpa: null, roas: 0 },
 ];
 
 const f = (n: number | null, d = 2) => (n === null ? "null" : n.toFixed(d));
@@ -65,35 +62,33 @@ const eq = (name: string, got: unknown, want: unknown) => {
 };
 
 console.log("=== ROAS is the real ratio, never adjusted ===");
-// Owner decision: no shrinkage toward the account average. The brief's old
-// example, 4 purchases at 3.38, now reports 3.38; the read threshold and the
-// interval say how far it can be trusted instead.
+// Owner decisions: no shrinkage toward the account average, and pure numbers
+// (2026-10-13): no confidence class, no interval. The brief's old example, 4
+// purchases at 3.38, reports 3.38 and carries nothing else.
 {
-  const few = read({ ...ZERO, spend: 1000, revenue: 3380, purchases: 4 }, 10000, T);
+  const few = read({ ...ZERO, spend: 1000, revenue: 3380, purchases: 4 }, 10000);
   eq("4 purchases at 3.38 reports 3.38, not pulled toward any mean", f(few.roas), "3.38");
-  eq("its interval is around the real figure", `${f(few.ciLow)}-${f(few.ciHigh)}`, `${f(interval(3.38, 4)[0])}-${f(interval(3.38, 4)[1])}`);
-  eq("4 purchases is still Noise confidence", few.confidence, "noise");
-  const many = read({ ...ZERO, spend: 40000, revenue: 51200, purchases: 76 }, 100000, T);
+  eq("the Reading carries no interval", "ciLow" in few || "ciHigh" in few, false);
+  eq("the Reading carries no confidence class", "confidence" in few, false);
+  const many = read({ ...ZERO, spend: 40000, revenue: 51200, purchases: 76 }, 100000);
   eq("76 purchases at 1.28 reports 1.28", f(many.roas), "1.28");
-  const none = read({ ...ZERO, spend: 900, revenue: 0, purchases: 0 }, 10000, T);
-  eq("0 purchases reports no ROAS and no interval (as Ads Manager)", `${none.roas}/${none.ciLow}/${none.ciHigh}`, "null/null/null");
+  const none = read({ ...ZERO, spend: 900, revenue: 0, purchases: 0 }, 10000);
+  eq("spend and 0 purchases reports a real 0.00, not n/a", f(none.roas), "0.00");
+  const idle = read({ ...ZERO, spend: 0, revenue: 0, purchases: 0 }, 10000);
+  eq("zero spend is the only n/a (division by zero)", idle.roas, null);
   eq("the Reading carries no second, raw figure", "roasRaw" in few, false);
   eq("derive() ROAS is revenue over spend", f(derive({ ...ZERO, spend: 1000, revenue: 3380, purchases: 4 }).roas), "3.38");
 }
 
-console.log("\n=== interval width against the brief's table ===");
-// "To claim with 95% confidence that an ad set truly running at 2,50 is above
-//  the 1,80 kill line, you need roughly 65 purchases."
-eq("purchases to clear 1.80 from 2.50 (brief: ~65)", purchasesToClear(2.5, 1.8), 67);
-console.log(`   that is ${Math.round(66 * 527).toLocaleString("en-US")} Kc of spend at a 527 CPA (brief says ~34 000)`);
+console.log("\n=== zones: a plain comparison with the lines ===");
+eq("2.50 against 1.80 / 2.50 is at target", zoneOf(2.5, T), "above-target");
+eq("2.10 is under target", zoneOf(2.1, T), "under-target");
+eq("0.00 (no purchases) is below the kill line", zoneOf(0, T), "below-kill");
+eq("zone labels", ZONE_LABELS["below-kill"], "Below kill line");
+
+console.log("\n=== persona capacity precision (planning only, never a gate) ===");
 // "reading a persona to +/-25% needs about 84 purchases"
 eq("purchases for +/-25% precision", purchasesForPrecision(0.25), 84);
-console.log(`   half-width at 12 purchases: +/-${f(2.29/Math.sqrt(12)*100,0)}%  (brief: one ad at the signal floor, +/-66%)`);
-console.log(`   half-width at 173 purchases: +/-${f(2.29/Math.sqrt(173)*100,0)}%  (brief: whole account, +/-17%)`);
-
-console.log("\n=== spend to decide ===");
-console.log("   an ad set at 2.15 with 20 purchases needs",
-  `${spendToDecide(2.15, 20, 1.8, 527)?.toFixed(0)} Kc more to clear the kill line`);
 
 console.log("\n=== persona capacity, brief section 8 ===");
 const cap = personaCapacity(84, 527, 273000, 12, 5);
@@ -102,19 +97,35 @@ eq("readable per quarter (brief: about 6)", cap.readablePerQuarter, 6);
 
 console.log("\n=== verdicts ===");
 const comp = (o: Partial<Components>): Components => ({ ...ZERO, ...o });
-const show = (name: string, c: Components, roas: number | null, age: number | null) => {
-  const v = moneyVerdict({ components: c, roas, ageDays: age }, T);
+const show = (name: string, c: Components, age: number | null) => {
+  const v = moneyVerdict({ components: c, ageDays: age }, T);
   console.log(`   ${name.padEnd(34)} -> ${v.label.padEnd(16)} ${v.say}`);
+  return v;
 };
-show("PACK6, 4 days old", comp({ spend: 12200, revenue: 27000, purchases: 36 }), 2.21, 4);
-show("0 purchases at 1.5x CPA", comp({ spend: 900, revenue: 0, purchases: 0 }), null, 40);
-show("below the 1x CPA gate", comp({ spend: 300, revenue: 700, purchases: 1 }), 2.1, 40);
-show("2.15 with 20 purchases", comp({ spend: 11000, revenue: 23650, purchases: 20 }), 2.15, 40);
-show("1.28 past the 3x gate", comp({ spend: 40000, revenue: 51200, purchases: 76 }), 1.28, 90);
-show("3.30 with 90 purchases", comp({ spend: 47000, revenue: 155000, purchases: 90 }), 3.30, 90);
-show("5.20 with 120 purchases", comp({ spend: 60000, revenue: 312000, purchases: 120 }), 5.20, 90);
-show("2.40 with 80 purchases", comp({ spend: 42000, revenue: 100800, purchases: 80 }), 2.40, 90);
-show("2.05 with 70 purchases", comp({ spend: 37000, revenue: 75850, purchases: 70 }), 2.05, 90);
+const verdictOf = (c: Partial<Components>, age: number | null = 90) => moneyVerdict({ components: comp(c), ageDays: age }, T).code;
+show("PACK6, 4 days old", comp({ spend: 12200, revenue: 27000, purchases: 36 }), 4);
+show("0 purchases at 1.5x CPA", comp({ spend: 900, revenue: 0, purchases: 0 }), 40);
+show("below the 1x CPA gate", comp({ spend: 300, revenue: 700, purchases: 1 }), 40);
+show("2.15 with 20 purchases", comp({ spend: 11000, revenue: 23650, purchases: 20 }), 40);
+show("1.28 past the 3x gate", comp({ spend: 40000, revenue: 51200, purchases: 76 }), 90);
+show("3.30 with 90 purchases", comp({ spend: 47000, revenue: 155000, purchases: 90 }), 90);
+show("5.20 with 120 purchases", comp({ spend: 60000, revenue: 312000, purchases: 120 }), 90);
+show("2.40 with 80 purchases", comp({ spend: 42000, revenue: 100800, purchases: 80 }), 90);
+show("2.05 with 70 purchases", comp({ spend: 37000, revenue: 75850, purchases: 70 }), 90);
+
+// Pure numbers: purchase counts gate nothing, only time and spend do.
+eq("no spend is No data", verdictOf({ spend: 0 }), "data-missing");
+eq("inside the no-touch window is too early", verdictOf({ spend: 12200, revenue: 27000, purchases: 36 }, 4), "too-early");
+eq("under 1x CPA spend needs more data", verdictOf({ spend: 300, revenue: 700, purchases: 1 }), "needs-more-data");
+eq("0 purchases at 1.5x CPA is not 'Check tracking': a real 0.00 under the kill gate holds", verdictOf({ spend: 900, revenue: 0, purchases: 0 }), "hold");
+eq("0 purchases past the 3x CPA kill gate is a kill", verdictOf({ spend: 1600, revenue: 0, purchases: 0 }), "kill");
+eq("a kill line crossing no longer blocks a kill: 1.28 past 3x CPA", verdictOf({ spend: 40000, revenue: 51200, purchases: 76 }), "kill");
+eq("2.15 with 20 purchases is judged, not 'not separable' or 'learning'", verdictOf({ spend: 11000, revenue: 23650, purchases: 20 }), "iterate");
+eq("3 purchases at 3.10x past 1x CPA scales: no learning gate", verdictOf({ spend: 1500, revenue: 4650, purchases: 3 }), "scale");
+eq("5.20 scales hard", verdictOf({ spend: 60000, revenue: 312000, purchases: 120 }), "aggressive-scale");
+eq("2.40 holds", verdictOf({ spend: 42000, revenue: 100800, purchases: 80 }), "hold");
+eq("1.50 at 2x CPA (under the kill gate) holds", verdictOf({ spend: 1100, revenue: 1650, purchases: 2 }), "hold");
+eq("the kill message states the real number", show("1.28 kill message", comp({ spend: 40000, revenue: 51200, purchases: 76 }), 90).say.startsWith("1.28,"), true);
 
 console.log("\n=== ad-level diagnosis (never a money verdict) ===");
 const d1 = diagnose(comp({ impressions: 200000, videoPlays: 90000, videoViews: 48000, videoThruplays: 14000, clicks: 4800, spend: 30000, purchases: 51, revenue: 49651 }), "DYN", T);
@@ -252,9 +263,9 @@ console.log("\n=== a client with no kill line still renders ===");
 //
 //   1. the verdict says "not judged" rather than resolving to `hold`, which is
 //      what a kill line of 0 and a target of Infinity otherwise produce;
-//   2. no chart derives a coordinate from that infinite target. IntervalChart
+//   2. no chart derives a coordinate from that infinite target. RoasChart
 //      scales its x-axis off `targetRoas`, so passing the stand-in through
-//      would collapse every bar to zero width without erroring.
+//      would collapse every dot to zero without erroring.
 // `toDisplayThresholds` itself is not imported here: it lives beside the
 // Postgres reads in lib/creative/store.ts, which is `server-only` and refuses
 // to load outside a server component. What it returns is a kill line of 0 and
@@ -266,7 +277,7 @@ console.log("\n=== a client with no kill line still renders ===");
 
   // What a Concepts card does with those: read the delivery, judge nothing.
   const c: Components = { ...ZERO, spend: 12000, revenue: 26400, purchases: 31, impressions: 210000 };
-  const judgedSay = moneyVerdict({ level: "concept", components: c, roas: 2.2, ageDays: 40 }, T as never).code;
+  const judgedSay = moneyVerdict({ components: c, ageDays: 40 }, T as never).code;
   eq("the same concept, with lines, is judged", judgedSay !== "unjudged", true);
 
   // The charts, actually rendered. A NaN or an Infinity in an SVG attribute
@@ -275,7 +286,7 @@ console.log("\n=== a client with no kill line still renders ===");
   const markup = renderToStaticMarkup(
     createElement("div", null,
       createElement(SpendRevenueBars, { rows: CHART_ROWS, killRoas: null, targetRoas: null }),
-      createElement(IntervalChart, { rows: CHART_ROWS, killRoas: null, targetRoas: null }))
+      createElement(RoasChart, { rows: CHART_ROWS, killRoas: null, targetRoas: null }))
   );
   eq("charts render with no decision lines", markup.length > 500, true);
   eq("no Infinity in the rendered SVG", /Infinity/.test(markup), false);
@@ -283,9 +294,15 @@ console.log("\n=== a client with no kill line still renders ===");
   eq("no kill-line label drawn without a kill line", /kill \d/.test(markup), false);
 
   const judgedMarkup = renderToStaticMarkup(
-    createElement(IntervalChart, { rows: CHART_ROWS, killRoas: 1.8, targetRoas: 2.5 })
+    createElement("div", null,
+      createElement(SpendRevenueBars, { rows: CHART_ROWS, killRoas: 1.8, targetRoas: 2.5 }),
+      createElement(RoasChart, { rows: CHART_ROWS, killRoas: 1.8, targetRoas: 2.5 }))
   );
   eq("the kill line is drawn when there is one", /kill 1\.80/.test(judgedMarkup), true);
+  eq("no 'Too little data' or 'Cannot tell' readout", /Too little data|Cannot tell/.test(judgedMarkup), false);
+  eq("the zero-purchase row shows its real 0.00", /0\.00</.test(judgedMarkup), true);
+  eq("the zero-purchase row reads below the kill line", (judgedMarkup.match(/Below kill line/g) ?? []).length, 2);
+  eq("no row is dimmed for its purchase count", /opacity="0\.(36|405)"|<g[^>]*opacity="0\.5"/.test(judgedMarkup), false);
 }
 
 console.log("\n=== every angle in use is in the vocabulary ===");

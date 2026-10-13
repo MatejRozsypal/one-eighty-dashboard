@@ -248,7 +248,7 @@ export const COMPONENTS = defineComponents({
   "ad_launch.age_days": { money: false, requires: "meta", nullMeans: "zero" },
   /** 1 per ad first delivered in the bucket (pre-existing ads and relaunches are not in the rows at all). */
   "ad_launch.launched": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: false, lowerBound: false } },
-  /** 1 per ad that is a winner on its lifetime totals: purchases >= readPurchases and real ROAS (revenue / spend) >= targetRoas. */
+  /** 1 per ad that is a winner on its lifetime totals: real ROAS (revenue / spend) >= targetRoas, at least 14 days old, whatever the purchase count. */
   "ad_launch.winners": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: true, lowerBound: true } },
   /** 1 per ad that is not a winner and under 60 days old: it may still qualify. */
   "ad_launch.open": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: true, lowerBound: false } },

@@ -536,19 +536,3 @@ body {
     transform: none;
   }
 }
-
-/* Rows the engine cannot read: under the directional purchase threshold, the
-   interval is wider than the gap between the kill line and the target, so the
-   row cannot support a decision.
-
-   Hatched and greyed rather than hidden. Hiding them would quietly rebase every
-   share-of-spend percentage on a denominator that excludes them, and every
-   remaining figure would still look completely reasonable. */
-.row-unreadable {
-  color: var(--text-muted);
-  background: repeating-linear-gradient(
-    135deg,
-    transparent 0 6px,
-    color-mix(in srgb, var(--ink-950) 3%, transparent) 6px 7px
-  );
-}

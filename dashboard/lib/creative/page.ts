@@ -40,8 +40,8 @@ export interface CreativeContext {
   /** Null when the client has no kill line, target or CPA on file. */
   thresholds: CreativeThresholds | null;
   /**
-   * What the hit rate and winners need: a target ROAS and a read threshold,
-   * nothing else (no Target CPA, no kill line). Null only without a target.
+   * What the hit rate and winners need: a target ROAS, nothing else (no
+   * Target CPA, no kill line). Null only without a target.
    */
   hitThresholds: CreativeThresholds | null;
   /**

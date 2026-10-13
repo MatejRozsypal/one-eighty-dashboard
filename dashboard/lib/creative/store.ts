@@ -225,8 +225,18 @@ export interface StoredCreativeSettings {
   monthlyBudget: number | null;
   noTouchDays: number;
   tier: string | null;
+  /**
+   * Velocity planning input: purchases a test needs before its verdict
+   * (V = N x CPA). Never gates a winner, loser or verdict (owner decision
+   * 2026-10-13, pure numbers).
+   */
   readPurchases: number;
+  /**
+   * Read by nothing since 2026-10-13 and no longer on the Settings form. Kept
+   * so the stored value survives; Settings never overwrites it.
+   */
   directionalPurchases: number;
+  /** Planning only: the Concepts persona-capacity figure (`purchasesForPrecision`). */
   maxCiHalfWidth: number;
   hookRateFloor: number;
   holdRateFloor: number;
@@ -311,8 +321,8 @@ export async function getCreativeSettings(
  *
  * The kill line sits at 0 and the target at infinity, so nothing is ever
  * coloured as winning or losing and no verdict can fire. Everything that does
- * not depend on the money lines, the ROAS figures, the confidence classes, the
- * attention-metric floors, keeps working, which is what lets the creative
+ * not depend on the money lines, the ROAS figures and the attention-metric
+ * floors, keeps working, which is what lets the creative
  * wall render before anybody has been to Settings.
  *
  * The alternative, and what shipped first, was to render no grid at all until
@@ -331,9 +341,6 @@ export function toDisplayThresholds(s: StoredCreativeSettings): CreativeThreshol
     holdGateX: s.holdGateX,
     iterateGateX: s.iterateGateX,
     killGateX: s.killGateX,
-    readPurchases: s.readPurchases,
-    directionalPurchases: s.directionalPurchases,
-    maxCiHalfWidth: s.maxCiHalfWidth,
     hookRateFloor: s.hookRateFloor,
     holdRateFloor: s.holdRateFloor,
     frequencyWarn: s.frequencyWarn,
@@ -357,9 +364,6 @@ export function toThresholds(s: StoredCreativeSettings): CreativeThresholds | nu
     holdGateX: s.holdGateX,
     iterateGateX: s.iterateGateX,
     killGateX: s.killGateX,
-    readPurchases: s.readPurchases,
-    directionalPurchases: s.directionalPurchases,
-    maxCiHalfWidth: s.maxCiHalfWidth,
     hookRateFloor: s.hookRateFloor,
     holdRateFloor: s.holdRateFloor,
     frequencyWarn: s.frequencyWarn,
@@ -372,10 +376,10 @@ export function toThresholds(s: StoredCreativeSettings): CreativeThresholds | nu
 }
 
 /**
- * Thresholds for the hit rate and winners: the target ROAS and the read
- * threshold are all a winner needs (`classify` never looks at the kill line or
- * the CPA for a winner), so a client without a Target CPA, or without a kill
- * line, still gets a hit rate (audit change C4). Null only when there is no
+ * Thresholds for the hit rate and winners: the target ROAS is all a winner
+ * needs (`classify` never looks at the kill line or the CPA for a winner), so
+ * a client without a Target CPA, or without a kill line, still gets a hit
+ * rate (audit change C4). Null only when there is no
  * target. The kill line and CPA come through as 0 when missing: nothing on the
  * winner path reads them.
  *
@@ -553,8 +557,6 @@ export interface Decision {
   spend: number | null;
   purchases: number | null;
   roas: number | null;
-  ciLow: number | null;
-  ciHigh: number | null;
   decidedBy: string;
   decidedAt: string;
 }
@@ -572,8 +574,6 @@ export interface NewDecision {
   spend: number | null;
   purchases: number | null;
   roas: number | null;
-  ciLow: number | null;
-  ciHigh: number | null;
   decidedBy: string;
 }
 
@@ -588,6 +588,9 @@ export interface NewDecision {
  * constraint, not from a check here. This function deliberately does not
  * pre-validate it, a caller that bypassed this function would then bypass the
  * rule, and the whole point is that it cannot be bypassed.
+ *
+ * `ci_low` and `ci_high` are no longer written (pure numbers, 2026-10-13): the
+ * columns stay, NULL on new rows, and older rows keep what they recorded.
  */
 export async function recordDecision(input: NewDecision): Promise<void> {
   const overridden = input.finalVerdict !== input.computedVerdict;
@@ -595,13 +598,13 @@ export async function recordDecision(input: NewDecision): Promise<void> {
     `INSERT INTO decisions
        (client_id, level, entity_id, entity_name, review_date,
         computed_verdict, final_verdict, overridden, override_reason, learning_note,
-        spend, purchases, roas, ci_low, ci_high, decided_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        spend, purchases, roas, decided_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
     [
       input.clientId, input.level, input.entityId, input.entityName, input.reviewDate,
       input.computedVerdict, input.finalVerdict, overridden, input.overrideReason,
       input.learningNote, input.spend, input.purchases, input.roas,
-      input.ciLow, input.ciHigh, input.decidedBy,
+      input.decidedBy,
     ]
   );
 }
@@ -629,8 +632,6 @@ export async function listDecisions(
     spend: dec(r.spend),
     purchases: dec(r.purchases),
     roas: dec(r.roas),
-    ciLow: dec(r.ci_low),
-    ciHigh: dec(r.ci_high),
     decidedBy: String(r.decided_by),
     decidedAt: (r.decided_at as Date)?.toISOString() ?? "",
   }));

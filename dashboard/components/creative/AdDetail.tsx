@@ -24,9 +24,7 @@ import type { AdBreakdowns } from "@/lib/queries/creative";
 import type { AdView } from "@/lib/creative/view";
 import type { RangeLabel } from "@/lib/params";
 import { RetentionCurve } from "@/components/creative/RetentionCurve";
-import { CONFIDENCE_LABELS } from "@/lib/creative/stats";
 import {
-  ConfidenceChip,
   Tag,
   count,
   money,
@@ -180,8 +178,7 @@ export function AdDetail({
               {ad.stage && <Tag value={ad.stage} missing="stage" />}
               {ad.market && <Tag value={ad.market} missing="market" />}
               {ad.bodyHook && <Tag value={ad.bodyHook} missing="body/hook" />}
-              <ConfidenceChip level={ad.confidence} />
-              {/* Delivery, beside the reading confidence rather than buried
+              {/* Delivery, beside the tags rather than buried
                   under the creative. Whether an ad is still running is the
                   first thing that qualifies every number below it, a 1.2x
                   ROAS on something paused three weeks ago is a different
@@ -694,10 +691,9 @@ function Creative({ ad }: { ad: AdView }) {
       )}
 
       {/* ── The spec line ────────────────────────────────────────────────
-          The three facts that qualify the picture above them: what shape it
-          actually is, how much of the account it is holding, and how much
-          weight its numbers can carry. Delivery status sits up beside the
-          name, where it qualifies the metrics too. */}
+          The two facts that qualify the picture above them: what shape it
+          actually is and how much of the account it is holding. Delivery
+          status sits up beside the name, where it qualifies the metrics too. */}
       <dl className="m-0 mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-3.5">
         <dt className="font-mono text-[11.5px] uppercase tracking-[0.07em] text-content-muted">
           Format
@@ -712,12 +708,6 @@ function Creative({ ad }: { ad: AdView }) {
         </dt>
         <dd className="m-0 text-right font-mono text-[13px] tabular text-content-strong">
           {pct(ad.spendShare)}
-        </dd>
-        <dt className="font-mono text-[11.5px] uppercase tracking-[0.07em] text-content-muted">
-          Learning
-        </dt>
-        <dd className="m-0 text-right text-[13px] text-content-strong">
-          {CONFIDENCE_LABELS[ad.confidence]}
         </dd>
       </dl>
 
@@ -1031,8 +1021,9 @@ function Metrics({
           ? "warn"
           : "bad";
 
-  // Good only for a read winner (the one test every surface shares). Above
-  // target without being one yet reads as a warning dot, not a green one.
+  // Good only for a winner (the one test every surface shares). Above target
+  // without being one yet reads as a warning dot, not a green one. Spend with
+  // no purchases is a real 0.00 and reads as bad below the kill line.
   const roasVerdict: Verdict =
     !thresholds || ad.roas === null
       ? null
@@ -1066,12 +1057,7 @@ function Metrics({
       k: "ROAS",
       f: fRoas(ad.roas),
       big: true,
-      // The interval is on the card, not in a tooltip. It is the number that
-      // decides whether the headline figure means anything at all.
-      s:
-        ad.ciLow !== null && ad.ciHigh !== null
-          ? `95% CI ${roas(ad.ciLow)} to ${roas(ad.ciHigh)}`
-          : undefined,
+      s: thresholds ? `target ${roas(thresholds.targetRoas)}` : "no target set",
       verdict: roasVerdict,
     },
 

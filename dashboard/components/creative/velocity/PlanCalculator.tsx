@@ -154,7 +154,7 @@ export function PlanCalculator({
       shown: share(measured.newShare),
     },
     { key: "cpa", label: `CPA (${currency})`, info: "Last 90 days, 7d click + 1d view.", shown: formatMoney(measured.cpa, currency, { unit: true }) },
-    { key: "verdictN", label: "Purchases to verdict", info: "Settings, read at.", shown: whole(measured.verdictN) },
+    { key: "verdictN", label: "Purchases to verdict", info: "Settings, purchases to verdict.", shown: whole(measured.verdictN) },
     { key: "adsPerPack", label: "Ads per pack", info: "Default 4.", shown: whole(measured.adsPerPack) },
     {
       key: "hitRate",

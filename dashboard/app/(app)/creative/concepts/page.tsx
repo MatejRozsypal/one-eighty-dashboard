@@ -124,7 +124,7 @@ export default async function ConceptsPage({
 
   const cards: ConceptCardData[] = groups.map((g) => {
     const components = sum(g.ads);
-    const r = read(components, account.spend, display);
+    const r = read(components, account.spend);
     const first = g.ads[0];
     const adsets = [...new Set(g.ads.map((a) => a.adsetName ?? NO_VALUE))];
     // The verdict is taken against the OLDEST ad set the concept runs in: the
@@ -169,11 +169,8 @@ export default async function ConceptsPage({
       purchases: r.purchases,
       cpa: components.purchases > 0 ? components.spend / components.purchases : null,
       roas: r.roas,
-      confidence: r.confidence,
       verdict: toVerdictView(
-        judged
-          ? moneyVerdict({ level: "concept", components, roas: r.roas, ageDays }, thresholds)
-          : unjudgedVerdict()
+        judged ? moneyVerdict({ components, ageDays }, thresholds) : unjudgedVerdict()
       ),
       ageDays,
       frequency: freqs.length ? Math.max(...freqs) : null,
@@ -218,7 +215,9 @@ export default async function ConceptsPage({
   const activePersonas = personas.filter((p) => clickupStatusTone(p.status) !== "idle").length;
   const quarterSpend = account.spend * (91 / Math.max(1, daysInRange(ctx.params.range)));
   const capacity = personaCapacity(
-    purchasesForPrecision(display.maxCiHalfWidth),
+    // Planning only, never a verdict gate: purchases to read a persona to the
+    // Settings precision (`max_ci_halfwidth`).
+    purchasesForPrecision(ctx.settings.maxCiHalfWidth),
     display.targetCpa,
     quarterSpend,
     activePersonas || personasUsed.size,
@@ -255,8 +254,6 @@ export default async function ConceptsPage({
       spend: v.spend,
       purchases: v.purchases,
       roas: v.roas,
-      ciLow: v.ciLow,
-      ciHigh: v.ciHigh,
       ageDays: v.ageDays,
       verdictCode: v.verdict.code,
       verdictLabel: v.verdict.label,

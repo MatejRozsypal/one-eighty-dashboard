@@ -5,6 +5,9 @@
  * whenever `mustChangePassword` is set, so a page inside it would redirect to
  * itself forever.
  *
+ * Reachable only while `mustChangePassword` is set: a session alone is not
+ * proof of the old password, so it must not be enough to choose a new one.
+ *
  * The flag clears in the session automatically, `resolveAccess` runs on every
  * token refresh, so there is nothing to sign out and back in for.
  */
@@ -23,6 +26,10 @@ async function changePassword(formData: FormData) {
   const session = await getServerSession(authOptions);
   const email = session?.user?.email;
   if (!email) redirect("/auth/signin");
+  // Only a temporary password may be replaced here. Otherwise anyone at an
+  // unlocked laptop could set a new password without knowing the old one and
+  // keep the account. A lost password goes through an admin reset.
+  if (!session.user.mustChangePassword) redirect("/");
 
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
@@ -50,6 +57,7 @@ export default async function ChangePasswordPage({
 }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) redirect("/auth/signin");
+  if (!session.user.mustChangePassword) redirect("/");
 
   const error = searchParams.error ? ERRORS[searchParams.error] : null;
   const field =

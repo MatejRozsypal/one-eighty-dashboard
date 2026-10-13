@@ -43,6 +43,12 @@ import {
   verifyPassword,
   type Role,
 } from "@/lib/users/store";
+import {
+  TOO_MANY_ATTEMPTS,
+  clientIp,
+  isThrottled,
+  recordAttempt,
+} from "@/lib/users/loginThrottle";
 
 const ALLOWED_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN ?? "oneeighty.cz";
 const ALLOWED_DOMAINS = ALLOWED_DOMAIN.split(",").map((d) => d.trim().toLowerCase());
@@ -194,11 +200,20 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.email || !credentials.password) return null;
         if (!userStoreConfigured()) return null;
 
-        const user = await verifyPassword(credentials.email, credentials.password);
+        // Brute-force limit, checked before the password is compared (lib/users/loginThrottle.ts).
+        const email = credentials.email.trim().toLowerCase();
+        const ip = clientIp(req?.headers);
+        if (await isThrottled(email, ip)) {
+          console.warn(`[auth] Throttled password sign-in: ${email} from ${ip ?? "unknown ip"}`);
+          throw new Error(TOO_MANY_ATTEMPTS);
+        }
+
+        const user = await verifyPassword(email, credentials.password);
+        await recordAttempt(email, ip, Boolean(user));
         if (!user) return null;
 
         return { id: user.id, email: user.email, name: user.name ?? user.email };
@@ -207,12 +222,19 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       const email = user.email?.toLowerCase() ?? "";
 
       // The credentials provider already proved the password in `authorize`;
       // re-running the lookup here would only add a round trip.
       if (account?.provider === "credentials") return true;
+
+      // A Google account can carry an address Google has not verified it owns.
+      // Access is keyed on the address, so only a verified one counts.
+      if (account?.provider === "google" && (profile as { email_verified?: boolean } | undefined)?.email_verified !== true) {
+        console.warn(`[auth] Rejected Google sign-in with unverified email: ${email}`);
+        return false;
+      }
 
       const access = await resolveAccess(email);
       if (!access) {

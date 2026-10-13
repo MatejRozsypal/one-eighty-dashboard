@@ -33,7 +33,13 @@ export default function SignInPage() {
     });
 
     if (result?.error) {
-      setError("Wrong email or password.");
+      // Throttling applies to any address, existing or not, so saying so
+      // reveals nothing (lib/users/loginThrottle.ts).
+      setError(
+        result.error === "TooManyAttempts"
+          ? "Too many attempts. Try again in 15 minutes."
+          : "Wrong email or password.",
+      );
       setCredentialsBusy(false);
       return;
     }

@@ -76,3 +76,16 @@ CREATE INDEX IF NOT EXISTS access_log_at_idx ON access_log (at DESC);
 CREATE INDEX IF NOT EXISTS access_log_client_idx ON access_log (client_id, at DESC);
 CREATE INDEX IF NOT EXISTS access_log_email_idx ON access_log (LOWER(email), at DESC);
 CREATE INDEX IF NOT EXISTS access_log_refused_idx ON access_log (at DESC) WHERE event = 'refused';
+
+-- Brute-force limit for the email + password sign-in (lib/users/loginThrottle.ts,
+-- which creates it on demand). Failures per address and per IP in a 15 minute
+-- window; a success clears the address's failures and prunes rows over a day old.
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id     BIGSERIAL PRIMARY KEY,
+  at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  email  TEXT NOT NULL,
+  ip     TEXT,
+  ok     BOOLEAN NOT NULL
+);
+CREATE INDEX IF NOT EXISTS login_attempts_email_idx ON login_attempts (email, at DESC) WHERE NOT ok;
+CREATE INDEX IF NOT EXISTS login_attempts_ip_idx ON login_attempts (ip, at DESC) WHERE NOT ok;

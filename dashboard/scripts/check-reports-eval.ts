@@ -893,7 +893,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     hookRateFloor: 0.2, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3,
     noTouchDays: 14, minAdsetBudgetDaily: null, perAdFloorDaily: null, tier: null,
   });
-  type Ad = { p: number; spend: number; rev: number; age: number; prior?: number | null };
+  type Ad = { p: number; spend: number; rev: number; age: number };
   const rowL = (clientId: string, period: "cur" | "cmp", bucket: string, ad: Ad): ComponentRow => ({
     clientId,
     period,
@@ -904,7 +904,6 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
       "ad_launch.spend": { nat: ad.spend, disp: ad.spend, natNulls: 0, dispNulls: 0 },
       "ad_launch.revenue": { nat: ad.rev, disp: ad.rev, natNulls: 0, dispNulls: 0 },
       "ad_launch.age_days": { nat: ad.age, disp: ad.age, natNulls: 0, dispNulls: 0 },
-      "ad_launch.prior_roas": ad.prior === null ? { nat: null, disp: null, natNulls: 1, dispNulls: 1 } : { nat: ad.prior ?? 2, disp: ad.prior ?? 2, natNulls: 0, dispNulls: 0 },
     },
   });
   // Registry.
@@ -924,22 +923,23 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     const t = T(2.25, 15);
     const client = { ...alpha, creativeThresholds: t };
     const grid: Ad[] = [];
-    for (const p of [0, 5, 14, 15, 16, 40]) for (const roas of [0, 1.5, 2.2, 2.25, 2.4, 3.5]) for (const age of [10, 59, 60, 200]) grid.push({ p, spend: 1000, rev: 1000 * roas, age, prior: 2.03 });
-    grid.push({ p: 50, spend: 1000, rev: 5000, age: 100, prior: null });
+    for (const p of [0, 5, 14, 15, 16, 40]) for (const roas of [0, 1.5, 2.2, 2.25, 2.4, 3.5]) for (const age of [10, 59, 60, 200]) grid.push({ p, spend: 1000, rev: 1000 * roas, age });
+    grid.push({ p: 50, spend: 1000, rev: 5000, age: 100 });
     grid.push({ p: 50, spend: 0, rev: 0, age: 100 });
     const rows = grid.map((ad) => rowL("alpha", "cur", TOTAL, ad));
     const before = JSON.stringify(rows);
     const out = classifyEntityRows(rows, new Map([["alpha", client]]));
     let same = 0;
     grid.forEach((ad, i) => {
-      const lr: LaunchRow = { adId: "x", adName: "x", firstDate: "2026-09-01", ageDays: ad.age, spend: ad.spend, revenue: ad.rev, purchases: ad.p, isVideo: false, isRelaunch: false, isPreexisting: false, conceptId: null, conceptName: null, priorRoas: ad.prior === undefined ? 2 : ad.prior };
+      const lr: LaunchRow = { adId: "x", adName: "x", firstDate: "2026-09-01", ageDays: ad.age, spend: ad.spend, revenue: ad.rev, purchases: ad.p, isVideo: false, isRelaunch: false, isPreexisting: false, conceptId: null, conceptName: null };
       const s = launchStatus(lr, t);
       const v = out[i].values;
       if (v["ad_launch.launched"]?.nat === 1 && v["ad_launch.winners"]?.nat === (s === "winner" ? 1 : 0) && v["ad_launch.open"]?.nat === (s === "open" ? 1 : 0) && v["ad_launch.purchases"] === undefined) same += 1;
     });
     check("HR3: classifier equals launchStatus() on every grid row (Creative tile parity by construction)", same === grid.length, `${same}/${grid.length}`);
     check("HR3: classifier never mutates the cached rows", JSON.stringify(rows) === before);
-    check("HR3: no prior ROAS is never a winner", out[grid.length - 2].values["ad_launch.winners"]?.nat === 0);
+    check("HR3: real ROAS decides, no prior needed: 5.00 on 50 purchases is a winner", out[grid.length - 2].values["ad_launch.winners"]?.nat === 1);
+    check("HR3: 2.20 on 40 purchases is not a winner against 2.25 (no average lifts it)", classifyEntityRows([rowL("alpha", "cur", TOTAL, { p: 40, spend: 1000, rev: 2200, age: 200 })], new Map([["alpha", client]]))[0].values["ad_launch.winners"]?.nat === 0);
     const none = classifyEntityRows([rows[0]], new Map([["alpha", { ...alpha, creativeThresholds: null }]]))[0].values;
     check("HR3: without thresholds only launched is written (no false zero)", none["ad_launch.launched"]?.nat === 1 && none["ad_launch.winners"] === undefined && none["ad_launch.open"] === undefined);
     const kpiRow = row("alpha", "cur", TOTAL, { "kpis.revenue": 5 });
@@ -978,7 +978,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   check("HR3: combined carries the maturing caveat when a member is maturing", rk.series[0].caveats.includes("cohort_maturing"));
 
   // Thresholds change the evaluation only (SQL and key are asserted in check:reports).
-  const strict = clients.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: T(2.5, 15) } : c));
+  const strict = clients.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: T(2.75, 15) } : c));
   check("HR3: a stricter target changes the result at once (Settings edit, no cache change)", close(cell(evalW(widget(["hit_rate"], { filters: ids, clients: strict }), curRows), "alpha", "hit_rate").total, 0.25));
 
   // Comparison: a maturing current cohort against a settled previous one has no delta.
@@ -1016,7 +1016,7 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
   {
     const wx = widget(["revenue", "hit_rate"], { filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" }, clients });
     const kpi = row("alpha", "cur", TOTAL, { "kpis.revenue": 1000 });
-    const nullInputs = { "ad_launch.purchases": null, "ad_launch.spend": null, "ad_launch.revenue": null, "ad_launch.age_days": null, "ad_launch.prior_roas": null } as const;
+    const nullInputs = { "ad_launch.purchases": null, "ad_launch.spend": null, "ad_launch.revenue": null, "ad_launch.age_days": null } as const;
     const kpiJoined: ComponentRow = { ...kpi, guards: { ...kpi.guards, ad_launch: { nRows: 0, foreignCcyRows: 0, fxMissingRows: 0, fxMissingMonths: [] } }, values: { ...kpi.values, ...Object.fromEntries(Object.keys(nullInputs).map((k) => [k, { nat: null, disp: null, natNulls: 0, dispNulls: 0 }])) } };
     const ads = curRows.slice(0, 4).map((r) => ({ ...r, guards: { ...r.guards, kpis: { nRows: 0, foreignCcyRows: 0, fxMissingRows: 0, fxMissingMonths: [] } } }));
     const r = evalW(wx, [kpiJoined, ...ads]);
@@ -1031,10 +1031,10 @@ check("mergeFilters prefers overrides", eqJson(mergeFilters(FIXTURE_FILTERS, { c
     const launches: LaunchRow[] = Array.from({ length: 150 }, (_, i) => {
       const p = Math.floor(rnd() * 40);
       const spend = 100 + rnd() * 3000;
-      return { adId: `a${i}`, adName: "", firstDate: "2026-09-10", ageDays: Math.floor(rnd() * 120), spend, revenue: spend * rnd() * 4.5, purchases: p, isVideo: false, isRelaunch: false, isPreexisting: false, conceptId: null, conceptName: null, priorRoas: 2.0287 };
+      return { adId: `a${i}`, adName: "", firstDate: "2026-09-10", ageDays: Math.floor(rnd() * 120), spend, revenue: spend * rnd() * 4.5, purchases: p, isVideo: false, isRelaunch: false, isPreexisting: false, conceptId: null, conceptName: null };
     });
     const tile = hitRate(launches, t);
-    const r = evalW(widget(["hit_rate", "winners", "ads_launched"], { filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" }, clients: clients.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: t } : c)) }), launches.map((l) => rowL("alpha", "cur", TOTAL, { p: l.purchases, spend: l.spend, rev: l.revenue, age: l.ageDays, prior: l.priorRoas })));
+    const r = evalW(widget(["hit_rate", "winners", "ads_launched"], { filters: { clients: { mode: "list", ids: ["alpha"] }, compare: "none" }, clients: clients.map((c) => (c.id === "alpha" ? { ...c, creativeThresholds: t } : c)) }), launches.map((l) => rowL("alpha", "cur", TOTAL, { p: l.purchases, spend: l.spend, rev: l.revenue, age: l.ageDays })));
     check("HR3: Reports equals the Creative tile on the same launches (winners, launched, rate)", cell(r, "alpha", "winners").total === tile.winners && cell(r, "alpha", "ads_launched").total === tile.launched && close(cell(r, "alpha", "hit_rate").total, tile.rate ?? -1) && (tile.winners ?? 0) > 0, `${tile.winners}/${tile.launched}`);
   }
 }

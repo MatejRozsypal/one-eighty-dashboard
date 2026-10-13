@@ -25,7 +25,6 @@ export interface BreakdownRow {
   purchases: number;
   cpa: number | null;
   roas: number | null;
-  roasRaw: number | null;
   ciLow: number | null;
   ciHigh: number | null;
   confidence: Confidence;
@@ -103,7 +102,7 @@ export function SpendRevenueBars({
       {[
         [cV, "SPEND / REVENUE"],
         [cP, "PURCHASES"],
-        [cR, "ROAS (ADJ.)"],
+        [cR, "ROAS"],
       ].map(([x, label]) => (
         <text
           key={label as string}
@@ -233,8 +232,8 @@ export function IntervalChart({
   return (
     <svg viewBox={`0 0 ${W} ${h}`} className="h-auto w-full" role="img"
          aria-label={judged
-           ? "Shrunk ROAS with 95% intervals against the kill line and the target"
-           : "Shrunk ROAS with 95% intervals. No kill line or target is set for this client."}>
+           ? "ROAS with 95% intervals against the kill line and the target"
+           : "ROAS with 95% intervals. No kill line or target is set for this client."}>
       {judged && (
         <>
           <rect x={X(0)} y="4" width={X(killRoas) - X(0)} height={plotB - 4}

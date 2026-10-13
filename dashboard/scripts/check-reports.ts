@@ -535,10 +535,11 @@ if (real.registry) {
     const base = { clientIds: ["dobias", "ethia", "manami", "venev"], grain: "month" as const, current: { from: "2025-10-01", to: "2026-09-30" }, compare: "previous_period" as const };
     const w = resolved({ ...base, components: ["ad_launch.launched", "ad_launch.winners"] });
     const q = realCompile(w);
-    const INPUTS = "ad_launch.age_days,ad_launch.prior_roas,ad_launch.purchases,ad_launch.revenue,ad_launch.spend";
+    const INPUTS = "ad_launch.age_days,ad_launch.purchases,ad_launch.revenue,ad_launch.spend";
     check("HR3 sql: entity mart selects every classifier input, never a classified output", q.components.join() === INPUTS && !/ad_launch__(winners|launched|open)/.test(q.sql), q.components.join());
-    check("HR3 sql: one row per ad (entity key, GROUP BY 4), inputs as ANY_VALUE with NULL counts", q.sql.includes("t.ad_id AS entity_key") && q.sql.includes("GROUP BY 1, 2, 3, 4") && q.sql.includes("ANY_VALUE(t.purchases_7dc_1dv) AS ad_launch__purchases") && q.sql.includes("COUNTIF(t.prior_roas_7dc_1dv IS NULL) AS ad_launch__prior_roas__nulls"));
-    check("ME5: the classifier reads revenue, purchases and prior on 7-day click + 1-day view, spend and age unchanged", q.sql.includes("ANY_VALUE(t.revenue_7dc_1dv) AS ad_launch__revenue") && q.sql.includes("ANY_VALUE(t.prior_roas_7dc_1dv) AS ad_launch__prior_roas") && q.sql.includes("ANY_VALUE(t.spend) AS ad_launch__spend") && q.sql.includes("ANY_VALUE(t.age_days) AS ad_launch__age_days") && !/t\.(purchases|revenue|prior_roas)\b[^_]/.test(q.sql.replace(/t\.(purchases|revenue|prior_roas)_7dc_1dv/g, "")));
+    check("HR3 sql: one row per ad (entity key, GROUP BY 4), inputs as ANY_VALUE with NULL counts", q.sql.includes("t.ad_id AS entity_key") && q.sql.includes("GROUP BY 1, 2, 3, 4") && q.sql.includes("ANY_VALUE(t.purchases_7dc_1dv) AS ad_launch__purchases") && q.sql.includes("COUNTIF(t.purchases_7dc_1dv IS NULL) AS ad_launch__purchases__nulls"));
+    check("real ROAS: no prior ROAS is read for the winner test", !q.sql.includes("prior_roas"));
+    check("ME5: the classifier reads revenue and purchases on 7-day click + 1-day view, spend and age unchanged", q.sql.includes("ANY_VALUE(t.revenue_7dc_1dv) AS ad_launch__revenue") && q.sql.includes("ANY_VALUE(t.spend) AS ad_launch__spend") && q.sql.includes("ANY_VALUE(t.age_days) AS ad_launch__age_days") && !/t\.(purchases|revenue)\b[^_]/.test(q.sql.replace(/t\.(purchases|revenue)_7dc_1dv/g, "")));
     check("HR3 sql: pre-existing ads and relaunches excluded in WHERE", q.sql.includes("AND t.is_preexisting IS NOT TRUE") && q.sql.includes("AND t.is_relaunch IS NOT TRUE"));
     check("HR3 sql: bucketed on first delivery, date predicate and period tagging", q.sql.includes("DATE_TRUNC(t.first_date, MONTH) AS bucket") && q.sql.includes("t.first_date BETWEEN @scanFrom AND @scanTo") && q.sql.includes("t.first_date BETWEEN p.from_date AND p.to_date") && q.sql.includes("FROM `oneeighty-warehouse.mart.rpt_ad_launch` AS t"));
     check("HR3 sql: no FX, no display currency param (no money)", !q.sql.includes("fx_pairs") && !("displayCurrency" in q.params) && q.sql.includes("0 AS ad_launch__fx_missing_rows"));
@@ -565,10 +566,10 @@ if (real.registry) {
     const plain = realCompile(resolved({ ...base, components: ["kpis.revenue"] }));
     check("HR3 sql: widgets without an entity mart are unchanged (no entity_key)", !plain.sql.includes("entity_key") && plain.sql.endsWith("ORDER BY client_id, period, bucket"));
     const nl = normaliseRows(
-      [{ client_id: "manami", period: "cur", bucket: { value: "2026-09-01" }, entity_key: "123", ad_launch__n_rows: 1, ad_launch__foreign_ccy_rows: 0, ad_launch__fx_missing_rows: 0, ad_launch__fx_missing_months: [], ad_launch__purchases: 16, ad_launch__spend: big2("1000.5"), ad_launch__revenue: big2("2600"), ad_launch__age_days: 70, ad_launch__prior_roas: big2("2.0287"), ad_launch__prior_roas__nulls: 0 }],
+      [{ client_id: "manami", period: "cur", bucket: { value: "2026-09-01" }, entity_key: "123", ad_launch__n_rows: 1, ad_launch__foreign_ccy_rows: 0, ad_launch__fx_missing_rows: 0, ad_launch__fx_missing_months: [], ad_launch__purchases: 16, ad_launch__spend: big2("1000.5"), ad_launch__revenue: big2("2600"), ad_launch__age_days: 70 }],
       q
     );
-    check("HR3 normalise: entity row inputs as numbers", nl[0].values["ad_launch.spend"]?.nat === 1000.5 && nl[0].values["ad_launch.prior_roas"]?.nat === 2.0287 && nl[0].values["ad_launch.purchases"]?.nat === 16 && nl[0].guards.ad_launch?.nRows === 1);
+    check("HR3 normalise: entity row inputs as numbers", nl[0].values["ad_launch.spend"]?.nat === 1000.5 && nl[0].values["ad_launch.revenue"]?.nat === 2600 && nl[0].values["ad_launch.purchases"]?.nat === 16 && nl[0].guards.ad_launch?.nRows === 1);
   }
   // WR5: cohort retention reads the customer entry mart (plain sum mart, early customers left out in SQL).
   {

@@ -59,7 +59,7 @@ const ok = (name: string, pass: boolean, detail = "") => {
   console.log(`${pass ? "ok  " : "FAIL"}  ${name}${detail ? `: ${detail}` : ""}`);
 };
 
-/** Manami's proposed bar: 15 purchases to be read, shrunk ROAS 2.25 to win. */
+/** Manami's proposed bar: 15 purchases to be read, real ROAS 2.25 to win. */
 const T: CreativeThresholds = {
   killRoas: 1.8, targetRoas: 2.25, targetCpa: 527, grossMargin: 0.684,
   scaleMultiplier: 1.2, aggressiveMultiplier: 2.0,
@@ -68,7 +68,6 @@ const T: CreativeThresholds = {
   hookRateFloor: 0.2, holdRateFloor: 0.05, frequencyWarn: 2, frequencyAct: 3,
   noTouchDays: 14, minAdsetBudgetDaily: null, perAdFloorDaily: null, tier: null,
 };
-const PRIOR = 2.0;
 
 let seq = 0;
 /** An ad that is a clear winner unless the overrides say otherwise. */
@@ -78,7 +77,7 @@ function ad(over: Partial<LaunchRow> = {}): LaunchRow {
     adId: `a${seq}`, adName: `Ad ${seq}`, firstDate: "2026-07-10", ageDays: 90,
     spend: 1000, revenue: 2800, purchases: 15,
     isVideo: false, isRelaunch: false, isPreexisting: false,
-    conceptId: null, conceptName: null, priorRoas: PRIOR,
+    conceptId: null, conceptName: null,
     ...over,
   };
 }
@@ -94,39 +93,39 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   ok("no spend is not a winner", launchStatus(ad({ spend: 0, revenue: 0, purchases: 20 }), T) !== "winner");
 }
 
-// ── The shrinkage is the one classify() uses ─────────────────────────────────
+// ── classify() judges the real ROAS, no shrinkage ───────────────────────────
 {
-  // Hand arithmetic: (15 x 2.5 + 15 x 2.0) / 30 = 2.25 exactly, which clears 2.25.
-  const onTheLine = ad({ purchases: 15, spend: 1000, revenue: revenueFor(1000, 2.5) });
-  ok("shrunk 2.25 exactly (raw 2.50, prior 2.00, n = k = 15) wins", launchStatus(onTheLine, T) === "winner");
-  const justUnder = ad({ purchases: 15, spend: 1000, revenue: revenueFor(1000, 2.49) });
-  ok("shrunk 2.245 (raw 2.49) does not win", launchStatus(justUnder, T) !== "winner");
-  // The same raw ROAS wins against a higher prior and loses against a lower one.
+  // Revenue over spend, as it is: 2.25 exactly clears 2.25 at n = N = 15.
+  const onTheLine = ad({ purchases: 15, spend: 1000, revenue: revenueFor(1000, 2.25) });
+  ok("real 2.25 exactly at n = N = 15 wins", launchStatus(onTheLine, T) === "winner");
+  const justUnder = ad({ purchases: 15, spend: 1000, revenue: revenueFor(1000, 2.24) });
+  ok("real 2.24 does not win", launchStatus(justUnder, T) !== "winner");
+  // Shrunk toward a 1.00 average this ad used to read 1.93 and lose. Real: 2.40, a winner.
   const mid = ad({ purchases: 30, spend: 1000, revenue: 2400 });
-  ok("raw 2.40 at n = 30 wins on prior 2.20 ((72 + 33) / 45 = 2.33)", launchStatus({ ...mid, priorRoas: 2.2 }, T) === "winner");
-  ok("raw 2.40 at n = 30 loses on prior 1.00 ((72 + 15) / 45 = 1.93)", launchStatus({ ...mid, priorRoas: 1.0 }, T) !== "winner");
+  ok("real 2.40 at n = 30 wins, nothing pulls it toward an account average", launchStatus(mid, T) === "winner");
+  // Shrunk toward a 2.00 average this ad used to read 2.35 and win. Real: 2.20, not a winner.
+  const below = ad({ purchases: 15, spend: 1000, revenue: revenueFor(1000, 2.2) });
+  ok("real 2.20 at n = 15 does not win, even where an account average would have lifted it", launchStatus(below, T) !== "winner");
+  ok("classify() judges revenue over spend: 2.25 wins, 2.2499 does not", classify({ ...ZERO, spend: 1000, revenue: 2250, purchases: 15 }, T) === "winner" && classify({ ...ZERO, spend: 1000, revenue: 2249.9, purchases: 15 }, T) !== "winner");
 
   // Identical to classify() across a grid, so the grid badge and the hit rate cannot disagree.
   let agree = 0;
   let cells = 0;
   for (const purchases of [0, 1, 5, 14, 15, 16, 30, 60]) {
-    for (const roasRaw of [0, 0.5, 1.5, 1.8, 2.0, 2.25, 2.5, 3, 5, 12]) {
-      for (const prior of [0.9, 2.0, 3.1]) {
-        const spend = 800;
-        const row = ad({ purchases, spend, revenue: spend * roasRaw, priorRoas: prior, ageDays: 200 });
-        const direct = classify({ ...ZERO, spend, revenue: spend * roasRaw, purchases }, prior, T) === "winner";
-        cells += 1;
-        if ((launchStatus(row, T) === "winner") === direct) agree += 1;
-      }
+    for (const roas of [0, 0.5, 1.5, 1.8, 2.0, 2.25, 2.5, 3, 5, 12]) {
+      const spend = 800;
+      const row = ad({ purchases, spend, revenue: spend * roas, ageDays: 200 });
+      const direct = classify({ ...ZERO, spend, revenue: spend * roas, purchases }, T) === "winner";
+      // And the winner test is exactly: enough purchases and real ROAS at target.
+      const byHand = purchases >= T.readPurchases && roas >= T.targetRoas;
+      cells += 1;
+      if ((launchStatus(row, T) === "winner") === direct && direct === byHand) agree += 1;
     }
   }
-  ok("winner status equals classify() === 'winner' on every grid cell", agree === cells, `${agree}/${cells}`);
+  ok("winner status equals classify() === 'winner' and the plain rule on every grid cell", agree === cells, `${agree}/${cells}`);
 
-  // The prior is the row's own, so a different range cannot move it.
-  const row = ad({ priorRoas: 2.0 });
+  const row = ad();
   ok("status does not depend on any range", launchStatus(row, T) === launchStatus({ ...row, firstDate: "2025-01-01" }, T));
-  ok("no prior means never a winner, and young means open", launchStatus(ad({ priorRoas: null, ageDays: 10 }), T) === "open");
-  ok("no prior and old means settled", launchStatus(ad({ priorRoas: null, ageDays: 100 }), T) === "settled");
 }
 
 // ── Open = not a winner and under 60 days ────────────────────────────────────
@@ -296,11 +295,11 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
 // ── ME3 C9: the 14-day winner rule is in the one shared classify path ───────
 {
   const strong = { ...ZERO, spend: 1000, revenue: 2800, purchases: 15 };
-  ok("classify: old enough is a winner", classify(strong, 2.0, T, 14) === "winner" && classify(strong, 2.0, T, 400) === "winner");
-  ok("classify: under 14 days is open, not carrier or loser", classify(strong, 2.0, T, 13) === "open" && classify(strong, 2.0, T, 0) === "open");
-  ok("classify: unknown age applies no rule", classify(strong, 2.0, T) === "winner" && classify(strong, 2.0, T, null) === "winner");
+  ok("classify: old enough is a winner", classify(strong, T, 14) === "winner" && classify(strong, T, 400) === "winner");
+  ok("classify: under 14 days is open, not carrier or loser", classify(strong, T, 13) === "open" && classify(strong, T, 0) === "open");
+  ok("classify: unknown age applies no rule", classify(strong, T) === "winner" && classify(strong, T, null) === "winner");
   const weak = { ...ZERO, spend: 2000, revenue: 2000, purchases: 20 };
-  ok("classify: age never turns a loser or carrier into anything else", classify(weak, 2.0, T, 3) === classify(weak, 2.0, T, 300));
+  ok("classify: age never turns a loser or carrier into anything else", classify(weak, T, 3) === classify(weak, T, 300));
 
   const mk = (id: string, c: Partial<typeof strong>): AdRow => ({
     adId: id, adName: id, adsetId: null, adsetName: null, campaignId: null, campaignName: null,
@@ -308,9 +307,9 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   });
   const ads = [mk("old", strong), mk("young", strong), mk("weak", weak)];
   const ages: Record<string, number> = { old: 60, young: 12, weak: 60 };
-  const w = winnerEconomics(ads, 2.0, T, (id) => ages[id] ?? null);
+  const w = winnerEconomics(ads, T, (id) => ages[id] ?? null);
   ok("scorecard: the 12-day-old ad is not a winner, it is open", w.winners === 1 && w.open === 1 && w.decided === 2, JSON.stringify(w));
-  ok("scorecard without ages is the old behaviour (age unknown, no rule)", winnerEconomics(ads, 2.0, T).winners === 2);
+  ok("scorecard without ages is the old behaviour (age unknown, no rule)", winnerEconomics(ads, T).winners === 2);
 
   // The scorecard, the grid and the hit rate say the same thing for the same ad.
   let same = 0;
@@ -318,10 +317,10 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   for (const age of [0, 5, 13, 14, 15, 59, 60, 200]) {
     for (const p of [10, 15, 40]) {
       for (const roas of [1.2, 2.25, 2.6, 4]) {
-        const row = ad({ ageDays: age, purchases: p, spend: 1000, revenue: 1000 * roas, priorRoas: 2.0 });
+        const row = ad({ ageDays: age, purchases: p, spend: 1000, revenue: 1000 * roas });
         const viaTile = launchStatus(row, T) === "winner";
-        const viaGrid = classify({ ...ZERO, spend: 1000, revenue: 1000 * roas, purchases: p }, 2.0, T, age) === "winner";
-        const viaCard = winnerEconomics([mk("x", { spend: 1000, revenue: 1000 * roas, purchases: p })], 2.0, T, () => age).winners === 1;
+        const viaGrid = classify({ ...ZERO, spend: 1000, revenue: 1000 * roas, purchases: p }, T, age) === "winner";
+        const viaCard = winnerEconomics([mk("x", { spend: 1000, revenue: 1000 * roas, purchases: p })], T, () => age).winners === 1;
         cells += 1;
         if (viaTile === viaGrid && viaGrid === viaCard) same += 1;
       }
@@ -339,7 +338,7 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   ok("tone: under the directional gate is muted whatever the ROAS", roasTone({ purchases: 3, roas: 9, outcome: "open" }, lines) === "muted");
   ok("tone: below the kill line is negative, between the lines neutral", roasTone({ purchases: 40, roas: 1.2, outcome: "loser" }, lines) === "negative" && roasTone({ purchases: 40, roas: 2.0, outcome: "carrier" }, lines) === "neutral");
   const display = { ...T, targetRoas: Number.POSITIVE_INFINITY, killRoas: 0 };
-  ok("tone: with no lines set nothing is coloured", roasTone({ purchases: 40, roas: 9, outcome: classify({ ...ZERO, spend: 1000, revenue: 9000, purchases: 40 }, 2, display, 99) }, { directionalPurchases: 6, targetRoas: Infinity, killRoas: 0 }) === "neutral");
+  ok("tone: with no lines set nothing is coloured", roasTone({ purchases: 40, roas: 9, outcome: classify({ ...ZERO, spend: 1000, revenue: 9000, purchases: 40 }, display, 99) }, { directionalPurchases: 6, targetRoas: Infinity, killRoas: 0 }) === "neutral");
 }
 
 // ── ME3 C4: hit rate independent of Target CPA, CPA unit, no 'Body problem' at CPA 0 ─
@@ -359,7 +358,7 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   ok("no kill line: hit rate thresholds still exist, kill reads 0", toHitRateThresholds({ ...base, killRoas: null })?.killRoas === 0);
   const full = toThresholds({ ...base, targetCpa: 783 })!;
   ok("with a CPA the hit rate and verdict thresholds agree on every winner input", hit !== null && hit.targetRoas === full.targetRoas && hit.readPurchases === full.readPurchases);
-  const row = ad({ purchases: 12, spend: 1000, revenue: 2900, priorRoas: 2.0 });
+  const row = ad({ purchases: 12, spend: 1000, revenue: 2900 });
   ok("a winner is a winner with or without a CPA", launchStatus(row, hit!) === launchStatus(row, full));
   ok("hit rate without CPA is a number", hitRate([row, ad({ purchases: 1, revenue: 5 })], hit!).rate === 0.5);
 
@@ -491,15 +490,16 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   // launchFrom: the winner test reads the basis columns, not the stored ones.
   const base = { ad_id: "1", ad_name: "A", first_date: { value: "2026-07-01" }, age_days: 60, spend: "1000", is_video: true, is_relaunch: false, is_preexisting: false };
   const withBasis = launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0", revenue_7dc_1dv: "2700", purchases_7dc_1dv: 18, prior_roas_7dc_1dv: "2.1" });
-  ok("launchFrom: purchases, revenue and prior come from the 7dc_1dv columns", withBasis.purchases === 18 && withBasis.revenue === 2700 && withBasis.priorRoas === 2.1);
+  ok("launchFrom: purchases and revenue come from the 7dc_1dv columns", withBasis.purchases === 18 && withBasis.revenue === 2700);
+  ok("launchFrom: no prior is carried, nothing judges against one", !("priorRoas" in withBasis));
   const legacyOnly = launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0" });
-  ok("launchFrom: a table without the columns reads the stored ones", legacyOnly.purchases === 16 && legacyOnly.revenue === 2600 && legacyOnly.priorRoas === 2.0);
+  ok("launchFrom: a table without the columns reads the stored ones", legacyOnly.purchases === 16 && legacyOnly.revenue === 2600);
   const incomplete = launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0", revenue_7dc_1dv: null, purchases_7dc_1dv: null, prior_roas_7dc_1dv: null });
-  ok("launchFrom: a NULL basis (split incomplete) is never a winner, as in the Reports compiler", incomplete.purchases === 0 && incomplete.priorRoas === null && launchStatus(incomplete, T) !== "winner");
+  ok("launchFrom: a NULL basis (split incomplete) is never a winner, as in the Reports compiler", incomplete.purchases === 0 && launchStatus(incomplete, T) !== "winner");
   const flip = launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0", revenue_7dc_1dv: "1500", purchases_7dc_1dv: 12, prior_roas_7dc_1dv: "2.0" });
   ok("the stored columns no longer decide: a winner on them that fails on the basis is not one", launchStatus(launchFrom({ ...base, revenue: "2600", purchases: 16, prior_roas: "2.0" }), T) === "winner" && launchStatus(flip, T) !== "winner");
 
-  ok("anchor reads the basis prior", /prior_roas_7dc_1dv AS prior_roas/.test(ANCHOR_SQL));
+  ok("anchor reads no prior: nothing shrinks toward it", !/prior_roas/.test(ANCHOR_SQL));
   const creativeSrc = src("lib/queries/creative.ts");
   ok("Creative grid and account totals sum the basis columns", (creativeSrc.match(/SUM\(\$\{basisRevenueSql\(\)\}\) AS revenue, SUM\(\$\{basisPurchasesSql\(\)\}\) AS purchases/g) ?? []).length === 2);
   const metaSrc = src("lib/queries/paidMeta.ts");
@@ -508,7 +508,8 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
   ok("Paid Overview: Meta row and campaigns overlay the basis, only on rows that already carry Meta figures", ovSrc.includes("COALESCE(mb.revenue, k.meta_revenue)") && ovSrc.includes("COALESCE(mb.purchases, k.meta_purchases)") && (ovSrc.match(/IF\(k\.meta_spend IS NULL AND k\.meta_impressions IS NULL AND k\.meta_revenue IS NULL AND k\.meta_purchases IS NULL,/g) ?? []).length === 2 && ovSrc.includes("IF(mb.campaign_id IS NULL, c.revenue_client_ccy, mb.revenue)") && ovSrc.includes("COALESCE(mb.purchases, c.purchases)"));
   ok("only the (empty) ad set mart read keeps stored purchase sums in creative.ts", (creativeSrc.match(/SUM\(revenue\) AS revenue, SUM\(purchases\) AS purchases/g) ?? []).length === 1);
   const regSrc = src("lib/reports/registry/components.ts");
-  ok("Reports: the launch inputs read the basis columns", /"ad_launch\.purchases":[^\n]*column: "purchases_7dc_1dv"/.test(regSrc) && /"ad_launch\.revenue":[^\n]*column: "revenue_7dc_1dv"/.test(regSrc) && /"ad_launch\.prior_roas":[^\n]*column: "prior_roas_7dc_1dv"/.test(regSrc));
+  ok("Reports: the launch inputs read the basis columns", /"ad_launch\.purchases":[^\n]*column: "purchases_7dc_1dv"/.test(regSrc) && /"ad_launch\.revenue":[^\n]*column: "revenue_7dc_1dv"/.test(regSrc));
+  ok("Reports: no prior ROAS input, the classifier judges real ROAS", !regSrc.includes("ad_launch.prior_roas"));
   const { SEMANTIC_VERSION } = require("@/lib/reports/registry/types") as typeof import("@/lib/reports/registry/types");
   ok("semantic version bumped for the basis change (cache keys)", SEMANTIC_VERSION >= 9, String(SEMANTIC_VERSION));
   const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
@@ -519,7 +520,7 @@ const revenueFor = (spend: number, roas: number) => spend * roas;
 
 // ── Queries: shape of the anchor read ────────────────────────────────────────
 {
-  ok("anchor SQL reads one client's launch table only", /mart\.rpt_ad_launch/.test(ANCHOR_SQL) && ANCHOR_SQL.includes("@clientId") && ANCHOR_SQL.includes("age_days") && ANCHOR_SQL.includes("prior_roas") && !ANCHOR_SQL.includes("\u2014"));
+  ok("anchor SQL reads one client's launch table only", /mart\.rpt_ad_launch/.test(ANCHOR_SQL) && ANCHOR_SQL.includes("@clientId") && ANCHOR_SQL.includes("age_days") && !ANCHOR_SQL.includes("\u2014"));
   ok("launch SQL reaches back to the reference window and selects all columns (ad set columns arrive later)", /INTERVAL 364 DAY/.test(LAUNCH_SQL) && /r\.\*/.test(LAUNCH_SQL) && /refreshed_at/.test(LAUNCH_SQL));
 }
 
@@ -547,11 +548,10 @@ async function main() {
   const row = launchFrom({
     ad_id: 42, ad_name: "A \u2014 B", first_date: { value: "2026-07-03" }, age_days: "93", spend: "1000.5",
     revenue: 2800, purchases: 15, is_video: true, is_relaunch: false, is_preexisting: false,
-    concept_id: "", concept_name: null, prior_roas: "2.029",
+    concept_id: "", concept_name: null,
   });
-  ok("row mapping: ids, dates, numbers and flags", row.adId === "42" && row.firstDate === "2026-07-03" && row.ageDays === 93 && row.spend === 1000.5 && row.isVideo === true && row.isRelaunch === false && row.priorRoas === 2.029);
+  ok("row mapping: ids, dates, numbers and flags", row.adId === "42" && row.firstDate === "2026-07-03" && row.ageDays === 93 && row.spend === 1000.5 && row.isVideo === true && row.isRelaunch === false);
   ok("row mapping: empty concept is null, em dash in a name is removed", row.conceptId === null && row.adName === "A - B", row.adName);
-  ok("row mapping: a null prior stays null, not 0", launchFrom({ ad_id: "x", first_date: "2026-01-01", prior_roas: null }).priorRoas === null);
 
   // Stub the BigQuery client: the page must survive a missing table and must not hide anything else.
   const real = BigQuery.prototype.query;
@@ -576,10 +576,10 @@ async function main() {
     ok("client present, no ad matches: ready with no rows", quiet.state === "ready" && quiet.rows.length === 0 && quiet.through === "2026-10-04");
 
     stub(null, [
-      { table_through: { value: "2026-10-04" }, table_refreshed_at: "2026-10-05T08:10:12Z", table_rows: 450, ad_id: "1", first_date: { value: "2026-07-03" }, age_days: 93, spend: 1000, revenue: 2800, purchases: 15, is_video: false, is_relaunch: false, is_preexisting: false, prior_roas: 2.029 },
+      { table_through: { value: "2026-10-04" }, table_refreshed_at: "2026-10-05T08:10:12Z", table_rows: 450, ad_id: "1", first_date: { value: "2026-07-03" }, age_days: 93, spend: 1000, revenue: 2800, purchases: 15, is_video: false, is_relaunch: false, is_preexisting: false },
     ]);
     const got = await getLaunches("manami", range);
-    ok("a populated result maps to launches", got.state === "ready" && got.rows.length === 1 && got.rows[0].priorRoas === 2.029);
+    ok("a populated result maps to launches", got.state === "ready" && got.rows.length === 1 && got.rows[0].purchases === 15);
     ok("ME3 C6: the table's build time rides along", got.state === "ready" && got.refreshedAt === "2026-10-05T08:10:12Z");
     ok("ME3 C7: a table without the ad set columns maps them to undefined (not ready), never to false", got.state === "ready" && got.rows[0].isNewAdset === undefined && got.rows[0].adsetId === undefined && got.rows[0].adsetFirstDate === undefined);
 
@@ -603,15 +603,15 @@ async function main() {
   };
   try {
     stub({ code: 404, message: "Not found: Table oneeighty-warehouse:mart.rpt_ad_launch was not found in location EU" });
-    ok("anchor: a missing table reads as null (no age rule, window mean)", (await getLaunchAnchor("manami")) === null);
+    ok("anchor: a missing table reads as null (no age rule)", (await getLaunchAnchor("manami")) === null);
     stub(null, []);
     ok("anchor: an empty client reads as null", (await getLaunchAnchor("manami")) === null);
     stub(null, [
-      { ad_id: "1", age_days: 40, prior_roas: "2.029", through: { value: "2026-10-04" }, refreshed_at: "2026-10-05T08:10:12Z" },
-      { ad_id: "2", age_days: 3, prior_roas: "2.029", through: { value: "2026-10-04" }, refreshed_at: "2026-10-05T08:10:12Z" },
+      { ad_id: "1", age_days: 40, through: { value: "2026-10-04" }, refreshed_at: "2026-10-05T08:10:12Z" },
+      { ad_id: "2", age_days: 3, through: { value: "2026-10-04" }, refreshed_at: "2026-10-05T08:10:12Z" },
     ]);
     const a = await getLaunchAnchor("manami");
-    ok("anchor: prior, through, build time and ages by ad", a !== null && a.priorRoas === 2.029 && a.through === "2026-10-04" && a.refreshedAt === "2026-10-05T08:10:12Z" && a.ageByAd.get("1") === 40 && a.ageByAd.get("2") === 3);
+    ok("anchor: through, build time and ages by ad", a !== null && !("priorRoas" in a) && a.through === "2026-10-04" && a.refreshedAt === "2026-10-05T08:10:12Z" && a.ageByAd.get("1") === 40 && a.ageByAd.get("2") === 3);
     stub({ code: 403, message: "Access Denied: Table oneeighty-warehouse:mart.rpt_ad_launch: Permission denied" });
     let threw = false;
     try { await getLaunchAnchor("manami"); } catch { threw = true; }

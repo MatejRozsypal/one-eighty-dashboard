@@ -309,7 +309,6 @@ const HIT = {
   spend: "ad_launch.spend",
   revenue: "ad_launch.revenue",
   ageDays: "ad_launch.age_days",
-  priorRoas: "ad_launch.prior_roas",
   launched: "ad_launch.launched",
   winners: "ad_launch.winners",
   open: "ad_launch.open",
@@ -347,7 +346,6 @@ function classifyCreativeHit(values: ComponentRow["values"], client: ReportClien
       isPreexisting: false,
       conceptId: null,
       conceptName: null,
-      priorRoas: read(HIT.priorRoas),
     },
     t
   );

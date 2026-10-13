@@ -121,7 +121,7 @@ export default async function BreakdownPage({
           | string
           | null
           | undefined) ?? null;
-    const r = read(c, account.anchorRoas, account.spend, display);
+    const r = read(c, account.spend, display);
     return {
       key: g.key,
       label: g.label,
@@ -133,7 +133,6 @@ export default async function BreakdownPage({
       purchases: c.purchases,
       cpa: c.purchases > 0 ? c.spend / c.purchases : null,
       roas: r.roas,
-      roasRaw: r.roasRaw,
       ciLow: r.ciLow,
       ciHigh: r.ciHigh,
       confidence: r.confidence,
@@ -289,7 +288,7 @@ export default async function BreakdownPage({
         the other that does not involve retyping a filter.
       */}
       <DataTable
-        gridClass="grid grid-cols-[2.4fr_0.5fr_0.9fr_1fr_0.6fr_0.8fr_0.7fr_0.6fr_1.2fr_1fr] items-center gap-2"
+        gridClass="grid grid-cols-[2.4fr_0.5fr_0.9fr_1fr_0.6fr_0.8fr_0.7fr_1.2fr_1fr] items-center gap-2"
         columns={[
           { key: "dim", label },
           { key: "ads", label: "Ads", align: "right" },
@@ -297,8 +296,7 @@ export default async function BreakdownPage({
           { key: "share", label: "Share" },
           { key: "purch", label: "Purch.", align: "right" },
           { key: "cpa", label: "CPA", align: "right" },
-          { key: "roas", label: "ROAS (adj.)", align: "right", info: "Pulled toward the account mean when purchases are few." },
-          { key: "raw", label: "Raw", align: "right", info: "Observed ROAS, before that adjustment." },
+          { key: "roas", label: "ROAS", align: "right" },
           { key: "ci", label: "95% interval" },
           { key: "conf", label: "Confidence", sortable: false },
         ]}
@@ -312,7 +310,6 @@ export default async function BreakdownPage({
             r.purchases,
             r.cpa,
             r.roas,
-            r.roasRaw,
             r.ciHigh !== null && r.ciLow !== null ? r.ciHigh - r.ciLow : null,
             null,
           ],
@@ -365,10 +362,6 @@ export default async function BreakdownPage({
             <span key="p" className="font-mono text-[13px] tabular text-content-body">{r.purchases}</span>,
             <span key="c" className="font-mono text-[13px] tabular text-content-body">{unitMoney(r.cpa, currency)}</span>,
             <span key="r" className="font-mono text-[13px] font-medium tabular text-content-strong">{roas(r.roas)}</span>,
-            /* The raw ratio beside the shrunk one, always. Hiding it would make
-               the shrinkage feel like a correction applied behind the reader's
-               back. */
-            <span key="rw" className="font-mono text-[13px] tabular text-content-muted">{roas(r.roasRaw)}</span>,
             <span key="ci" className="font-mono text-[12px] tabular text-content-muted">
               {r.ciLow !== null && r.ciHigh !== null ? `${roas(r.ciLow)} to ${roas(r.ciHigh)}` : NO_VALUE}
             </span>,

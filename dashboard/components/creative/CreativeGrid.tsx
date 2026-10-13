@@ -362,11 +362,7 @@ function Tile({
           <SpendBar fraction={ad.spend / maxSpend} tone={tone} />
         </div>
         <dl className="m-0 flex flex-col gap-1">
-          <Row
-            label="ROAS (adj.)"
-            hint={`Adjusted toward the account average for few purchases. Raw ${roas(ad.roasRaw)}.`}
-            trailing={null}
-          >
+          <Row label="ROAS" trailing={null}>
             <span title={roasVerdict ?? undefined} className={`font-mono text-[13px] tabular ${roasColour}`}>
               {roas(ad.roas)}
               {roasVerdict && <span className="sr-only">, {roasVerdict}</span>}

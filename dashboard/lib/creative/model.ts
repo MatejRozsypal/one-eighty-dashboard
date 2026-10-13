@@ -14,7 +14,7 @@
  * ROAS, moves like ROAS, and is not ROAS.
  */
 
-import { confidenceOf, interval, shrink, type Confidence, type CreativeThresholds } from "@/lib/creative/stats";
+import { confidenceOf, interval, type Confidence, type CreativeThresholds } from "@/lib/creative/stats";
 
 // ---------------------------------------------------------------------------
 // Components, the only things allowed to cross a join or a GROUP BY
@@ -175,7 +175,7 @@ function div(a: number, b: number): number | null {
 }
 
 export interface Derived {
-  roasRaw: number | null;
+  roas: number | null;
   cpa: number | null;
   ctr: number | null;
   cpc: number | null;
@@ -204,7 +204,7 @@ export interface Derived {
 
 export function derive(c: Components): Derived {
   return {
-    roasRaw: div(c.revenue, c.spend),
+    roas: div(c.revenue, c.spend),
     cpa: div(c.spend, c.purchases),
     ctr: div(c.clicks, c.impressions),
     cpc: div(c.spend, c.clicks),
@@ -277,10 +277,11 @@ export function groupBy(
 // ---------------------------------------------------------------------------
 
 export interface Reading {
-  /** Empirical-Bayes posterior. The number that sorts and colours. */
+  /**
+   * The real ROAS, attributed revenue over spend, never adjusted. The number
+   * that shows, sorts and colours. Null with no purchases (see below).
+   */
   roas: number | null;
-  /** The raw ratio, shown beside it so the shrinkage is never hidden. */
-  roasRaw: number | null;
   ciLow: number | null;
   ciHigh: number | null;
   confidence: Confidence;
@@ -291,29 +292,19 @@ export interface Reading {
 
 export function read(
   c: Components,
-  accountMeanRoas: number,
   accountSpend: number,
   t: CreativeThresholds
 ): Reading {
-  const raw = div(c.revenue, c.spend);
-
-  // ── Zero purchases reports nothing, not the prior ─────────────────────────
-  // Shrinkage with n = 0 returns the account mean exactly: (0*obs + k*mean)/k.
-  // That is arithmetically right and a lie to look at. A wall of ads that never
-  // sold anything rendered thirty tiles all reading the same ROAS 2.12, which
-  // is not an estimate of any of them, it is the prior, wearing their names.
-  //
-  // With no conversions there is no evidence to shrink, so the honest output is
-  // no number. The tile still shows the spend, the CTR and "0 purchases", which
-  // is the whole of what is known.
-  const roas =
-    raw === null || c.purchases <= 0
-      ? null
-      : shrink(raw, c.purchases, accountMeanRoas, t.readPurchases);
+  // ── Zero purchases reports no ROAS ────────────────────────────────────────
+  // As in Ads Manager: with no conversions there is no purchase ROAS and no
+  // interval around one, so the cell reads n/a. The tile still shows the
+  // spend, the CTR and "0 purchases", which is the whole of what is known.
+  // Too few purchases never changes the number; the confidence chip and the
+  // read threshold in `classify` say how far it can be trusted.
+  const roas = c.purchases > 0 ? div(c.revenue, c.spend) : null;
   const [lo, hi] = roas === null ? [null, null] : interval(roas, c.purchases);
   return {
     roas,
-    roasRaw: raw,
     ciLow: lo,
     ciHigh: hi,
     confidence: confidenceOf(c.purchases, t),
@@ -337,10 +328,10 @@ export function read(
  * ── One winner test for every surface ──────────────────────────────────────
  * The Creative tile and trend, the scorecard, the grid, Concepts, Production,
  * the Paid tile and Reports all decide "winner" here: purchases >= the client's
- * read threshold, shrunk ROAS >= target, AND at least `WINNER_MIN_AGE_DAYS`
- * since first delivery. The shrinkage anchor is the client's stored trailing
- * 365-day ROAS (`mart.rpt_ad_launch.prior_roas`) on every surface, so the bar
- * does not move with the date picker.
+ * read threshold, real ROAS (revenue over spend, not adjusted) >= target, AND
+ * at least `WINNER_MIN_AGE_DAYS` since first delivery. The read threshold is
+ * the noise protection: below it an ad is never a winner or a carrier however
+ * well it reads, it stays `open`.
  */
 export type Outcome = "winner" | "carrier" | "loser" | "open";
 
@@ -359,13 +350,11 @@ export const WINNER_MIN_AGE_DAYS = 14;
  */
 export function classify(
   c: Components,
-  accountMeanRoas: number,
   t: CreativeThresholds,
   ageDays: number | null = null
 ): Outcome {
-  const raw = div(c.revenue, c.spend);
-  if (raw === null) return "open";
-  const roas = shrink(raw, c.purchases, accountMeanRoas, t.readPurchases);
+  const roas = div(c.revenue, c.spend);
+  if (roas === null) return "open";
 
   if (c.purchases >= t.readPurchases && roas >= t.targetRoas) {
     return ageDays !== null && ageDays < WINNER_MIN_AGE_DAYS ? "open" : "winner";
@@ -403,12 +392,11 @@ export interface WinnerEconomics {
  */
 export function winnerEconomics(
   ads: AdRow[],
-  accountMeanRoas: number,
   t: CreativeThresholds,
   ageOf: (adId: string) => number | null = () => null
 ): WinnerEconomics {
   const counts: Record<Outcome, number> = { winner: 0, carrier: 0, loser: 0, open: 0 };
-  for (const ad of ads) counts[classify(ad.components, accountMeanRoas, t, ageOf(ad.adId))] += 1;
+  for (const ad of ads) counts[classify(ad.components, t, ageOf(ad.adId))] += 1;
   return {
     winners: counts.winner,
     carriers: counts.carrier,
@@ -424,26 +412,18 @@ export function winnerEconomics(
 // ---------------------------------------------------------------------------
 
 /**
- * The account-level figures every row is judged against.
+ * The account-level figures of the window.
  *
- * Both ROAS figures are SUM of revenue over SUM of spend, never the mean of
- * per-ad ROAS, which would let a 300 Kč freak at 17x drag the anchor that every
- * other row is pulled toward. The learnings file has that exact ad in it.
- * `meanRoas` is the window's blended ROAS (what the Blended ROAS tile shows);
- * `anchorRoas` is what rows are shrunk toward.
+ * `meanRoas` is SUM of revenue over SUM of spend, never the mean of per-ad
+ * ROAS, which would let a 300 Kč freak at 17x drag it. The learnings file has
+ * that exact ad in it. It is what the Blended ROAS tile shows.
  */
 export interface AccountContext {
   spend: number;
   revenue: number;
   purchases: number;
-  /** Blended ROAS of the ads in the window. A display figure, not the shrinkage anchor. */
+  /** Blended ROAS of the ads in the window. */
   meanRoas: number;
-  /**
-   * The shrinkage anchor: the client's trailing 365-day ROAS from the launch
-   * table, the same number the hit rate uses, so no screen's winner bar moves
-   * with the date picker. Falls back to `meanRoas` when the table has none.
-   */
-  anchorRoas: number;
   cpa: number | null;
   ads: number;
 }
@@ -455,7 +435,6 @@ export function accountContext(ads: AdRow[], fallbackRoas: number): AccountConte
     revenue: c.revenue,
     purchases: c.purchases,
     meanRoas: c.spend > 0 ? c.revenue / c.spend : fallbackRoas,
-    anchorRoas: c.spend > 0 ? c.revenue / c.spend : fallbackRoas,
     cpa: div(c.spend, c.purchases),
     ads: ads.length,
   };

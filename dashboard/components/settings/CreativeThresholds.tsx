@@ -109,7 +109,7 @@ export function CreativeThresholds({
         </legend>
         <div className="flex flex-wrap items-start gap-3">
           <Field name="readPurchases" label="Read at" value={settings.readPurchases}
-                 hint="Purchases before a row is Read confidence. Also the shrinkage weight." />
+                 hint="Purchases before a row is Read confidence, and before an ad can be a winner." />
           <Field name="directionalPurchases" label="Directional at" value={settings.directionalPurchases}
                  hint="Below this a row is greyed and hatched." />
           <Field name="maxCiHalfWidthPct" label="Max interval %"

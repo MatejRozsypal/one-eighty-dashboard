@@ -311,7 +311,7 @@ export async function getCreativeSettings(
  *
  * The kill line sits at 0 and the target at infinity, so nothing is ever
  * coloured as winning or losing and no verdict can fire. Everything that does
- * not depend on the money lines, shrinkage, the confidence classes, the
+ * not depend on the money lines, the ROAS figures, the confidence classes, the
  * attention-metric floors, keeps working, which is what lets the creative
  * wall render before anybody has been to Settings.
  *

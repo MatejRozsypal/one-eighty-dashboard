@@ -56,7 +56,7 @@ export default async function ProductionPage({
     return <CreativeNotConnected title="Production ROI" source={loaded.source} />;
   }
   const { ctx } = loaded;
-  const { client, currency, data, thresholds, display, account } = ctx;
+  const { client, currency, data, thresholds, display } = ctx;
   // What a creative cost and what it returned is a measurement; which of them
   // "won" is a judgement. So the cost table renders either way and only the
   // cost-to-first-winner tiles wait for the lines to be set.
@@ -121,7 +121,7 @@ export default async function ProductionPage({
       net: cm !== null && priced.length ? cm - production : null,
       ret: cm !== null && production > 0 ? cm / production : null,
       winners: judged
-        ? g.ads.filter((a) => classify(a.components, account.anchorRoas, thresholds, ageOf(ctx, a.adId)) === "winner").length
+        ? g.ads.filter((a) => classify(a.components, thresholds, ageOf(ctx, a.adId)) === "winner").length
         : 0,
       confidence: confidenceOf(components.purchases, display),
     };
@@ -136,7 +136,7 @@ export default async function ProductionPage({
   const netNew = data.ads.filter((a) => isNetNew(a) === true);
   // The net-new hit rate is hitRate() on the launch cohort (ads first
   // delivered in the window, relaunches excluded), restricted to the ads this
-  // screen calls net-new. Same function, same anchor, same age rule as the
+  // screen calls net-new. Same function, same winner test, same age rule as the
   // Creative tile. The reference is the client's own trailing 12-month rate.
   const launched = launches.state === "ready" ? launches : null;
   const netNewIds = new Set(netNew.map((a) => a.adId));
@@ -146,7 +146,7 @@ export default async function ProductionPage({
   const ownRate = launched ? referenceRate(launched.rows, ctx.hitThresholds, launched.through) : null;
   const burned = judged
     ? data.ads
-        .filter((a) => classify(a.components, account.anchorRoas, thresholds, ageOf(ctx, a.adId)) !== "winner")
+        .filter((a) => classify(a.components, thresholds, ageOf(ctx, a.adId)) !== "winner")
         .reduce((a, b) => a + b.components.spend, 0)
     : 0;
 

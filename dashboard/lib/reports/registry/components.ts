@@ -240,17 +240,15 @@ export const COMPONENTS = defineComponents({
   // (ANY_VALUE per ad). Outputs: written per ad by the creative_hit
   // classifier in evaluate.ts, which reuses launchStatus() from
   // lib/creative/hitRate.ts, the function behind the Creative tile.
-  // ME5: purchases, revenue and the prior are the 7-day click + 1-day view columns of the launch table (the standard
+  // ME5: purchases and revenue are the 7-day click + 1-day view columns of the launch table (the standard
   // basis; migration 256). The ids are unchanged, so the classifier input map in evaluate.ts needs no edit.
   "ad_launch.purchases": { money: false, requires: "meta", nullMeans: "zero", column: "purchases_7dc_1dv" },
   "ad_launch.spend": { money: false, requires: "meta", nullMeans: "zero" },
   "ad_launch.revenue": { money: false, requires: "meta", nullMeans: "zero", column: "revenue_7dc_1dv" },
   "ad_launch.age_days": { money: false, requires: "meta", nullMeans: "zero" },
-  /** The client's trailing 365-day Meta ROAS on the same basis, the shrinkage anchor. NULL: the ad cannot be judged, never a winner. */
-  "ad_launch.prior_roas": { money: false, requires: "meta", nullMeans: "zero", column: "prior_roas_7dc_1dv" },
   /** 1 per ad first delivered in the bucket (pre-existing ads and relaunches are not in the rows at all). */
   "ad_launch.launched": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: false, lowerBound: false } },
-  /** 1 per ad that is a winner on its lifetime totals: purchases >= readPurchases and shrunk ROAS >= targetRoas. */
+  /** 1 per ad that is a winner on its lifetime totals: purchases >= readPurchases and real ROAS (revenue / spend) >= targetRoas. */
   "ad_launch.winners": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: true, lowerBound: true } },
   /** 1 per ad that is not a winner and under 60 days old: it may still qualify. */
   "ad_launch.open": { money: false, requires: "meta", nullMeans: "zero", classified: { needsThresholds: true, lowerBound: false } },

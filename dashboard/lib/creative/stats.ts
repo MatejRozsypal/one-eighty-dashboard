@@ -15,7 +15,9 @@
  * The learnings file records exactly that happening: format, funnel stage and
  * offer all "showed differences" that did not survive scrutiny.
  *
- * Everything in this file is one of the two defences against that.
+ * Everything in this file is a defence against that. None of it changes the
+ * ROAS itself: every screen shows the real ratio, attributed revenue over
+ * spend. What these functions do is say how far that number can be trusted.
  */
 
 /**
@@ -54,7 +56,7 @@ export interface CreativeThresholds {
   iterateGateX: number;
   killGateX: number;
 
-  /** Purchases before a row is "Read" confidence. Also the shrinkage weight. */
+  /** Purchases before a row is "Read" confidence. */
   readPurchases: number;
   /** Purchases before a row is even "Directional". */
   directionalPurchases: number;
@@ -77,30 +79,6 @@ export interface CreativeThresholds {
   minAdsetBudgetDaily: number | null;
   perAdFloorDaily: number | null;
   tier: string | null;
-}
-
-/**
- * Shrinkage toward the account mean, defence one.
- *
- *     reported = (n x observed + k x account_mean) / (n + k)
- *
- * with `k` the client's read threshold. An ad with 4 purchases at a raw 3.38
- * reports as 2.17, not 3.38. This is the arithmetic version of the rule already
- * written in the learnings file: *a creative at 15x on trivial spend is not a
- * winner.* Piliero's rule, made continuous.
- *
- * Both numbers are shown in the UI. The shrunk one is the one that sorts and
- * colours, because it is the one that is defensible.
- */
-export function shrink(
-  observedRoas: number,
-  purchases: number,
-  accountMeanRoas: number,
-  k: number
-): number {
-  if (!Number.isFinite(observedRoas)) return accountMeanRoas;
-  const n = Math.max(0, purchases);
-  return (n * observedRoas + k * accountMeanRoas) / (n + k);
 }
 
 /**

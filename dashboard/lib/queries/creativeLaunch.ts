@@ -21,8 +21,8 @@ import "server-only";
  * returns the client's `through` and row count, even when no ad matches, which
  * is how "not built for this client" is told apart from "no launches".
  *
- * Purchases, revenue and the prior are the 7-day click + 1-day view columns of
- * the table (ME5); `launchFrom` maps them onto the row the winner test reads.
+ * Purchases and revenue are the 7-day click + 1-day view columns of the table
+ * (ME5); `launchFrom` maps them onto the row the winner test reads.
  *
  * Thresholds are not read here and never reach SQL: the caller evaluates the
  * rows with `lib/creative/hitRate.ts`.
@@ -72,8 +72,8 @@ export function launchFrom(r: Record<string, unknown>): LaunchRow {
     spend: n0(r.spend),
     // 7-day click + 1-day view (ME5), the winner test's basis. A table without
     // the columns (older release, test stubs) reads its stored columns. A table
-    // WITH them and a NULL (split incomplete for the ad) reads 0 and no prior,
-    // so the ad is never a winner: the same rule the Reports compiler applies.
+    // WITH them and a NULL (split incomplete for the ad) reads 0 purchases, so
+    // the ad is never a winner: the same rule the Reports compiler applies.
     revenue: n0("revenue_7dc_1dv" in r ? r.revenue_7dc_1dv : r.revenue),
     purchases: n0("purchases_7dc_1dv" in r ? r.purchases_7dc_1dv : r.purchases),
     isVideo: r.is_video === true,
@@ -81,7 +81,6 @@ export function launchFrom(r: Record<string, unknown>): LaunchRow {
     isPreexisting: r.is_preexisting === true,
     conceptId: str(r.concept_id),
     conceptName: str(r.concept_name),
-    priorRoas: num("prior_roas_7dc_1dv" in r ? r.prior_roas_7dc_1dv : r.prior_roas),
     adsetId: "adset_id" in r ? str(r.adset_id) : undefined,
     adsetFirstDate:
       "adset_first_date" in r
@@ -154,19 +153,16 @@ export async function getLaunches(clientId: string, range: DateRange): Promise<L
 }
 
 // ---------------------------------------------------------------------------
-// The anchor and the ages: what every other Creative screen judges against
+// The ages: what every other Creative screen judges against
 // ---------------------------------------------------------------------------
 
 /**
  * What the grid, scorecard, Concepts, Breakdown and Production need from the
- * launch table so they judge a winner exactly as the hit rate does: the
- * client's trailing 365-day ROAS (the shrinkage anchor) and each ad's age in
- * days since first delivery (the 14-day winner rule). Includes pre-existing
- * ads and relaunches: they are on the wall too.
+ * launch table so they judge a winner exactly as the hit rate does: each ad's
+ * age in days since first delivery (the 14-day winner rule). Includes
+ * pre-existing ads and relaunches: they are on the wall too.
  */
 export interface LaunchAnchor {
-  /** Null when the table holds no spend to compute it from. */
-  priorRoas: number | null;
   through: string;
   refreshedAt: string | null;
   /** Days since first delivery, by ad id, as of `through`. */
@@ -174,19 +170,18 @@ export interface LaunchAnchor {
 }
 
 export const ANCHOR_SQL = `
-  SELECT ad_id, age_days, prior_roas_7dc_1dv AS prior_roas, through,
+  SELECT ad_id, age_days, through,
          FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', refreshed_at) AS refreshed_at
   FROM \`${PROJECT_ID}.mart.rpt_ad_launch\`
   WHERE client_id = @clientId`;
 
-/** Null when the table is not ready for this client: callers then keep the window mean and apply no age rule. */
+/** Null when the table is not ready for this client: callers then apply no age rule. */
 export async function getLaunchAnchor(clientId: string): Promise<LaunchAnchor | null> {
   if (isDemo(clientId)) {
     const { demoLaunches } = await import("@/lib/demo/creative");
     const demo = demoLaunches();
     if (demo.state !== "ready") return null;
     return {
-      priorRoas: demo.rows.find((r) => r.priorRoas !== null)?.priorRoas ?? null,
       through: demo.through,
       refreshedAt: null,
       ageByAd: new Map(demo.rows.map((r) => [r.adId, r.ageDays])),
@@ -197,7 +192,6 @@ export async function getLaunchAnchor(clientId: string): Promise<LaunchAnchor | 
     if (rows.length === 0) return null;
     const head = rows[0];
     return {
-      priorRoas: num(head.prior_roas),
       through: String(isoDate(head.through as never)),
       refreshedAt: head.refreshed_at ? String(head.refreshed_at) : null,
       ageByAd: new Map(rows.map((r) => [String(r.ad_id), n0(r.age_days)])),

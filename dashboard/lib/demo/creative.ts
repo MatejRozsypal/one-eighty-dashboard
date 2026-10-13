@@ -551,8 +551,6 @@ export function demoTotals(range: DateRange): Components | null {
  */
 export function demoLaunches(): LaunchData {
   const through = "2026-09-08";
-  const total = SEEDS.reduce((a, s) => ({ s: a.s + s.s, r: a.r + s.r }), { s: 0, r: 0 });
-  const priorRoas = total.s > 0 ? total.r / total.s : null;
   const rows = SEEDS.map((seed) => {
     const first = Math.max(0, seed.m.findIndex((v) => v > 0));
     const day = 1 + Math.floor(unit(`launch:${seed.id}`) * 26);
@@ -572,7 +570,6 @@ export function demoLaunches(): LaunchData {
       isPreexisting: false,
       conceptId: seed.concept,
       conceptName: concept ? concept.name : null,
-      priorRoas,
     };
   });
   return { state: "ready", rows, through };

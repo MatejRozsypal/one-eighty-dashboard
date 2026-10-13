@@ -55,19 +55,19 @@ async function main() {
   // The tile's inputs: a comparison period with no launches yields no change.
   const launch = (id: string, firstDate: string, extra: Partial<LaunchRow> = {}): LaunchRow => ({
     adId: id, adName: id, firstDate, ageDays: 100, spend: 1000, revenue: 4000, purchases: 20,
-    isVideo: true, isRelaunch: false, isPreexisting: false, conceptId: null, conceptName: null, priorRoas: 2,
+    isVideo: true, isRelaunch: false, isPreexisting: false, conceptId: null, conceptName: null,
     ...extra,
   });
   const thresholds = {
     targetRoas: 2.5, targetCpa: 300, killRoas: 1, readPurchases: 15, directionalPurchases: 8,
   } as unknown as Parameters<typeof hitRate>[1];
-  const rows = [launch("a", "2026-09-05"), launch("b", "2026-09-10", { priorRoas: null })];
+  const rows = [launch("a", "2026-09-05"), launch("b", "2026-09-10", { purchases: 5 })];
   const cur = hitRate(inRange(rows, { from: "2026-09-01", to: "2026-09-30" }), thresholds);
   const prevEmpty = hitRate(inRange(rows, { from: "2026-08-01", to: "2026-08-31" }), thresholds);
   check("hit rate: current period has launches", cur.launched === 2);
   check("hit rate: empty comparison period has 0 launched and a null rate", prevEmpty.launched === 0 && prevEmpty.rate === null);
   check("hit rate: empty comparison period gives no change", rateChange(cur.rate, prevEmpty.rate, prevEmpty.launched) === null);
-  const withPrev = [...rows, launch("c", "2026-08-12"), launch("d", "2026-08-20", { priorRoas: null })];
+  const withPrev = [...rows, launch("c", "2026-08-12"), launch("d", "2026-08-20", { purchases: 5 })];
   const prevFull = hitRate(inRange(withPrev, { from: "2026-08-01", to: "2026-08-31" }), thresholds);
   check("hit rate: comparison period with launches gives a change", prevFull.launched === 2 && rateChange(cur.rate, prevFull.rate, prevFull.launched) !== null);
 

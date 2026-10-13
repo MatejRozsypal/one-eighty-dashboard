@@ -16,8 +16,8 @@
  *
  * ── One winner test ────────────────────────────────────────────────────────
  * Every count and colour on this page comes from the same `classify()` as the
- * hit rate: the client's read threshold, shrunk ROAS against target with the
- * stored 365-day anchor, and 14 days of age. The scorecard counts ads WITH
+ * hit rate: the client's read threshold, real ROAS (revenue over spend, not
+ * adjusted) against target, and 14 days of age. The scorecard counts ads WITH
  * DELIVERY in the window; the hit rate counts ads FIRST DELIVERED in it.
  */
 
@@ -185,7 +185,7 @@ export default async function CreativesPage({
         }
       : null;
   const w = thresholds
-    ? winnerEconomics(data.ads, account.anchorRoas, thresholds, (id) => ageOf(ctx, id))
+    ? winnerEconomics(data.ads, thresholds, (id) => ageOf(ctx, id))
     : null;
 
   // ── Against the comparison period ───────────────────────────────────────

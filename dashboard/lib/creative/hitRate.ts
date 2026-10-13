@@ -9,19 +9,15 @@
  *   launched  = ads whose first delivery falls in the period, not pre-existing
  *               when the client's Meta history starts, and not a relaunch of an
  *               asset that already ran
- *   winner    = `classify()` over the ad's LIFETIME totals, judged against the
- *               client's trailing-year ROAS stored on the row: purchases >=
- *               readPurchases, shrunk ROAS >= target, and at least
- *               `WINNER_MIN_AGE_DAYS` since first delivery. The scorecard, the
- *               grid, Concepts, Production, Paid and Reports call the same
- *               `classify()` with the same anchor and the same age rule.
+ *   winner    = `classify()` over the ad's LIFETIME totals: purchases >=
+ *               readPurchases, real ROAS (revenue over spend, not adjusted)
+ *               >= target, and at least `WINNER_MIN_AGE_DAYS` since first
+ *               delivery. The scorecard, the grid, Concepts, Production, Paid
+ *               and Reports call the same `classify()` with the same age rule.
  *   open      = not a winner and younger than 60 days. It may still qualify
  *   hit rate  = winners / launched, pooled (sum over sum) for any rollup
  *   reference = the client's OWN hit rate over its trailing 365 days of
  *               launches ("Your 12-mo rate"). There is no fixed benchmark.
- *
- * The anchor for shrinkage is the stored 12-month ROAS, not the mean of the
- * selected range, so the figure does not move when the date range changes.
  *
  * Needs a target ROAS and a read threshold only, never a Target CPA (C4).
  *
@@ -65,8 +61,6 @@ export interface LaunchRow {
   isPreexisting: boolean;
   conceptId: string | null;
   conceptName: string | null;
-  /** The client's trailing 365-day Meta ROAS. Null when there was no spend to compute it from. */
-  priorRoas: number | null;
   // Launch context (`mart.rpt_ad_launch` from the ME1 release). Absent
   // (undefined) when the table does not have the columns yet, which reads as
   // "not ready", never as a split. Null means the column exists and the value
@@ -86,20 +80,16 @@ export type LaunchStatus = "winner" | "open" | "settled";
 
 /**
  * Winner, open, or settled (not a winner and old enough that waiting will not
- * change that). An ad without a prior cannot be judged, so it is never a winner.
- * An ad under `WINNER_MIN_AGE_DAYS` old is never a winner either, however well
+ * change that). An ad under `WINNER_MIN_AGE_DAYS` old is never a winner either, however well
  * it reads: `classify` returns `open` for it.
  */
 export function launchStatus(row: LaunchRow, t: CreativeThresholds): LaunchStatus {
-  if (row.priorRoas !== null) {
-    const outcome = classify(
-      { ...ZERO, spend: row.spend, revenue: row.revenue, purchases: row.purchases },
-      row.priorRoas,
-      t,
-      row.ageDays
-    );
-    if (outcome === "winner") return "winner";
-  }
+  const outcome = classify(
+    { ...ZERO, spend: row.spend, revenue: row.revenue, purchases: row.purchases },
+    t,
+    row.ageDays
+  );
+  if (outcome === "winner") return "winner";
   return row.ageDays < HIT_RATE_MATURITY_DAYS ? "open" : "settled";
 }
 
@@ -419,7 +409,7 @@ export function tileText(
 
 function tileInfo(t: CreativeThresholds, reference: number | null): string {
   const ref = reference === null ? "" : ` ${HIT_RATE_REFERENCE_LABEL}: ${formatRate(reference)}.`;
-  return `Winners among ads first delivered in this period, relaunches excluded. Winner: ${winnerBar(t)} after shrinkage, ${WINNER_MIN_AGE_DAYS}+ days old.${ref}`;
+  return `Winners among ads first delivered in this period, relaunches excluded. Winner: ${winnerBar(t)}, ${WINNER_MIN_AGE_DAYS}+ days old.${ref}`;
 }
 
 // ---------------------------------------------------------------------------

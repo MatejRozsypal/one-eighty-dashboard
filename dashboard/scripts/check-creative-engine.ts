@@ -19,14 +19,14 @@
  * Exits non-zero on a mismatch.
  */
 
-import { shrink, interval, purchasesToClear, purchasesForPrecision, spendToDecide, separation, Z } from "@/lib/creative/stats";
+import { interval, purchasesToClear, purchasesForPrecision, spendToDecide, separation, Z } from "@/lib/creative/stats";
 import { propose, tokenise, type Candidate } from "@/lib/creative/matching";
 import { ANGLES } from "@/lib/creative/vocabulary";
 import { presetRange, comparisonRange, daysInRange, addDays } from "@/lib/period";
 import { demoCreative } from "@/lib/demo/creative";
 import { personaCapacity, launchCadence } from "@/lib/creative/velocity";
 import { moneyVerdict, diagnose, unjudgedVerdict } from "@/lib/creative/verdict";
-import { ZERO, derive, add, fillNames, tagCoverage, type Components } from "@/lib/creative/model";
+import { ZERO, derive, add, fillNames, read, tagCoverage, type Components } from "@/lib/creative/model";
 import { cleanPersona, conceptLabel, humanizeConceptCode, isConceptCode, noEmDash } from "@/lib/creative/display";
 import { roas as fmtRoas } from "@/components/creative/primitives";
 import { cadenceTicks, LaunchCadence } from "@/components/creative/LaunchCadence";
@@ -48,11 +48,11 @@ const T = {
 const CHART_ROWS = [
   { key: "a", label: "Problem agitation", untagged: false, ads: 6, spend: 41000,
     spendShare: 0.42, revenue: 92000, purchases: 78, cpa: 526, roas: 2.24,
-    roasRaw: 2.41, ciLow: 1.79, ciHigh: 2.69, confidence: "directional" as const,
+    ciLow: 1.66, ciHigh: 2.82, confidence: "directional" as const,
     readable: true },
   { key: "b", label: "Curiosity gap", untagged: false, ads: 3, spend: 9000,
-    spendShare: 0.09, revenue: 14000, purchases: 4, cpa: 2250, roas: 1.66,
-    roasRaw: 1.56, ciLow: 0.71, ciHigh: 2.61, confidence: "noise" as const,
+    spendShare: 0.09, revenue: 14000, purchases: 4, cpa: 2250, roas: 1.56,
+    ciLow: 0, ciHigh: 3.35, confidence: "noise" as const,
     readable: false },
 ];
 
@@ -64,13 +64,21 @@ const eq = (name: string, got: unknown, want: unknown) => {
   console.log(`${ok ? "ok  " : "FAIL"}  ${name}: got ${got}${ok ? "" : `, want ${want}`}`);
 };
 
-console.log("=== shrinkage: the brief's worked example ===");
-// "An ad with 4 purchases at a raw 3,38 reports as 2,17, not 3,38."
-// Account mean 2.04 (Manami blended lifetime), k = 25.
-eq("4 purchases at raw 3.38, mean 1.98 -> 2.17 (the brief's example)", f(shrink(3.38, 4, 1.976, 25)), "2.17");
-console.log(`   (with the brief's stated mean of 2.04 and k=25 the result is ${f(shrink(3.38,4,2.04,25))})`);
-for (const mean of [1.8, 1.9, 2.0, 2.04]) {
-  console.log(`   mean ${mean} -> ${f(shrink(3.38, 4, mean, 25))}`);
+console.log("=== ROAS is the real ratio, never adjusted ===");
+// Owner decision: no shrinkage toward the account average. The brief's old
+// example, 4 purchases at 3.38, now reports 3.38; the read threshold and the
+// interval say how far it can be trusted instead.
+{
+  const few = read({ ...ZERO, spend: 1000, revenue: 3380, purchases: 4 }, 10000, T);
+  eq("4 purchases at 3.38 reports 3.38, not pulled toward any mean", f(few.roas), "3.38");
+  eq("its interval is around the real figure", `${f(few.ciLow)}-${f(few.ciHigh)}`, `${f(interval(3.38, 4)[0])}-${f(interval(3.38, 4)[1])}`);
+  eq("4 purchases is still Noise confidence", few.confidence, "noise");
+  const many = read({ ...ZERO, spend: 40000, revenue: 51200, purchases: 76 }, 100000, T);
+  eq("76 purchases at 1.28 reports 1.28", f(many.roas), "1.28");
+  const none = read({ ...ZERO, spend: 900, revenue: 0, purchases: 0 }, 10000, T);
+  eq("0 purchases reports no ROAS and no interval (as Ads Manager)", `${none.roas}/${none.ciLow}/${none.ciHigh}`, "null/null/null");
+  eq("the Reading carries no second, raw figure", "roasRaw" in few, false);
+  eq("derive() ROAS is revenue over spend", f(derive({ ...ZERO, spend: 1000, revenue: 3380, purchases: 4 }).roas), "3.38");
 }
 
 console.log("\n=== interval width against the brief's table ===");

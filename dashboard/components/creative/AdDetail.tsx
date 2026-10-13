@@ -1063,11 +1063,8 @@ function Metrics({
       verdict: cpaVerdict,
     },
     {
-      k: "ROAS (adj.)",
+      k: "ROAS",
       f: fRoas(ad.roas),
-      // The headline figure is pulled toward the account average when there are
-      // few purchases. The raw ratio is Revenue over Spend on the cards below.
-      info: `Adjusted toward the account average when purchases are few. Raw: ${roas(ad.roasRaw)}.`,
       big: true,
       // The interval is on the card, not in a tooltip. It is the number that
       // decides whether the headline figure means anything at all.

@@ -3,7 +3,7 @@
  *
  * ── Why there is a view model at all ───────────────────────────────────────
  * Filtering the grid and opening the detail panel are interactions, so those
- * components run on the client. Everything they display, the shrunk ROAS, the
+ * components run on the client. Everything they display, the ROAS, the
  * interval, the diagnosis, the signed asset URL, is computed on the server,
  * because the thresholds come from Postgres, the asset URLs are signed with a
  * private key, and none of that belongs in a browser bundle.
@@ -52,7 +52,6 @@ export interface AdView {
   reach: number;
 
   roas: number | null;
-  roasRaw: number | null;
   ciLow: number | null;
   ciHigh: number | null;
   confidence: Confidence;
@@ -181,13 +180,12 @@ export function toAdView(
   ad: AdRow,
   asset: CreativeAsset | undefined,
   signed: { thumbUrl: string | null; assetUrl: string | null; downloadUrl: string | null },
-  accountMeanRoas: number,
   accountSpend: number,
   t: CreativeThresholds,
   /** Days since first delivery, for the 14-day winner rule. Null when unknown. */
   ageDays: number | null = null
 ): AdView {
-  const r = read(ad.components, accountMeanRoas, accountSpend, t);
+  const r = read(ad.components, accountSpend, t);
   const d = derive(ad.components);
   const format = ad.tags.format ?? inferFormat(asset);
   const diag = diagnose(ad.components, format, t);
@@ -207,11 +205,10 @@ export function toAdView(
     reach: ad.components.reach,
 
     roas: r.roas,
-    roasRaw: r.roasRaw,
     ciLow: r.ciLow,
     ciHigh: r.ciHigh,
     confidence: r.confidence,
-    outcome: classify(ad.components, accountMeanRoas, t, ageDays),
+    outcome: classify(ad.components, t, ageDays),
 
     cpa: d.cpa,
     ctr: d.ctr,
@@ -324,11 +321,10 @@ export interface AdsetView {
 export function toAdsetView(
   set: AdsetRow,
   adCount: number,
-  accountMeanRoas: number,
   accountSpend: number,
   t: CreativeThresholds
 ): AdsetView {
-  const r = read(set.components, accountMeanRoas, accountSpend, t);
+  const r = read(set.components, accountSpend, t);
   const d = derive(set.components);
   const verdict = moneyVerdict(
     { components: set.components, roas: r.roas, ageDays: set.ageDays },

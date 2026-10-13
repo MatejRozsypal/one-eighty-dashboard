@@ -5,9 +5,9 @@ import "server-only";
  *
  * All five need the same six things, the resolved client, the thresholds, the
  * ads with their tags, the assets, the account context and the unmapped count.
- * Doing it once here means a new screen cannot accidentally use a different
- * account mean for its shrinkage than the screen next to it, which would show
- * up as the same persona reporting two different ROAS figures on two tabs.
+ * Doing it once here means a new screen cannot accidentally judge against
+ * different thresholds or ad ages than the screen next to it, which would show
+ * up as the same ad reading as a winner on one tab and not on another.
  */
 
 import { getClients, resolveClient, type Client } from "@/lib/clients";
@@ -45,9 +45,9 @@ export interface CreativeContext {
    */
   hitThresholds: CreativeThresholds | null;
   /**
-   * The launch table's anchor and ages, or null when it is not ready. Every
-   * screen shrinks toward `anchor.priorRoas` and applies the winner age rule
-   * from `anchor.ageByAd`, the same as the hit rate.
+   * The launch table's ad ages, or null when it is not ready. Every screen
+   * applies the winner age rule from `anchor.ageByAd`, the same as the hit
+   * rate.
    */
   anchor: LaunchAnchor | null;
   /**
@@ -114,9 +114,8 @@ export async function loadCreative(
     options.compare && params.period.comparison
       ? getCreativeTotals(client.clientId, params.period.comparison)
       : Promise.resolve(null),
-    // The launch table's anchor (365-day ROAS) and ad ages: one winner test on
-    // every screen. Null when the table is not ready, and screens then keep
-    // the window mean and apply no age rule.
+    // The launch table's ad ages: one winner test on every screen. Null when
+    // the table is not ready, and screens then apply no age rule.
     getLaunchAnchor(client.clientId),
     // Genuine video ads of the trailing 180 days: the relative hook and hold floors.
     getVideoAdRates(client.clientId),
@@ -157,11 +156,8 @@ export async function loadCreative(
     assets,
     // `meanRoas` is the window's blended ROAS, summed revenue over summed
     // spend, so a 300 Kč freak at 17x cannot drag it, the learnings file has
-    // that exact ad in it. It is what the Blended ROAS tile shows. What rows
-    // are shrunk toward is `anchorRoas`: the client's stored 365-day ROAS, the
-    // same number the hit rate uses, so the winner bar does not move with the
-    // date picker.
-    account: { ...windowAccount, anchorRoas: anchor?.priorRoas ?? windowAccount.meanRoas },
+    // that exact ad in it. It is what the Blended ROAS tile shows.
+    account: windowAccount,
     unmapped,
     unmappedCount: unmapped.ads.filter((a) => !confirmedIds.has(a.adId)).length,
   };
@@ -196,7 +192,6 @@ export async function buildAdViews(
       ad,
       assets[i],
       { thumbUrl: thumbs[i], assetUrl: fulls[i], downloadUrl: downloads[i] },
-      ctx.account.anchorRoas,
       ctx.account.spend,
       thresholds,
       ageOf(ctx, ad.adId)

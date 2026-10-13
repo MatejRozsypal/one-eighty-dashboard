@@ -75,7 +75,7 @@ export interface VerdictInput {
    */
   level?: "adset" | "concept";
   components: Components;
-  /** The shrunk ROAS. Verdicts are taken on the defensible number, not the raw one. */
+  /** The real ROAS (revenue over spend, not adjusted). Null with no purchases. */
   roas: number | null;
   /** Days since launch. Null when unknown, treated as outside the window. */
   ageDays: number | null;

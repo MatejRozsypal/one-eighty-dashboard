@@ -6,7 +6,7 @@
  * Top to bottom: the logo and the collapse toggle, then the products (Home,
  * Assistant, Analytics, Creative, Reports) as rows with an icon and a label,
  * then Settings pinned at the foot. The product you are in opens in place and
- * lists its own navigation underneath, indented and without icons:
+ * lists its own navigation underneath, indented, each page with its icon:
  *
  *  - Analytics and Creative: their trees from `lib/nav.ts`, group labels as
  *    small headers, and a third level (Paid's platforms, Breakdown's
@@ -44,6 +44,7 @@ import { Logo } from "@/components/ui/Logo";
 import { HistoryList } from "@/components/chat/HistoryList";
 import { NavCollapseToggle } from "@/components/shell/NavCollapseToggle";
 import { NavSlotHost } from "@/components/shell/NavSlot";
+import { NavIcon } from "@/components/shell/NavIcon";
 import { ProductIcon, SettingsIcon } from "@/components/shell/ProductIcon";
 import {
   SUB_HEAD,
@@ -408,8 +409,10 @@ function ItemRow({
       href={navHref(item.href, qs)}
       // On a child's page the parent is a place you are inside, not the page itself.
       aria-current={isPage ? "page" : isSection ? "true" : undefined}
-      className={`${SUB_ROW} ${tone}`}
+      className={`${SUB_ROW} gap-2 ${tone}`}
     >
+      {/* Page icons, owner 2026-10-14: they help find a page at a glance. */}
+      <NavIcon name={item.icon} size={15} />
       <span className="min-w-0 truncate">{item.label}</span>
     </AppLink>
   );

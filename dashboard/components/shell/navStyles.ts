@@ -13,9 +13,12 @@
 export const SUB_ROW =
   "flex h-7 w-full min-w-0 flex-1 items-center rounded-sm pl-[36px] pr-2 text-left text-[13px] tracking-[-0.01em] transition-colors duration-fast focus-visible:outline-offset-[-2px]";
 
-/** Third level (Paid's platforms, Breakdown's dimensions): one step further in, a touch smaller. */
+/**
+ * Third level (Paid's platforms, Breakdown's dimensions): text under the
+ * parent page's label, which sits after its 15px icon and 8px gap.
+ */
 export const THIRD_ROW =
-  "flex h-[26px] w-full min-w-0 items-center rounded-sm pl-[48px] pr-2 text-left text-[12.5px] tracking-[-0.01em] transition-colors duration-fast focus-visible:outline-offset-[-2px]";
+  "flex h-[26px] w-full min-w-0 items-center rounded-sm pl-[59px] pr-2 text-left text-[12.5px] tracking-[-0.01em] transition-colors duration-fast focus-visible:outline-offset-[-2px]";
 
 export const SUB_ROW_ACTIVE = "bg-growth-500/[0.14] font-semibold text-growth-300";
 export const SUB_ROW_IDLE = "text-gray-300 hover:bg-white/[0.06] hover:text-gray-250";

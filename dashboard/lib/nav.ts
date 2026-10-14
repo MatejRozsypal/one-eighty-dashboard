@@ -10,8 +10,8 @@
  * tree underneath, indented. That tree is two levels at most: an item may have
  * children (Paid's platforms, Breakdown's dimensions, Repurchase's timing view),
  * shown under it while its section is open rather than as a tab row in the page.
- * Each item keeps an icon for the mobile page sheet; the desktop sidebar draws
- * icons on the product rows only.
+ * Each item has an icon, drawn beside it in the desktop sidebar and in the
+ * mobile page sheet.
  */
 
 import { matchesPrefix, pageAvailability, type HasCapabilities } from "@/lib/capabilities";

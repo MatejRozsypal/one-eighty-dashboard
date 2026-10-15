@@ -142,6 +142,8 @@ export interface MapGeometry {
   countries: MapCountry[];
   /** Label anchor per requested ISO, in SVG units. */
   labels: Record<string, [number, number]>;
+  /** Area the outlines cover, in SVG units (wider than the frame): the pan limit. */
+  extent: Box;
 }
 
 const WIDTH = 800;
@@ -201,27 +203,50 @@ export function buildMapGeometry(focus: string[], extra: string[] = []): MapGeom
   const [[, fy0], [, fy1]] = geoPath(projection).bounds(frame);
   const height = Math.round(Math.min(0.72, Math.max(0.46, (fy1 - fy0) / WIDTH)) * WIDTH);
   projection.fitExtent([[6, 6], [WIDTH - 6, height - 6]], frame);
-  projection.clipExtent([[0, 0], [WIDTH, height]]);
+  // The map pans and zooms (MarketMap), so the outlines reach one frame past
+  // each edge: dragging shows the neighbours instead of empty paper.
+  const outer: Box = [[-WIDTH, -height], [2 * WIDTH, 2 * height]];
+  projection.clipExtent(outer);
 
+  // Fine outlines (50m) only for a regional frame and only for countries that
+  // touch the opening view; everything reached by panning uses 110m, which
+  // keeps the page payload near what the fixed map cost.
   const detail = spanX < 45 ? "50m" : "110m";
   const path = geoPath(projection).digits(1);
+  const touches = (b: Box, area: Box) => !(b[1][0] < area[0][0] || b[1][1] < area[0][1] || b[0][0] > area[1][0] || b[0][1] > area[1][1]);
+  const view: Box = [[0, 0], [WIDTH, height]];
+  const fine = new Map<string, Feature<Geometry, { name: string }>>();
+  if (detail === "50m") {
+    for (const f of countries("50m")) {
+      if (f.id !== undefined && touches(path.bounds(f) as Box, view)) fine.set(String(f.id), f);
+    }
+  }
   const out: MapCountry[] = [];
-  for (const f of countries(detail)) {
+  const seen = new Set<string>();
+  for (const coarse of countries("110m")) {
+    const id = coarse.id === undefined ? null : String(coarse.id);
+    const f = (id && fine.get(id)) || coarse;
     const d = path(f);
     if (!d) continue;
-    const [[bx0, by0], [bx1, by1]] = path.bounds(f);
-    if (bx1 < 0 || by1 < 0 || bx0 > WIDTH || by0 > height) continue;
+    if (!touches(path.bounds(f) as Box, outer)) continue;
+    if (id) seen.add(id);
     out.push({ iso: isoOf(f), d });
+  }
+  // Small countries that only the 50m atlas has (Luxembourg-sized and below).
+  for (const [id, f] of fine) {
+    if (seen.has(id)) continue;
+    const d = path(f);
+    if (d) out.push({ iso: isoOf(f), d });
   }
 
   const labels: Record<string, [number, number]> = {};
   for (const iso of [...focus, ...extra]) {
     const f = byIso.get(iso);
     const at = LABEL_AT[iso] ? projection(LABEL_AT[iso]) : f ? path.centroid(mainPart(f)) : null;
-    if (at && Number.isFinite(at[0]) && at[0] >= 0 && at[0] <= WIDTH && at[1] >= 0 && at[1] <= height) {
+    if (at && Number.isFinite(at[0]) && at[0] >= outer[0][0] && at[0] <= outer[1][0] && at[1] >= outer[0][1] && at[1] <= outer[1][1]) {
       labels[iso] = [Math.round(at[0] * 10) / 10, Math.round(at[1] * 10) / 10];
     }
   }
 
-  return { width: WIDTH, height, countries: out, labels };
+  return { width: WIDTH, height, countries: out, labels, extent: outer };
 }

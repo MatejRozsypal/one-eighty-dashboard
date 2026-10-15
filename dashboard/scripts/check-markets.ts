@@ -194,7 +194,9 @@ check("US no flag", discountFlag(us.cur, us.prev).state === "off");
 for (const focus of [["US", "CA"], ["CZ", "SK"], ["CZ", "SK", "PL", "DE", "AT", "HU"], ["US", "CA", "GB", "IE"]]) {
   const g = buildMapGeometry(focus, []);
   check(`outline ${focus.join("+")}`, g !== null && focus.every((iso) => g.labels[iso] !== undefined));
-  check(`outline ${focus.join("+")} under 80 KB`, g !== null && JSON.stringify(g).length < 80_000, String(g && JSON.stringify(g).length));
+  // 130 KB raw: the map pans one frame past each edge (2026-10-15), so it
+  // carries neighbours too; path text gzips about 3 to 4x on the wire.
+  check(`outline ${focus.join("+")} under 130 KB`, g !== null && JSON.stringify(g).length < 130_000, String(g && JSON.stringify(g).length));
 }
 check("unknown country falls back to tiles", buildMapGeometry(["XX"]) === null);
 {

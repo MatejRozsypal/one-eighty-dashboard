@@ -14,7 +14,7 @@ import { ChartSummary } from "@/components/ui/ChartSummary";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { SegmentPills } from "@/components/controls/SegmentedControl";
 import { formatMoney, formatNumber, NO_VALUE } from "@/lib/format";
-import { predict, reallocate, MIN_FIT_WEEKS, WEAK_FIT_R2, type MarketResponse, type ResponsePoint } from "@/lib/markets/analysis";
+import { niceWidth, predict, reallocate, reallocationTakeaway, responseTakeaway, MIN_FIT_WEEKS, WEAK_FIT_R2, type MarketResponse, type ResponsePoint } from "@/lib/markets/analysis";
 import { AXIS_TICK, TooltipBox, TooltipRow, marketLabel } from "@/components/markets/trends/bits";
 
 export interface ResponseMarket extends MarketResponse {
@@ -56,18 +56,30 @@ export function ResponseView({
   }, [m]);
 
   if (!m) return null;
+  // The spend axis starts near the lowest week, not at zero, so the cloud of
+  // weeks and the bend of the curve fill the plot instead of its right half.
+  const spends = m.points.map((p) => p.spend).filter((v) => v > 0);
+  const xStep = spends.length ? niceWidth(Math.max(...spends) * 1.15 - Math.min(...spends) * 0.85, 4) : 1;
+  const xFrom = spends.length ? Math.max(0, Math.floor((Math.min(...spends) * 0.85) / xStep) * xStep) : 0;
+  const xTop = Math.max(xFrom + xStep, ...spends.map((v) => v * 1.15), m.currentSpend ?? 0);
+  const xTo = Math.ceil(xTop / xStep) * xStep;
+  const xTicks = Array.from({ length: Math.round((xTo - xFrom) / xStep) + 1 }, (_, i) => xFrom + i * xStep);
   const money = (v: number) => formatMoney(v, currency);
   const unitMoney = (v: number | null) => formatMoney(v, currency, { unit: true });
+  const takeaway = responseTakeaway(m, currency);
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {markets.length > 1 ? (
-          <SegmentPills segments={markets.map((x) => ({ value: x.market, label: marketLabel(x.market) }))} shown={m.market} onSelect={setPicked} ariaLabel="Market" />
-        ) : (
-          <span />
-        )}
-        <span className="text-[12px] text-content-muted">Complete weeks, {windowText}</span>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {markets.length > 1 ? (
+            <SegmentPills segments={markets.map((x) => ({ value: x.market, label: marketLabel(x.market) }))} shown={m.market} onSelect={setPicked} ariaLabel="Market" />
+          ) : (
+            <span />
+          )}
+          <span className="text-[12px] text-content-muted">Complete weeks, {windowText}</span>
+        </div>
+        {takeaway && <p className="m-0 text-[13px] text-content-strong">{takeaway}</p>}
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
@@ -79,7 +91,8 @@ export function ResponseView({
                 <XAxis
                   type="number"
                   dataKey="spend"
-                  domain={[0, "auto"]}
+                  domain={[xFrom, xTo]}
+                  ticks={xTicks}
                   tickLine={false}
                   axisLine={false}
                   tick={AXIS_TICK}
@@ -211,6 +224,7 @@ function Calculator({ markets, currency }: { markets: ResponseMarket[]; currency
     amount
   );
   const n1 = (v: number) => formatNumber(v, { decimals: 1 });
+  const takeaway = reallocationTakeaway(from.market, to.market, r, currency);
   const gpWhy = from.gpPerNew === null ? from.gpWhy : to.gpPerNew === null ? to.gpWhy : null;
   const select = "h-8 rounded-sm border border-hairline-strong bg-paper px-2 font-mono text-[12px] text-content-strong";
 
@@ -256,6 +270,7 @@ function Calculator({ markets, currency }: { markets: ResponseMarket[]; currency
           </select>
         </label>
       </div>
+      {takeaway && <p className="m-0 text-[13px] text-content-strong">{takeaway}</p>}
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label={`New customers, ${marketLabel(from.market)}`} value={`${signed(r.newFrom, n1)} a week`} />
         <Stat label={`New customers, ${marketLabel(to.market)}`} value={`${signed(r.newTo, n1)} a week`} />

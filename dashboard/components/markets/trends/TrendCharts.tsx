@@ -4,15 +4,16 @@
  * Weekly small multiples: one row per metric, one line per market in the
  * page's market colours. The compare period is the same colour, thin and
  * dotted (week 1 against week 1). A week the range or the data cuts short is
- * a hollow point and says "partial" in the tooltip; a week with no value is a
- * gap, never a zero.
+ * a hollow point, not joined to the line (its total is short by construction),
+ * and says "partial" in the tooltip; a week with no value is a gap, never a
+ * zero. Beside each metric, one sentence names the market that moved most.
  */
 
 import { useId } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartSummary } from "@/components/ui/ChartSummary";
 import { NO_VALUE } from "@/lib/format";
-import type { TrendPoint, TrendSeries } from "@/lib/markets/analysis";
+import { trendTakeaway, type TrendPoint, type TrendSeries } from "@/lib/markets/analysis";
 import { AXIS_TICK, MarketKey, TooltipBox, TooltipRow, formatKind, marketLabel } from "@/components/markets/trends/bits";
 
 export function TrendCharts({
@@ -77,7 +78,10 @@ function TrendRow({
   const data = s.points.map((p) => {
     const row: Record<string, unknown> = { label: p.label, partial: p.partial, point: p };
     for (const m of markets) {
-      row[m] = p.values[m];
+      // A partial week is drawn as a lone hollow point, not joined to the line:
+      // its total is short by construction and would read as a collapse.
+      row[m] = p.partial ? null : p.values[m];
+      row[`part_${m}`] = p.partial ? p.values[m] : null;
       row[`cmp_${m}`] = p.compare[m];
     }
     return row;
@@ -85,12 +89,14 @@ function TrendRow({
   const live = markets.filter((m) => s.points.some((p) => p.values[m] !== null) || (comparing && s.points.some((p) => p.compare[m] !== null)));
   const fmt = (v: number) => formatKind(v, s.kind, currency);
   const dots = s.points.length <= 16;
+  const takeaway = live.length ? trendTakeaway(s, live, currency) : null;
 
   return (
-    <div className="grid gap-2 py-3 first:pt-0 last:pb-0 md:grid-cols-[132px_minmax(0,1fr)] md:items-center">
-      <div className="flex flex-col">
+    <div className="grid gap-2 py-3 first:pt-0 last:pb-0 md:grid-cols-[200px_minmax(0,1fr)] md:items-center md:gap-4">
+      <div className="flex flex-col gap-1">
         <span className="text-[13px] font-medium text-content-strong">{s.label}</span>
         {live.length === 0 && <span className="text-[11.5px] text-content-muted">{NO_VALUE} in every week</span>}
+        {takeaway && <p className="m-0 text-[12.5px] leading-snug text-content-body">{takeaway}</p>}
       </div>
       <div className="h-[140px] w-full" role="img" aria-label={`${s.label} by week and market`} aria-describedby={summaryId}>
         <ResponsiveContainer width="100%" height="100%">
@@ -132,12 +138,26 @@ function TrendRow({
                 connectNulls={false}
                 isAnimationActive={false}
                 dot={(props: unknown) => {
-                  const { cx, cy, payload, index } = props as { cx?: number; cy?: number; payload: { partial: boolean }; index: number };
-                  if (cx === undefined || cy === undefined || cy === null || Number.isNaN(cy)) return <g key={`${m}-${index}`} />;
-                  if (payload.partial) {
-                    return <circle key={`${m}-${index}`} cx={cx} cy={cy} r={3.5} style={{ fill: "var(--paper)", stroke: colors[m], strokeWidth: 1.5 }} />;
-                  }
-                  return dots ? <circle key={`${m}-${index}`} cx={cx} cy={cy} r={2.5} style={{ fill: colors[m] }} /> : <g key={`${m}-${index}`} />;
+                  const { cx, cy, index } = props as { cx?: number; cy?: number; index: number };
+                  if (!dots || cx === undefined || cy === undefined || cy === null || Number.isNaN(cy)) return <g key={`${m}-${index}`} />;
+                  return <circle key={`${m}-${index}`} cx={cx} cy={cy} r={2.5} style={{ fill: colors[m] }} />;
+                }}
+              />
+            ))}
+            {live.map((m) => (
+              <Line
+                key={`part_${m}`}
+                type="linear"
+                dataKey={`part_${m}`}
+                stroke="none"
+                legendType="none"
+                connectNulls={false}
+                isAnimationActive={false}
+                activeDot={false}
+                dot={(props: unknown) => {
+                  const { cx, cy, index } = props as { cx?: number; cy?: number; index: number };
+                  if (cx === undefined || cy === undefined || cy === null || Number.isNaN(cy)) return <g key={`p-${m}-${index}`} />;
+                  return <circle key={`p-${m}-${index}`} cx={cx} cy={cy} r={3.5} style={{ fill: "var(--paper)", stroke: colors[m], strokeWidth: 1.5 }} />;
                 }}
               />
             ))}

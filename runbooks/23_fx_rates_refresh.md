@@ -5,8 +5,13 @@ to_currency)` and drives two things:
 
 | Consumer | Pair | What breaks without it |
 |---|---|---|
-| `stg.stg_shopify_orders` | CAD→USD | Historical Canadian orders get NULL revenue |
-| Dashboard currency toggle | USD→CZK | Toggle renders disabled with a padlock |
+| `stg.stg_shopify_orders` | shop currency → client currency (CAD→USD for the migrated Canadian store) | Those orders get NULL revenue |
+| Dashboard currency toggle | USD→CZK, EUR→CZK, CZK→EUR | Toggle renders disabled with a padlock |
+| `mart.market_orders` (Markets page, migration 290) | order currency → client currency, or the inverse (CAD→USD, EUR→USD, GBP→USD, GBP→EUR, EUR→CZK, CZK→EUR) | `fx_local_to_base` NULL: no local-currency toggle, no local prices |
+
+One script builds every refresh: `python3 infra/fx_rates_refresh.py --from YYYY-MM` prints the
+MERGE for all seven pairs (sources and methods in its docstring). The sections below explain
+the sources; the script is the thing to run.
 
 **This table expires.** Both consumers need a row for *every* month they touch, so
 a table that stops in July is broken in August. The dashboard treats partial
@@ -28,12 +33,14 @@ fixings**, tagged in `source`:
 |---|---|
 | `cnb_monthly_avg` | Final. ČNB's published monthly average. |
 | `cnb_mtd_avg@YYYY-MM-DD` | Provisional. Mean of daily fixings up to that date. Replace when the month closes. |
+| `boc_monthly_avg` / `ecb_monthly_avg` | Final. Mean of the Bank of Canada (CAD→USD) or ECB (EUR→USD, GBP→USD, GBP→EUR) daily rates of a closed month. |
+| `boc_mtd_avg@…` / `ecb_mtd_avg@…` | Provisional, same rule as the CNB one. |
 | `manual_entry_2026-05-25` | The original CAD→USD seed (Bank of Canada, migration 012). |
 
 ```sql
 -- What is currently provisional or missing?
 SELECT from_currency, to_currency, MAX(month_start) AS last_month,
-       COUNTIF(source LIKE 'cnb_mtd_avg%')          AS provisional_rows
+       COUNTIF(source LIKE '%mtd_avg%')             AS provisional_rows
 FROM `oneeighty-warehouse.ref.fx_rates`
 GROUP BY from_currency, to_currency;
 ```
@@ -134,35 +141,50 @@ Then load `/snapshot?client=dobias` and confirm the currency toggle's
 
 ---
 
-## CAD→USD
+## CAD→USD, EUR→USD, GBP→USD, GBP→EUR
 
-Seeded once in migration `012` from Bank of Canada monthly averages,
-**2022-06 → 2026-05**, and not refreshed since.
+CAD→USD was seeded once in migration `012` (Bank of Canada, 2022-06 → 2026-05) and nobody
+refreshed it. That went unnoticed because the Canadian store was merged into the US store in
+March 2026 and the old note here said no CAD order would need a rate. It was wrong: since the
+merge Shopify Markets presents Canadian customers in CAD, so `presentment_currency = 'CAD'`
+orders arrive every day (1,902 between 2026-06-01 and 2026-10-15). Their money is booked in
+USD, but the Markets page needs CAD→USD to show a local currency and local prices. EUR and GBP
+presentment orders (Dobias) and Venev GBP orders need EUR→USD, GBP→USD and GBP→EUR for the same
+reason. Migration `302_fx_rates_backfill.sql` fills all of it; this script keeps it filled:
 
-Not currently urgent: the Canadian store was merged into the US store in March
-2026 and no CAD-presentment order has landed since **2026-03**, so no row joins
-a missing rate. It becomes urgent the moment Shopify Markets produces a CAD
-order again — that order's revenue would silently come back NULL.
-
-The Bank of Canada's daily series works; there is **no** `FXMCADUSD` monthly
-series, so average the dailies yourself:
-
-```
-https://www.bankofcanada.ca/valet/observations/FXCADUSD/json?start_date=YYYY-MM-01&end_date=YYYY-MM-31
+```bash
+python3 infra/fx_rates_refresh.py --from 2026-10 --pairs CAD/USD EUR/USD GBP/USD GBP/EUR > /tmp/fx.sql
 ```
 
-Watch for this in the check below:
+Sources (all public, no key): Bank of Canada Valet `FXCADUSD` (daily, no monthly series, so the
+script averages the dailies; mean at 4 dp reproduces the 012 seed), ECB
+`eurofxref-hist.zip` (units per EUR, crossed for GBP→USD and GBP→EUR, 6 dp).
+
+Watch for gaps with this check (it is the one that would have caught the CAD hole in June):
 
 ```sql
--- Shopify orders in a currency with no rate for their month -> NULL revenue
+-- Orders whose currency has no rate for their month: NULL local currency / NULL revenue
+SELECT client_id, currency_local, DATE_TRUNC(order_date, MONTH) AS m, COUNT(*) AS orders
+FROM `oneeighty-warehouse.mart.market_orders` o
+WHERE currency_local != currency_base AND fx_local_to_base IS NULL AND net_sales IS NOT NULL
+GROUP BY 1, 2, 3 ORDER BY m DESC;
+```
+
+And the older stg-level check (shop currency without a rate):
+
+```sql
 SELECT DATE_TRUNC(o.order_date, MONTH) AS m, o.currency_original, COUNT(*) AS orders
 FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
 LEFT JOIN `oneeighty-warehouse.ref.fx_rates` fx
   ON fx.month_start = DATE_TRUNC(o.order_date, MONTH)
- AND fx.from_currency = o.currency_original AND fx.to_currency = 'USD'
-WHERE o.currency_original <> 'USD' AND fx.rate IS NULL
+ AND fx.from_currency = o.currency_original AND fx.to_currency = o.currency
+WHERE o.currency_original <> o.currency AND fx.rate IS NULL
 GROUP BY 1, 2 ORDER BY 1 DESC;
 ```
+
+Known remaining hole: CAD→USD before 2022-06 (Dobias migrated Canadian history, 34,325 stg
+orders 2013-12 → 2022-05 with NULL USD amounts). Left empty on purpose until the owner decides
+to restate Dobias history; see docs/sessions/2026-10-15/markets/FX-FIX.md section D.
 
 ---
 
@@ -179,5 +201,9 @@ effort:
    and no rate limit, so a monthly cron doing HTTP → Code (the two-table parse
    above) → BigQuery MERGE is roughly 4 nodes. Model it on
    `wf_klaviyo_to_bigquery`'s BigQuery-insert branch. This is the real fix.
+
+`infra/fx_rates_refresh.py` is the Code-node body for option 2: same fetch, same parse, it only
+prints the MERGE. Node plan and the grants it needs are in
+docs/sessions/2026-10-15/markets/FX-FIX.md section C.
 
 Until one of those exists, put a monthly reminder in the calendar.

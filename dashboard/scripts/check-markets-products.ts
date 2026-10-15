@@ -14,6 +14,9 @@
  *     local price only with enough local-currency coverage, n/a reasons;
  *   - the demo: both regions build, CA and SK buy differently from home,
  *     Compare fills every comparison field;
+ *   - the takeaways: the product that differs most and which way, the top-3
+ *     concentration, the widest price gap with enough units, the leader per
+ *     market and the biggest shift, and no sentence without data;
  *   - the views render (static markup) and no source holds an em dash.
  */
 
@@ -24,6 +27,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildProductsModel,
   differsMost,
+  differsTakeaway,
+  matrixTakeaway,
+  topTakeaway,
   marketShares,
   marketTotals,
   orderMarkets,
@@ -161,6 +167,64 @@ check("order: home first, Other last, rest by net sales", orderMarkets(new Map([
   check("model: home without sales makes differs n/a", Object.values(noHome.differs).every((d) => "na" in d));
   check("local coverage bar", LOCAL_COVERAGE === 0.95);
   check("share steps", shareStep(null) === -1 && shareStep(0) === -1 && shareStep(0.01) === 0 && shareStep(0.05) === 2 && shareStep(0.5) === 4);
+}
+
+// ── Takeaways ──────────────────────────────────────────────────────────────
+{
+  const plain = (t: string | null) => (t === null ? null : t.replace(/ /g, " "));
+  const s = marketShares([row("US", "A", 60), row("US", "B", 30), row("US", "C", 10), row("CA", "A", 20), row("CA", "B", 60), row("CA", "D", 20)]);
+  const less = differsTakeaway({ homeMarket: "US", differs: { CA: { items: differsMost(s.get("US")!, s.get("CA")!) } } });
+  check(
+    "takeaway differs: biggest gap, sold less than at home",
+    less === `Biggest difference: A is 20.0% of CA net sales against 60.0% in US (${MINUS}40.0 pp): worth checking its price or visibility in CA.`,
+    less ?? "null"
+  );
+  const more = differsTakeaway({
+    homeMarket: "US",
+    differs: { CA: { items: [{ product: "B", share: 0.3, homeShare: 0.1, diff: 0.2 }] }, OTHER: { items: [{ product: "C", share: 0.2, homeShare: 0.1, diff: 0.1 }] }, MX: { na: "few units" } },
+  });
+  check("takeaway differs: across markets, sold more reads as a lead", more === "Biggest difference: B is 30.0% of CA net sales against 10.0% in US (+20.0 pp): a product to lead with in CA.", more ?? "null");
+  check("takeaway differs: only n/a markets, no sentence", differsTakeaway({ homeMarket: "US", differs: { CA: { na: "x" } } }) === null);
+  check("takeaway differs: no gap, no sentence", differsTakeaway({ homeMarket: "US", differs: { CA: { items: [] } } }) === null);
+
+  const raw = (current: ProductSalesRow[], previous: ProductSalesRow[] | null = null): ProductsRaw => ({
+    source: "demo",
+    baseCurrency: "CZK",
+    homeMarket: "CZ",
+    localCurrencyOf: { CZ: "CZK", SK: "EUR" },
+    range: { from: "2026-07-01", to: "2026-09-30" },
+    compareRange: previous ? { from: "2026-04-01", to: "2026-06-30" } : null,
+    current,
+    previous,
+  });
+  const cur = [row("CZ", "A", 50, 10), row("CZ", "B", 30, 10), row("CZ", "C", 20, 10), row("SK", "A", 20, 10), row("SK", "B", 20, 10), row("SK", "C", 10, 10), row("SK", "D", 50, 10)];
+  const m = buildProductsModel(raw(cur));
+  const share = plain(matrixTakeaway(m, "share"));
+  check("takeaway matrix: top-3 concentration and its range", share === "The top 3 products make 85.0% of net sales: from 80.0% in CZ to 90.0% in SK.", share ?? "null");
+  const even = buildProductsModel(raw([row("CZ", "A", 50), row("CZ", "B", 50), row("SK", "A", 50), row("SK", "B", 50)]));
+  check("takeaway matrix: the same everywhere says so", matrixTakeaway(even, "share") === "The top 2 products make 100.0% of net sales, about the same in every market.", matrixTakeaway(even, "share") ?? "null");
+  const price = plain(matrixTakeaway(m, "price"));
+  check("takeaway matrix: widest price gap vs home", price === `Widest price gap vs CZ: A sells for CZK 2 in SK against CZK 5 in CZ (${MINUS}60 %).`, price ?? "null");
+  const thin = buildProductsModel(raw(cur.map((r) => ({ ...r, units: 5 }))));
+  check(`takeaway matrix: under ${10} units in a market, no price gap`, matrixTakeaway(thin, "price") === null);
+  check("takeaway matrix: one product, no concentration", matrixTakeaway(buildProductsModel(raw([row("CZ", "A", 50)])), "share") === null);
+
+  const top = topTakeaway(m);
+  check("takeaway top: leaders differ", top === "The top seller differs: A in CZ (50.0%) and D in SK (50.0%).", top ?? "null");
+  const same = topTakeaway(buildProductsModel(raw([row("CZ", "A", 60), row("CZ", "B", 40), row("SK", "A", 70), row("SK", "B", 30), row("OTHER", "B", 10)])));
+  check("takeaway top: one leader everywhere (Other aside)", same === "A leads in every market, from 60.0% in CZ to 70.0% in SK.", same ?? "null");
+  const prev = [row("CZ", "A", 40), row("CZ", "B", 30), row("CZ", "C", 30), row("SK", "A", 20), row("SK", "B", 20), row("SK", "C", 10), row("SK", "D", 50)];
+  const shift = topTakeaway(buildProductsModel(raw(cur, prev)));
+  check("takeaway top: biggest shift against the comparison", shift === "The top seller differs: A in CZ (50.0%) and D in SK (50.0%). Biggest shift against the comparison: A in CZ, +10.0 pp.", shift ?? "null");
+  const newMarket = topTakeaway(buildProductsModel(raw(cur, [row("CZ", "A", 50), row("CZ", "B", 30), row("CZ", "C", 20)])));
+  check("takeaway top: a market new since the comparison is no shift", newMarket === "The top seller differs: A in CZ (50.0%) and D in SK (50.0%).", newMarket ?? "null");
+  check("takeaway top: nothing sold, no sentence", topTakeaway({ markets: [], top: {}, hasCompare: false }) === null);
+
+  // On the demo.
+  const demo = buildProductsModel(demoMarketsProducts("na", { from: "2026-07-16", to: "2026-10-13" }, null));
+  const dd = differsTakeaway(demo) ?? "";
+  check("demo takeaway: differs names a product and CA", dd.startsWith("Biggest difference: ") && dd.includes(" of CA net sales against "), dd);
+  for (const t of [less, more, share, price, top, shift, dd, matrixTakeaway(demo, "price"), topTakeaway(demo)]) check("takeaway has no em dash", !(t ?? "").includes(EM_DASH));
 }
 
 // ── Demo ───────────────────────────────────────────────────────────────────

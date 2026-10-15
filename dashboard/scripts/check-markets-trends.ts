@@ -19,6 +19,8 @@
  *   - the free-shipping threshold is the step, not the cliff above it, and
  *     says when there is none;
  *   - portfolio points fall back to first-order GP and say why a market is not drawn;
+ *   - every chart's takeaway sentence: the right market, direction and figure,
+ *     partial weeks and Other's ratios left out, no sentence without data;
  *   - the nav lists the Markets children; no em dash in any new source.
  */
 
@@ -40,13 +42,22 @@ import {
   marginalNcac,
   marketColors,
   mondayOf,
+  nearThreshold,
   portfolioPoints,
+  portfolioTakeaway,
   predict,
   reallocate,
+  reallocationTakeaway,
   responseByMarket,
+  responseTakeaway,
+  thresholdTakeaway,
+  trendTakeaway,
   weekSlots,
   weeklyTrends,
+  type LogFit,
   type OrderBin,
+  type PortfolioPoint,
+  type TrendSeries,
 } from "@/lib/markets/analysis";
 import { NAV, pageTitle, resolveActive } from "@/lib/nav";
 
@@ -289,6 +300,132 @@ function sums(p: Partial<DailySums>): DailySums {
   check("young PL falls back to first-order GP", pl.basis === "firstOrder" && pl.y !== null, JSON.stringify(pl));
   const colors = marketColors(["CA", "US", "OTHER"], "US");
   check("home market takes the first series colour", colors.US === "var(--series-1)" && colors.CA === "var(--series-2)" && colors.OTHER === "var(--gray-400)");
+}
+
+// ── Takeaways ───────────────────────────────────────────────────────────────
+{
+  const M = "\u2212";
+  // Intl puts a no-break space after an ISO currency code ("CZK 1,000"); compare as plain text.
+  const plain = (t: string | null) => (t === null ? null : t.replace(/\u00a0/g, " "));
+  // Portfolio.
+  const pt = (market: string, x: number | null, y: number | null, basis: PortfolioPoint["basis"] = "ltgp365"): PortfolioPoint => ({
+    market, x, y, basis: y === null ? null : basis, size: 1, ratio: x && y !== null ? y / x : null, why: x === null ? "no spend" : null,
+  });
+  const two = portfolioTakeaway([pt("CA", 98, 166.6), pt("US", 41, 213.2)], "USD");
+  check(
+    "portfolio: best first, worst needs a cheaper nCAC",
+    two === "US pays back 5.2× at 365 days for a $41 nCAC; CA 1.7× for $98. To reach 3:1, CA needs an nCAC under $56 or more GP per customer.",
+    two ?? "null"
+  );
+  const clear = portfolioTakeaway([pt("US", 50, 200), pt("CA", 40, 140)], "USD");
+  check("portfolio: every market clears 3:1", clear === "US pays back 4.0× at 365 days for a $50 nCAC; CA 3.5× for $40. Every market clears 3:1.", clear ?? "null");
+  const mixed = plain(portfolioTakeaway([pt("CZ", 1000, 2000), pt("PL", 800, 400, "firstOrder")], "CZK"));
+  check(
+    "portfolio: first-order basis is named, several below list their nCAC bar",
+    mixed === "CZ pays back 2.0× at 365 days for a CZK 1,000 nCAC; PL 0.5× on the first order, for CZK 800. For 3:1 at today's GP per customer, nCAC must fall under CZK 133 in PL and CZK 667 in CZ.",
+    mixed ?? "null"
+  );
+  const one = plain(portfolioTakeaway([pt("PL", 800, 400, "firstOrder")], "CZK"));
+  check("portfolio: one first-order market asks for a higher first-order GP", one === "PL pays back 0.5× on the first order for a CZK 800 nCAC. To reach 3:1, PL needs an nCAC under CZK 133 or a higher first-order GP.", one ?? "null");
+  const four = portfolioTakeaway([pt("A", 10, 60), pt("B", 10, 50), pt("C", 10, 40), pt("D", 10, 35)], "USD") ?? "";
+  check("portfolio: four markets name only the best and the worst", four.startsWith("A pays back 6.0× at 365 days for a $10 nCAC; D 3.5× for $10.") && !four.includes("B "), four);
+  const loss = portfolioTakeaway([pt("US", 40, 200), pt("SK", 50, -20)], "USD") ?? "";
+  check("portfolio: no GP per customer says so", loss.endsWith("SK makes no gross profit per customer yet, so no nCAC pays back there."), loss);
+  check("portfolio: nothing drawn, no sentence", portfolioTakeaway([pt("US", null, 100)], "USD") === null);
+
+  // Weekly trends.
+  const series = (kind: TrendSeries["kind"], goodWhen: "up" | "down", byMarket: Record<string, Array<number | null>>, partialEnds = true): TrendSeries => {
+    const n = Object.values(byMarket)[0].length;
+    return {
+      metric: kind === "unit" ? "nCac" : "netRevenue",
+      label: "x",
+      kind,
+      goodWhen,
+      points: Array.from({ length: n }, (_, i) => ({
+        week: `w${i}`,
+        label: `w${i}`,
+        partial: partialEnds && (i === 0 || i === n - 1),
+        values: Object.fromEntries(Object.entries(byMarket).map(([m, vs]) => [m, vs[i]])),
+        compare: {},
+        reasons: {},
+      })),
+    };
+  };
+  // Partial weeks (first and last) are wild on purpose: they must not count.
+  const rev = series("money", "up", { US: [5, 100, 100, 120, 140, 9], CA: [1, 50, 50, 40, 40, 900], OTHER: [0, 5, 5, 6, 6, 0] });
+  const tr = trendTakeaway(rev, ["US", "CA", "OTHER"], "USD");
+  check("trend: totals rank by the size of the move, partial weeks out", tr === "Biggest mover: US, up 30 % from $100 to $130 a week (better).", tr ?? "null");
+  const ncac = series("unit", "down", { US: [0, 40, 40, 44, 44, 0], CA: [0, 100, 100, 80, 80, 0], OTHER: [0, 10, 10, 50, 50, 0] });
+  const tn = trendTakeaway(ncac, ["US", "CA", "OTHER"], "USD");
+  check("trend: ratios rank by percent, Other left out, down is better for nCAC", tn === "Biggest mover: CA, down 20 % from $100 to $80 (better).", tn ?? "null");
+  const worse = trendTakeaway(series("unit", "down", { US: [0, 40, 40, 50, 50, 0] }), ["US"], "USD");
+  check("trend: a rising nCAC is worse", worse === "Biggest mover: US, up 25 % from $40 to $50 (worse).", worse ?? "null");
+  const flat = trendTakeaway(series("ratio", "up", { US: [0, 10, 10, 10.2, 10.1, 0], CA: [0, 8, 8, 8.1, 8, 0] }), ["US", "CA"], "USD");
+  check("trend: under 3 % everywhere reads flat", flat === "Flat: no market moved more than 3 % from the first to the last full weeks.", flat ?? "null");
+  const fromZero = trendTakeaway(series("count", "up", { PL: [0, 0, 0, 7, 9, 0] }), ["PL"], "USD");
+  check("trend: a start at zero gives no percent", fromZero === "Biggest mover: PL, from 0 to 8 a week (better).", fromZero ?? "null");
+  check("trend: under four full weeks, no sentence", trendTakeaway(series("money", "up", { US: [1, 2, 3, 4, 5] }), ["US"], "USD") === null);
+  check("trend: n/a weeks leave too few values, no sentence", trendTakeaway(series("money", "up", { US: [0, 1, null, null, 2, 0] }), ["US"], "USD") === null);
+
+  // Spend response.
+  const fit = (r2: number): LogFit => ({ a: 1, b: 2, r2, n: 20, minX: 1, maxX: 2 });
+  const rising = responseTakeaway({ market: "US", fit: fit(0.8), marginal: 62, currentSpend: 2400, avgNcac: 41 }, "USD");
+  check(
+    "response: marginal above the average reads as a rising price",
+    rising === "At $2,400 a week, the next US customer costs about $62, 51 % more than the $41 average: more spend here buys customers at a rising price.",
+    rising ?? "null"
+  );
+  const room = responseTakeaway({ market: "CA", fit: fit(0.22), marginal: 30, currentSpend: 900, avgNcac: 41 }, "USD");
+  check(
+    "response: below the average means room, and a weak fit says so in words",
+    room === "At $900 a week, the next CA customer costs about $30, 27 % less than the $41 average: there is room to spend more here before returns fall. Spend explains only 22 % of the weekly swing, so read this as a direction, not a number.",
+    room ?? "null"
+  );
+  const level = responseTakeaway({ market: "US", fit: fit(0.8), marginal: 45, currentSpend: 1569, avgNcac: 43 }, "USD");
+  check("response: within 10 % reads as level", level === "At $1,569 a week, the next US customer costs about $45, close to the $43 average: returns are not falling much yet.", level ?? "null");
+  check("response: no fit, no sentence", responseTakeaway({ market: "SK", fit: null, marginal: null, currentSpend: 500, avgNcac: 40 }, "USD") === null);
+  check("response: no marginal, no sentence", responseTakeaway({ market: "SK", fit: fit(0.8), marginal: null, currentSpend: 500, avgNcac: 40 }, "USD") === null);
+  const noAvg = responseTakeaway({ market: "US", fit: fit(0.8), marginal: 45, currentSpend: 1000, avgNcac: null }, "USD");
+  check("response: no average, just the marginal", noAvg === "At $1,000 a week, the next US customer costs about $45.", noAvg ?? "null");
+
+  // Calculator.
+  const gain = reallocationTakeaway("US", "CA", { move: 240, newFrom: -3.1, newTo: 4.3, newTotal: 1.2, gp: 80, extrapolates: false }, "USD");
+  check("calculator: trade, net and GP", gain === "Moving $240 a week from US to CA trades 3.1 US customers for 4.3 in CA: 1.2 more customers and +$80 GP after ads a week.", gain ?? "null");
+  const lossCalc = reallocationTakeaway("US", "CA", { move: 157, newFrom: -3.7, newTo: 1.4, newTotal: -2.3, gp: -214, extrapolates: false }, "USD");
+  check("calculator: a loss reads as fewer and minus", lossCalc === `Moving $157 a week from US to CA trades 3.7 US customers for 1.4 in CA: 2.3 fewer customers and ${M}$214 GP after ads a week.`, lossCalc ?? "null");
+  const noGp = reallocationTakeaway("US", "OTHER", { move: 100, newFrom: -1, newTo: 1, newTotal: 0, gp: null, extrapolates: false }, "USD");
+  check("calculator: no GP, no GP clause", noGp === "Moving $100 a week from US to Other trades 1 US customers for 1 in Other: about the same number of customers a week.", noGp ?? "null");
+  check("calculator: nothing moved, no sentence", reallocationTakeaway("US", "CA", { move: 0, newFrom: 0, newTo: 0, newTotal: 0, gp: 0, extrapolates: false }, "USD") === null);
+
+  // Free shipping.
+  const fine: OrderBin[] = [{ lo: 100, orders: 5, zeroShip: 0 }, { lo: 112, orders: 10, zeroShip: 0 }, { lo: 116, orders: 5, zeroShip: 0 }, { lo: 120, orders: 5, zeroShip: 0 }, { lo: 124, orders: 10, zeroShip: 1 }, { lo: 128, orders: 45, zeroShip: 44 }];
+  const near = nearThreshold(fine, 4, { value: 128, share: 0.98, ordersAbove: 45 });
+  check("near threshold: the band starts on the first bin edge inside 10 %", near !== null && near.from === 116 && near.to === 128 && near.orders === 20 && near.share === 0.25, JSON.stringify(near));
+  const ship = thresholdTakeaway({ market: "US", threshold: { value: 128, share: 0.98, ordersAbove: 45 }, near }, "USD");
+  check("threshold: share of orders just short", ship === "25 % of US orders (20) fell just short of free shipping, at $116 to $128: the easiest orders to lift over the threshold with an add-on.", ship ?? "null");
+  const empty = thresholdTakeaway({ market: "CA", threshold: { value: 200, share: 0.9, ordersAbove: 45 }, near: nearThreshold(fine, 4, { value: 200, share: 0.9, ordersAbove: 45 }) }, "USD");
+  check("threshold: nobody just short says so", empty === "No CA orders sit within 10 % below the $200 threshold, so it is not holding orders back.", empty ?? "null");
+  const tiny = thresholdTakeaway({ market: "US", threshold: { value: 128, share: 0.98, ordersAbove: 45 }, near: { from: 116, to: 128, orders: 1, share: 0.004 } }, "USD") ?? "";
+  check("threshold: under 1 % does not read 0 %", tiny.startsWith("Under 1 % of US orders (1)"), tiny);
+  check("threshold: no threshold, no band", nearThreshold(fine, 4, { none: "x" }) === null);
+  check("threshold: no threshold, no sentence", thresholdTakeaway({ market: "US", threshold: { none: "x" }, near: null }, "USD") === null);
+
+  // On the demo: the page's own data gives a sentence for every chart.
+  const last = dataThrough();
+  const range = { from: new Date(Date.parse(`${last}T00:00:00Z`) - 89 * 86_400_000).toISOString().slice(0, 10), to: last };
+  const na = buildModel(demoMarkets("na", range, null));
+  const pd = portfolioTakeaway(portfolioPoints(na), na.baseCurrency) ?? "";
+  check("demo: portfolio names US first and what CA needs", pd.startsWith("US pays back") && pd.includes("CA needs an nCAC under"), pd);
+  const bins = demoOrderBins("na", range);
+  const hs = bins.markets!.filter((m) => m.market !== "OTHER").map(histogram);
+  check("demo: every sold market has a near-threshold band", hs.every((h) => h.near !== null && h.near.orders > 0), JSON.stringify(hs.map((h) => h.near)));
+  const usShip = thresholdTakeaway(hs.find((h) => h.market === "US")!, "USD") ?? "";
+  check("demo: free-shipping sentence names the band", /^\d+ % of US orders \(\d[\d,]*\) fell just short of free shipping, at \$\d+ to \$\d+/.test(usShip), usShip);
+  const resp = demoResponse("na", range);
+  const us = responseByMarket({ rows: resp.rows, markets: ["US"], window: resp.window, range, lastDay: last })[0];
+  const rt = responseTakeaway({ ...us, avgNcac: 43 }, "USD") ?? "";
+  check("demo: response sentence for US", rt.startsWith("At $") && rt.includes("the next US customer costs about"), rt);
+  for (const t of [two, clear, mixed, tr, tn, rising, room, gain, ship, pd, usShip, rt]) check("takeaway has no em dash", !(t ?? "").includes(String.fromCharCode(0x2014)));
 }
 
 // ── Nav ─────────────────────────────────────────────────────────────────────

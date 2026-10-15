@@ -24,7 +24,19 @@
 --
 -- Keep the two id lists below in step with the registry (ids are append-only, so this means
 -- adding ids, never changing them). money = metrics whose unit is money; fraction = metrics whose
--- unit is percent (stored as a fraction, 0.012 for 1.2 %).
+-- unit is percent (stored as a fraction, 0.012 for 1.2 %). cvr, cod_share and return_rate are
+-- benchmark-only ids (registry/ids.ts BENCHMARK_ONLY_METRIC_IDS, migration 295).
+--
+-- Allowed values (extended for the 295 seed, 2026-10-15):
+--   stat    median, mean, p25, p75, or 'range'. A 'range' row stores the arithmetic midpoint in
+--           value and the published range in value_low / value_high, so both bounds are required
+--           and low <= value <= high (rule range_without_band, plus band_inconsistent). Reports
+--           skips 'range' rows on purpose; the Markets page reads them.
+--   region  the runbook's CZ, CEE, EU, US, GLOBAL, or any ISO 3166-1 alpha-2 country code
+--           (^[A-Z]{2}$: SK, PL, HU, DE, AT, GB, IE, CA, ...). The pattern is deliberately open;
+--           it catches case and spelling mistakes ("cz", "Czechia", "UK_") and nothing more.
+--           Applied to ref.industry_benchmarks and to ref.client_verticals.region (a client in
+--           SK matches the SK rows).
 
 CREATE OR REPLACE VIEW `oneeighty-warehouse.ops.v_benchmark_issues` AS
 WITH
@@ -33,7 +45,9 @@ WITH
   ),
   fraction_metrics AS (
     SELECT m FROM UNNEST(['cm1_pct', 'cm3_pct', 'meta_ctr', 'google_ctr',
-                          'email_open_rate', 'email_click_rate', 'meta_atc_rate']) AS m
+                          'email_open_rate', 'email_click_rate', 'meta_atc_rate',
+                          'meta_conversion_rate', 'repeat_rate_365',
+                          'cvr', 'cod_share', 'return_rate']) AS m
   ),
   b AS (
     SELECT * FROM `oneeighty-warehouse.ref.industry_benchmarks` WHERE is_active
@@ -76,12 +90,17 @@ WITH
        OR (b.value_high IS NOT NULL AND b.value_high < b.value)
     UNION ALL
     SELECT 'invalid_stat', 'critical', NULL, b.benchmark_id, b.vertical, b.metric_id,
-           FORMAT('stat "%s" is not one of median, mean, p25, p75.', b.stat)
-    FROM b WHERE b.stat NOT IN ('median', 'mean', 'p25', 'p75')
+           FORMAT('stat "%s" is not one of median, mean, p25, p75, range.', b.stat)
+    FROM b WHERE b.stat NOT IN ('median', 'mean', 'p25', 'p75', 'range')
+    UNION ALL
+    SELECT 'range_without_band', 'critical', NULL, b.benchmark_id, b.vertical, b.metric_id,
+           FORMAT('stat "range" needs value_low and value_high (value is their midpoint): low %s, high %s.',
+                  IFNULL(CAST(b.value_low AS STRING), 'null'), IFNULL(CAST(b.value_high AS STRING), 'null'))
+    FROM b WHERE b.stat = 'range' AND (b.value_low IS NULL OR b.value_high IS NULL)
     UNION ALL
     SELECT 'invalid_region', 'critical', NULL, b.benchmark_id, b.vertical, b.metric_id,
-           FORMAT('region "%s" is not one of CZ, CEE, EU, US, GLOBAL.', b.region)
-    FROM b WHERE b.region NOT IN ('CZ', 'CEE', 'EU', 'US', 'GLOBAL')
+           FORMAT('region "%s" is not one of CZ, CEE, EU, US, GLOBAL or an ISO 3166-1 alpha-2 country code (two capital letters).', b.region)
+    FROM b WHERE b.region NOT IN ('CZ', 'CEE', 'EU', 'US', 'GLOBAL') AND NOT REGEXP_CONTAINS(b.region, r'^[A-Z]{2}$')
     UNION ALL
     SELECT 'duplicate_active_row', 'critical', NULL, b.benchmark_id, b.vertical, b.metric_id,
            FORMAT('%d active rows share vertical, region, metric, period, stat and source.', d.n)
@@ -127,8 +146,8 @@ WITH
     FROM v WHERE v.valid_to IS NOT NULL AND v.valid_to < v.valid_from
     UNION ALL
     SELECT 'vertical_invalid_region', 'critical', v.client_id, NULL, v.vertical, NULL,
-           FORMAT('region "%s" is not one of CZ, CEE, EU, US, GLOBAL.', v.region)
-    FROM v WHERE v.region NOT IN ('CZ', 'CEE', 'EU', 'US', 'GLOBAL')
+           FORMAT('region "%s" is not one of CZ, CEE, EU, US, GLOBAL or an ISO 3166-1 alpha-2 country code (two capital letters).', v.region)
+    FROM v WHERE v.region NOT IN ('CZ', 'CEE', 'EU', 'US', 'GLOBAL') AND NOT REGEXP_CONTAINS(v.region, r'^[A-Z]{2}$')
     UNION ALL
     SELECT 'vertical_not_snake_case', 'warning', v.client_id, NULL, v.vertical, NULL,
            'vertical must be lower snake_case so it matches ref.industry_benchmarks.vertical.'

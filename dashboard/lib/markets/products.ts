@@ -27,6 +27,7 @@
  * market's net sales. A market paid in the base currency shows base only.
  */
 
+import { formatMoney, formatPercent, MINUS } from "@/lib/format";
 import { MARKET_OTHER, type MarketsSource } from "@/lib/markets/types";
 
 /** Rows shown in the matrix before the rest pools into "Other products". */
@@ -373,4 +374,129 @@ export function buildProductsModel(raw: ProductsRaw, { topN = TOP_PRODUCTS }: { 
     top,
     differs,
   };
+}
+
+// ── Takeaways: one plain sentence above each view ──────────────────────────
+//
+// Each answers "so what?" for its view from the model it draws, and returns
+// null when there is nothing to say (no compared market, no prices), so the
+// page prints no sentence rather than a wrong one.
+
+/** Percentage points, "+3.4 pp" / "−3.4 pp"; a gap that rounds to zero is "0.0 pp". */
+export function formatPp(diff: number): string {
+  const v = Math.abs(diff * 100).toFixed(1);
+  if (!/[1-9]/.test(v)) return "0.0 pp";
+  return `${diff > 0 ? "+" : MINUS}${v} pp`;
+}
+
+const label = (key: string) => (key === MARKET_OTHER ? "Other" : key);
+
+function listWords(xs: string[]): string {
+  return xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0] ?? "";
+}
+
+/**
+ * What sells differently: the one product whose share differs most from home,
+ * over every compared market, and which way.
+ *   "Biggest difference: Deep Sleep Tincture is 14.2% of CA net sales against
+ *    9.5% in US (+4.7 pp): a product to lead with in CA."
+ */
+export function differsTakeaway(model: Pick<ProductsModel, "differs" | "homeMarket">): string | null {
+  let best: { market: string; item: DiffItem } | null = null;
+  for (const [market, res] of Object.entries(model.differs)) {
+    if (!("items" in res)) continue;
+    for (const item of res.items) if (!best || Math.abs(item.diff) > Math.abs(best.item.diff)) best = { market, item };
+  }
+  if (!best || formatPp(best.item.diff) === "0.0 pp") return null;
+  const { market, item } = best;
+  const home = label(model.homeMarket);
+  const where = label(market);
+  const hint = item.diff > 0 ? `a product to lead with in ${where}` : `worth checking its price or visibility in ${where}`;
+  return `Biggest difference: ${item.product} is ${formatPercent(item.share)} of ${where} net sales against ${formatPercent(item.homeShare)} in ${home} (${formatPp(item.diff)}): ${hint}.`;
+}
+
+/** Products counted as "the top" when the matrix reads concentration. */
+export const TOP_CONCENTRATION = 3;
+/** Units a product needs in both markets before its price gap is named. */
+export const MIN_GAP_UNITS = 10;
+
+/**
+ * The matrix. Share: how much of net sales the top three products carry and
+ * where that leans. Price: the widest gap in average selling price against
+ * home, on products with enough units in both markets.
+ *   "The top 3 products make 43.5% of net sales: from 36.0% in CA to 45.2% in US."
+ *   "Widest price gap vs US: Travel Duo sells for $62 in CA against $74 in US (−16 %)."
+ */
+export function matrixTakeaway(model: Pick<ProductsModel, "rows" | "markets" | "homeMarket" | "baseCurrency">, metric: "share" | "price"): string | null {
+  const products = model.rows.filter((r) => !r.pooled);
+  const markets = model.markets.filter((m) => m.key !== MARKET_OTHER && m.netSales > 0);
+  if (metric === "share") {
+    const top = products.slice(0, TOP_CONCENTRATION);
+    if (top.length < 2) return null;
+    const all = top.reduce((t, r) => t + (r.total.share ?? 0), 0);
+    const by = markets.map((m) => ({ key: m.key, share: top.reduce((t, r) => t + (r.cells[m.key]?.share ?? 0), 0) })).sort((a, b) => a.share - b.share);
+    const head = `The top ${top.length} products make ${formatPercent(all)} of net sales`;
+    if (by.length < 2) return `${head}.`;
+    const lo = by[0];
+    const hi = by[by.length - 1];
+    if (hi.share - lo.share < 0.03) return `${head}, about the same in every market.`;
+    return `${head}: from ${formatPercent(lo.share)} in ${label(lo.key)} to ${formatPercent(hi.share)} in ${label(hi.key)}.`;
+  }
+  const home = model.homeMarket;
+  let best: { product: string; market: string; asp: number; homeAsp: number; gap: number } | null = null;
+  for (const r of products) {
+    const h = r.cells[home];
+    if (!h || h.asp === null || h.units === null || h.units < MIN_GAP_UNITS) continue;
+    for (const m of markets) {
+      if (m.key === home) continue;
+      const c = r.cells[m.key];
+      if (!c || c.asp === null || c.units === null || c.units < MIN_GAP_UNITS) continue;
+      const gap = c.asp / h.asp - 1;
+      if (!best || Math.abs(gap) > Math.abs(best.gap)) best = { product: r.product, market: m.key, asp: c.asp, homeAsp: h.asp, gap };
+    }
+  }
+  if (!best) return null;
+  const pct = Math.round(best.gap * 100);
+  if (pct === 0) return `Average selling prices match ${label(home)} within 1 % on every product with ${MIN_GAP_UNITS} or more units.`;
+  const money = (v: number) => formatMoney(v, model.baseCurrency);
+  return `Widest price gap vs ${label(home)}: ${best.product} sells for ${money(best.asp)} in ${label(best.market)} against ${money(best.homeAsp)} in ${label(home)} (${pct > 0 ? "+" : MINUS}${Math.abs(pct)} %).`;
+}
+
+/**
+ * Top 5 per market: whether the same product leads everywhere, and with
+ * Compare on, the biggest change in share inside a top 5.
+ *   "Radiance Serum 30ml leads in every market, from 15.0% in CA to 21.0% in US."
+ *   "The top seller differs: Radiance Serum 30ml in US (17.0%), Deep Sleep Tincture in CA (14.2%)."
+ */
+export function topTakeaway(model: Pick<ProductsModel, "top" | "markets" | "hasCompare">): string | null {
+  const leaders = model.markets
+    .map((m) => ({ key: m.key, item: model.top[m.key]?.[0] }))
+    .filter((x): x is { key: string; item: TopItem } => !!x.item);
+  if (!leaders.length) return null;
+  let head: string;
+  const named = leaders.filter((l) => l.key !== MARKET_OTHER);
+  const pool = named.length ? named : leaders;
+  if (pool.length === 1) {
+    head = `${pool[0].item.product} leads ${label(pool[0].key)} with ${formatPercent(pool[0].item.share)} of net sales.`;
+  } else if (pool.every((l) => l.item.product === pool[0].item.product)) {
+    const sorted = [...pool].sort((a, b) => a.item.share - b.item.share);
+    head = `${pool[0].item.product} leads in every market, from ${formatPercent(sorted[0].item.share)} in ${label(sorted[0].key)} to ${formatPercent(sorted[sorted.length - 1].item.share)} in ${label(sorted[sorted.length - 1].key)}.`;
+  } else {
+    head = `The top seller differs: ${listWords(pool.map((l) => `${l.item.product} in ${label(l.key)} (${formatPercent(l.item.share)})`))}.`;
+  }
+  if (!model.hasCompare) return head;
+  let move: { key: string; product: string; diff: number } | null = null;
+  for (const m of model.markets) {
+    const items = model.top[m.key] ?? [];
+    // Other pools many countries on few orders, and a market that did not sell
+    // in the comparison has no shift to report.
+    if (m.key === MARKET_OTHER || items.every((it) => it.prevRank === null)) continue;
+    for (const it of items) {
+      if (it.prevShare === null) continue;
+      const diff = it.share - it.prevShare;
+      if (!move || Math.abs(diff) > Math.abs(move.diff)) move = { key: m.key, product: it.product, diff };
+    }
+  }
+  if (!move || Math.abs(move.diff) < 0.01) return head;
+  return `${head} Biggest shift against the comparison: ${move.product} in ${label(move.key)}, ${formatPp(move.diff)}.`;
 }

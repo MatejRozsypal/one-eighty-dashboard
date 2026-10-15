@@ -19,8 +19,10 @@
  *   reallocate        move X of weekly spend from A to B, read off the two fits
  *   funnelRows        GA4 sessions to purchase by market, indexed to home = 100
  *   inferThreshold    free-shipping threshold from zero-shipping shares by value
+ *   *Takeaway         one plain sentence per chart: what it says, n/a-safe
  */
 
+import { formatMoney, formatNumber, formatRatio, MINUS } from "@/lib/format";
 import { isNa, marketCosts, periodMetrics, type MarketsModel, type PeriodMetrics, type Val } from "@/lib/markets/model";
 import { MARKET_OTHER, MARKET_UNALLOCATED, type CostCard, type DailySums, type MarketPeriodRaw } from "@/lib/markets/types";
 
@@ -820,6 +822,8 @@ export interface Histogram {
   zeroShipShare: number | null;
   threshold: Threshold;
   width: number;
+  /** Orders within 10 % below the threshold (fine bins); null without a threshold. */
+  near: { from: number; to: number; orders: number; share: number } | null;
 }
 
 /** Fine bins grouped into display bars, with the threshold read on the fine grain. */
@@ -843,5 +847,193 @@ export function histogram(m: MarketBins): Histogram {
   }
   const orders = bars.reduce((t, b) => t + b.orders, 0);
   const zero = bars.reduce((t, b) => t + b.zeroShip, 0);
-  return { market: m.market, bars, orders, zeroShipShare: orders > 0 ? zero / orders : null, threshold: inferThreshold(m.bins, m.width), width };
+  const threshold = inferThreshold(m.bins, m.width);
+  return { market: m.market, bars, orders, zeroShipShare: orders > 0 ? zero / orders : null, threshold, width, near: nearThreshold(m.bins, m.width, threshold) };
+}
+
+// ---------------------------------------------------------------------------
+// 7. Takeaways: one plain sentence above each chart
+// ---------------------------------------------------------------------------
+//
+// Every chart on the page answers "so what?" in one or two short sentences,
+// computed from the same data it draws. Each returns null when the data is
+// missing, so the page prints no sentence rather than a wrong one. Numbers go
+// through lib/format, so they read like the rest of the page.
+
+/** "US", "Other", "Unallocated" (the page's own market labels). */
+function nameOf(key: string): string {
+  if (key === MARKET_OTHER) return "Other";
+  if (key === MARKET_UNALLOCATED) return "Unallocated";
+  return key;
+}
+
+/** "14 %", the page's prose percent (whole, with a space). */
+function pctWords(v: number): string {
+  return `${Math.abs(Math.round(v * 100))} %`;
+}
+
+/** "A, B and C". */
+function listWords(xs: string[]): string {
+  return xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0] ?? "";
+}
+
+/** The LTGP:CAC the page aims for. */
+export const TARGET_RATIO = 3;
+
+/**
+ * Portfolio: how many times each market pays back what a new customer costs,
+ * best and worst, and what a market under 3:1 would need to reach it.
+ *   "US pays back 5.0× at 365 days for a $44 nCAC; CA 1.7× for $94. To reach
+ *    3:1, CA needs an nCAC under $53 or more GP per customer."
+ */
+export function portfolioTakeaway(points: PortfolioPoint[], currency: string): string | null {
+  const drawn = points
+    .filter((p): p is PortfolioPoint & { x: number; y: number; ratio: number } => p.x !== null && p.y !== null && p.ratio !== null && p.x > 0)
+    .sort((a, b) => b.ratio - a.ratio);
+  if (!drawn.length) return null;
+  const money = (v: number) => formatMoney(v, currency);
+  const ratio = (v: number) => formatRatio(v, { decimals: 1 });
+  const basisWords = (p: PortfolioPoint) => (p.basis === "firstOrder" ? "on the first order" : "at 365 days");
+  const shown = drawn.length <= 3 ? drawn : [drawn[0], drawn[drawn.length - 1]];
+  const lead = shown[0];
+  const clauses = [
+    `${nameOf(lead.market)} pays back ${ratio(lead.ratio)} ${basisWords(lead)} for a ${money(lead.x)} nCAC`,
+    ...shown.slice(1).map((p) => `${nameOf(p.market)} ${ratio(p.ratio)}${p.basis !== lead.basis ? ` ${basisWords(p)},` : ""} for ${money(p.x)}`),
+  ];
+  const head = `${clauses.join("; ")}.`;
+  const below = drawn.filter((p) => p.ratio < TARGET_RATIO).reverse();
+  if (!below.length) return `${head} ${drawn.length > 1 ? "Every market clears" : "That clears"} ${TARGET_RATIO}:1.`;
+  const worst = below[0];
+  if (worst.y <= 0) return `${head} ${nameOf(worst.market)} makes no gross profit per customer yet, so no nCAC pays back there.`;
+  if (below.length === 1) {
+    const gpWords = worst.basis === "firstOrder" ? "a higher first-order GP" : "more GP per customer";
+    return `${head} To reach ${TARGET_RATIO}:1, ${nameOf(worst.market)} needs an nCAC under ${money(worst.y / TARGET_RATIO)} or ${gpWords}.`;
+  }
+  const need = below.map((p) => `${money(p.y / TARGET_RATIO)} in ${nameOf(p.market)}`);
+  return `${head} For ${TARGET_RATIO}:1 at today's GP per customer, nCAC must fall under ${listWords(need)}.`;
+}
+
+/** Full weeks averaged at each end when a weekly trend names its biggest mover. */
+export const MOVER_WEEKS = 2;
+/** Below this change at both ends a metric reads as flat. */
+export const FLAT_SHARE = 0.03;
+
+/**
+ * Weekly trends: the market that moved most between the average of the first
+ * two and the last two full weeks (partial weeks left out). Totals (revenue,
+ * customers, GP) rank by the size of the move; ratios (nCAC, MER) by the
+ * percentage move over the sold markets, since Other's ratio swings on a
+ * handful of orders.
+ *   "Biggest mover: CA, up 14 % from $98 to $112 (worse)."
+ */
+export function trendTakeaway(s: TrendSeries, markets: string[], currency: string): string | null {
+  const full = s.points.filter((p) => !p.partial);
+  const additive = s.kind === "money" || s.kind === "count";
+  const fmt = (v: number) =>
+    s.kind === "money" ? formatMoney(v, currency, { compact: Math.abs(v) >= 10_000 })
+      : s.kind === "unit" ? formatMoney(v, currency)
+      : s.kind === "count" ? formatNumber(v, { decimals: 0 })
+      : formatRatio(v, { decimals: 1 });
+  const mean = (xs: number[]) => xs.reduce((t, v) => t + v, 0) / xs.length;
+  const moves = markets
+    .filter((m) => additive || (m !== MARKET_OTHER && m !== MARKET_UNALLOCATED))
+    .map((m) => {
+      const vs = full.map((p) => p.values[m]).filter((v): v is number => v !== null && Number.isFinite(v));
+      if (vs.length < 2 * MOVER_WEEKS) return null;
+      const start = mean(vs.slice(0, MOVER_WEEKS));
+      const end = mean(vs.slice(-MOVER_WEEKS));
+      const pct = start > 0 ? end / start - 1 : null;
+      return { m, start, end, pct, size: additive ? Math.abs(end - start) : pct === null ? -1 : Math.abs(pct) };
+    })
+    .filter((x): x is { m: string; start: number; end: number; pct: number | null; size: number } => x !== null && x.size >= 0)
+    .sort((a, b) => b.size - a.size);
+  if (!moves.length) return null;
+  if (moves.every((x) => x.pct !== null && Math.abs(x.pct) < FLAT_SHARE)) {
+    return `Flat: no market moved more than ${pctWords(FLAT_SHARE)} from the first to the last full weeks.`;
+  }
+  const top = moves[0];
+  const up = top.end >= top.start;
+  const good = up === (s.goodWhen === "up");
+  const perWeek = additive ? " a week" : "";
+  const change = top.pct !== null ? `${up ? "up" : "down"} ${pctWords(top.pct)} ` : "";
+  return `Biggest mover: ${nameOf(top.m)}, ${change}from ${fmt(top.start)} to ${fmt(top.end)}${perWeek} (${good ? "better" : "worse"}).`;
+}
+
+/**
+ * Spend vs new customers: what the next customer costs at today's spend
+ * against the average, in words, with the weak-fit caveat when it applies.
+ *   "At $2,400 a week, the next US customer costs about $62, 51 % more than the
+ *    $41 average: more spend here buys customers at a rising price."
+ */
+export function responseTakeaway(
+  r: { market: string; fit: LogFit | null; marginal: number | null; currentSpend: number | null; avgNcac: number | null },
+  currency: string
+): string | null {
+  if (!r.fit || r.marginal === null || r.currentSpend === null) return null;
+  const money = (v: number) => formatMoney(v, currency);
+  const head = `At ${money(r.currentSpend)} a week, the next ${nameOf(r.market)} customer costs about ${money(r.marginal)}`;
+  let body: string;
+  if (r.avgNcac === null || !(r.avgNcac > 0)) {
+    body = `${head}.`;
+  } else {
+    const gap = r.marginal / r.avgNcac - 1;
+    if (gap > 0.1) body = `${head}, ${pctWords(gap)} more than the ${money(r.avgNcac)} average: more spend here buys customers at a rising price.`;
+    else if (gap < -0.1) body = `${head}, ${pctWords(gap)} less than the ${money(r.avgNcac)} average: there is room to spend more here before returns fall.`;
+    else body = `${head}, close to the ${money(r.avgNcac)} average: returns are not falling much yet.`;
+  }
+  if (r.fit.r2 < WEAK_FIT_R2) {
+    body += ` Spend explains only ${pctWords(r.fit.r2)} of the weekly swing, so read this as a direction, not a number.`;
+  }
+  return body;
+}
+
+/**
+ * The spend calculator's result in one sentence.
+ *   "Moving $240 a week from US to CA trades 3.1 US customers for 4.3 in CA:
+ *    1.2 more customers and +$80 GP after ads a week."
+ */
+export function reallocationTakeaway(from: string, to: string, r: Reallocation, currency: string): string | null {
+  if (!(r.move > 0)) return null;
+  const n1 = (v: number) => formatNumber(Math.abs(v), { decimals: 1 });
+  const net = r.newTotal;
+  const netWords = Math.abs(net) < 0.05 ? "about the same number of customers" : `${n1(net)} ${net > 0 ? "more" : "fewer"} customers`;
+  const gp = r.gp === null ? "" : ` and ${r.gp >= 0 ? "+" : MINUS}${formatMoney(Math.abs(r.gp), currency)} GP after ads`;
+  return `Moving ${formatMoney(r.move, currency)} a week from ${nameOf(from)} to ${nameOf(to)} trades ${n1(r.newFrom)} ${nameOf(from)} customers for ${n1(r.newTo)} in ${nameOf(to)}: ${netWords}${gp} a week.`;
+}
+
+/** How far below the threshold an order counts as "just short" of free shipping. */
+export const NEAR_THRESHOLD = 0.1;
+
+/**
+ * Orders that fell just short of free shipping: within 10 % below the
+ * inferred threshold, read on the fine bins (the band starts on a bin edge
+ * inside the 10 %).
+ */
+export function nearThreshold(
+  bins: OrderBin[],
+  width: number,
+  t: Threshold,
+  band = NEAR_THRESHOLD
+): { from: number; to: number; orders: number; share: number } | null {
+  if (!("value" in t) || !(width > 0)) return null;
+  const total = bins.reduce((s, b) => s + b.orders, 0);
+  if (total <= 0) return null;
+  const from = Math.ceil((t.value * (1 - band)) / width - 1e-9) * width;
+  const orders = bins.filter((b) => b.lo >= from - 1e-9 && b.lo < t.value - 1e-9).reduce((s, b) => s + b.orders, 0);
+  return { from, to: t.value, orders, share: orders / total };
+}
+
+/**
+ * Order value vs free shipping: the share of orders that fell just short of
+ * the threshold, the group an add-on or a nudge could lift over it.
+ *   "18 % of US orders (372) fell just short of free shipping, at $144 to
+ *    $160: the easiest orders to lift over the threshold."
+ */
+export function thresholdTakeaway(h: Pick<Histogram, "market" | "threshold" | "near">, currency: string): string | null {
+  const n = h.near;
+  if (!n || !("value" in h.threshold)) return null;
+  const money = (v: number) => formatMoney(v, currency);
+  if (n.orders === 0) return `No ${nameOf(h.market)} orders sit within ${pctWords(NEAR_THRESHOLD)} below the ${money(n.to)} threshold, so it is not holding orders back.`;
+  const share = Math.round(n.share * 100) < 1 ? "Under 1 %" : pctWords(n.share);
+  return `${share} of ${nameOf(h.market)} orders (${formatNumber(n.orders)}) fell just short of free shipping, at ${money(n.from)} to ${money(n.to)}: the easiest orders to lift over the threshold with an add-on.`;
 }

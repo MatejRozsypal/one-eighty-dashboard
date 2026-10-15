@@ -13,7 +13,7 @@ import { CartesianGrid, ReferenceLine, ResponsiveContainer, Scatter, ScatterChar
 import { ChartSummary } from "@/components/ui/ChartSummary";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { formatMoney, formatRatio } from "@/lib/format";
-import { niceWidth, type PortfolioPoint } from "@/lib/markets/analysis";
+import { niceWidth, portfolioTakeaway, type PortfolioPoint } from "@/lib/markets/analysis";
 import { AXIS_TICK, TooltipBox, TooltipRow, marketLabel } from "@/components/markets/trends/bits";
 
 type Dot = PortfolioPoint & { x: number; y: number; r: number; color: string };
@@ -55,9 +55,11 @@ export function PortfolioChart({
   const end = (k: number) => (xMax * k <= yMax ? { x: xMax, y: xMax * k } : { x: yMax / k, y: yMax });
   const anyFallback = dots.some((d) => d.basis === "firstOrder");
   const fmt = (v: number) => formatMoney(v, currency, { unit: true });
+  const takeaway = portfolioTakeaway(points, currency);
 
   return (
     <div className="flex flex-col gap-3">
+      {takeaway && <p className="m-0 text-[13px] text-content-strong">{takeaway}</p>}
       <span aria-hidden="true" className="-mb-2 font-mono text-[10.5px] text-content-muted">GP per customer</span>
       <div
         className="relative h-[300px] w-full sm:h-[340px]"

@@ -45,7 +45,7 @@ export function TopByMarket({ model, compareLabel }: { model: ProductsModel; com
                     <div className="flex items-baseline justify-between gap-2 text-[13px]">
                       <span className="flex min-w-0 items-baseline gap-2">
                         <span className="w-3 shrink-0 font-mono text-[11px] tabular text-content-muted">{i + 1}</span>
-                        <span className="truncate text-content-body" title={it.product}>
+                        <span className="line-clamp-2 min-w-0 break-words leading-snug text-content-body" title={it.product}>
                           {it.product}
                         </span>
                         {newEntry && (

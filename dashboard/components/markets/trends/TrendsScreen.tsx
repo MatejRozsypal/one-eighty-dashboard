@@ -154,7 +154,7 @@ async function TrendsSection({
   return (
     <TrendCard
       title="Weekly trends"
-      info="Monday to Sunday weeks inside the range. A week the range or the data cuts short is hollow and marked partial. nCAC, MER, GP after ads and CM3 are n/a in a week with days that have no spend data; CM3 shows once a market has a cost card. With Compare on, the compare period is the dotted line, week 1 against week 1."
+      info="Monday to Sunday weeks inside the range. A week the range or the data cuts short is a hollow point, not joined to the line, and marked partial. nCAC, MER, GP after ads and CM3 are n/a in a week with days that have no spend data; CM3 shows once a market has a cost card. With Compare on, the compare period is the dotted line, week 1 against week 1. The line under each metric names the market that moved most: the average of the first two full weeks against the last two; totals rank by the size of the move, nCAC and MER by the percentage over the sold markets."
     >
       {body}
     </TrendCard>
@@ -279,7 +279,7 @@ async function FunnelSection({
 async function AovSection({ baseP, binsP }: { baseP: Promise<BaseResult>; binsP: Promise<OrderBinsRaw | null> }) {
   const [base, bins] = await Promise.all([baseP, binsP]);
   const info =
-    "Orders by value (net sales, ex VAT, ex shipping) and whether they shipped free. The threshold is inferred from the orders: the lowest value from which at least 80 % of orders shipped free.";
+    "Orders by value (net sales, ex VAT, ex shipping) and whether they shipped free. The threshold is inferred from the orders: the lowest value from which at least 80 % of orders shipped free. Orders within 10 % below it fell just short: the group an add-on or a free-shipping nudge could lift over it.";
   let body;
   if ("empty" in base) body = <Empty base={base} />;
   else if (!bins) body = <EmptyNote>Markets data is not built for this client yet.</EmptyNote>;

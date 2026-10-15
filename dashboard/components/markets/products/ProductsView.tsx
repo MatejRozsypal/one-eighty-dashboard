@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { SegmentPills } from "@/components/controls/SegmentedControl";
 import { countryName } from "@/lib/markets/display";
-import { MIN_SHARE, TOP_PER_MARKET, TOP_PRODUCTS, type ProductsModel } from "@/lib/markets/products";
+import { differsTakeaway, matrixTakeaway, topTakeaway, MIN_SHARE, TOP_PER_MARKET, TOP_PRODUCTS, type ProductsModel } from "@/lib/markets/products";
 import { DiffersMost } from "@/components/markets/products/DiffersMost";
 import { ProductMatrix, SHARE_MIX, SHARE_STEPS, type MatrixMetric } from "@/components/markets/products/ProductMatrix";
 import { TopByMarket } from "@/components/markets/products/TopByMarket";
@@ -20,6 +20,9 @@ export function ProductsView({ model, rangeText, compareLabel }: { model: Produc
   const [metric, setMetric] = useState<MatrixMetric>("share");
   const period = compareLabel ? `${rangeText}, ${compareLabel}` : rangeText;
   const steps = ["0%", ...SHARE_STEPS.map((s) => formatPercent(s, { decimals: 0 }))];
+  const differs = differsTakeaway(model);
+  const matrix = matrixTakeaway(model, metric);
+  const top = topTakeaway(model);
 
   return (
     <div className="flex flex-col gap-5">
@@ -34,6 +37,7 @@ export function ProductsView({ model, rangeText, compareLabel }: { model: Produc
             </h2>
             <span className="text-[12px] text-content-muted">{rangeText}</span>
           </div>
+          {differs && <p className="m-0 text-[13px] text-content-strong">{differs}</p>}
           <DiffersMost model={model} />
         </Card>
       )}
@@ -62,6 +66,7 @@ export function ProductsView({ model, rangeText, compareLabel }: { model: Produc
             onSelect={(v) => setMetric(v as MatrixMetric)}
             ariaLabel="Matrix shows"
           />
+          {matrix && <p className="m-0 w-full text-[13px] text-content-strong">{matrix}</p>}
         </div>
         <ProductMatrix model={model} metric={metric} compareLabel={compareLabel} periodLabel={rangeText} />
         {metric === "share" && (
@@ -82,6 +87,7 @@ export function ProductsView({ model, rangeText, compareLabel }: { model: Produc
           Top {TOP_PER_MARKET} per market
           {model.hasCompare && <InfoTip text="Change in share in percentage points against the comparison period." />}
         </h2>
+        {top && <p className="m-0 text-[13px] text-content-strong">{top}</p>}
         <TopByMarket model={model} compareLabel={compareLabel} />
       </div>
     </div>

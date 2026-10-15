@@ -22,86 +22,17 @@ import { unstable_cache } from "next/cache";
 import { query, PROJECT_ID } from "@/lib/bigquery";
 import { assertReportsAccess } from "@/lib/authz";
 import { isoDate, num } from "@/lib/coerce";
+import { text, toBenchmarkRow, type BenchmarkDbRow, type BqDate } from "./benchmarkRows";
 import { matchBenchmarks } from "./benchmarkMatch";
 import { isTableNotFound } from "./clients";
 import type { BenchmarkRow, FxRate, GetBenchmarkRows, GetBenchmarks, GetFxRates, MatchBenchmarks } from "./contracts";
 import { CACHE_TAGS, CACHE_TTL_S } from "./limits";
-import type { BenchmarkStat } from "./types";
-
-type BqDate = string | { value: string } | null;
-
-interface BenchmarkDbRow {
-  benchmark_id: string | null;
-  vertical: string | null;
-  region: string | null;
-  metric_id: string | null;
-  period_start: BqDate;
-  period_end: BqDate;
-  stat: string | null;
-  value: unknown;
-  value_low: unknown;
-  value_high: unknown;
-  currency: string | null;
-  source: string | null;
-  source_url: string | null;
-  as_of: BqDate;
-  definition_note: string | null;
-  sample_note: string | null;
-  note: string | null;
-}
 
 interface FxDbRow {
   month_start: BqDate;
   from_currency: string | null;
   to_currency: string | null;
   rate: unknown;
-}
-
-const STATS: readonly BenchmarkStat[] = ["median", "mean", "p25", "p75"];
-
-function text(value: string | null | undefined): string | null {
-  const t = value?.trim();
-  return t ? t : null;
-}
-
-/**
- * Camel-case one row. Rows missing a required field (the DDL makes them NOT
- * NULL, but the table is hand-maintained) are dropped rather than guessed:
- * a benchmark with no source or date must not be drawn.
- */
-function toBenchmarkRow(r: BenchmarkDbRow): BenchmarkRow | null {
-  const benchmarkId = text(r.benchmark_id);
-  const vertical = text(r.vertical)?.toLowerCase() ?? null;
-  const region = text(r.region)?.toUpperCase() ?? null;
-  const metricId = text(r.metric_id);
-  const periodStart = isoDate(r.period_start);
-  const periodEnd = isoDate(r.period_end);
-  const stat = text(r.stat)?.toLowerCase() ?? null;
-  const value = num(r.value);
-  const source = text(r.source);
-  const asOf = isoDate(r.as_of);
-  if (!benchmarkId || !vertical || !region || !metricId || !periodStart || !periodEnd || !source || !asOf) return null;
-  if (value === null || !stat || !(STATS as readonly string[]).includes(stat)) return null;
-  if (periodEnd < periodStart) return null;
-  return {
-    benchmarkId,
-    vertical,
-    region,
-    metricId,
-    periodStart,
-    periodEnd,
-    stat: stat as BenchmarkStat,
-    value,
-    valueLow: num(r.value_low),
-    valueHigh: num(r.value_high),
-    currency: text(r.currency)?.toUpperCase() ?? null,
-    source,
-    sourceUrl: text(r.source_url),
-    asOf,
-    definitionNote: text(r.definition_note),
-    sampleNote: text(r.sample_note),
-    note: text(r.note),
-  };
 }
 
 async function loadBenchmarkRows(): Promise<BenchmarkRow[]> {

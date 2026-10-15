@@ -16,6 +16,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { matchBenchmarks, fxFactor, regionPreference } from "@/lib/reports/benchmarkMatch";
+import { toBenchmarkRow, type BenchmarkDbRow } from "@/lib/reports/benchmarkRows";
 import type { BenchmarkRow, ComponentRow, ComponentSum, FxRate, ResolvedWidget } from "@/lib/reports/contracts";
 import { NOT_CLASSIFIED, NOT_MATURE, NO_THRESHOLDS, TOO_FEW, classifyEntityRows, evaluateWidget } from "@/lib/reports/evaluate";
 import { hitRate, launchStatus, type LaunchRow } from "@/lib/creative/hitRate";
@@ -24,8 +25,8 @@ import { FIXTURE_CLIENTS, FIXTURE_FILTERS, FIXTURE_RESOLVED, FIXTURE_ROWS, FIXTU
 import { CAPABILITIES, evalCapExpr, missingCapabilities, toReportCapabilities } from "@/lib/reports/registry/capabilities";
 import { CAVEATS, clientCaveats, visibleCaveats } from "@/lib/reports/registry/caveats";
 import { CLASSES_COMPONENT, COMPONENTS, MARTS } from "@/lib/reports/registry/components";
-import { METRIC_IDS, PHASE2_METRIC_IDS, REGISTRY_METRIC_IDS, type MetricId } from "@/lib/reports/registry/ids";
-import { METRICS, METRIC_LIST, componentsFor, findMetricId } from "@/lib/reports/registry/metrics";
+import { BENCHMARK_ONLY_METRIC_IDS, METRIC_IDS, PHASE2_METRIC_IDS, REGISTRY_METRIC_IDS, isKnownBenchmarkMetricId, isMetricId, isRegistryMetricId, type MetricId } from "@/lib/reports/registry/ids";
+import { BENCHMARK_ONLY_METRICS, METRICS, METRIC_LIST, componentsFor, findMetricId } from "@/lib/reports/registry/metrics";
 import { IDENTIFIER_RE, type ComponentId, type ReportClient } from "@/lib/reports/registry/types";
 import { buildBuckets, mergeFilters, partialBucketIndexes, resolveWidget } from "@/lib/reports/resolve";
 import { WidgetQuery, verticalSeriesId, type ReportFilters, type WidgetResult } from "@/lib/reports/types";
@@ -1279,6 +1280,68 @@ const FX: FxRate[] = [
   check("charlie and delta share all_ecommerce EU", eqJson(by("all-eu")?.appliesTo, ["charlie", "delta"]));
   check("not connected client gets no benchmark", eqJson(by("roas-all")?.appliesTo, ["alpha", "bravo", "delta"]));
   check("output fields", by("va-cz")?.vertical === "vertical_a" && by("va-cz")?.region === "CZ" && eqJson(by("va-cz")?.period, { from: "2026-01-01", to: "2026-06-30" }));
+}
+
+// ---------------------------------------------------------------------------
+// 5b. Migration 295 rows: 'range' stat, ISO regions, benchmark-only ids
+// ---------------------------------------------------------------------------
+
+{
+  const dbRow = (p: Partial<BenchmarkDbRow>): BenchmarkDbRow => ({
+    benchmark_id: "x",
+    vertical: "all_ecommerce",
+    region: "SK",
+    metric_id: "meta_cpm",
+    period_start: "2026-01-01",
+    period_end: "2026-12-31",
+    stat: "mean",
+    value: 10,
+    value_low: 8,
+    value_high: 12,
+    currency: "USD",
+    source: "Fixture",
+    source_url: null,
+    as_of: "2026-10-15",
+    definition_note: null,
+    sample_note: null,
+    note: null,
+    ...p,
+  });
+
+  // Loader mapping: 'range' rows are skipped by design, ISO regions are kept and upper-cased.
+  check("295: range row skipped by the loader", toBenchmarkRow(dbRow({ stat: "range" })) === null);
+  const iso = toBenchmarkRow(dbRow({ region: "sk" }));
+  check("295: ISO region kept, band kept", iso?.region === "SK" && iso.valueLow === 8 && iso.valueHigh === 12 && iso.stat === "mean");
+  check("295: other stats still read", (["median", "mean", "p25", "p75"] as const).every((st) => toBenchmarkRow(dbRow({ stat: st }))?.stat === st));
+  check("295: unknown stat skipped", toBenchmarkRow(dbRow({ stat: "mode" })) === null);
+
+  // Matcher: ISO rows only apply to a client whose own market is that country.
+  const rows: BenchmarkRow[] = [
+    bench({ benchmarkId: "cpm-sk", metricId: "meta_cpm", region: "SK", vertical: "all_ecommerce", stat: "mean", periodStart: "2026-01-01", periodEnd: "2026-12-31", currency: "USD", value: 10 }),
+    bench({ benchmarkId: "cpm-pl", metricId: "meta_cpm", region: "PL", vertical: "all_ecommerce", stat: "mean", periodStart: "2026-01-01", periodEnd: "2026-12-31", currency: "USD", value: 6 }),
+    bench({ benchmarkId: "cpm-gb", metricId: "meta_cpm", region: "GB", vertical: "all_ecommerce", stat: "mean", periodStart: "2026-01-01", periodEnd: "2026-12-31", currency: "USD", value: 12 }),
+  ];
+  const fx295: FxRate[] = [
+    { monthStart: "2026-12-01", from: "USD", to: "CZK", rate: 22 },
+    { monthStart: "2026-12-01", from: "CZK", to: "CZK", rate: 1 },
+  ];
+  const wAlpha = widget(["meta_cpm"], { filters: { clients: { mode: "list", ids: ["alpha"] }, benchmark: true } });
+  check("295: ISO rows never apply to a CZ client", matchBenchmarks({ rows, fx: fx295, widget: wAlpha, today: TODAY }).length === 0);
+  const skAlpha: ReportClient = { ...(FIXTURE_CLIENTS.find((c) => c.id === "alpha") as ReportClient), region: "SK" };
+  const wSk = widget(["meta_cpm"], { filters: { clients: { mode: "list", ids: ["alpha"] }, benchmark: true }, clients: [skAlpha] });
+  const skMatch = matchBenchmarks({ rows, fx: fx295, widget: wSk, today: TODAY });
+  check("295: a client whose market is SK gets only the SK row", skMatch.length === 1 && skMatch[0].benchmarkId === "cpm-sk" && skMatch[0].region === "SK");
+
+  // Benchmark-only ids: known to Data Health, never queryable, never matched.
+  const only = bench({ benchmarkId: "cvr-cz", metricId: "cvr", region: "CZ", vertical: "all_ecommerce" });
+  const widgetAll = widget(["meta_cpm", "mer"], { filters: { clients: { mode: "list", ids: ["alpha"] }, benchmark: true } });
+  check(
+    "295: cvr, cod_share, return_rate rows are never matched",
+    matchBenchmarks({ rows: BENCHMARK_ONLY_METRIC_IDS.map((id) => bench({ benchmarkId: `${id}-cz`, metricId: id, region: "CZ", vertical: "all_ecommerce" })), fx: fx295, widget: widgetAll, today: TODAY }).length === 0 && only.metricId === "cvr",
+  );
+  check("295: 3 benchmark-only ids, none queryable or in the registry", eqJson(BENCHMARK_ONLY_METRIC_IDS, ["cvr", "cod_share", "return_rate"]) && BENCHMARK_ONLY_METRIC_IDS.every((id) => !isMetricId(id) && !isRegistryMetricId(id) && !(id in METRICS)));
+  check("295: benchmark-only ids are known, not benchmarkable", BENCHMARK_ONLY_METRIC_IDS.every((id) => isKnownBenchmarkMetricId(id) && BENCHMARK_ONLY_METRICS[id].id === id && BENCHMARK_ONLY_METRICS[id].benchmarkable === false && BENCHMARK_ONLY_METRICS[id].unit === "percent"));
+  check("295: every queryable and phase 2 id stays known; a stranger does not", REGISTRY_METRIC_IDS.every(isKnownBenchmarkMetricId) && !isKnownBenchmarkMetricId("not_a_metric"));
 }
 
 // ---------------------------------------------------------------------------

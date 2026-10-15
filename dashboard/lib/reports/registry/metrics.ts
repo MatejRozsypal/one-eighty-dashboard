@@ -28,7 +28,7 @@
 
 import { allOf } from "./capabilities";
 import { CLASSES_COMPONENT, COMPONENTS, MARTS, getComponent } from "./components";
-import { METRIC_IDS, REGISTRY_METRIC_IDS, type MetricId, type RegistryMetricId } from "./ids";
+import { METRIC_IDS, REGISTRY_METRIC_IDS, type BenchmarkOnlyMetricId, type MetricId, type RegistryMetricId } from "./ids";
 import {
   METRIC_GROUP_ORDER,
   type CapExpr,
@@ -621,6 +621,58 @@ export const METRICS: MetricRegistry = defineMetrics({
     grains: ["week", "month"],
   }),
 });
+
+// ---------------------------------------------------------------------------
+// Benchmark-only metrics (known to ref.industry_benchmarks, not computed here)
+// ---------------------------------------------------------------------------
+
+export interface BenchmarkOnlyMetric {
+  id: BenchmarkOnlyMetricId;
+  label: string;
+  unit: Unit;
+  /** How the benchmark row stores it. */
+  stored: string;
+  description: string;
+  /** Always false: no Reports metric computes it. */
+  benchmarkable: false;
+  /** Why it is not benchmarkable, and what it would take. */
+  reason: string;
+}
+
+/**
+ * Not part of METRICS: a registry metric needs a mart component to compute it,
+ * and none of these has one. They are not queryable, not in any picker and
+ * never matched. Units follow runbooks/31_reporting_benchmarks.md (fractions).
+ */
+export const BENCHMARK_ONLY_METRICS: { readonly [K in BenchmarkOnlyMetricId]: BenchmarkOnlyMetric & { id: K } } = Object.freeze({
+  cvr: {
+    id: "cvr",
+    label: "Conversion rate",
+    unit: "percent",
+    stored: "fraction, orders / sessions",
+    description: "Orders per session on the shop. Different from meta_conversion_rate (Meta purchases per link click).",
+    benchmarkable: false,
+    reason: "No mart carries sessions (GA4 sessions are not in mart_daily_kpis), so no Reports metric can compute orders / sessions.",
+  },
+  cod_share: {
+    id: "cod_share",
+    label: "Cash on delivery share",
+    unit: "percent",
+    stored: "fraction, share of orders or customers paying cash on delivery",
+    description: "Share of orders or customers that pay cash on delivery. The row's definition_note says which.",
+    benchmarkable: false,
+    reason: "No mart carries the payment method of an order, so no Reports metric can compute it.",
+  },
+  return_rate: {
+    id: "return_rate",
+    label: "Return rate",
+    unit: "percent",
+    stored: "fraction, share of orders returned",
+    description: "Share of orders returned.",
+    benchmarkable: false,
+    reason: "No mart carries returns (revenue is gross of returns, see the returns_not_netted caveat), so no Reports metric can compute it.",
+  },
+}) as { readonly [K in BenchmarkOnlyMetricId]: BenchmarkOnlyMetric & { id: K } };
 
 // ---------------------------------------------------------------------------
 // Lookups for the pickers and the evaluator

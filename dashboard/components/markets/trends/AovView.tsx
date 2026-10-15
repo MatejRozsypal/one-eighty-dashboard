@@ -13,7 +13,7 @@ import { ChartSummary } from "@/components/ui/ChartSummary";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { SegmentPills } from "@/components/controls/SegmentedControl";
 import { formatMoney, formatNumber, formatPercent, NO_VALUE } from "@/lib/format";
-import { THRESHOLD_SHARE, type Histogram, type HistogramBar } from "@/lib/markets/analysis";
+import { thresholdTakeaway, THRESHOLD_SHARE, type Histogram, type HistogramBar } from "@/lib/markets/analysis";
 import { AXIS_TICK, TooltipBox, TooltipRow, marketLabel } from "@/components/markets/trends/bits";
 
 export function AovView({ histograms, currency }: { histograms: Histogram[]; currency: string }) {
@@ -25,7 +25,11 @@ export function AovView({ histograms, currency }: { histograms: Histogram[]; cur
   const binLabel = (b: HistogramBar) => (b.open ? `${compact(b.lo)}+` : compact(b.lo));
   const data = h.bars.map((b) => ({ ...b, label: binLabel(b) }));
   const t = h.threshold;
-  const tLabel = "value" in t ? binLabel(h.bars.find((b) => t.value >= b.lo && t.value < b.hi) ?? h.bars[0]) : null;
+  const tBar = "value" in t ? h.bars.find((b) => t.value >= b.lo && t.value < b.hi) ?? h.bars[0] : null;
+  const tLabel = tBar ? binLabel(tBar) : null;
+  // The line sits on the bar's left edge when the threshold is that edge, as the inferred one usually is.
+  const tAtEdge = tBar !== null && "value" in t && Math.abs(t.value - tBar.lo) < 1e-6;
+  const takeaway = thresholdTakeaway(h, currency);
 
   return (
     <div className="flex flex-col gap-4">
@@ -34,6 +38,7 @@ export function AovView({ histograms, currency }: { histograms: Histogram[]; cur
           <SegmentPills segments={histograms.map((x) => ({ value: x.market, label: marketLabel(x.market) }))} shown={h.market} onSelect={setPicked} ariaLabel="Market" />
         </div>
       )}
+      {takeaway && <p className="m-0 text-[13px] text-content-strong">{takeaway}</p>}
       <dl className="m-0 grid grid-cols-2 gap-3 text-[13px] sm:grid-cols-3">
         <div className="flex flex-col gap-0.5">
           <dt className="text-[11.5px] text-content-muted">Orders</dt>
@@ -67,13 +72,13 @@ export function AovView({ histograms, currency }: { histograms: Histogram[]; cur
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 14, right: 8, bottom: 0, left: 0 }} barCategoryGap={1}>
             <CartesianGrid stroke="var(--border)" vertical={false} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={18} tick={AXIS_TICK} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={18} tick={<EdgeTick />} />
             <YAxis tickLine={false} axisLine={false} width={40} tick={AXIS_TICK} allowDecimals={false} />
             <Tooltip cursor={{ fill: "var(--gray-100)", opacity: 0.6 }} content={<BinTooltip currency={currency} />} />
             <Bar dataKey="paidShip" stackId="o" fill="var(--gray-300)" isAnimationActive={false} name="Paid shipping" />
             <Bar dataKey="zeroShip" stackId="o" fill="var(--series-1)" isAnimationActive={false} radius={[2, 2, 0, 0]} name="Shipped free" />
             {tLabel && (
-              <ReferenceLine x={tLabel} stroke="var(--ink-800)" strokeDasharray="4 3" label={{ value: "Threshold, inferred", position: "top", style: { ...AXIS_TICK, fill: "var(--text-strong)" } }} />
+              <ReferenceLine x={tLabel} position={tAtEdge ? "start" : "middle"} stroke="var(--ink-800)" strokeDasharray="4 3" label={{ value: "Threshold, inferred", position: "top", style: { ...AXIS_TICK, fill: "var(--text-strong)" } }} />
             )}
           </BarChart>
         </ResponsiveContainer>
@@ -97,7 +102,7 @@ export function AovView({ histograms, currency }: { histograms: Histogram[]; cur
           <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[3px] bg-gray-300" />
           Paid shipping
         </span>
-        <span>Order value: net sales, ex VAT, ex shipping; the last bar holds the top 1 %</span>
+        <span>Order value: net sales, ex VAT, ex shipping; each label marks the bar&apos;s lower edge; the last bar holds the top 1 %</span>
       </div>
     </div>
   );
@@ -112,5 +117,15 @@ function BinTooltip({ active, payload, currency }: { active?: boolean; payload?:
       <TooltipRow name="Orders" value={formatNumber(b.orders)} />
       <TooltipRow name="Shipped free" value={b.orders > 0 ? formatPercent(b.zeroShip / b.orders) : NO_VALUE} />
     </TooltipBox>
+  );
+}
+
+/** A bin's label at its bar's left edge, where its lower bound is, not under its middle. */
+function EdgeTick({ x, y, payload }: { x?: number; y?: number; payload?: { value: string; offset?: number } }) {
+  if (x === undefined || y === undefined || !payload) return null;
+  return (
+    <text x={x - (payload.offset ?? 0)} y={y} dy="0.71em" textAnchor="middle" style={AXIS_TICK}>
+      {payload.value}
+    </text>
   );
 }

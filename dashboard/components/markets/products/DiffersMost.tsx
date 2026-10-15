@@ -9,15 +9,11 @@
  */
 
 import { NaValue } from "@/components/markets/bits";
-import { formatPercent, MINUS } from "@/lib/format";
+import { formatPercent } from "@/lib/format";
 import { countryName } from "@/lib/markets/display";
-import { MIN_SHARE, type DiffItem, type ProductsModel } from "@/lib/markets/products";
+import { formatPp, MIN_SHARE, type DiffItem, type ProductsModel } from "@/lib/markets/products";
 
-export function formatPp(diff: number): string {
-  const v = Math.abs(diff * 100).toFixed(1);
-  if (!/[1-9]/.test(v)) return "0.0 pp";
-  return `${diff > 0 ? "+" : MINUS}${v} pp`;
-}
+export { formatPp };
 
 function MarketDiff({ market, home, items }: { market: string; home: string; items: DiffItem[] }) {
   const max = Math.max(0.0001, ...items.map((i) => Math.abs(i.diff)));

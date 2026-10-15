@@ -25,7 +25,7 @@ import { useDeltaMode } from "@/components/ui/DeltaMode";
 import { NaValue } from "@/components/markets/bits";
 import { formatDelta, formatMoney, formatNumber, formatPercent } from "@/lib/format";
 import { MARKET_OTHER } from "@/lib/markets/types";
-import { MIN_PRICE_UNITS, type MarketColumn, type ProductCell, type ProductRow, type ProductsModel } from "@/lib/markets/products";
+import { formatTotal, MIN_PRICE_UNITS, type MarketColumn, type ProductCell, type ProductRow, type ProductsModel } from "@/lib/markets/products";
 
 export type MatrixMetric = "share" | "price";
 
@@ -119,7 +119,7 @@ function ShareCell({ c }: { c: ProductCell }) {
         {c.netSales > 0 ? formatPercent(c.share) : "0%"}
       </span>
       <span className={`font-mono text-[11px] tabular ${dark ? "text-accent-contrast" : "text-content-muted"}`}>
-        {c.units === null ? "n/a units" : `${formatNumber(c.units)} units`}
+        {c.units === null ? "n/a units" : `${formatNumber(c.units)} ${c.units === 1 ? "unit" : "units"}`}
       </span>
     </span>
   );
@@ -227,7 +227,7 @@ export function ProductMatrix({
                     </button>
                   </span>
                   <span className="font-mono text-[10.5px] tabular text-content-muted">
-                    {formatMoney(col ? col.netSales : model.markets.reduce((t, m) => t + m.netSales, 0), base, { compact: true })}
+                    {formatTotal(col ? col.netSales : model.markets.reduce((t, m) => t + m.netSales, 0), base)}
                   </span>
                   {metric === "price" && col && col.localCurrency && (
                     <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-content-muted">{`${base} / ${col.localCurrency}`}</span>

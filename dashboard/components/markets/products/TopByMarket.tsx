@@ -12,10 +12,10 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { DeltaChip } from "@/components/ui/Delta";
 import { InfoTip } from "@/components/ui/InfoTip";
-import { formatMoney, formatPercent } from "@/lib/format";
+import { formatPercent } from "@/lib/format";
 import { MARKET_OTHER } from "@/lib/markets/types";
 import { countryName } from "@/lib/markets/display";
-import { TOP_PER_MARKET, type ProductsModel } from "@/lib/markets/products";
+import { formatTotal, TOP_PER_MARKET, type ProductsModel } from "@/lib/markets/products";
 
 export function TopByMarket({ model, compareLabel }: { model: ProductsModel; compareLabel?: string }) {
   return (
@@ -35,7 +35,7 @@ export function TopByMarket({ model, compareLabel }: { model: ProductsModel; com
                 )}
                 {m.key === MARKET_OTHER && <InfoTip text="Every country outside the configured markets, pooled." />}
               </h3>
-              <span className="font-mono text-[12px] tabular text-content-muted">{formatMoney(m.netSales, model.baseCurrency, { compact: true })}</span>
+              <span className="font-mono text-[12px] tabular text-content-muted">{formatTotal(m.netSales, model.baseCurrency)}</span>
             </div>
             <ol className="m-0 flex list-none flex-col gap-2.5 p-0">
               {items.map((it, i) => {

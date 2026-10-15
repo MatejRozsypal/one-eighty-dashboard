@@ -30,6 +30,12 @@
  * the order: base / `fx_local_to_base`, as lib/queries/markets.ts converts.
  * The page decides whether that covers enough of the market to show.
  *
+ * ── First orders ────────────────────────────────────────────────────────────
+ * Entry products count, per product, the distinct first orders (the order's
+ * `is_new_customer` in `market_orders`) that contain it, and per market the
+ * distinct first orders with any line. Both read the same lines, so a share
+ * never divides by orders the numerator could not see.
+ *
  * A Markets table that does not exist yet returns null and the page says so.
  */
 
@@ -64,17 +70,21 @@ function unitsSql(platform: string | null): string {
   return [shopify, shoptet, woo].join("\nUNION ALL\n");
 }
 
-async function period(clientId: string, platform: string | null, range: DateRange): Promise<ProductSalesRow[]> {
+/** One row per order line in the range: market, product, net, qty, currency, rate, order and its first-order flag. */
+function linesSql(platform: string | null): string {
   // In prod the lines come pre-allocated from mart.market_order_lines (299):
   // the dashboard's reader has no access to stg, which holds customer data.
   // QA keeps the original stg join (mart_qa has no lines table).
-  const lines =
-    MARKETS_SOURCE === "mart"
-      ? `SELECT market, product, net_sales AS net, units AS qty, currency_local, fx_local_to_base
-         FROM \`${PROJECT_ID}.mart.market_order_lines\`
-         WHERE client_id = @clientId AND order_date BETWEEN @from AND @to`
+  return MARKETS_SOURCE === "mart"
+      ? `SELECT l.market, l.product, l.net_sales AS net, l.units AS qty, l.currency_local, l.fx_local_to_base,
+                l.order_id, IFNULL(o.is_new_customer, FALSE) AS is_new
+         FROM \`${PROJECT_ID}.mart.market_order_lines\` l
+         LEFT JOIN ${marketsTable("market_orders")} o
+           ON o.client_id = l.client_id AND o.order_id = l.order_id
+          AND o.order_date BETWEEN DATE_SUB(DATE(@from), INTERVAL ${LINE_PAD_DAYS} DAY) AND DATE_ADD(DATE(@to), INTERVAL ${LINE_PAD_DAYS} DAY)
+         WHERE l.client_id = @clientId AND l.order_date BETWEEN @from AND @to`
       : `WITH o AS (
-           SELECT order_id, market, net_sales, currency_local, fx_local_to_base
+           SELECT order_id, market, net_sales, currency_local, fx_local_to_base, IFNULL(is_new_customer, FALSE) AS is_new
            FROM ${marketsTable("market_orders")}
            WHERE client_id = @clientId AND order_date BETWEEN @from AND @to
          ),
@@ -90,18 +100,22 @@ async function period(clientId: string, platform: string | null, range: DateRang
          u AS (${unitsSql(platform)}),
          ot AS (SELECT order_id, SUM(rev) AS order_rev FROM li GROUP BY order_id)
          SELECT o.market, li.product, o.net_sales * SAFE_DIVIDE(li.rev, ot.order_rev) AS net, u.qty,
-                o.currency_local, o.fx_local_to_base
+                o.currency_local, o.fx_local_to_base, o.order_id, o.is_new
          FROM o
          JOIN li USING (order_id)
          JOIN ot USING (order_id)
          LEFT JOIN u USING (order_id, product_key)`;
+}
+
+async function period(clientId: string, platform: string | null, range: DateRange): Promise<ProductSalesRow[]> {
+  const lines = linesSql(platform);
   const rows = await query<Row>(
     `WITH l AS (${lines}),
      cfg AS (
        SELECT market, local_currency FROM ${marketsTable("client_markets")} WHERE client_id = @clientId
      ),
      x AS (
-       SELECT l.market, l.product, l.net, l.qty,
+       SELECT l.market, l.product, l.net, l.qty, l.order_id, l.is_new,
               (l.currency_local = cfg.local_currency AND l.fx_local_to_base IS NOT NULL AND l.fx_local_to_base > 0) AS in_local,
               l.fx_local_to_base AS fx
        FROM l
@@ -112,7 +126,8 @@ async function period(clientId: string, platform: string | null, range: DateRang
             SUM(qty) AS units,
             IFNULL(SUM(IF(in_local, SAFE_DIVIDE(net, fx), 0)), 0) AS local_net_sales,
             IFNULL(SUM(IF(in_local, qty, 0)), 0) AS local_units,
-            IFNULL(SUM(IF(in_local, net, 0)), 0) AS local_covered_net_sales
+            IFNULL(SUM(IF(in_local, net, 0)), 0) AS local_covered_net_sales,
+            COUNT(DISTINCT IF(is_new, order_id, NULL)) AS entry_orders
      FROM x
      GROUP BY market, product`,
     { clientId, from: range.from, to: range.to }
@@ -125,7 +140,18 @@ async function period(clientId: string, platform: string | null, range: DateRang
     localNetSales: num0(r.local_net_sales),
     localUnits: num0(r.local_units),
     localCoveredNetSales: num0(r.local_covered_net_sales),
+    entryOrders: num0(r.entry_orders),
   }));
+}
+
+/** Distinct first orders with any line, per market, current period. */
+async function newOrders(clientId: string, platform: string | null, range: DateRange): Promise<Record<string, number>> {
+  const rows = await query<Row>(
+    `WITH l AS (${linesSql(platform)})
+     SELECT market, COUNT(DISTINCT order_id) AS n FROM l WHERE is_new GROUP BY market`,
+    { clientId, from: range.from, to: range.to }
+  );
+  return Object.fromEntries(rows.map((r) => [String(r.market), num0(r.n)]));
 }
 
 async function config(clientId: string): Promise<{ home: string | null; localCurrencyOf: Record<string, string> }> {
@@ -155,10 +181,11 @@ export async function getMarketsProducts(
   const clientId = client.clientId;
   const platform = client.shopPlatform;
   return optional(async () => {
-    const [current, previous, cfg] = await Promise.all([
+    const [current, previous, cfg, firsts] = await Promise.all([
       period(clientId, platform, range),
       comparison ? period(clientId, platform, comparison) : Promise.resolve(null),
       config(clientId),
+      optional(() => newOrders(clientId, platform, range), {} as Record<string, number>),
     ]);
     return {
       source: MARKETS_SOURCE,
@@ -169,6 +196,7 @@ export async function getMarketsProducts(
       compareRange: comparison,
       current,
       previous,
+      newOrders: firsts,
     } satisfies ProductsRaw;
   }, null);
 }

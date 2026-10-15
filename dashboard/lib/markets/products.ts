@@ -13,12 +13,24 @@
  * the split), so the products of a market add up to the market's net sales on
  * the main Markets page and the shares of a column add up to 100 %.
  *
- * ── Differs most ────────────────────────────────────────────────────────────
- * For each market other than home and Other, every product's share there
- * minus its share at home, in percentage points, largest gap first. A product
- * under `MIN_SHARE` in both markets is noise and left out; a market under
- * `MIN_MARKET_UNITS` units in the period gets no list at all (n/a, with why).
- * Other pools several countries, so it is never compared.
+ * ── Mix map (what sells differently) ───────────────────────────────────────
+ * For each market other than home and Other, every product's share of the
+ * market's units against its share of home's units. Units, not net sales, so
+ * a market that pays less per unit does not look like it buys less of it.
+ * The index is market share / home share x 100 (100 = same mix). Lines that
+ * are not products (shipping insurance, gift cards, `isNonProduct`) and lines
+ * given away free (no net sales anywhere in the period) are left out of the
+ * units. A product under `MIX_MIN_UNITS` units in the market is drawn faded:
+ * its index moves a lot on a few orders. A market under `MIN_MARKET_UNITS`
+ * units gets no map at all (n/a, with why). Other pools several countries, so
+ * it is never compared.
+ *
+ * ── Entry products ──────────────────────────────────────────────────────────
+ * Per market, the share of first orders (new customers) that contain each
+ * product, against home. A first order with three products counts for each,
+ * so the shares of a market add up to more than 100 %. Under
+ * `ENTRY_MIN_ORDERS` first orders a product is shown faded with "low n",
+ * never hidden.
  *
  * ── Local prices ────────────────────────────────────────────────────────────
  * Average selling price in local currency is read only from orders paid in
@@ -34,12 +46,22 @@ import { MARKET_OTHER, type MarketsSource } from "@/lib/markets/types";
 export const TOP_PRODUCTS = 15;
 /** Products per market in the top lists. */
 export const TOP_PER_MARKET = 5;
-/** Products per market in the differs-most list. */
-export const DIFFERS_LIMIT = 5;
-/** A product below this share in both markets is left out of differs-most. */
-export const MIN_SHARE = 0.01;
-/** A market with fewer units than this in the period gets no differs-most list. */
+/** A market with fewer units than this in the period gets no mix map. */
 export const MIN_MARKET_UNITS = 50;
+/** Under this many units in the market, a product's mix point is drawn faded. */
+export const MIX_MIN_UNITS = 100;
+/** Index band read as "same mix": within 15 % of home either way. */
+export const MIX_BAND = 0.15;
+/** Products named as buying more or less in the mix takeaway, each way. */
+export const MIX_NAMED = 3;
+/** Products compared in the "same mix" head of the takeaway. */
+export const MIX_HEAD = 4;
+/** Top-of-mix products within this many points of home read as "the same mix". */
+export const MIX_SAME_PP = 0.05;
+/** Products listed per market in entry products. */
+export const ENTRY_LIMIT = 8;
+/** Under this many first orders a product's entry share is shown faded ("low n"). */
+export const ENTRY_MIN_ORDERS = 30;
 /** Fewer units than this in a cell and the matrix shows no average price (one order would set it). */
 export const MIN_PRICE_UNITS = 3;
 /** Share of a market's net sales that must be in local-currency orders to show a local price. */
@@ -61,6 +83,8 @@ export interface ProductSalesRow {
   localUnits: number;
   /** Base net sales of those same orders: the coverage numerator. */
   localCoveredNetSales: number;
+  /** First orders (new customers) that contain this product. */
+  entryOrders: number;
 }
 
 export interface ProductsRaw {
@@ -73,6 +97,8 @@ export interface ProductsRaw {
   compareRange: { from: string; to: string } | null;
   current: ProductSalesRow[];
   previous: ProductSalesRow[] | null;
+  /** First orders (new customers) per market in the current period; empty when unknown. */
+  newOrders: Record<string, number>;
 }
 
 export interface MarketColumn {
@@ -118,15 +144,36 @@ export interface TopItem {
   prevRank: number | null;
 }
 
-export interface DiffItem {
+export interface MixPoint {
   product: string;
+  units: number;
+  homeUnits: number;
+  /** Share of the market's units (0.209 = 20.9 %). */
   share: number;
   homeShare: number;
-  /** share minus homeShare, in points (0.034 = 3.4 pp). */
-  diff: number;
+  /** share / homeShare (1.24 = index 124); null when home sold none. */
+  index: number | null;
+  /** Fewer than `MIX_MIN_UNITS` units in the market: drawn faded. */
+  low: boolean;
 }
 
-export type DiffResult = { items: DiffItem[] } | { na: string };
+export type MixResult =
+  | { points: MixPoint[]; units: number; homeUnits: number; excluded: string[] }
+  | { na: string };
+
+export interface EntryItem {
+  product: string;
+  orders: number;
+  homeOrders: number;
+  /** Share of the market's first orders that contain the product. */
+  share: number;
+  homeShare: number;
+  index: number | null;
+  low: boolean;
+  homeLow: boolean;
+}
+
+export type EntryResult = { items: EntryItem[]; newOrders: number; homeNewOrders: number } | { na: string };
 
 export interface ProductsModel {
   source: MarketsSource;
@@ -138,7 +185,10 @@ export interface ProductsModel {
   /** Products sold in the period, before pooling. */
   productCount: number;
   top: Record<string, TopItem[]>;
-  differs: Record<string, DiffResult>;
+  /** Per compared market (not home, not Other): units mix against home. */
+  mix: Record<string, MixResult>;
+  /** Per compared market: entry products against home. */
+  entry: Record<string, EntryResult>;
 }
 
 // ── Small pure helpers (pinned by scripts/check-markets-products.ts) ───────
@@ -168,25 +218,98 @@ export function marketShares(rows: readonly ProductSalesRow[]): Map<string, Map<
 }
 
 /**
- * Products whose share in `market` differs most from their share at `home`,
- * largest absolute gap first; ties by product name. A product under
- * `minShare` in both is left out.
+ * Lines that are not products: shipping insurance, gift cards and vouchers,
+ * placeholder lines. They sell in units but say nothing about what a market
+ * buys, so the mix map and entry products leave them out. Samples sold at a
+ * price stay in: they are products.
  */
-export function differsMost(
-  home: ReadonlyMap<string, number>,
-  market: ReadonlyMap<string, number>,
-  { limit = DIFFERS_LIMIT, minShare = MIN_SHARE }: { limit?: number; minShare?: number } = {}
-): DiffItem[] {
-  const products = new Set([...home.keys(), ...market.keys()]);
-  const items: DiffItem[] = [];
-  for (const product of products) {
-    const share = market.get(product) ?? 0;
-    const homeShare = home.get(product) ?? 0;
-    if (share < minShare && homeShare < minShare) continue;
-    items.push({ product, share, homeShare, diff: share - homeShare });
+const NON_PRODUCT = /shipping insurance|hold for shipping|gift ?card|d\u00e1rkov\u00fd (poukaz|voucher)|^(po\u0161tovn\u00e9|doprava|dob\u00edrka)$/i;
+
+export function isNonProduct(product: string): boolean {
+  return NON_PRODUCT.test(product.trim());
+}
+
+/** Products the mix map and entry products read: real products with net sales somewhere in the period. */
+export function mixProducts(rows: readonly ProductSalesRow[]): { keep: Set<string>; excluded: string[] } {
+  const net = new Map<string, number>();
+  for (const r of rows) net.set(r.product, (net.get(r.product) ?? 0) + r.netSales);
+  const keep = new Set<string>();
+  const excluded: string[] = [];
+  for (const [p, v] of net) {
+    if (isNonProduct(p) || v <= 0) excluded.push(p);
+    else keep.add(p);
   }
-  items.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff) || a.product.localeCompare(b.product));
-  return items.slice(0, limit);
+  return { keep, excluded: excluded.sort((a, b) => a.localeCompare(b)) };
+}
+
+function unitsBy(rows: readonly ProductSalesRow[], market: string, keep: ReadonlySet<string>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    if (r.market !== market || !keep.has(r.product) || r.units === null || r.units <= 0) continue;
+    out.set(r.product, (out.get(r.product) ?? 0) + r.units);
+  }
+  return out;
+}
+
+/**
+ * Units mix of `market` against `home`: every product sold in either, its
+ * share of each market's units and the index. Sorted by the market's units,
+ * then home's, then name.
+ */
+export function unitMix(
+  rows: readonly ProductSalesRow[],
+  market: string,
+  home: string,
+  keep: ReadonlySet<string>,
+  minUnits = MIX_MIN_UNITS
+): { points: MixPoint[]; units: number; homeUnits: number } {
+  const m = unitsBy(rows, market, keep);
+  const h = unitsBy(rows, home, keep);
+  const units = [...m.values()].reduce((t, v) => t + v, 0);
+  const homeUnits = [...h.values()].reduce((t, v) => t + v, 0);
+  const points: MixPoint[] = [];
+  for (const product of new Set([...m.keys(), ...h.keys()])) {
+    const u = m.get(product) ?? 0;
+    const hu = h.get(product) ?? 0;
+    const share = units > 0 ? u / units : 0;
+    const homeShare = homeUnits > 0 ? hu / homeUnits : 0;
+    points.push({ product, units: u, homeUnits: hu, share, homeShare, index: homeShare > 0 ? share / homeShare : null, low: u < minUnits });
+  }
+  points.sort((a, b) => b.units - a.units || b.homeUnits - a.homeUnits || a.product.localeCompare(b.product));
+  return { points, units, homeUnits };
+}
+
+/**
+ * Entry products of `market` against `home`: share of each market's first
+ * orders that contain the product, the market's top `limit` by that share.
+ */
+export function entryProducts(
+  rows: readonly ProductSalesRow[],
+  market: string,
+  home: string,
+  newOrders: Readonly<Record<string, number>>,
+  keep: ReadonlySet<string>,
+  { limit = ENTRY_LIMIT, minOrders = ENTRY_MIN_ORDERS }: { limit?: number; minOrders?: number } = {}
+): EntryItem[] {
+  const count = (mk: string) => {
+    const out = new Map<string, number>();
+    for (const r of rows) if (r.market === mk && keep.has(r.product) && r.entryOrders > 0) out.set(r.product, (out.get(r.product) ?? 0) + r.entryOrders);
+    return out;
+  };
+  const m = count(market);
+  const h = count(home);
+  const n = newOrders[market] ?? 0;
+  const hn = newOrders[home] ?? 0;
+  if (n <= 0) return [];
+  return [...m.entries()]
+    .map(([product, orders]) => {
+      const homeOrders = h.get(product) ?? 0;
+      const share = orders / n;
+      const homeShare = hn > 0 ? homeOrders / hn : 0;
+      return { product, orders, homeOrders, share, homeShare, index: homeShare > 0 ? share / homeShare : null, low: orders < minOrders, homeLow: homeOrders < minOrders };
+    })
+    .sort((a, b) => b.share - a.share || a.product.localeCompare(b.product))
+    .slice(0, limit);
 }
 
 /** The top `limit` products of one market by net sales, with their share and the comparison share. */
@@ -349,18 +472,29 @@ export function buildProductsModel(raw: ProductsRaw, { topN = TOP_PRODUCTS }: { 
   const top: Record<string, TopItem[]> = {};
   for (const m of order) top[m] = topProducts(cur, prev, m);
 
-  const shares = marketShares(cur);
-  const differs: Record<string, DiffResult> = {};
-  const home = shares.get(raw.homeMarket);
+  const { keep: mixKeep, excluded } = mixProducts(cur);
+  const mix: Record<string, MixResult> = {};
+  const entry: Record<string, EntryResult> = {};
+  const home = raw.homeMarket;
+  const homeCol = markets.find((m) => m.isHome);
   for (const m of markets) {
     if (m.isHome || m.key === MARKET_OTHER) continue;
-    if (!home || (totals.get(raw.homeMarket) ?? 0) <= 0) {
-      differs[m.key] = { na: `No sales in the home market (${raw.homeMarket}) in this period` };
-    } else if (m.units < MIN_MARKET_UNITS) {
-      differs[m.key] = { na: `Fewer than ${MIN_MARKET_UNITS} units sold in ${m.key} in this period: shares this small are noise` };
+    const u = unitMix(cur, m.key, home, mixKeep);
+    if (!homeCol || homeCol.netSales <= 0) {
+      mix[m.key] = { na: `No sales in the home market (${home}) in this period` };
+    } else if (u.homeUnits <= 0 || u.units <= 0) {
+      mix[m.key] = { na: "No units recorded for these lines" };
+    } else if (u.units < MIN_MARKET_UNITS) {
+      mix[m.key] = { na: `Fewer than ${MIN_MARKET_UNITS} units sold in ${m.key} in this period: a mix this small is noise` };
     } else {
-      differs[m.key] = { items: differsMost(home, shares.get(m.key) ?? new Map()) };
+      mix[m.key] = { ...u, excluded: excluded.filter((p) => cur.some((r) => r.product === p && (r.market === m.key || r.market === home) && (r.units ?? 0) > 0)) };
     }
+    const n = raw.newOrders[m.key] ?? 0;
+    const hn = raw.newOrders[home] ?? 0;
+    if (!Object.keys(raw.newOrders).length) entry[m.key] = { na: "First orders are not available for this client" };
+    else if (n <= 0) entry[m.key] = { na: `No first orders in ${m.key} in this period` };
+    else if (hn <= 0) entry[m.key] = { na: `No first orders in the home market (${home}) in this period` };
+    else entry[m.key] = { items: entryProducts(cur, m.key, home, raw.newOrders, mixKeep), newOrders: n, homeNewOrders: hn };
   }
 
   return {
@@ -372,7 +506,8 @@ export function buildProductsModel(raw: ProductsRaw, { topN = TOP_PRODUCTS }: { 
     rows,
     productCount: ranked.length,
     top,
-    differs,
+    mix,
+    entry,
   };
 }
 
@@ -395,24 +530,64 @@ function listWords(xs: string[]): string {
   return xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0] ?? "";
 }
 
+/** A market or column total: compact from 10,000 ("€23K"), whole below it ("€880", never "€879.5"). */
+export function formatTotal(value: number, currency: string): string {
+  return formatMoney(value, currency, Math.abs(value) >= 10_000 ? { compact: true } : { decimals: 0 });
+}
+
+/** Index as printed: 1.237 is "124". */
+export function formatIndex(index: number): string {
+  return String(Math.round(index * 100));
+}
+
+/** Points between two shares as printed: each share rounded to 0.1 % first, so the gap matches the two figures shown. */
+export function formatPpBetween(share: number, base: number): string {
+  return formatPp((Math.round(share * 1000) - Math.round(base * 1000)) / 1000);
+}
+
+const named = (items: MixPoint[]) => listWords(items.map((p) => `${p.product} (${formatIndex(p.index!)})`));
+
 /**
- * What sells differently: the one product whose share differs most from home,
- * over every compared market, and which way.
- *   "Biggest difference: Deep Sleep Tincture is 14.2% of CA net sales against
- *    9.5% in US (+4.7 pp): a product to lead with in CA."
+ * The mix map: does the market buy the home mix, by units, and which
+ * products it buys clearly more or less of (outside the band, enough units).
+ *   "By units, CA buys the US mix: the top 4 products are all within 4.1 pts.
+ *    It buys more of MitoBoost (137), GreenMin (130) and GutSense (124), and
+ *    less of Omega H+ (67)."
  */
-export function differsTakeaway(model: Pick<ProductsModel, "differs" | "homeMarket">): string | null {
-  let best: { market: string; item: DiffItem } | null = null;
-  for (const [market, res] of Object.entries(model.differs)) {
-    if (!("items" in res)) continue;
-    for (const item of res.items) if (!best || Math.abs(item.diff) > Math.abs(best.item.diff)) best = { market, item };
-  }
-  if (!best || formatPp(best.item.diff) === "0.0 pp") return null;
-  const { market, item } = best;
-  const home = label(model.homeMarket);
+export function mixTakeaway(res: MixResult, market: string, home: string): string | null {
+  if ("na" in res || res.points.length === 0) return null;
   const where = label(market);
-  const hint = item.diff > 0 ? `a product to lead with in ${where}` : `worth checking its price or visibility in ${where}`;
-  return `Biggest difference: ${item.product} is ${formatPercent(item.share)} of ${where} net sales against ${formatPercent(item.homeShare)} in ${home} (${formatPp(item.diff)}): ${hint}.`;
+  const at = label(home);
+  const top = [...res.points].sort((a, b) => b.homeShare - a.homeShare || a.product.localeCompare(b.product)).slice(0, MIX_HEAD);
+  const widest = top.reduce((w, p) => (Math.abs(p.share - p.homeShare) > Math.abs(w.share - w.homeShare) ? p : w), top[0]);
+  const gapPts = Math.abs(Math.round(widest.share * 1000) - Math.round(widest.homeShare * 1000)) / 10;
+  const head =
+    gapPts / 100 <= MIX_SAME_PP
+      ? `By units, ${where} buys the ${at} mix: the top ${top.length} products are all within ${gapPts.toFixed(1)} pts.`
+      : `By units, ${where} buys a different mix: ${widest.product} is ${formatPercent(widest.share)} of units against ${formatPercent(widest.homeShare)} in ${at}.`;
+  const solid = res.points.filter((p) => !p.low && p.index !== null);
+  const more = solid.filter((p) => p.index! >= 1 + MIX_BAND).sort((a, b) => b.index! - a.index!).slice(0, MIX_NAMED);
+  const less = solid.filter((p) => p.index! <= 1 - MIX_BAND).sort((a, b) => a.index! - b.index!).slice(0, MIX_NAMED);
+  if (!more.length && !less.length) return `${head} No product with ${MIX_MIN_UNITS} or more units sits outside ${Math.round(MIX_BAND * 100)} % of ${at}.`;
+  const parts = [more.length ? `more of ${named(more)}` : null, less.length ? `less of ${named(less)}` : null].filter(Boolean);
+  return `${head} It buys ${parts.join(", and ")}.`;
+}
+
+/**
+ * Entry products: the product that opens clearly more first orders in the
+ * market than at home (enough orders in both), else the market's top opener.
+ *   "GutSense is in 44.1% of CA first orders against 26.0% in US: the CA entry product."
+ */
+export function entryTakeaway(res: EntryResult, market: string, home: string): string | null {
+  if ("na" in res || res.items.length === 0) return null;
+  const where = label(market);
+  const at = label(home);
+  const lead = res.items
+    .filter((i) => !i.low && !i.homeLow && i.index !== null && i.index >= 1 + MIX_BAND)
+    .sort((a, b) => b.share - a.share)[0];
+  if (lead) return `${lead.product} is in ${formatPercent(lead.share)} of ${where} first orders against ${formatPercent(lead.homeShare)} in ${at}: the ${where} entry product.`;
+  const first = res.items[0];
+  return `${first.product} opens the most ${where} first orders, ${formatPercent(first.share)} against ${formatPercent(first.homeShare)} in ${at}.`;
 }
 
 /** Products counted as "the top" when the matrix reads concentration. */

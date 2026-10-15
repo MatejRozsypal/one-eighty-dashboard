@@ -17,6 +17,11 @@
  *   eu  SK buys the starter set and the mask far more than CZ; PL (a young
  *       test market) is mostly the starter set and the travel duo.
  *
+ * First orders: each market's new customers (the Markets demo) open with
+ * about 1.4 products, drawn by the same mix tilted towards the products that
+ * start a routine (the starter set, the sample kit). In CA the calm capsules
+ * open far more first orders than in US, so entry products has a lead to show.
+ *
  * Local prices: CA pays CAD and SK pays EUR on almost every order (0.3 % in
  * base), so both show a local price; Other mixes currencies and shows none.
  * Every figure is generated; no row is anyone's data.
@@ -63,6 +68,24 @@ interface MarketMix {
   /** Price level against home, in base currency. */
   priceLevel: number;
 }
+
+/** Products per first order, on average. */
+const LINES_PER_FIRST_ORDER = 1.4;
+
+/** How much more (or less) often a product opens a first order than its share of sales says. */
+const ENTRY_TILT: Record<string, number> = {
+  "Starter Ritual Set": 2.6,
+  "Sample Discovery Kit": 3,
+  "Travel Duo": 1.5,
+  "Refill Pouch 100ml": 0.15,
+  "Gift Card": 0,
+};
+
+/** Extra entry tilt per market, on top of ENTRY_TILT. */
+const ENTRY_MARKET_TILT: Record<string, Record<string, number>> = {
+  CA: { "Calm Balance Capsules": 1.9 },
+  SK: { "Overnight Repair Mask": 1.6 },
+};
 
 const MIX: Record<DemoRegion, Record<string, MarketMix>> = {
   na: {
@@ -143,6 +166,11 @@ function rowsFor(region: DemoRegion, range: { from: string; to: string }): Produ
 
     const weights = CATALOGUE.map((p) => p.weight * (mix.tilt[p.name] ?? 1) * jitter(`${key}:${p.name}:w`, 0.14));
     const sum = weights.reduce((t, w) => t + w, 0);
+    const entryWeights = weights.map(
+      (w, i) => w * (ENTRY_TILT[CATALOGUE[i].name] ?? 1) * (ENTRY_MARKET_TILT[m.market]?.[CATALOGUE[i].name] ?? 1)
+    );
+    const entrySum = entryWeights.reduce((t, w) => t + w, 0);
+    const firsts = Math.round(m.sums.newCustomers);
     CATALOGUE.forEach((p, i) => {
       const netSales = (m.sums.netSales * weights[i]) / sum;
       const price = shelfPrice(p, region) * mix.priceLevel * jitter(`${key}:${p.name}:p`, 0.04);
@@ -156,6 +184,7 @@ function rowsFor(region: DemoRegion, range: { from: string; to: string }): Produ
         localNetSales: covered * fx,
         localUnits: local ? Math.round(units * (1 - BASE_PAID_SHARE)) : 0,
         localCoveredNetSales: covered,
+        entryOrders: Math.min(firsts, Math.round((firsts * LINES_PER_FIRST_ORDER * entryWeights[i]) / entrySum)),
       });
     });
   }
@@ -177,5 +206,8 @@ export function demoMarketsProducts(
     compareRange,
     current: rowsFor(region, range),
     previous: compareRange ? rowsFor(region, compareRange) : null,
+    newOrders: Object.fromEntries(
+      raw.current.filter((m) => m.market !== MARKET_UNALLOCATED && m.sums.netSales > 0).map((m) => [m.market, Math.round(m.sums.newCustomers)])
+    ),
   };
 }

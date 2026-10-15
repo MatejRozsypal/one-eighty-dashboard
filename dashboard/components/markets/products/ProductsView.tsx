@@ -1,8 +1,10 @@
 "use client";
 
 /**
- * The Products body: what each market buys differently from home, the
- * product x market matrix (share or price), and each market's top five.
+ * The Products body: what each market buys differently from home (the units
+ * mix map) and which products open its first orders (entry products), both
+ * for one compared market at a time; then the product x market matrix (share
+ * or price) and each market's top five.
  */
 
 import { useState } from "react";
@@ -10,36 +12,102 @@ import { Card } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { SegmentPills } from "@/components/controls/SegmentedControl";
 import { countryName } from "@/lib/markets/display";
-import { differsTakeaway, matrixTakeaway, topTakeaway, MIN_SHARE, TOP_PER_MARKET, TOP_PRODUCTS, type ProductsModel } from "@/lib/markets/products";
-import { DiffersMost } from "@/components/markets/products/DiffersMost";
+import {
+  entryTakeaway,
+  matrixTakeaway,
+  mixTakeaway,
+  topTakeaway,
+  ENTRY_MIN_ORDERS,
+  MIX_BAND,
+  TOP_PER_MARKET,
+  TOP_PRODUCTS,
+  type ProductsModel,
+} from "@/lib/markets/products";
+import { NaValue } from "@/components/markets/bits";
+import { MixLegend, MixMap } from "@/components/markets/products/MixMap";
+import { EntryProducts } from "@/components/markets/products/EntryProducts";
 import { ProductMatrix, SHARE_MIX, SHARE_STEPS, type MatrixMetric } from "@/components/markets/products/ProductMatrix";
 import { TopByMarket } from "@/components/markets/products/TopByMarket";
 import { formatPercent } from "@/lib/format";
 
 export function ProductsView({ model, rangeText, compareLabel }: { model: ProductsModel; rangeText: string; compareLabel?: string }) {
   const [metric, setMetric] = useState<MatrixMetric>("share");
+  const compared = Object.keys(model.mix);
+  const [picked, setPicked] = useState<string | null>(null);
+  const market = picked && compared.includes(picked) ? picked : compared[0] ?? null;
+  const home = model.homeMarket;
+  const mix = market ? model.mix[market] : null;
+  const entry = market ? model.entry[market] : null;
   const period = compareLabel ? `${rangeText}, ${compareLabel}` : rangeText;
   const steps = ["0%", ...SHARE_STEPS.map((s) => formatPercent(s, { decimals: 0 }))];
-  const differs = differsTakeaway(model);
+  const mixLine = market && mix ? mixTakeaway(mix, market, home) : null;
+  const entryLine = market && entry ? entryTakeaway(entry, market, home) : null;
+  const band = Math.round(MIX_BAND * 100);
   const matrix = matrixTakeaway(model, metric);
   const top = topTakeaway(model);
 
   return (
     <div className="flex flex-col gap-5">
-      {Object.keys(model.differs).length > 0 && (
-        <Card padding="none" className="flex min-w-0 flex-col gap-4 p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="m-0 flex items-center gap-1.5 text-[15px] font-semibold text-content-strong">
-              What sells differently from {countryName(model.homeMarket)}
-              <InfoTip
-                text={`A product's share of the market's net sales minus its share at home, in percentage points. Products under ${formatPercent(MIN_SHARE, { decimals: 0 })} in both are left out; Other is never compared.`}
-              />
-            </h2>
-            <span className="text-[12px] text-content-muted">{rangeText}</span>
-          </div>
-          {differs && <p className="m-0 text-[13px] text-content-strong">{differs}</p>}
-          <DiffersMost model={model} />
-        </Card>
+      {market && mix && entry && (
+        <>
+          <Card padding="none" className="flex min-w-0 flex-col gap-3 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col gap-0.5">
+                <h2 className="m-0 flex items-center gap-1.5 text-[15px] font-semibold text-content-strong">
+                  What sells differently from {countryName(home)}
+                  <InfoTip
+                    text={`By units, not net sales, so a lower price does not read as buying less. Each dot is a product: its share of ${home} units across, its share of ${market} units up. On the dashed line the market buys the same mix; the band is index ${100 - band} to ${100 + band} (index = ${market} share / ${home} share x 100). Square-root axes so small products spread out. Shipping insurance, gift cards and free lines are left out.`}
+                  />
+                </h2>
+                <span className="text-[12px] text-content-muted">{rangeText}</span>
+              </div>
+              {compared.length > 1 && (
+                <SegmentPills
+                  segments={compared.map((k) => ({ value: k, label: k }))}
+                  shown={market}
+                  onSelect={setPicked}
+                  ariaLabel="Market compared with home"
+                />
+              )}
+            </div>
+            {mixLine && <p className="m-0 border-l-2 border-accent pl-3 text-[13px] text-content-strong">{mixLine}</p>}
+            {"na" in mix ? (
+              <span className="text-[13px]">
+                <NaValue reason={mix.na} />
+              </span>
+            ) : (
+              <>
+                <MixLegend market={market} excluded={mix.excluded} />
+                <MixMap points={mix.points} market={market} home={home} />
+              </>
+            )}
+          </Card>
+
+          <Card padding="none" className="flex min-w-0 flex-col gap-3 p-4 sm:p-5">
+            <div className="flex flex-col gap-0.5">
+              <h2 className="m-0 flex items-center gap-1.5 text-[15px] font-semibold text-content-strong">
+                Entry products, {countryName(market)} vs {countryName(home)}
+                <InfoTip
+                  text={`Share of first orders (new customers) that contain each product. A first order with three products counts for each, so a market's shares add up to more than 100 %. Under ${ENTRY_MIN_ORDERS} first orders a share is faded ("low n"). Index = ${market} share / ${home} share x 100.`}
+                />
+              </h2>
+              <span className="text-[12px] text-content-muted">
+                {rangeText}
+                {"na" in entry ? "" : `, ${entry.newOrders.toLocaleString("en-US")} first orders in ${market}, ${entry.homeNewOrders.toLocaleString("en-US")} in ${home}`}
+              </span>
+            </div>
+            {entryLine && <p className="m-0 text-[13px] text-content-strong">{entryLine}</p>}
+            {"na" in entry ? (
+              <span className="text-[13px]">
+                <NaValue reason={entry.na} />
+              </span>
+            ) : entry.items.length === 0 ? (
+              <p className="m-0 text-[13px] text-content-muted">No first order in {market} contains a product in this period.</p>
+            ) : (
+              <EntryProducts items={entry.items} market={market} home={home} />
+            )}
+          </Card>
+        </>
       )}
 
       <Card padding="none" className="min-w-0 overflow-hidden">

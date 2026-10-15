@@ -6,7 +6,8 @@ Status: built in the worktree `oe-dash-wt/mk0-markets-spec`, not committed, not 
 
 ## What the page shows
 
-1. **What sells differently from home** (top card). For each market other than home and Other: the 5 products whose share of the market's net sales differs most from their share at home, in percentage points. Bars sit either side of a zero line: right means the market buys more than home, left means less. Each row also shows both shares ("17.0% vs 11.6% in US").
+1. **What sells differently from home** (top card, redesigned 2026-10-16, owner pick: option A by units + D + C). One compared market at a time (pills when there are several). A one-line takeaway (same mix or not; what the market buys clearly more and less of, by index), then the **mix map**: one dot per product, share of home's units across, share of the market's units up, both on square-root axes. The dashed diagonal is "same mix", the grey band is index 85 to 115 (index = market share / home share x 100). Colour = more / same / less, size = the market's units, faded = under 100 units in the market. Units, not net sales or GP, so a lower price in a market does not read as buying less (owner, 2026-10-16). Shipping insurance, gift cards / vouchers and free lines (no net sales) are left out and named under the legend.
+1b. **Entry products** (second card, same market). Share of first orders (new customers) containing each product, market vs home, with first-order counts; under 30 first orders a share is faded "low n", never hidden. Takeaway names the product that opens clearly more first orders than at home.
 2. **Product x market matrix.** Top 15 products by net sales across all markets as rows, the rest pooled into "Other products" (always last). Columns: All markets, then home, then the other markets by net sales, then Other. Two modes:
    - **Share**: the product's share of that market's net sales, with units under it. Cells are shaded on the accent ramp in fixed steps (under 2 %, 2 %, 5 %, 10 %, 20 %+), so a shade means the same thing in every column.
    - **Avg price**: net sales / units in base currency, with the local price under it where the market pays in one currency. A cell with fewer than 3 units shows n/a, because one order would set the price.
@@ -30,9 +31,11 @@ Period picker, Compare, delta mode, client switcher and demo region (US + CA / C
 |---|---|---|
 | `TOP_PRODUCTS` | 15 | matrix rows before pooling |
 | `TOP_PER_MARKET` | 5 | per-market list |
-| `DIFFERS_LIMIT` | 5 | products per differs-most list |
-| `MIN_SHARE` | 1 % | a product under this in both markets is left out of differs-most |
-| `MIN_MARKET_UNITS` | 50 | below this a market gets no differs-most list (n/a, shares are noise) |
+| `MIN_MARKET_UNITS` | 50 | below this a market gets no mix map (n/a, a mix this small is noise) |
+| `MIX_MIN_UNITS` | 100 | under this many units in the market a product's dot is faded |
+| `MIX_BAND` | 15 % | index 85 to 115 reads as the same mix |
+| `ENTRY_LIMIT` | 8 | products per entry list |
+| `ENTRY_MIN_ORDERS` | 30 | under this many first orders an entry share is faded "low n" |
 | `MIN_PRICE_UNITS` | 3 | below this a matrix cell shows no average price |
 | `LOCAL_COVERAGE` | 95 % | share of net sales that must be in local-currency orders to show a local price |
 
@@ -47,12 +50,12 @@ These figures come from a direct SQL check of the same logic. They are not a scr
 ## Files
 
 - `app/(app)/markets/products/page.tsx`, `loading.tsx`: the route (thin guard)
-- `components/markets/products/`: `ProductsScreen` (server: header, controls, Suspense), `ProductsSkeleton`, `ProductsView`, `ProductMatrix`, `DiffersMost`, `TopByMarket`
-- `lib/markets/products.ts`: pure helpers and model (`marketShares`, `differsMost`, `topProducts`, `orderMarkets`, `buildProductsModel`)
+- `components/markets/products/`: `ProductsScreen` (server: header, controls, Suspense), `ProductsSkeleton`, `ProductsView`, `ProductMatrix`, `MixMap` (+ `MixLegend`), `EntryProducts`, `TopByMarket`
+- `lib/markets/products.ts`: pure helpers and model (`marketShares`, `mixProducts`, `unitMix`, `entryProducts`, `topProducts`, `orderMarkets`, `buildProductsModel`, takeaways)
 - `lib/queries/marketsProducts.ts`: BigQuery, `getMarketsProducts`
 - `lib/demo/marketsProducts.ts`: demo fixture. Each market's net sales come from the Markets demo, so the totals match the main page. The catalogue has 18 products. In the na region, CA leans to supplements and away from the serum and the starter set. In the eu region, SK buys the starter set and the mask, and PL buys the starter set and the travel duo.
 - `app/dev/markets-products/page.tsx`: dev harness for the demo client. It returns 404 in production (verified on a production build).
-- `scripts/check-markets-products.ts`: `npm run check:markets-products`, 97 checks. They cover shares, differs-most, top lists, column order, pooling, reconciliation to Markets, the local-price rules, both demo regions, static renders, and no em dash.
+- `scripts/check-markets-products.ts`: `npm run check:markets-products`, 144 checks. They cover shares, the units mix map, entry products, the takeaways, top lists, column order, pooling, reconciliation to Markets, the local-price rules, both demo regions, static renders, and no em dash.
 
 ## Verified
 

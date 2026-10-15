@@ -6,15 +6,17 @@
  * Pure checks, no warehouse, no server. Pins:
  *
  *   - shares: per market they add up to 100 %, a zero market has none;
- *   - differs-most: points, sign, order by absolute gap, the noise floor, a
- *     product sold in only one of the two markets, ties by name;
+ *   - the mix map: unit shares, the index, non-products and free lines left
+ *     out, the faded floor, a product sold in only one of the two markets;
+ *   - entry products: share of first orders, low n, top by the market's share;
  *   - top per market: order, share, comparison share and rank;
  *   - the model: home first and Other last, the pooled row, the market's
  *     products adding up to the market's net sales on the main Markets page,
  *     local price only with enough local-currency coverage, n/a reasons;
  *   - the demo: both regions build, CA and SK buy differently from home,
  *     Compare fills every comparison field;
- *   - the takeaways: the product that differs most and which way, the top-3
+ *   - the takeaways: same mix or not, what a market buys more and less of,
+ *     the entry product, the top-3
  *     concentration, the widest price gap with enough units, the leader per
  *     market and the biggest shift, and no sentence without data;
  *   - the views render (static markup) and no source holds an em dash.
@@ -26,8 +28,15 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildProductsModel,
-  differsMost,
-  differsTakeaway,
+  entryProducts,
+  entryTakeaway,
+  formatPp,
+  formatPpBetween,
+  formatTotal,
+  isNonProduct,
+  mixProducts,
+  mixTakeaway,
+  unitMix,
   matrixTakeaway,
   topTakeaway,
   marketShares,
@@ -44,7 +53,8 @@ import { demoMarketsProducts } from "@/lib/demo/marketsProducts";
 import { demoMarkets } from "@/lib/demo/markets";
 import { MINUS } from "@/lib/format";
 import { ProductMatrix, shareStep } from "@/components/markets/products/ProductMatrix";
-import { DiffersMost, formatPp } from "@/components/markets/products/DiffersMost";
+import { MixMap } from "@/components/markets/products/MixMap";
+import { EntryProducts } from "@/components/markets/products/EntryProducts";
 import { TopByMarket } from "@/components/markets/products/TopByMarket";
 
 /** Built from its code point so this file never holds the character it bans. */
@@ -74,6 +84,7 @@ const row = (market: string, product: string, netSales: number, units: number | 
   localNetSales: 0,
   localUnits: 0,
   localCoveredNetSales: 0,
+  entryOrders: 0,
   ...local,
 });
 
@@ -88,18 +99,38 @@ const row = (market: string, product: string, netSales: number, units: number | 
   check("shares: same product twice in a market adds up", close(marketShares([row("US", "A", 1), row("US", "A", 1), row("US", "B", 2)]).get("US")!.get("A")!, 0.5));
   check("totals", marketTotals(rows).get("CA") === 100);
 
-  // ── Differs most ─────────────────────────────────────────────────────────
-  const d = differsMost(s.get("US")!, s.get("CA")!);
-  check("differs: largest gap first (A -40 pp, B +30, D +20, C -10)", d.map((i) => i.product).join() === "A,B,D,C", d.map((i) => i.product).join());
-  check("differs: points are share minus home share", close(d[0].diff, -0.4) && close(d[1].diff, 0.3));
-  check("differs: product only in market (D) keeps home 0", d.find((i) => i.product === "D")!.homeShare === 0);
-  check("differs: product only at home (C) keeps market 0", d.find((i) => i.product === "C")!.share === 0);
-  check("differs: limit", differsMost(s.get("US")!, s.get("CA")!, { limit: 2 }).length === 2);
+  // ── Mix map ──────────────────────────────────────────────────────────────
+  const units = [
+    row("US", "A", 600, 600), row("US", "B", 300, 300), row("US", "C", 100, 100), row("US", "Shipping Insurance", 5, 50),
+    row("CA", "A", 200, 200), row("CA", "B", 600, 600), row("CA", "D", 200, 200), row("CA", "Free Sample", 0, 90),
+  ];
+  const { keep, excluded } = mixProducts(units);
+  check("mix: non-products and free lines left out", excluded.join() === "Free Sample,Shipping Insurance", excluded.join());
+  check("non-product names", isNonProduct("Pawsome Shipping Insurance") && isNonProduct("Healthy Dog Gift Card") && isNonProduct("Dárkový poukaz na parfém") && !isNonProduct("Testovací dárková sada & poukaz na parfém") && !isNonProduct("Vzorek parfému"));
+  const mx = unitMix(units, "CA", "US", keep, 250);
+  check("mix: totals in units, non-products out", mx.units === 1000 && mx.homeUnits === 1000, `${mx.units} ${mx.homeUnits}`);
+  const pt = (p: string) => mx.points.find((x) => x.product === p)!;
+  check("mix: shares of units", close(pt("B").share, 0.6) && close(pt("B").homeShare, 0.3));
+  check("mix: index is share / home share", close(pt("B").index, 2) && close(pt("A").index, 1 / 3));
+  check("mix: product only in market has no index", pt("D").index === null && pt("D").homeShare === 0);
+  check("mix: product only at home keeps share 0", pt("C").share === 0 && close(pt("C").index, 0));
+  check("mix: under the floor is low", pt("D").low && !pt("B").low);
+  check("mix: sorted by market units", mx.points[0].product === "B");
+  const priced = unitMix([row("US", "A", 100, 10), row("US", "B", 100, 10), row("CA", "A", 50, 10), row("CA", "B", 200, 10)], "CA", "US", new Set(["A", "B"]));
+  check("mix: price does not move the mix (units equal, net sales not)", close(priced.points[0].index, 1) && close(priced.points[1].index, 1));
 
-  const noise = differsMost(new Map([["A", 0.995], ["N", 0.005]]), new Map([["A", 0.992], ["N", 0.008]]));
-  check("differs: under 1 % in both markets is left out", !noise.some((i) => i.product === "N"), noise.map((i) => i.product).join());
-  const tie = differsMost(new Map([["B", 0.5], ["A", 0.5]]), new Map([["B", 0.6], ["A", 0.4]]));
-  check("differs: ties by name", tie.map((i) => i.product).join() === "A,B", tie.map((i) => i.product).join());
+  // ── Entry products ───────────────────────────────────────────────────────
+  const firsts = [
+    row("US", "A", 1, 1, { entryOrders: 50 }), row("US", "B", 1, 1, { entryOrders: 20 }),
+    row("CA", "A", 1, 1, { entryOrders: 10 }), row("CA", "B", 1, 1, { entryOrders: 40 }), row("CA", "Gift Card", 1, 1, { entryOrders: 5 }),
+  ];
+  const en = entryProducts(firsts, "CA", "US", { US: 100, CA: 80 }, mixProducts(firsts).keep, { minOrders: 30 });
+  check("entry: top by the market's share", en.map((i) => i.product).join() === "B,A", en.map((i) => i.product).join());
+  check("entry: share of first orders", close(en[0].share, 0.5) && close(en[0].homeShare, 0.2) && close(en[0].index, 2.5));
+  check("entry: low n flagged, not hidden", en[1].low && !en[0].low && !en[1].homeLow && en[0].homeLow);
+  check("entry: no first orders, no list", entryProducts(firsts, "CA", "US", { US: 100 }, mixProducts(firsts).keep).length === 0);
+  check("pp between rounded shares (QA 10)", formatPpBetween(0.221, 0.201) === "+2.0 pp" && formatPpBetween(0.0134, 0.0064) === "+0.7 pp", `${formatPpBetween(0.221, 0.201)} ${formatPpBetween(0.0134, 0.0064)}`);
+  check("totals print whole under 10,000 (QA 16)", formatTotal(879.5, "EUR") === "€880" && formatTotal(23456, "CZK").includes("K"), `${formatTotal(879.5, "EUR")} ${formatTotal(23456, "CZK")}`);
   check("pp format", formatPp(0.0342) === "+3.4 pp" && formatPp(-0.0342) === `${MINUS}3.4 pp` && formatPp(0.0001) === "0.0 pp", `${formatPp(0.0342)} ${formatPp(-0.0342)}`);
 }
 
@@ -140,6 +171,7 @@ check("order: home first, Other last, rest by net sales", orderMarkets(new Map([
     compareRange: null,
     current: cur,
     previous: null,
+    newOrders: { CZ: 100, SK: 40 },
   };
   const m = buildProductsModel(raw);
   check("model: columns", m.markets.map((c) => c.key).join() === "CZ,SK,PL,OTHER", m.markets.map((c) => c.key).join());
@@ -157,14 +189,16 @@ check("order: home first, Other last, rest by net sales", orderMarkets(new Map([
   check("model: SK local price in EUR", m.markets[1].localCurrency === "EUR" && close(p00.cells.SK.aspLocal, 100 / 25 / 3));
   check("model: PL local coverage under the bar is n/a", m.markets[2].localCurrency === null && /33 %/.test(m.markets[2].localWhy ?? ""), m.markets[2].localWhy ?? "");
   check("model: Other has no local price", m.markets[3].localCurrency === null && /several/.test(m.markets[3].localWhy ?? ""));
-  check("model: SK differs list", "items" in m.differs.SK && m.differs.SK.items.length > 0);
-  check(`model: PL under ${MIN_MARKET_UNITS} units is n/a`, "na" in m.differs.PL);
-  check("model: no differs for home or Other", !("CZ" in m.differs) && !("OTHER" in m.differs));
+  check("model: SK mix map", "points" in m.mix.SK && m.mix.SK.points.length === 20);
+  check(`model: PL under ${MIN_MARKET_UNITS} units is n/a`, "na" in m.mix.PL);
+  check("model: no mix for home or Other", !("CZ" in m.mix) && !("OTHER" in m.mix) && !("CZ" in m.entry));
+  check("model: PL without first orders says so", "na" in m.entry.PL && /No first orders in PL/.test(m.entry.PL.na), JSON.stringify(m.entry.PL));
+  check("model: no first-order data says so", Object.values(buildProductsModel({ ...raw, newOrders: {} }).entry).every((e) => "na" in e && /not available/.test(e.na)));
   check("model: unknown units stay null", buildProductsModel({ ...raw, current: [row("CZ", "A", 10, null)] }).rows[0].cells.CZ.asp === null);
   const noRate = buildProductsModel({ ...raw, current: [row("CZ", "A", 10), row("SK", "A", 10, 1)] });
   check("model: no rate on local orders says so", /exchange rate/.test(noRate.markets[1].localWhy ?? ""), noRate.markets[1].localWhy ?? "");
   const noHome = buildProductsModel({ ...raw, homeMarket: "DE" });
-  check("model: home without sales makes differs n/a", Object.values(noHome.differs).every((d) => "na" in d));
+  check("model: home without sales makes the mix n/a", Object.values(noHome.mix).every((d) => "na" in d));
   check("local coverage bar", LOCAL_COVERAGE === 0.95);
   check("share steps", shareStep(null) === -1 && shareStep(0) === -1 && shareStep(0.01) === 0 && shareStep(0.05) === 2 && shareStep(0.5) === 4);
 }
@@ -172,20 +206,31 @@ check("order: home first, Other last, rest by net sales", orderMarkets(new Map([
 // ── Takeaways ──────────────────────────────────────────────────────────────
 {
   const plain = (t: string | null) => (t === null ? null : t.replace(/ /g, " "));
-  const s = marketShares([row("US", "A", 60), row("US", "B", 30), row("US", "C", 10), row("CA", "A", 20), row("CA", "B", 60), row("CA", "D", 20)]);
-  const less = differsTakeaway({ homeMarket: "US", differs: { CA: { items: differsMost(s.get("US")!, s.get("CA")!) } } });
-  check(
-    "takeaway differs: biggest gap, sold less than at home",
-    less === `Biggest difference: A is 20.0% of CA net sales against 60.0% in US (${MINUS}40.0 pp): worth checking its price or visibility in CA.`,
-    less ?? "null"
+  const pts = (xs: [string, number, number, number, number, boolean?][]) =>
+    xs.map(([product, units, homeUnits, share, homeShare, low]) => ({ product, units, homeUnits, share, homeShare, index: homeShare > 0 ? share / homeShare : null, low: !!low }));
+  const sameMix = mixTakeaway(
+    { units: 1000, homeUnits: 1000, excluded: [], points: pts([["Omega", 236, 230, 0.236, 0.23], ["GutSense", 209, 168, 0.209, 0.168], ["SoulFood", 112, 116, 0.112, 0.116], ["GreenMin", 105, 81, 0.105, 0.081], ["MitoBoost", 140, 102, 0.052, 0.038], ["Omega H+", 140, 230, 0.04, 0.06], ["FleaHex", 26, 121, 0.005, 0.013, true]]) },
+    "CA",
+    "US"
   );
-  const more = differsTakeaway({
-    homeMarket: "US",
-    differs: { CA: { items: [{ product: "B", share: 0.3, homeShare: 0.1, diff: 0.2 }] }, OTHER: { items: [{ product: "C", share: 0.2, homeShare: 0.1, diff: 0.1 }] }, MX: { na: "few units" } },
-  });
-  check("takeaway differs: across markets, sold more reads as a lead", more === "Biggest difference: B is 30.0% of CA net sales against 10.0% in US (+20.0 pp): a product to lead with in CA.", more ?? "null");
-  check("takeaway differs: only n/a markets, no sentence", differsTakeaway({ homeMarket: "US", differs: { CA: { na: "x" } } }) === null);
-  check("takeaway differs: no gap, no sentence", differsTakeaway({ homeMarket: "US", differs: { CA: { items: [] } } }) === null);
+  check(
+    "takeaway mix: same mix, more and less named, low left out",
+    sameMix === "By units, CA buys the US mix: the top 4 products are all within 4.1 pts. It buys more of MitoBoost (137), GreenMin (130) and GutSense (124), and less of Omega H+ (67).",
+    sameMix ?? "null"
+  );
+  const diff = mixTakeaway({ units: 1, homeUnits: 1, excluded: [], points: pts([["A", 1, 1, 0.2, 0.6], ["B", 1, 1, 0.5, 0.3], ["C", 1, 1, 0.3, 0.1]]) }, "CA", "US");
+  check("takeaway mix: different mix names the widest gap", diff === "By units, CA buys a different mix: A is 20.0% of units against 60.0% in US. It buys more of C (300) and B (167), and less of A (33).", diff ?? "null");
+  const flat = mixTakeaway({ units: 1, homeUnits: 1, excluded: [], points: pts([["A", 1, 1, 0.5, 0.5], ["B", 1, 1, 0.5, 0.5]]) }, "CA", "US");
+  check("takeaway mix: nothing outside the band says so", flat === "By units, CA buys the US mix: the top 2 products are all within 0.0 pts. No product with 100 or more units sits outside 15 % of US.", flat ?? "null");
+  check("takeaway mix: n/a, no sentence", mixTakeaway({ na: "x" }, "CA", "US") === null);
+  const lead = entryTakeaway(
+    { newOrders: 245, homeNewOrders: 662, items: [{ product: "Omega", orders: 104, homeOrders: 255, share: 0.424, homeShare: 0.385, index: 1.1, low: false, homeLow: false }, { product: "GutSense", orders: 108, homeOrders: 172, share: 0.441, homeShare: 0.26, index: 1.7, low: false, homeLow: false }] },
+    "CA",
+    "US"
+  );
+  check("takeaway entry: the clear lead", lead === "GutSense is in 44.1% of CA first orders against 26.0% in US: the CA entry product.", lead ?? "null");
+  const plainEntry = entryTakeaway({ newOrders: 10, homeNewOrders: 10, items: [{ product: "A", orders: 5, homeOrders: 5, share: 0.5, homeShare: 0.5, index: 1, low: true, homeLow: true }] }, "CA", "US");
+  check("takeaway entry: no clear lead names the top opener", plainEntry === "A opens the most CA first orders, 50.0% against 50.0% in US.", plainEntry ?? "null");
 
   const raw = (current: ProductSalesRow[], previous: ProductSalesRow[] | null = null): ProductsRaw => ({
     source: "demo",
@@ -196,6 +241,7 @@ check("order: home first, Other last, rest by net sales", orderMarkets(new Map([
     compareRange: previous ? { from: "2026-04-01", to: "2026-06-30" } : null,
     current,
     previous,
+    newOrders: {},
   });
   const cur = [row("CZ", "A", 50, 10), row("CZ", "B", 30, 10), row("CZ", "C", 20, 10), row("SK", "A", 20, 10), row("SK", "B", 20, 10), row("SK", "C", 10, 10), row("SK", "D", 50, 10)];
   const m = buildProductsModel(raw(cur));
@@ -222,9 +268,11 @@ check("order: home first, Other last, rest by net sales", orderMarkets(new Map([
 
   // On the demo.
   const demo = buildProductsModel(demoMarketsProducts("na", { from: "2026-07-16", to: "2026-10-13" }, null));
-  const dd = differsTakeaway(demo) ?? "";
-  check("demo takeaway: differs names a product and CA", dd.startsWith("Biggest difference: ") && dd.includes(" of CA net sales against "), dd);
-  for (const t of [less, more, share, price, top, shift, dd, matrixTakeaway(demo, "price"), topTakeaway(demo)]) check("takeaway has no em dash", !(t ?? "").includes(EM_DASH));
+  const dd = mixTakeaway(demo.mix.CA, "CA", "US") ?? "";
+  check("demo takeaway: mix reads CA by units", dd.startsWith("By units, CA buys "), dd);
+  const de = entryTakeaway(demo.entry.CA, "CA", "US") ?? "";
+  check("demo takeaway: entry names the calm capsules", de.startsWith("Calm Balance Capsules "), de);
+  for (const t of [sameMix, diff, lead, share, price, top, shift, dd, de, matrixTakeaway(demo, "price"), topTakeaway(demo)]) check("takeaway has no em dash", !(t ?? "").includes(EM_DASH));
 }
 
 // ── Demo ───────────────────────────────────────────────────────────────────
@@ -244,13 +292,14 @@ for (const region of ["na", "eu"] as const) {
   const prevMarkets = new Set(raw.previous!.filter((r) => r.netSales > 0).map((r) => r.market));
   check(`demo ${region}: compare filled where the market sold`, m.hasCompare && m.rows.every((r) => Object.entries(r.cells).every(([k, c]) => (c.prevShare !== null) === prevMarkets.has(k))));
   const away = region === "na" ? "CA" : "SK";
-  const d = m.differs[away];
-  check(`demo ${region}: ${away} differs list`, !!d && "items" in d && d.items.length === 5);
-  if (d && "items" in d) {
-    const top = d.items[0];
-    const expect = region === "na" ? ["Radiance Serum 30ml", "Deep Sleep Tincture", "Calm Balance Capsules", "Immunity Blend Powder", "Starter Ritual Set"] : ["Starter Ritual Set", "Overnight Repair Mask", "Deep Sleep Tincture", "Radiance Serum 30ml"];
-    check(`demo ${region}: ${away} top gap is a written tilt`, expect.includes(top.product) && Math.abs(top.diff) >= 0.02, `${top.product} ${top.diff}`);
+  const mxa = m.mix[away];
+  check(`demo ${region}: ${away} mix map`, !!mxa && "points" in mxa && mxa.points.length >= 15 && mxa.excluded.includes("Gift Card"), JSON.stringify(mxa && "excluded" in mxa ? mxa.excluded : mxa));
+  if (mxa && "points" in mxa) {
+    const tilted = region === "na" ? ["Calm Balance Capsules", "Deep Sleep Tincture", "Immunity Blend Powder"] : ["Starter Ritual Set", "Overnight Repair Mask"];
+    check(`demo ${region}: ${away} buys more of a written tilt`, tilted.some((p) => (mxa.points.find((x) => x.product === p)?.index ?? 0) >= 1.15));
   }
+  const ena = m.entry[away];
+  check(`demo ${region}: ${away} entry products`, !!ena && "items" in ena && ena.items.length === 8 && ena.items.every((i) => i.share <= 1));
   const awayCol = m.markets.find((c) => c.key === away)!;
   check(`demo ${region}: ${away} local price`, awayCol.localCurrency === (region === "na" ? "CAD" : "EUR"));
   const serum = m.rows.find((r) => r.product === "Radiance Serum 30ml")!;
@@ -261,11 +310,13 @@ for (const region of ["na", "eu"] as const) {
   check(`render ${region}: matrix shares`, matrix.includes("All markets") && matrix.includes(OTHER_PRODUCTS) && matrix.includes("%"));
   const price = renderToStaticMarkup(createElement(ProductMatrix, { model: m, metric: "price", periodLabel: "x" }));
   check(`render ${region}: matrix prices show the local currency`, price.includes(region === "na" ? "USD / CAD" : "CZK / EUR"));
-  const diffs = renderToStaticMarkup(createElement(DiffersMost, { model: m }));
-  check(`render ${region}: differs`, diffs.includes(" pp") && diffs.includes("aria-hidden"));
+  const diffs = mxa && "points" in mxa ? renderToStaticMarkup(createElement(MixMap, { points: mxa.points, market: away, home: raw.homeMarket })) : "";
+  check(`render ${region}: mix map`, diffs.includes("<circle") && diffs.includes("buys more") && (diffs.match(/<circle/g) ?? []).length === (mxa && "points" in mxa ? mxa.points.length : -1));
+  const entries = ena && "items" in ena ? renderToStaticMarkup(createElement(EntryProducts, { items: ena.items, market: away, home: raw.homeMarket })) : "";
+  check(`render ${region}: entry products`, (entries.match(/<li/g) ?? []).length === 8);
   const top = renderToStaticMarkup(createElement(TopByMarket, { model: m, compareLabel: "vs prev period" }));
   check(`render ${region}: top lists`, (top.match(/<ol/g) ?? []).length === m.markets.length);
-  for (const html of [matrix, price, diffs, top]) check(`render ${region}: no em dash`, !html.includes(EM_DASH));
+  for (const html of [matrix, price, diffs, entries, top]) check(`render ${region}: no em dash`, !html.includes(EM_DASH));
 }
 
 // ── No em dash in any source of this page ──────────────────────────────────

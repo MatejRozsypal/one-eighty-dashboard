@@ -158,6 +158,55 @@ export interface CountryOrders {
   newCustomerNetSales: number;
 }
 
+/**
+ * One row of `mart.market_scouting_signals` (migration 297): a country the
+ * client does not sell to, with fixed windows (orders 365 d, GA4 90 d, latest
+ * search snapshot). GA4 fields are null when the client has no GA4 at all
+ * (`ga4Days90` null); search fields are null until core terms are confirmed.
+ */
+export interface ScoutSignalRow {
+  iso: string;
+  orders365: number;
+  newCustomers365: number;
+  /** Base currency, ex VAT. */
+  netRevenue365: number;
+  aovNew365: number | null;
+  /** Days in the 90-day window with any GA4 data for the client; null = no GA4. */
+  ga4Days90: number | null;
+  sessions90: number | null;
+  engagedSessions90: number | null;
+  unpaidEngagedSessions90: number | null;
+  addToCartSessions90: number | null;
+  ga4Purchases90: number | null;
+  /** Sum of the monthly volume of the confirmed core terms. */
+  searchVolumeCore: number | null;
+  searchTermsCore: number | null;
+  searchAsOf: string | null;
+}
+
+/** One Meta CPM benchmark for one country (`ref.industry_benchmarks`, metric `meta_cpm`). */
+export interface CpmBenchmark {
+  /** ISO-2 country the benchmark is for. */
+  iso: string;
+  vertical: string;
+  /** Per 1000 impressions, in `currency`. */
+  value: number;
+  currency: string | null;
+  source: string;
+  asOf: string;
+}
+
+/** Inputs of the opportunity index, read for one client. */
+export interface ScoutingSignalsRaw {
+  rows: ScoutSignalRow[];
+  /** GA4 day coverage of the client in the 90-day window; null when GA4 is not connected. */
+  ga4Days90: number | null;
+  /** `ref.client_verticals` vertical; null when the client has none. */
+  vertical: string | null;
+  /** Meta CPM rows for the client's vertical and the fallback; null when no Meta CPM benchmark is loaded at all. */
+  cpm: CpmBenchmark[] | null;
+}
+
 /** Where the page's numbers came from. */
 export type MarketsSource = "demo" | "mart_qa" | "mart";
 
@@ -193,4 +242,6 @@ export interface MarketsRaw {
   otherCountries: CountryOrders[];
   cohorts: CohortRow[];
   forecast: ForecastRow[];
+  /** Opportunity index inputs; null when the signals view cannot be read. */
+  scoutingSignals: ScoutingSignalsRaw | null;
 }

@@ -13,6 +13,14 @@
  *   na  a US/CA brand in USD with a small tail of European orders
  *   eu  a CZ/SK brand in CZK with a ten-week-old Polish test market
  *
+ * Scouting signals (the opportunity index inputs) are set so the two shapes
+ * show every state between them: na has GA4 on 74 of 90 days, no confirmed
+ * search terms and CPM benchmarks for US, GB and IE only (none for AU, CH,
+ * RS, as in the 295 seed); eu has no GA4, search demand for DE, AT and HU,
+ * CPM for CZ, DE, AT and HU, and one country (SI) with too few signals for an
+ * index. PL is a sold test market in eu, so
+ * the signals view excludes it, as the mart does.
+ *
  * The proportions (new-customer share, AOV new vs returning, discount depth
  * and penetration, COGS %, nCAC, repeat curves, COD and free-shipping shares)
  * follow the 2026-10 market audit of a North American and a Czech client
@@ -36,6 +44,9 @@ import {
   type MarketPeriodRaw,
   type MarketsRaw,
   type OrderExtras,
+  type CpmBenchmark,
+  type ScoutingSignalsRaw,
+  type ScoutSignalRow,
 } from "@/lib/markets/types";
 
 export type DemoRegion = "na" | "eu";
@@ -626,6 +637,84 @@ function forecastRows(region: DemoRegion, cohorts: Array<{ row: CohortRow; spec:
   return out;
 }
 
+/** GA4 90-day figures per candidate: sessions, engaged, unpaid engaged, add to cart, purchases. */
+const DEMO_GA4: Record<DemoRegion, Record<string, [number, number, number, number, number]>> = {
+  na: {
+    GB: [4200, 2650, 1480, 210, 31],
+    IE: [980, 610, 402, 41, 7],
+    AU: [1650, 990, 720, 62, 4],
+    CH: [520, 300, 170, 18, 2],
+    RS: [310, 150, 122, 5, 0],
+  },
+  eu: {},
+};
+/** Core search volume per month and number of core terms. */
+const DEMO_SEARCH: Record<DemoRegion, Record<string, [number, number]>> = {
+  na: {},
+  eu: { DE: [18400, 5], AT: [2900, 5], HU: [3600, 4] },
+};
+const DEMO_CPM: Record<DemoRegion, Array<[string, number, string]>> = {
+  na: [["US", 16.1, "USD"], ["GB", 11.8, "USD"], ["IE", 8.3, "USD"]],
+  eu: [["CZ", 5.7, "USD"], ["DE", 9.1, "USD"], ["AT", 8.6, "USD"], ["HU", 5.2, "USD"]],
+};
+/** Countries with orders earlier in the year but none generated (signals view only). */
+const DEMO_SIGNAL_ONLY: Record<DemoRegion, Record<string, [number, number, number]>> = {
+  na: {},
+  eu: { SI: [2, 2, 2240] },
+};
+const DEMO_GA4_DAYS: Record<DemoRegion, number | null> = { na: 74, eu: null };
+
+/** `mart.market_scouting_signals` for the demo client, plus its vertical and CPM rows. */
+function scoutingSignals(region: DemoRegion): ScoutingSignalsRaw {
+  const g = generate(region);
+  const shape = SHAPES[region];
+  const year = { from: addDays(g.last, -364), to: g.last };
+  const ga4Days = DEMO_GA4_DAYS[region];
+  const isos = new Set([
+    ...tails(shape).map((s) => s.market),
+    ...Object.keys(DEMO_GA4[region]),
+    ...Object.keys(DEMO_SEARCH[region]),
+    ...Object.keys(DEMO_SIGNAL_ONLY[region]),
+  ]);
+  const rows: ScoutSignalRow[] = [...isos].map((iso) => {
+    const spec = tails(shape).find((s) => s.market === iso);
+    const sums = spec ? sumDays(inRange(g.byMarket.get(iso) ?? [], year), spec.localCurrency)?.sums ?? null : null;
+    const only = DEMO_SIGNAL_ONLY[region][iso];
+    const orders = sums?.orders ?? only?.[0] ?? 0;
+    const newCustomers = sums?.newCustomers ?? only?.[1] ?? 0;
+    const net = sums?.netRevenue ?? only?.[2] ?? 0;
+    const newNet = sums ? sums.newCustomerNetSales ?? 0 : net;
+    const ga4 = DEMO_GA4[region][iso] ?? [0, 0, 0, 0, 0];
+    const search = DEMO_SEARCH[region][iso];
+    const withGa4 = (v: number) => (ga4Days === null ? null : v);
+    return {
+      iso,
+      orders365: Math.round(orders),
+      newCustomers365: Math.round(newCustomers),
+      netRevenue365: net,
+      aovNew365: newCustomers > 0 ? newNet / newCustomers : null,
+      ga4Days90: ga4Days,
+      sessions90: withGa4(ga4[0]),
+      engagedSessions90: withGa4(ga4[1]),
+      unpaidEngagedSessions90: withGa4(ga4[2]),
+      addToCartSessions90: withGa4(ga4[3]),
+      ga4Purchases90: withGa4(ga4[4]),
+      searchVolumeCore: search?.[0] ?? null,
+      searchTermsCore: search?.[1] ?? null,
+      searchAsOf: search ? addDays(g.last, -1) : null,
+    };
+  });
+  const cpm: CpmBenchmark[] = DEMO_CPM[region].map(([iso, value, currency]) => ({
+    iso,
+    vertical: "all_ecommerce",
+    value,
+    currency,
+    source: "Demo benchmark",
+    asOf: addDays(g.last, -30),
+  }));
+  return { rows, ga4Days90: ga4Days, vertical: null, cpm };
+}
+
 export function demoMarkets(
   region: DemoRegion,
   range: { from: string; to: string },
@@ -679,5 +768,6 @@ export function demoMarkets(
     otherCountries: otherCountries(region, range),
     cohorts: cohorts.map((c) => c.row),
     forecast: forecastRows(region, cohorts),
+    scoutingSignals: scoutingSignals(region),
   };
 }

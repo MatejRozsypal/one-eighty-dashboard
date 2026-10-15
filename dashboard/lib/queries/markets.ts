@@ -20,6 +20,14 @@
  *
  * A table that does not exist yet (QA build not run) returns null and the page
  * says so in one line; any other failure reaches the error page.
+ *
+ * ── Scouting signals ────────────────────────────────────────────────────────
+ * The opportunity index reads `mart.market_scouting_signals` (migration 297),
+ * the client's vertical (`ref.client_verticals`) and Meta CPM benchmarks
+ * (`ref.industry_benchmarks`, metric `meta_cpm`, one row per ISO-2 country).
+ * These are always read from `mart` and `ref`, in mart_qa mode too: no QA
+ * copies exist. A missing view leaves the index n/a and the rest of the page
+ * standing.
  */
 
 import { query, PROJECT_ID } from "@/lib/bigquery";
@@ -37,6 +45,9 @@ import {
   type DailySums,
   type ForecastMethod,
   type CountryOrders,
+  type CpmBenchmark,
+  type ScoutingSignalsRaw,
+  type ScoutSignalRow,
   type ForecastRow,
   type MarketLifetimeRaw,
   type MarketPeriodRaw,
@@ -324,6 +335,102 @@ async function otherCountries(clientId: string, range: DateRange): Promise<Count
   }));
 }
 
+/** Opportunity index inputs: the signals view, the client's vertical, Meta CPM benchmarks. */
+async function scoutingSignals(clientId: string): Promise<ScoutingSignalsRaw | null> {
+  const rows = await optional(
+    () =>
+      query<Row>(
+        `SELECT iso2, orders_365, new_customers_365, net_revenue_365, aov_new_365, ga4_days_90,
+                sessions_90, engaged_sessions_90, unpaid_engaged_sessions_90, add_to_cart_sessions_90,
+                ga4_purchases_90, search_volume_core, search_terms_core, search_as_of
+         FROM \`${PROJECT_ID}.mart.market_scouting_signals\`
+         WHERE client_id = @clientId`,
+        { clientId }
+      ),
+    null
+  );
+  if (rows === null) return null;
+
+  const [verticalRows, cpmRows, cpmLoaded] = await Promise.all([
+    optional(
+      () =>
+        query<Row>(
+          `SELECT vertical FROM \`${PROJECT_ID}.ref.client_verticals\`
+           WHERE client_id = @clientId AND valid_from <= CURRENT_DATE()
+             AND (valid_to IS NULL OR valid_to >= CURRENT_DATE())
+           ORDER BY valid_from DESC LIMIT 1`,
+          { clientId }
+        ),
+      [] as Row[]
+    ),
+    // One row per ISO-2 country, vertical (the client's, then all_ecommerce) and
+    // source: median, then mean, then a range midpoint; the latest as_of. The
+    // pairing of home and country (same vertical, same source) is cpmRatio's. Regional rows
+    // (CEE, GLOBAL) are not read: a shared fallback CPM would give every
+    // country the same cost to reach.
+    optional(
+      () =>
+        query<Row>(
+          `SELECT region AS iso, vertical, value, currency, source, as_of
+           FROM \`${PROJECT_ID}.ref.industry_benchmarks\`
+           WHERE is_active AND metric_id = 'meta_cpm' AND REGEXP_CONTAINS(region, r'^[A-Z]{2}$')
+             AND vertical IN (
+               (SELECT vertical FROM \`${PROJECT_ID}.ref.client_verticals\`
+                WHERE client_id = @clientId AND valid_from <= CURRENT_DATE()
+                  AND (valid_to IS NULL OR valid_to >= CURRENT_DATE())
+                ORDER BY valid_from DESC LIMIT 1),
+               'all_ecommerce')
+           QUALIFY ROW_NUMBER() OVER (
+             PARTITION BY region, vertical, source
+             ORDER BY CASE stat WHEN 'median' THEN 0 WHEN 'mean' THEN 1 WHEN 'range' THEN 2 ELSE 3 END, as_of DESC, period_end DESC) = 1`,
+          { clientId }
+        ),
+      [] as Row[]
+    ),
+    optional(
+      () =>
+        query<Row>(
+          `SELECT COUNT(*) AS n FROM \`${PROJECT_ID}.ref.industry_benchmarks\` WHERE is_active AND metric_id = 'meta_cpm'`
+        ),
+      [] as Row[]
+    ),
+  ]);
+
+  const signalRows: ScoutSignalRow[] = rows.map((r) => ({
+    iso: String(r.iso2),
+    orders365: num0(r.orders_365),
+    newCustomers365: num0(r.new_customers_365),
+    netRevenue365: num0(r.net_revenue_365),
+    aovNew365: num(r.aov_new_365),
+    ga4Days90: num(r.ga4_days_90),
+    sessions90: num(r.sessions_90),
+    engagedSessions90: num(r.engaged_sessions_90),
+    unpaidEngagedSessions90: num(r.unpaid_engaged_sessions_90),
+    addToCartSessions90: num(r.add_to_cart_sessions_90),
+    ga4Purchases90: num(r.ga4_purchases_90),
+    searchVolumeCore: num(r.search_volume_core),
+    searchTermsCore: num(r.search_terms_core),
+    searchAsOf: isoDate(r.search_as_of as never),
+  }));
+  const cpm: CpmBenchmark[] = cpmRows
+    .map((r) => ({
+      iso: String(r.iso),
+      vertical: String(r.vertical),
+      value: num0(r.value),
+      currency: r.currency ? String(r.currency).toUpperCase() : null,
+      source: String(r.source ?? ""),
+      asOf: isoDate(r.as_of as never) ?? "",
+    }))
+    .filter((r) => r.value > 0);
+  const days = signalRows.map((r) => r.ga4Days90).filter((d): d is number => d !== null);
+  return {
+    rows: signalRows,
+    ga4Days90: days.length ? Math.max(...days) : null,
+    vertical: verticalRows[0]?.vertical ? String(verticalRows[0].vertical) : null,
+    cpm: num0(cpmLoaded[0]?.n) > 0 ? cpm : null,
+  };
+}
+
 interface MarketConfig {
   markets: string[];
   home: string | null;
@@ -401,7 +508,7 @@ export async function getMarkets(
 
   const clientId = client.clientId;
   return optional(async () => {
-    const [current, previous, life, cohortRows, forecastRows, config, gapCur, gapPrev, others] = await Promise.all([
+    const [current, previous, life, cohortRows, forecastRows, config, gapCur, gapPrev, others, scout] = await Promise.all([
       period(clientId, range),
       comparison ? period(clientId, comparison) : Promise.resolve(null),
       lifetimeAndSold(clientId, range.to),
@@ -411,6 +518,7 @@ export async function getMarkets(
       spendGapDays(clientId, range),
       comparison ? spendGapDays(clientId, comparison) : Promise.resolve(null),
       otherCountries(clientId, range),
+      scoutingSignals(clientId),
     ]);
     if (!life.lastDay) return null;
     return {
@@ -432,6 +540,7 @@ export async function getMarkets(
       otherCountries: others,
       cohorts: cohortRows,
       forecast: forecastRows,
+      scoutingSignals: scout,
     } satisfies MarketsRaw;
   }, null);
 }

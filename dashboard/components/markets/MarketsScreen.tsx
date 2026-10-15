@@ -23,8 +23,8 @@ import { MarketsSkeleton } from "@/components/markets/MarketsSkeleton";
 import { getMarkets } from "@/lib/queries/markets";
 import { buildModel } from "@/lib/markets/model";
 import { buildMapGeometry, hasOutline } from "@/lib/markets/geo";
-import { researchCandidates } from "@/lib/markets/scouting";
 import { parseMarketsState } from "@/lib/markets/state";
+import { researchCandidates } from "@/lib/markets/scouting";
 import { MARKET_OTHER } from "@/lib/markets/types";
 import { isDemo } from "@/lib/demo/client";
 import { DEMO_REGIONS, parseDemoRegion, type DemoRegion } from "@/lib/demo/markets";
@@ -50,12 +50,16 @@ async function MarketsSection({
   const model = buildModel(raw);
   const sold = model.markets.filter((m) => m.kind === "sold").map((m) => m.key);
   const otherMembers = model.markets.find((m) => m.key === MARKET_OTHER)?.members ?? [];
-  const candidates = [...new Set([...model.scouting.map((s) => s.iso), ...researchCandidates(sold)])].filter(
-    (iso) => !sold.includes(iso)
-  );
+  const candidates = model.candidates;
   const geometry = {
     sold: buildMapGeometry(sold, otherMembers.filter(hasOutline)),
-    scout: buildMapGeometry([...sold, ...candidates.filter(hasOutline)]),
+    // Framed on the sold set and the research candidates (the frame the page
+    // always had); the top indexed candidates are labelled where the frame or
+    // a pan reaches them, so one far-off country does not zoom out to the world.
+    scout: buildMapGeometry(
+      [...sold, ...researchCandidates(sold).filter((iso) => hasOutline(iso) && !sold.includes(iso))],
+      model.scoutMap.filter(hasOutline)
+    ),
   };
   const range = rangeLabel(params);
 

@@ -15,7 +15,9 @@
  *   - payback interpolates between cohort ages and says "not yet";
  *   - the nCAC map scale is inverted; LTGP:CAC is on a fixed 0..3 scale;
  *   - map outlines are framed and small, and an unknown country falls back;
- *   - the matrix renders with the forecast labelled and no em dash anywhere.
+ *   - the matrix renders with the forecast labelled and no em dash anywhere;
+ *   - the opportunity index: weights, re-weighting over the signals that
+ *     exist, the 2-signal minimum, log normalisation, CPM ratio, ties.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -38,6 +40,15 @@ import {
 import { buildMapGeometry } from "@/lib/markets/geo";
 import type { CohortRow, MarketPeriodRaw } from "@/lib/markets/types";
 import { PnlMatrix } from "@/components/markets/PnlMatrix";
+import { ScoutingView } from "@/components/markets/ScoutingView";
+import {
+  candidateSignals,
+  cpmRatio,
+  logScale,
+  opportunityIndex,
+  ratioScale,
+  type CandidateSignals,
+} from "@/lib/markets/opportunity";
 import { Leaderboard } from "@/components/markets/Leaderboard";
 import { pageAvailability } from "@/lib/capabilities";
 import { NAV } from "@/lib/nav";
@@ -209,6 +220,108 @@ check("unknown country falls back to tiles", buildMapGeometry(["XX"]) === null);
 check("nav lists Markets with an icon", NAV.flatMap((g) => g.items).some((i) => i.href === "/markets" && i.icon === "markets"));
 check("markets needs a shop", pageAvailability({ capabilities: { shopify: false, shoptet: false, woocommerce: false, klaviyo: false, ecomail: false, meta: true, googleAds: false, ga4: false, instagram: false } }, "/markets") === "not-connected");
 
+// ── Opportunity index ─────────────────────────────────────────────────────
+{
+  const v = (x: number) => ({ v: x });
+  const nv = (r: string) => ({ na: r });
+  const c = (iso: string, pull: CandidateSignals["pull"], unpaid: CandidateSignals["unpaid"], search: CandidateSignals["search"], cost: CandidateSignals["cost"]): CandidateSignals => ({ iso, pull, unpaid, search, cost });
+
+  // Log normalisation: log1p(x) / log1p(max).
+  check("log scale 0 is 0", logScale(0, 100) === 0);
+  check("log scale max is 1", logScale(100, 100) === 1);
+  check("log scale is log1p, not linear", close(logScale(9, 99), 0.5), String(logScale(9, 99)));
+  check("log scale with max 0 is 0, not NaN", logScale(0, 0) === 0);
+  check("ratio scale caps to 0..1", ratioScale(2, 4) === 0.5 && ratioScale(5, 4) === 1 && ratioScale(-1, 4) === 0);
+
+  // Weights: 0.35 / 0.25 / 0.25 / 0.15 over all four signals.
+  {
+    const r = opportunityIndex([c("AA", v(100), v(0), v(0), v(0.5)), c("BB", v(0), v(100), v(100), v(2))]);
+    const a = r.find((o) => o.iso === "AA")!, b = r.find((o) => o.iso === "BB")!;
+    // AA: pull 1, cost 0.5/2 = 0.25 -> 0.35 + 0.0375 = 0.3875 -> 39
+    check("weights: pull 0.35 + cost share", a.index === 39, String(a.index));
+    check("weights: unpaid + search + cost = 65", b.index === 65, String(b.index));
+    check("coverage 4 of 4", a.coverage === 4 && b.coverage === 4);
+    check("ranked by index", r[0].iso === "BB" && r[0].rank === 1 && r[1].rank === 2);
+    check("best on every signal is 100", opportunityIndex([c("AA", v(5), v(5), v(5), v(1.2)), c("BB", v(1), v(1), v(1), v(0.6))])[0].index === 100);
+  }
+
+  // Re-weighting: a missing signal leaves the denominator, it is not a zero.
+  {
+    const r = opportunityIndex([c("XX", v(10), v(10), nv("no terms"), nv("no CPM")), c("YY", v(10), v(0), nv("no terms"), nv("no CPM"))]);
+    const x = r.find((o) => o.iso === "XX")!, y = r.find((o) => o.iso === "YY")!;
+    check("re-weighted: full marks on the available signals is 100", x.index === 100, String(x.index));
+    check("re-weighted: pull only over 0.6 = 58", y.index === 58, String(y.index));
+    check("re-weighted coverage 2 of 4", y.coverage === 2);
+    check("n/a signal has no score", y.signals.search.score === null && "na" in y.signals.search.raw);
+    // A measured zero counts: same candidate with search 0 measured scores lower.
+    const z = opportunityIndex([c("XX", v(10), v(10), v(0), nv("x")), c("YY", v(10), v(0), v(100), nv("x"))]);
+    check("measured zero counts against the index", z.find((o) => o.iso === "XX")!.index === Math.round((100 * 0.6) / 0.85));
+  }
+
+  // The 2-signal minimum.
+  {
+    const r = opportunityIndex([c("ZZ", v(5), nv("GA4 is not connected"), nv("No terms"), nv("Benchmarks not loaded")), c("WW", v(1), v(3), nv("x"), nv("x"))]);
+    const z = r.find((o) => o.iso === "ZZ")!;
+    check("one signal: index n/a", z.index === null && z.rank === null && z.coverage === 1);
+    check("n/a names the missing signals", !!z.na && z.na.includes("unpaid interest (GA4 is not connected)") && z.na.includes("search demand") && z.na.includes("cost to reach (Benchmarks not loaded)"), z.na ?? "");
+    check("n/a sorts last", r[r.length - 1].iso === "ZZ");
+    check("two signals is enough", r.find((o) => o.iso === "WW")!.index !== null);
+  }
+
+  // Ties share a rank, order is by coverage then ISO, the next rank skips.
+  {
+    const r = opportunityIndex([c("CC", v(4), v(4), nv("x"), nv("x")), c("BB", v(4), v(4), nv("x"), nv("x")), c("DD", v(1), v(1), nv("x"), nv("x"))]);
+    check("tie: equal index", r[0].index === r[1].index);
+    check("tie: shared rank, ISO order", r[0].iso === "BB" && r[1].iso === "CC" && r[0].rank === 1 && r[1].rank === 1);
+    check("tie: next rank skips", r[2].rank === 3);
+    const t = opportunityIndex([c("AA", v(4), v(4), nv("x"), nv("x")), c("BB", v(4), v(4), v(0), nv("x"))]);
+    check("tie on index broken by coverage", t[0].index === t[1].index || t[0].iso === "AA");
+  }
+
+  // Cost to reach: home CPM / country CPM, same vertical and currency.
+  {
+    const row = (iso: string, value: number, vertical = "all_ecommerce", currency = "USD", source = "t") => ({ iso, vertical, value, currency, source, asOf: "2026-10-01" });
+    const cpm = [row("US", 12, "all_ecommerce"), row("GB", 6, "all_ecommerce"), row("IE", 8, "pet_supplements"), row("US", 10, "pet_supplements"), row("AU", 9, "all_ecommerce", "AUD")];
+    check("cpm ratio home / country", close((cpmRatio("GB", "US", cpm, "pet_supplements") as { v: number }).v, 2));
+    check("cpm ratio prefers the client vertical", close((cpmRatio("IE", "US", cpm, "pet_supplements") as { v: number }).v, 10 / 8));
+    check("cpm not loaded", "na" in cpmRatio("GB", "US", null, null) && (cpmRatio("GB", "US", null, null) as { na: string }).na === "Benchmarks not loaded");
+    check("cpm missing country", (cpmRatio("RS", "US", cpm, null) as { na: string }).na === "No Meta CPM benchmark for RS");
+    check("cpm currency mismatch is n/a", "na" in cpmRatio("AU", "US", cpm, null));
+    check("cpm missing home", (cpmRatio("GB", "CA", cpm, null) as { na: string }).na.includes("home market"));
+    // Two sources: the pair comes from one source, the one covering more countries.
+    const two = [row("US", 16, "all_ecommerce", "USD", "Wide"), row("GB", 8, "all_ecommerce", "USD", "Wide"), row("DE", 10, "all_ecommerce", "USD", "Wide"), row("CZ", 6, "all_ecommerce", "USD", "Wide"),
+      row("US", 23, "all_ecommerce", "USD", "Narrow"), row("GB", 10, "all_ecommerce", "USD", "Narrow"), row("IE", 11, "all_ecommerce", "USD", "Narrow")];
+    check("cpm pair from the widest source", close((cpmRatio("GB", "US", two, null) as { v: number }).v, 2));
+    check("cpm falls to a source that has both", close((cpmRatio("IE", "US", two, null) as { v: number }).v, 23 / 11));
+    check("cpm never mixes sources", "na" in cpmRatio("DE", "US", [row("US", 16, "all_ecommerce", "USD", "A"), row("DE", 10, "all_ecommerce", "USD", "B")], null));
+  }
+
+  // From the signals view: no row is a measured zero; no GA4 is n/a.
+  {
+    const base = { iso: "GB", orders365: 3, newCustomers365: 2, netRevenue365: 100, aovNew365: 50, ga4Days90: null, sessions90: null, engagedSessions90: null, unpaidEngagedSessions90: null, addToCartSessions90: null, ga4Purchases90: null, searchVolumeCore: null, searchTermsCore: null, searchAsOf: null };
+    const noGa4 = candidateSignals({ candidates: ["GB", "IE"], home: "US", signals: { rows: [base], ga4Days90: null, vertical: null, cpm: null } });
+    check("no GA4: unpaid n/a", "na" in noGa4[0].unpaid && (noGa4[0].unpaid as { na: string }).na.includes("GA4"));
+    check("no row: pull is a measured 0", "v" in noGa4[1].pull && noGa4[1].pull.v === 0);
+    const ga4 = candidateSignals({ candidates: ["IE"], home: "US", signals: { rows: [{ ...base, ga4Days90: 60 }], ga4Days90: 60, vertical: null, cpm: [] } });
+    check("GA4 on, no row: unpaid is 0", "v" in ga4[0].unpaid && ga4[0].unpaid.v === 0);
+    check("no signals view: every signal n/a", candidateSignals({ candidates: ["GB"], home: "US", signals: null }).every((x) => "na" in x.pull && "na" in x.cost));
+  }
+
+  // The demo renders every state.
+  const naGb = na.opportunity.find((o) => o.iso === "GB");
+  check("demo na: GB indexed on 3 of 4", naGb?.index !== null && naGb?.coverage === 3, JSON.stringify(naGb?.coverage));
+  check("demo na: RS indexed on 2 of 4 (no CPM)", na.opportunity.find((o) => o.iso === "RS")?.coverage === 2);
+  check("demo na: AU listed from GA4 alone", na.candidates.includes("AU"));
+  check("demo na: no search signal", na.opportunity.every((o) => o.signals.search.score === null));
+  check("demo eu: SI n/a below 2 signals", eu.opportunity.find((o) => o.iso === "SI")?.index === null);
+  check("demo eu: DE on search", eu.opportunity.find((o) => o.iso === "DE")?.signals.search.score !== null);
+  check("demo eu: HU on search and CPM", eu.opportunity.find((o) => o.iso === "HU")?.coverage === 3);
+  check("demo na: AU has no CPM benchmark", na.opportunity.find((o) => o.iso === "AU")?.signals.cost.score === null);
+  check("demo eu: sold PL is no candidate", !eu.candidates.includes("PL"));
+  check("demo eu: unpaid n/a, GA4 off", eu.opportunity.every((o) => o.signals.unpaid.score === null));
+  check("demo: index in 0..100", [...na.opportunity, ...eu.opportunity].every((o) => o.index === null || (o.index >= 0 && o.index <= 100)));
+}
+
 // ── Render ────────────────────────────────────────────────────────────────
 {
   // InfoTip measures in a layout effect; React warns about that on a server
@@ -228,6 +341,13 @@ check("markets needs a shop", pageAvailability({ capabilities: { shopify: false,
   const lb = renderToStaticMarkup(createElement(Leaderboard, { model: eu, mode: "base", onOpen: () => {} }));
   check("leaderboard ranks", lb.includes("Ranked by GP after ads") && lb.includes("Czechia"));
   check("leaderboard shows Young", lb.includes("Young"));
+  const scoutNa = renderToStaticMarkup(createElement(ScoutingView, { model: na, geometry: null, candidates: na.candidates, ga4Connected: true, rangeText: "x" }));
+  check("scouting lists the index", scoutNa.includes("Opportunity index") && scoutNa.includes("3 of 4") && scoutNa.includes("not a verdict"));
+  check("scouting says GA4 day coverage", scoutNa.includes("GA4 covers 74 of 90 days"));
+  check("scouting drops the old GA4 text", !scoutNa.includes("F10") && !scoutNa.includes("Not computable"));
+  const scoutEu = renderToStaticMarkup(createElement(ScoutingView, { model: eu, geometry: null, candidates: eu.candidates, ga4Connected: false, rangeText: "x" }));
+  check("scouting eu: GA4 not connected", scoutEu.includes("GA4 is not connected"));
+  check("scouting eu: search demand shown", scoutEu.includes("18,400"));
 }
 
 // ── No em dash in any Markets source ──────────────────────────────────────

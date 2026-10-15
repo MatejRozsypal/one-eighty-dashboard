@@ -37,7 +37,10 @@ import {
   type MarketsRaw,
   type OrderExtras,
   type PaymentShare,
+  type ScoutingSignalsRaw,
 } from "@/lib/markets/types";
+import { candidateSignals, opportunityIndex, scoutCandidates, type Opportunity } from "@/lib/markets/opportunity";
+import { researchCandidates } from "@/lib/markets/scouting";
 
 // ---------------------------------------------------------------------------
 // Values
@@ -735,7 +738,18 @@ export interface MarketsModel {
   ranking: { key: RankKey; why: string };
   /** Countries pooled into Other, with their own period figures, for Scouting. */
   scouting: Array<{ iso: string; orders: number; netRevenue: number; newCustomers: number; aovNew: Val }>;
+  /** Scouting candidates: signals view + research + countries with orders, minus the sold set. */
+  candidates: string[];
+  /** Opportunity index per candidate, ranked (lib/markets/opportunity). */
+  opportunity: Opportunity[];
+  /** The raw signals behind the index; null when the view cannot be read. */
+  signals: ScoutingSignalsRaw | null;
+  /** Candidates drawn and labelled on the Scouting map: research plus the top indexed. */
+  scoutMap: string[];
 }
+
+/** How many indexed candidates the Scouting map labels next to the research ones. */
+export const SCOUT_MAP_TOP = 8;
 
 export type RankKey = "gpAfterAds" | "grossProfit" | "netRevenue";
 
@@ -956,6 +970,13 @@ export function buildModel(raw: MarketsRaw): MarketsModel {
     }));
   const scouting = [...fromRows, ...fromCountries].sort((a, b) => b.orders - a.orders);
 
+  const research = researchCandidates(sold).filter((iso) => !isSold(iso));
+  const candidates = scoutCandidates({ sold, withOrders: scouting.map((s) => s.iso), research, signals: raw.scoutingSignals });
+  const opportunity = opportunityIndex(candidateSignals({ candidates, home: raw.homeMarket, signals: raw.scoutingSignals }));
+  const indexed = opportunity.filter((o) => o.index !== null).map((o) => o.iso);
+  const byOrders = scouting.map((s) => s.iso).filter((iso) => candidates.includes(iso));
+  const scoutMap = [...new Set([...research, ...(indexed.length ? indexed : byOrders).slice(0, SCOUT_MAP_TOP)])];
+
   return {
     baseCurrency: raw.baseCurrency,
     platform: raw.platform,
@@ -968,6 +989,10 @@ export function buildModel(raw: MarketsRaw): MarketsModel {
     total,
     ranking: { key: rankKey, why },
     scouting,
+    candidates,
+    opportunity,
+    signals: raw.scoutingSignals,
+    scoutMap,
   };
 }
 

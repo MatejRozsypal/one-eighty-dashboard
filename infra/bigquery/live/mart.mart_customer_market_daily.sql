@@ -14,6 +14,6 @@ SELECT
   SAFE_DIVIDE(COUNTIF(is_returning_customer IS FALSE),
               COUNT(DISTINCT order_id)) * 100                       AS new_customer_pct
 FROM `oneeighty-warehouse.stg.stg_customer_orders`
-WHERE platform IN ('shopify', 'woocommerce')
+WHERE platform IN ('shopify', 'woocommerce', 'shoptet')
   AND order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 MONTH)
 GROUP BY client_id, order_date, shipping_country;

@@ -22,7 +22,9 @@ SELECT
   c.order_cogs                                      AS cogs,
   CASE WHEN c.order_cogs IS NULL THEN NULL
        ELSE o.subtotal_price - c.order_cogs END     AS gross_profit,
-  o.shipping_country
+  o.shipping_country,
+  'platform'                                        AS country_source,
+  CAST(NULL AS STRING)                              AS storefront_domain
 FROM `oneeighty-warehouse.stg.stg_shopify_orders` o
 LEFT JOIN order_costs c
   ON c.platform = 'shopify' AND c.client_id = o.client_id AND c.order_id = o.order_id
@@ -31,6 +33,7 @@ UNION ALL
 
 -- Shoptet: revenue is VAT inclusive in the customer marts (as live); margin
 -- comes from the order, cost is what mart_daily_kpis derives from it.
+-- shipping_country follows the 284 market rule (see stg_shoptet_orders).
 SELECT
   'shoptet'                                         AS platform,
   client_id,
@@ -47,7 +50,9 @@ SELECT
   CAST(NULL AS NUMERIC)                             AS shipping,
   product_revenue_czk - margin_czk                  AS cogs,
   margin_czk                                        AS gross_profit,
-  CAST(NULL AS STRING)                              AS shipping_country
+  shipping_country,
+  country_source,
+  storefront_domain
 FROM `oneeighty-warehouse.stg.stg_shoptet_orders`
 
 UNION ALL
@@ -73,7 +78,9 @@ SELECT
   -- NULL, never 0, when no line carries a cost: a 0 would read as 100% margin.
   CASE WHEN c.order_cogs IS NULL THEN NULL
        ELSE o.subtotal_price - c.order_cogs END     AS gross_profit,
-  o.shipping_country
+  o.shipping_country,
+  'platform'                                        AS country_source,
+  CAST(NULL AS STRING)                              AS storefront_domain
 FROM `oneeighty-warehouse.stg.stg_woo_orders` o
 LEFT JOIN order_costs c
   ON c.platform = 'woocommerce' AND c.client_id = o.client_id AND c.order_id = o.order_id;

@@ -1,6 +1,6 @@
 # Markets: prod rollout checklist
 
-Progress 2026-10-15: steps 0 to 5 done on prod and verified per step against the audit and QA (284 regression all zero; 290 to 294 per-step numbers in the session log). `MARKETS_SOURCE=mart` set on Vercel Production. Note for step 0: `sa-n8n-writer` has dataEditor on mart, stg, ref and raw, but no dataset grant on `raw_google_ads` (291 reads GeoStats there): grant dataViewer before step 7 or the daily run fails.
+Progress 2026-10-15: steps 0 to 5 done on prod and verified per step against the audit and QA (284 regression all zero; 290 to 294 per-step numbers in the session log). `MARKETS_SOURCE=mart` set on Vercel Production. Step 6 done: pushed 40c6691 to main, deploy dpl_F9qvPN3h2e7t671kFGEHZs9muUPx READY on dashboard.oneeighty.cz, /markets checked on prod for Dobias and RawBark (numbers match the warehouse, no console errors). live/ updated for the three views 284 changed; the new mart tables and procedures are documented by migrations 290 to 294. Note for step 0: `sa-n8n-writer` has dataEditor on mart, stg, ref and raw, but no dataset grant on `raw_google_ads` (291 reads GeoStats there): grant dataViewer before step 7 or the daily run fails.
 
 Branch `mk0-markets-spec` (page + migrations 290 to 294) and branch `mm1-shoptet-market` (migration 284). Every step runs only after the owner's OK. BigQuery steps run in the console, location EU, project `oneeighty-warehouse`.
 
@@ -33,12 +33,12 @@ Owner decisions applied (2026-10-15): Dobias home market = US; refresh daily, no
 
 ## 5. Regression
 - [x] Run `infra/bigquery/qa/290_294_regression.sql` pointed at `mart`. Expected: Ethia, Manami, Venev exact vs the audit; RawBark exact at L90; Dobias differs only by the 59 non-shippable orders and the US & CA split (DATA-BUILD.md section 4).
-- [ ] Update `infra/bigquery/live/` with the two ref tables, five mart tables and six procedures.
+- [x] Update `infra/bigquery/live/` with the two ref tables, five mart tables and six procedures.
 
 ## 6. App
 - [x] Vercel env `MARKETS_SOURCE=mart` (Production) BEFORE the push. The code default is `mart_qa`, so without it prod would read the QA tables.
-- [ ] Push `mk0-markets-spec` to `main` (auto-deploys dashboard.oneeighty.cz).
-- [ ] On prod check `/markets` for Dobias, RawBark, Manami, Venev, Ethia: map frame, leaderboard, matrix n/a reasons, drawer, Scouting, phone width. UI-BUILD.md section 6 lists what only real data can prove.
+- [x] Push `mk0-markets-spec` to `main` (auto-deploys dashboard.oneeighty.cz).
+- [x] On prod check `/markets` for Dobias, RawBark, Manami, Venev, Ethia: map frame, leaderboard, matrix n/a reasons, drawer, Scouting, phone width. UI-BUILD.md section 6 lists what only real data can prove.
 
 ## 7. Daily refresh
 - [ ] BigQuery > Scheduled queries > Create. Name `markets_refresh_daily`. Query: ``CALL `oneeighty-warehouse.mart.sp_refresh_markets`();``. Daily 05:30 UTC, no destination table, location EU, the service account from step 0, email on failure. Then "Run one time transfer - now" and check it succeeds.

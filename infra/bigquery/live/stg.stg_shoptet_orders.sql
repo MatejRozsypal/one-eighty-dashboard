@@ -20,6 +20,52 @@ cost_adj AS (
   FROM `oneeighty-warehouse.stg.stg_shoptet_order_items`
   WHERE cost_is_imputed
   GROUP BY client_id, order_code
+),
+-- One row per Shoptet client: the storefront the export is pulled from and the
+-- country that storefront sells to by default. Move to ref.clients when a
+-- second Shoptet client arrives.
+storefronts AS (
+  SELECT 'manami' AS client_id, 'eshop.manami.cz' AS storefront_domain, 'CZ' AS domain_country
+),
+-- Transacting currency -> market country, per client (EUR is not SK for
+-- every shop, so this is never a global map).
+currency_markets AS (
+  SELECT * FROM UNNEST([
+    STRUCT('manami' AS client_id, 'CZK' AS currency, 'CZ' AS currency_country),
+    STRUCT('manami', 'EUR', 'SK')
+  ])
+),
+market AS (
+  SELECT
+    d.*,
+    NULLIF(TRIM(JSON_VALUE(d.payload_json, '$.deliveryCountryName')), '') AS delivery_country_name,
+    -- Pickup point postcode at the end of the shipping item name
+    -- ("<carrier> - <id> | <point>, <street>, <city>, 680 01").
+    REPLACE(REGEXP_EXTRACT(d.shippingMethod, r'\|.*,\s*(\d{3} ?\d{2})\s*$'), ' ', '') AS pickup_postcode
+  FROM deduped d
+),
+market_country AS (
+  SELECT
+    m.*,
+    -- Shoptet exports the country by its name in the shop admin language.
+    -- Unmapped names fall through to the next rule and show up in the
+    -- 284 regression (check 4), so a new name is never silently wrong.
+    CASE LOWER(m.delivery_country_name)
+      WHEN 'česká republika'     THEN 'CZ'
+      WHEN 'česko'               THEN 'CZ'
+      WHEN 'czech republic'      THEN 'CZ'
+      WHEN 'czechia'             THEN 'CZ'
+      WHEN 'slovensko'           THEN 'SK'
+      WHEN 'slovenská republika' THEN 'SK'
+      WHEN 'slovakia'            THEN 'SK'
+    END AS delivery_country,
+    -- CZ postcodes run 100 00 to 799 99, SK postcodes start with 0, 8 or 9.
+    CASE
+      WHEN m.pickup_postcode IS NULL THEN NULL
+      WHEN SUBSTR(m.pickup_postcode, 1, 1) IN ('0', '8', '9') THEN 'SK'
+      ELSE 'CZ'
+    END AS postcode_country
+  FROM market m
 )
 SELECT
   d.client_id,
@@ -51,7 +97,22 @@ SELECT
   END AS is_returning_customer,
   d.customerOrderCount  AS customer_order_count,
   d.isReturningCustomer AS is_returning_customer_raw,
-  d.ingested_at
-FROM deduped d
+  d.ingested_at,
+  -- Market (284): shipping country first, currency second, storefront last.
+  d.delivery_country_name,
+  d.pickup_postcode,
+  COALESCE(d.delivery_country, d.postcode_country, cm.currency_country, sf.domain_country) AS shipping_country,
+  CASE
+    WHEN d.delivery_country  IS NOT NULL THEN 'delivery_country'
+    WHEN d.postcode_country  IS NOT NULL THEN 'pickup_postcode'
+    WHEN cm.currency_country IS NOT NULL THEN 'currency'
+    WHEN sf.domain_country   IS NOT NULL THEN 'storefront_domain'
+  END AS country_source,
+  sf.storefront_domain
+FROM market_country d
 LEFT JOIN cost_adj a
-  ON a.client_id = d.client_id AND a.order_code = d.code;
+  ON a.client_id = d.client_id AND a.order_code = d.code
+LEFT JOIN currency_markets cm
+  ON cm.client_id = d.client_id AND cm.currency = d.currency
+LEFT JOIN storefronts sf
+  ON sf.client_id = d.client_id;

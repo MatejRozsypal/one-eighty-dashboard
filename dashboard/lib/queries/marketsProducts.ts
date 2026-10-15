@@ -65,37 +65,47 @@ function unitsSql(platform: string | null): string {
 }
 
 async function period(clientId: string, platform: string | null, range: DateRange): Promise<ProductSalesRow[]> {
+  // In prod the lines come pre-allocated from mart.market_order_lines (299):
+  // the dashboard's reader has no access to stg, which holds customer data.
+  // QA keeps the original stg join (mart_qa has no lines table).
+  const lines =
+    MARKETS_SOURCE === "mart"
+      ? `SELECT market, product, net_sales AS net, units AS qty, currency_local, fx_local_to_base
+         FROM \`${PROJECT_ID}.mart.market_order_lines\`
+         WHERE client_id = @clientId AND order_date BETWEEN @from AND @to`
+      : `WITH o AS (
+           SELECT order_id, market, net_sales, currency_local, fx_local_to_base
+           FROM ${marketsTable("market_orders")}
+           WHERE client_id = @clientId AND order_date BETWEEN @from AND @to
+         ),
+         li AS (
+           SELECT order_id, product_key,
+                  ANY_VALUE(COALESCE(NULLIF(TRIM(product_name), ''), NULLIF(TRIM(item_name), ''), 'Unnamed')) AS product,
+                  SUM(revenue) AS rev
+           FROM \`${PROJECT_ID}.stg.stg_customer_order_items\`
+           WHERE client_id = @clientId
+             AND order_date BETWEEN DATE_SUB(DATE(@from), INTERVAL ${LINE_PAD_DAYS} DAY) AND DATE_ADD(DATE(@to), INTERVAL ${LINE_PAD_DAYS} DAY)
+           GROUP BY order_id, product_key
+         ),
+         u AS (${unitsSql(platform)}),
+         ot AS (SELECT order_id, SUM(rev) AS order_rev FROM li GROUP BY order_id)
+         SELECT o.market, li.product, o.net_sales * SAFE_DIVIDE(li.rev, ot.order_rev) AS net, u.qty,
+                o.currency_local, o.fx_local_to_base
+         FROM o
+         JOIN li USING (order_id)
+         JOIN ot USING (order_id)
+         LEFT JOIN u USING (order_id, product_key)`;
   const rows = await query<Row>(
-    `WITH o AS (
-       SELECT order_id, market, net_sales, currency_local, fx_local_to_base
-       FROM ${marketsTable("market_orders")}
-       WHERE client_id = @clientId AND order_date BETWEEN @from AND @to
-     ),
+    `WITH l AS (${lines}),
      cfg AS (
        SELECT market, local_currency FROM ${marketsTable("client_markets")} WHERE client_id = @clientId
      ),
-     li AS (
-       SELECT order_id, product_key,
-              ANY_VALUE(COALESCE(NULLIF(TRIM(product_name), ''), NULLIF(TRIM(item_name), ''), 'Unnamed')) AS product,
-              SUM(revenue) AS rev
-       FROM \`${PROJECT_ID}.stg.stg_customer_order_items\`
-       WHERE client_id = @clientId
-         AND order_date BETWEEN DATE_SUB(DATE(@from), INTERVAL ${LINE_PAD_DAYS} DAY) AND DATE_ADD(DATE(@to), INTERVAL ${LINE_PAD_DAYS} DAY)
-       GROUP BY order_id, product_key
-     ),
-     u AS (${unitsSql(platform)}),
-     ot AS (SELECT order_id, SUM(rev) AS order_rev FROM li GROUP BY order_id),
      x AS (
-       SELECT o.market, li.product,
-              o.net_sales * SAFE_DIVIDE(li.rev, ot.order_rev) AS net,
-              u.qty,
-              (o.currency_local = cfg.local_currency AND o.fx_local_to_base IS NOT NULL AND o.fx_local_to_base > 0) AS in_local,
-              o.fx_local_to_base AS fx
-       FROM o
-       JOIN li USING (order_id)
-       JOIN ot USING (order_id)
-       LEFT JOIN u USING (order_id, product_key)
-       LEFT JOIN cfg ON cfg.market = o.market
+       SELECT l.market, l.product, l.net, l.qty,
+              (l.currency_local = cfg.local_currency AND l.fx_local_to_base IS NOT NULL AND l.fx_local_to_base > 0) AS in_local,
+              l.fx_local_to_base AS fx
+       FROM l
+       LEFT JOIN cfg ON cfg.market = l.market
      )
      SELECT market, product,
             IFNULL(SUM(net), 0) AS net_sales,

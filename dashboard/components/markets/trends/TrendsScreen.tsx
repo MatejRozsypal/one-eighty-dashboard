@@ -53,6 +53,7 @@ import { TrendCharts } from "@/components/markets/trends/TrendCharts";
 import { BridgeView } from "@/components/markets/trends/BridgeView";
 import { ResponseView, type ResponseMarket } from "@/components/markets/trends/ResponseView";
 import { FunnelTable } from "@/components/markets/trends/FunnelTable";
+import { FunnelChart } from "@/components/markets/trends/FunnelChart";
 import { AovView } from "@/components/markets/trends/AovView";
 
 /** Same default as the Overview: a quarter. */
@@ -263,6 +264,7 @@ async function FunnelSection({
     body = (
       <div className="flex flex-col gap-3">
         <p className="m-0 text-[12px] text-content-muted">{coverage}</p>
+        <FunnelChart rows={rows} home={base.model.homeMarket} />
         <FunnelTable rows={rows} home={base.model.homeMarket} comparing={!!ga4.previous && (ga4.daysPrevious ?? 0) > 0} />
       </div>
     );

@@ -228,6 +228,10 @@ export const TREND_METRICS: Array<{ key: TrendMetric; label: string; kind: Trend
   { key: "cm3", label: "CM3", kind: "money", goodWhen: "up" },
 ];
 
+/** nCAC and MER are hidden in a week whose spend is under this share of the market's median week. */
+export const LOW_SPEND_SHARE = 0.15;
+const LOW_SPEND_REASON = "Spend this week was under 15 % of this market's usual week, so the ratio would mislead";
+
 /** A metric of a week, read from `periodMetrics`; undefined when the model has no such field. */
 function pick(m: PeriodMetrics, key: TrendMetric): Val | undefined {
   return (m as unknown as Record<string, Val | undefined>)[key];
@@ -309,6 +313,24 @@ export function weeklyTrends(input: {
   const sample = cur[0] ? Object.values(cur[0])[0] : undefined;
   const hasCm3 = cards.length > 0 && sample !== undefined && pick(sample, "cm3") !== undefined;
 
+  // A week whose spend is a sliver of the market's usual week (a campaign
+  // starting or stopping mid-week) gives a meaningless nCAC or MER (CA had a
+  // 450x MER week before its campaigns started) and flattens the rest of the
+  // chart. Those ratios are hidden with a reason; the spend itself stays.
+  const spendOf = (rows: WeekRow[] | null) => new Map((rows ?? []).map((r) => [`${r.market}|${r.week}`, r.sums.spend]));
+  const curSpend = spendOf(input.weeks);
+  const cmpSpend = spendOf(input.compareWeeks);
+  const typical: Record<string, number> = {};
+  for (const m of input.markets) {
+    const xs = [...input.weeks, ...(input.compareWeeks ?? [])]
+      .filter((r) => r.market === m && r.sums.spend > 0)
+      .map((r) => r.sums.spend)
+      .sort((a, b) => a - b);
+    typical[m] = xs.length ? xs[Math.floor(xs.length / 2)] : 0;
+  }
+  const tinySpend = (m: string, spend: number | undefined) => typical[m] > 0 && (spend ?? 0) < LOW_SPEND_SHARE * typical[m];
+  const spendRatio = (k: TrendMetric) => k === "nCac" || k === "mer";
+
   return TREND_METRICS.filter((t) => t.key !== "cm3" || hasCm3).map((t) => ({
     metric: t.key,
     label: t.label,
@@ -322,8 +344,15 @@ export function weeklyTrends(input: {
         const v = pick(cur[i][m], t.key);
         values[m] = v && !isNa(v) ? v.v : null;
         if (v && isNa(v)) reasons[m] = v.na;
+        if (spendRatio(t.key) && values[m] !== null && tinySpend(m, curSpend.get(`${m}|${s.start}`))) {
+          values[m] = null;
+          reasons[m] = LOW_SPEND_REASON;
+        }
         const c = prev[i] ? pick(prev[i][m], t.key) : undefined;
         compare[m] = c && !isNa(c) ? c.v : null;
+        if (spendRatio(t.key) && compare[m] !== null && cmpSlots[i] && tinySpend(m, cmpSpend.get(`${m}|${cmpSlots[i].start}`))) {
+          compare[m] = null;
+        }
       }
       return { week: s.start, label: dayLabel(s.start), partial: s.partial, values, compare, reasons };
     }),

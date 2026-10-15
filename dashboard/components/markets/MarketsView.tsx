@@ -131,15 +131,18 @@ export function MarketsView({
 
   // Map metric, with the fallback when no market has the chosen figure.
   const sold = model.markets.filter((m) => m.kind === "sold");
+  // The profit metric follows the ranking: CM3 once every sold market has it.
+  const rank = model.ranking.key;
+  const metrics = MAP_METRICS.map((m) => (m.key === "gpa" && rank === "cm3" ? { ...m, label: "CM3" } : m));
   let metric = state.map;
   let metricNote = "";
-  if (metric !== "status" && sold.length > 0 && sold.every((m) => isNa(mapValue(m, metric)))) {
-    const first = mapValue(sold[0], metric);
-    metricNote = `${MAP_METRICS.find((x) => x.key === metric)!.label} is n/a for every market: ${isNa(first) ? first.na : ""}. Showing net revenue.`;
+  if (metric !== "status" && sold.length > 0 && sold.every((m) => isNa(mapValue(m, metric, rank)))) {
+    const first = mapValue(sold[0], metric, rank);
+    metricNote = `${metrics.find((x) => x.key === metric)!.label} is n/a for every market: ${isNa(first) ? first.na : ""}. Showing net revenue.`;
     metric = "net";
   }
-  const metricLabel = MAP_METRICS.find((x) => x.key === metric)!.label;
-  const numericVals = sold.map((m) => mapValue(m, metric)).filter((x) => !isNa(x)).map((x) => (x as { v: number }).v);
+  const metricLabel = metrics.find((x) => x.key === metric)!.label;
+  const numericVals = sold.map((m) => mapValue(m, metric, rank)).filter((x) => !isNa(x)).map((x) => (x as { v: number }).v);
 
   const items: Record<string, MapItem> = {};
   for (const c of sold) {
@@ -155,7 +158,7 @@ export function MarketsView({
       };
       continue;
     }
-    const x = mapValue(c, metric);
+    const x = mapValue(c, metric, rank);
     if (isNa(x)) {
       items[c.key] = { market: c.key, label: c.key, value: "n/a", hatch: true, aria: `${longName(c)}: n/a, ${x.na}` };
       continue;
@@ -182,7 +185,7 @@ export function MarketsView({
         categories
         labels={sold.map((m) => longName(m))}
         series={[{ name: metricLabel, values: sold.map((m) => {
-          const x = mapValue(m, metric);
+          const x = mapValue(m, metric, rank);
           return isNa(x) ? null : x.v;
         }) }]}
         format={(v) => (metric === "ltgp" ? formatFigure(v, "ratio", base) : formatFigure(v, metric === "ncac" ? "unit" : "money", base))}
@@ -211,7 +214,7 @@ export function MarketsView({
                 </h2>
                 <div className="relative max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <SegmentPills
-                    segments={MAP_METRICS.map((m) => ({ value: m.key, label: m.label }))}
+                    segments={metrics.map((m) => ({ value: m.key, label: m.label }))}
                     shown={state.map}
                     onSelect={(v) => update({ map: v as MapMetric })}
                     ariaLabel="Map metric"

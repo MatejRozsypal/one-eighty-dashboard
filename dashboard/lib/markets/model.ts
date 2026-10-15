@@ -30,6 +30,8 @@ import {
   type Allocation,
   type CohortAge,
   type CohortRow,
+  type CostCard,
+  type CostDay,
   type DailySums,
   type ForecastRow,
   type MarketLifetimeRaw,
@@ -67,10 +69,6 @@ function ratio(a: number | null, b: number | null, naA: string, naB: string): Va
 /** A metric the warehouse cannot produce for anyone yet. */
 export const NOT_YET = {
   markdown: "No list-price history yet; the daily snapshot starts with F9",
-  shipCost: "No carrier cost data for any client; needs market rate cards (F6)",
-  payFees: "No payment fee data for any client; needs market rate cards (F6)",
-  cm2: "Needs shipping and fee rate cards (F6)",
-  cm3: "Needs CM2 (F6)",
   codeVsAuto: "Discount type split is not in the mart yet",
   delivery: "Delivery mix is not ingested",
   codRefusal: "COD refusal is not recorded by any platform",
@@ -179,7 +177,155 @@ function pool(rows: MarketPeriodRaw[], market: string): MarketPeriodRaw | null {
   if (!sums) return null;
   // A row with no orders (the unallocated spend) has no order-grain figures to add.
   const withOrders = rows.filter((r) => r.extras !== null || r.sums.orders > 0);
-  return { market, sums, extras: sumExtras(withOrders.map((r) => r.extras)) };
+  return { market, sums, extras: sumExtras(withOrders.map((r) => r.extras)), costDays: poolCostDays(withOrders) };
+}
+
+/** Day counts of several markets, summed by date; null when any part has none. */
+function poolCostDays(rows: MarketPeriodRaw[]): CostDay[] | null {
+  if (rows.length === 0 || rows.some((r) => !r.costDays)) return null;
+  const by = new Map<string, CostDay>();
+  for (const r of rows) {
+    for (const d of r.costDays as CostDay[]) {
+      const t = by.get(d.date);
+      if (!t) by.set(d.date, { ...d });
+      else {
+        t.orders += d.orders;
+        t.codOrders = addN(t.codOrders, d.codOrders);
+        t.refundedOrders = addN(t.refundedOrders, d.refundedOrders);
+        t.netRevenue += d.netRevenue;
+      }
+    }
+  }
+  return [...by.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ---------------------------------------------------------------------------
+// Market cost cards: CM2 and CM3 (SPEC 3.4, fix F6)
+// ---------------------------------------------------------------------------
+
+/** The n/a reason of every CM2 / CM3 line of a market without a card. */
+export const NO_CARD = "No cost card for this market (Settings > Market costs)";
+
+/**
+ * A market's costs beyond COGS over one range, from its cost card(s). Money in
+ * base currency. `notes` say what a card states but the data cannot apply
+ * (COD orders or refunds not ingested); the line is then subtracted without it.
+ */
+export interface MarketCosts {
+  /** Shipping and fulfilment cost: card cost per order x orders. */
+  shipCost: number;
+  /** Return handling: card cost per refunded order x refunded orders. */
+  returnCost: number;
+  /** Shipping charged to customers (already in net revenue, not in gross profit). */
+  shipCharged: number;
+  /** Payment fee % x net revenue. */
+  pctFees: number;
+  /** COD fee x COD orders. */
+  codFees: number;
+  /** Fixed monthly market cost, pro rata over the days of the range. */
+  fixed: number;
+  shipNotes: string[];
+  feeNotes: string[];
+}
+export type CostResult = MarketCosts | { na: string };
+
+export function isCostNa(c: CostResult): c is { na: string } {
+  return "na" in c;
+}
+
+/**
+ * The card in effect on a day: the latest one that started on or before it.
+ * Before the first card, the first card applies: the owner types today's rates
+ * and expects last quarter to be costed with them until history says otherwise.
+ */
+export function cardOn(cards: CostCard[], date: string): CostCard | null {
+  if (cards.length === 0) return null;
+  const sorted = [...cards].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  let hit = sorted[0];
+  for (const c of sorted) if (c.effectiveFrom <= date) hit = c;
+  return hit;
+}
+
+function addDaysIso(date: string, n: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Fixed monthly cost is spread evenly: 12 months over 365 days. */
+const FIXED_PER_DAY = 12 / 365;
+
+/**
+ * Applies a market's cost cards to one period. A required field left empty is
+ * n/a with the field named: shipping cost and the payment fee always, the COD
+ * fee once the market has COD orders, return cost once it has refunded orders.
+ * The fixed monthly cost is optional (empty = none).
+ */
+export function marketCosts(
+  cards: CostCard[],
+  p: MarketPeriodRaw,
+  range: { from: string; to: string },
+  platform: string | null
+): CostResult {
+  if (cards.length === 0) return { na: NO_CARD };
+  const s = p.sums;
+  const days: CostDay[] =
+    p.costDays ??
+    (s.orders > 0 || s.netRevenue !== 0
+      ? [{ date: range.to, orders: s.orders, codOrders: s.codOrders, refundedOrders: p.extras?.refundedOrders ?? null, netRevenue: s.netRevenue }]
+      : []);
+  const name = (c: CostCard) => `the ${c.market === "OTHER" ? "Other" : c.market} cost card from ${c.effectiveFrom}`;
+  const out: MarketCosts = { shipCost: 0, returnCost: 0, shipCharged: s.shippingCharged ?? 0, pctFees: 0, codFees: 0, fixed: 0, shipNotes: [], feeNotes: [] };
+  let codUnknown = false;
+  let refundsUnknown = false;
+  for (const d of days) {
+    const c = cardOn(cards, d.date)!;
+    if (d.orders > 0 && c.shipCostPerOrder === null) return { na: `Shipping cost per order is empty on ${name(c)}` };
+    if (d.netRevenue !== 0 && c.payFeePct === null) return { na: `Payment fee % is empty on ${name(c)}` };
+    out.shipCost += (c.shipCostPerOrder ?? 0) * d.orders;
+    out.pctFees += (c.payFeePct ?? 0) * d.netRevenue;
+    if (d.codOrders === null) {
+      if ((c.codFee ?? 0) > 0) codUnknown = true;
+    } else if (d.codOrders > 0) {
+      if (c.codFee === null) return { na: `COD fee is empty on ${name(c)}, and the market has COD orders` };
+      out.codFees += c.codFee * d.codOrders;
+    }
+    if (d.refundedOrders === null) {
+      if ((c.returnCost ?? 0) > 0) refundsUnknown = true;
+    } else if (d.refundedOrders > 0) {
+      if (c.returnCost === null) return { na: `Return cost is empty on ${name(c)}, and the market has refunded orders` };
+      out.returnCost += c.returnCost * d.refundedOrders;
+    }
+  }
+  for (let d = range.from; d <= range.to; d = addDaysIso(d, 1)) {
+    out.fixed += (cardOn(cards, d)!.fixedMonthly ?? 0) * FIXED_PER_DAY;
+  }
+  if (s.shippingCharged === null && (platform ?? "").toLowerCase() !== "shoptet") {
+    out.shipNotes.push("Shipping charged is not in the mart, so the cost is not offset by it");
+  }
+  if (refundsUnknown) out.shipNotes.push("Refunded orders are not ingested, so return handling is not subtracted");
+  if (codUnknown) out.feeNotes.push("COD orders are not ingested, so the COD fee is not subtracted");
+  return out;
+}
+
+/** Costs of several columns added up (the Total); n/a when any column has none. */
+export function sumCosts(list: Array<{ key: string; costs: CostResult }>): CostResult {
+  const missing = list.filter((x) => isCostNa(x.costs));
+  if (list.length === 0) return { na: NO_CARD };
+  if (missing.length > 0) {
+    const names = missing.map((x) => (x.key === "OTHER" ? "Other" : x.key)).join(", ");
+    return { na: `Not every market has a cost card (missing: ${names}; Settings > Market costs)` };
+  }
+  const xs = list.map((x) => x.costs as MarketCosts);
+  const uniq = (a: string[]) => [...new Set(a)];
+  return {
+    shipCost: xs.reduce((t, x) => t + x.shipCost, 0),
+    returnCost: xs.reduce((t, x) => t + x.returnCost, 0),
+    shipCharged: xs.reduce((t, x) => t + x.shipCharged, 0),
+    pctFees: xs.reduce((t, x) => t + x.pctFees, 0),
+    codFees: xs.reduce((t, x) => t + x.codFees, 0),
+    fixed: xs.reduce((t, x) => t + x.fixed, 0),
+    shipNotes: uniq(xs.flatMap((x) => x.shipNotes)),
+    feeNotes: uniq(xs.flatMap((x) => x.feeNotes)),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +355,24 @@ export interface PeriodMetrics {
   spend: Val;
   gpAfterAds: Val;
   gpAfterAdsPct: Val;
+  /** Shipping and fulfilment cost incl. return handling, net of shipping charged (cost card). */
+  shippingCost: Val;
+  /** Payment fees incl. the COD fee (cost card). */
+  paymentFees: Val;
+  /** Fixed monthly market cost, pro rata over the range (cost card; 0 when none). */
+  fixedCost: Val;
+  /** CM2 = gross profit - shipping and fulfilment (net) - payment fees. */
+  cm2: Val;
+  cm2Pct: Val;
+  /** CM3 = CM2 - ad spend - fixed market cost. */
+  cm3: Val;
+  cm3Pct: Val;
+  /** First-order gross profit of every new customer in the range minus the ad spend. */
+  firstOrderGpAfterAds: Val;
+  /** First-order CM2 per new customer: first-order GP minus the market's average variable cost per order. */
+  firstOrderCm2: Val;
+  /** What break-even aMER is computed on. */
+  breakEvenBasis: "cm2" | "cm1";
   nCac: Val;
   mer: Val;
   amer: Val;
@@ -241,6 +405,8 @@ export function periodMetrics(
     spendLabel?: string;
     /** Days in the range with no spend data for the client: spend ratios are lower bounds, so n/a. */
     spendGapDays?: number;
+    /** The market's costs from its cost card(s); absent = no card. */
+    costs?: CostResult;
   }
 ): PeriodMetrics {
   const s = p.sums;
@@ -285,11 +451,57 @@ export function periodMetrics(
   // AOV on net sales (contract amendment); net revenue on a source without the column.
   const aovNew = ratio(s.newCustomerNetSales ?? s.newCustomerRevenue, s.newCustomers, "", noNew);
 
+  // ── CM2 and CM3 from the cost card ──────────────────────────────────────
+  const costs: CostResult = ctx.costs ?? { na: NO_CARD };
+  const joinNotes = (...n: Array<string | undefined>) => {
+    const t = n.filter(Boolean).join(". ");
+    return t || undefined;
+  };
+  const withNote = (v: number, note?: string): Val => (note ? { v, note } : { v });
+  const shippingCost: Val = isCostNa(costs)
+    ? costs
+    : withNote(costs.shipCost + costs.returnCost - costs.shipCharged, joinNotes(...costs.shipNotes));
+  const paymentFees: Val = isCostNa(costs) ? costs : withNote(costs.pctFees + costs.codFees, joinNotes(...costs.feeNotes));
+  const fixedCost: Val = isCostNa(costs) ? costs : { v: costs.fixed };
+  const cm2: Val =
+    isNa(grossProfit) ? grossProfit
+    : isCostNa(costs) ? costs
+    : withNote(
+        grossProfit.v - (costs.shipCost + costs.returnCost - costs.shipCharged) - (costs.pctFees + costs.codFees),
+        joinNotes(costNote, ...costs.shipNotes, ...costs.feeNotes)
+      );
+  const cm3: Val =
+    isNa(cm2) ? cm2
+    : spendGap ? { na: spendGap }
+    : withNote(cm2.v - s.spend - (fixedCost as { v: number }).v, cm2.note);
+  const pctOfNet = (x: Val): Val => (isNa(x) ? x : ratio(x.v, s.netRevenue, "", "No net revenue in this range"));
+
+  // First-order CM2 per new customer: the market's average variable cost per
+  // order comes off the first-order GP, the payment fee on the new customers'
+  // own revenue. Order-level costs of first orders alone are not in the mart.
+  const firstOrderCm2: Val = (() => {
+    if (isNa(firstOrderGp)) return firstOrderGp;
+    if (isCostNa(costs)) return costs;
+    if (s.orders === 0 || s.newCustomers === 0) return { na: noNew };
+    const perOrder = (costs.shipCost + costs.returnCost - costs.shipCharged + costs.codFees) / s.orders;
+    const feeRate = s.netRevenue !== 0 ? costs.pctFees / s.netRevenue : 0;
+    return { v: firstOrderGp.v - perOrder - feeRate * (s.newCustomerRevenue / s.newCustomers) };
+  })();
+
+  // Break-even aMER on CM2 once the market has a cost card, on CM1 before.
+  const beBase = isNa(firstOrderCm2) ? firstOrderGp : firstOrderCm2;
+  const breakEvenBasis: "cm2" | "cm1" = isNa(firstOrderCm2) ? "cm1" : "cm2";
   const breakEvenAmer: Val =
-    isNa(firstOrderGp) ? firstOrderGp
+    isNa(beBase) ? beBase
     : isNa(aovNew) ? aovNew
-    : firstOrderGp.v <= 0 ? { na: "First-order gross profit is at or below 0" }
-    : { v: aovNew.v / firstOrderGp.v };
+    : beBase.v <= 0 ? { na: breakEvenBasis === "cm2" ? "First-order CM2 is at or below 0" : "First-order gross profit is at or below 0" }
+    : { v: aovNew.v / beBase.v };
+
+  const firstOrderGpAfterAds: Val =
+    spendGap ? { na: spendGap }
+    : s.newCustomers === 0 ? { na: noNew }
+    : isNa(firstOrderGp) ? firstOrderGp
+    : { v: firstOrderGp.v * s.newCustomers - s.spend };
 
   return {
     orders: { v: s.orders },
@@ -318,6 +530,16 @@ export function periodMetrics(
       : { v: s.spend, ...(ctx.spendLabel ? { note: ctx.spendLabel } : {}) },
     gpAfterAds: spendGap && !isNa(gpa) ? { na: spendGap } : gpa,
     gpAfterAdsPct: spendGap ? { na: spendGap } : isNa(gpa) ? gpa : ratio(gpa.v, s.netRevenue, "", "No net revenue in this range"),
+    shippingCost,
+    paymentFees,
+    fixedCost,
+    cm2,
+    cm2Pct: pctOfNet(cm2),
+    cm3,
+    cm3Pct: pctOfNet(cm3),
+    firstOrderGpAfterAds,
+    firstOrderCm2,
+    breakEvenBasis,
     nCac,
     mer: spendGap ? { na: spendGap } : s.spend <= 0 ? { na: noSpend } : { v: s.netRevenue / s.spend },
     amer: spendGap ? { na: spendGap } : s.spend <= 0 ? { na: noSpend } : { v: s.newCustomerRevenue / s.spend },
@@ -609,7 +831,7 @@ export type VerdictKey = "scale" | "hold" | "fix-acquisition" | "fix-structure" 
 export interface Verdict {
   key: VerdictKey;
   label: string;
-  /** Rules ran on CM1 because CM2 needs rate cards. */
+  /** Rules ran on CM1 because the market has no cost card (no CM2). */
   onCm1: boolean;
   why: string;
 }
@@ -636,43 +858,62 @@ export function verdict(input: {
   payback: Payback;
 }): Verdict {
   const { cur, prev, home } = input;
+  // CM2 basis once the market has a cost card (CM2 and CM3 both measured);
+  // CM1 before, and the chip says "on CM1".
+  const onCm2 = !isNa(cur.cm2) && !isNa(cur.cm3);
   const none = (why: string): Verdict => ({ key: "none", label: VERDICT_LABEL.none, onCm1: false, why });
-  const make = (key: VerdictKey, why: string): Verdict => ({ key, label: VERDICT_LABEL[key], onCm1: true, why });
+  const make = (key: VerdictKey, why: string): Verdict => ({ key, label: VERDICT_LABEL[key], onCm1: !onCm2, why });
 
   if (input.maturity === "Young") return none("Young market: read the leading indicators instead of a verdict");
   if (isNa(cur.grossProfit)) return none(cur.grossProfit.na);
-  const gpa = cur.gpAfterAds as { v: number };
-  const gpaPct = num(cur.gpAfterAdsPct);
+  const profitVal = onCm2 ? cur.cm3 : cur.gpAfterAds;
+  if (isNa(profitVal)) return none(profitVal.na);
+  const profit = profitVal.v;
+  const P = onCm2 ? "CM3" : "GP after ads";
+  const profitPct = num(onCm2 ? cur.cm3Pct : cur.gpAfterAdsPct);
 
   // Exit: deep loss now and in the comparison period, with no improvement.
-  const prevPct = prev ? num(prev.gpAfterAdsPct) : null;
-  const prevGpa = prev ? num(prev.gpAfterAds) : null;
-  if (gpaPct !== null && gpaPct < -0.1 && prevPct !== null && prevPct < -0.1 && prevGpa !== null && gpa.v <= prevGpa) {
-    return make("exit", `GP after ads is ${pct1(gpaPct)} of net revenue, below −10% in both periods and not improving.`);
+  const prevPct = prev ? num(onCm2 ? prev.cm3Pct : prev.gpAfterAdsPct) : null;
+  const prevProfit = prev ? num(onCm2 ? prev.cm3 : prev.gpAfterAds) : null;
+  if (profitPct !== null && profitPct < -0.1 && prevPct !== null && prevPct < -0.1 && prevProfit !== null && profit <= prevProfit) {
+    return make("exit", `${P} is ${pct1(profitPct)} of net revenue, below −10% in both periods and not improving.`);
   }
 
-  // Fix structure: gross margin more than 5 pp under the home market.
-  const cm1 = num(cur.cm1Pct);
-  const homeCm1 = home ? num(home.cm1Pct) : null;
+  // Fix structure: margin more than 5 pp under the home market. CM2 margin
+  // when both have a cost card, gross margin otherwise.
+  const structureOnCm2 = onCm2 && home !== null && !isNa(home.cm2Pct);
+  const margin = num(structureOnCm2 ? cur.cm2Pct : cur.cm1Pct);
+  const homeMargin = home ? num(structureOnCm2 ? home.cm2Pct : home.cm1Pct) : null;
+  const marginName = structureOnCm2 ? "CM2 margin" : "Gross margin";
   const isHome = input.market === input.homeMarket;
-  if (!isHome && cm1 !== null && homeCm1 !== null && homeCm1 - cm1 > 0.05) {
+  if (!isHome && margin !== null && homeMargin !== null && homeMargin - margin > 0.05) {
     const gaps: Array<[string, number]> = [];
     const c = num(cur.cogsPct), hc = home ? num(home.cogsPct) : null;
     if (c !== null && hc !== null) gaps.push(["COGS", c - hc]);
     const d = num(cur.discountRate), hd = home ? num(home.discountRate) : null;
     if (d !== null && hd !== null) gaps.push(["discounts", d - hd]);
+    if (structureOnCm2 && home) {
+      const share = (x: Val, m: PeriodMetrics) => {
+        const a = num(x), n = num(m.netRevenue);
+        return a !== null && n ? a / n : null;
+      };
+      const sh = share(cur.shippingCost, cur), hsh = share(home.shippingCost, home);
+      if (sh !== null && hsh !== null) gaps.push(["shipping and fulfilment", sh - hsh]);
+      const f = share(cur.paymentFees, cur), hf = share(home.paymentFees, home);
+      if (f !== null && hf !== null) gaps.push(["payment fees", f - hf]);
+    }
     gaps.sort((a, b) => b[1] - a[1]);
     const driver = gaps[0] && gaps[0][1] > 0 ? ` Driver: ${gaps[0][0]}, ${(gaps[0][1] * 100).toFixed(1)} pp above ${input.homeMarket}.` : "";
-    return make("fix-structure", `Gross margin ${pct1(cm1)} vs ${pct1(homeCm1)} in ${input.homeMarket}.${driver}`);
+    return make("fix-structure", `${marginName} ${pct1(margin)} vs ${pct1(homeMargin)} in ${input.homeMarket}.${driver}`);
   }
 
   const ltgp = num(input.ltgp365);
   const pb = "days" in input.payback ? input.payback.days : null;
-  if (gpa.v <= 0 || (ltgp !== null && ltgp < 2)) {
+  if (profit <= 0 || (ltgp !== null && ltgp < 2)) {
     return make(
       "fix-acquisition",
-      gpa.v <= 0
-        ? "GP after ads at or below 0 while gross margin is within 5 pp of home."
+      profit <= 0
+        ? `${P} at or below 0 while ${marginName.toLowerCase()} is within 5 pp of home.`
         : `LTGP:CAC at 365 d is ${ltgp!.toFixed(2)}, under 2.0.`
     );
   }
@@ -685,7 +926,7 @@ export function verdict(input: {
     if (amerOk) {
       return make(
         "scale",
-        `GP after ads above 0, ${ltgp !== null && ltgp >= 3 ? `LTGP:CAC 365 d ${ltgp.toFixed(2)}` : `payback ${pb} d`}, aMER ${amer!.toFixed(2)} vs break-even ${be!.toFixed(2)}.`
+        `${P} above 0, ${ltgp !== null && ltgp >= 3 ? `LTGP:CAC 365 d ${ltgp.toFixed(2)}` : `payback ${pb} d`}, aMER ${amer!.toFixed(2)} vs break-even ${be!.toFixed(2)}.`
       );
     }
   }
@@ -695,7 +936,7 @@ export function verdict(input: {
   const missing: string[] = [];
   if (ltgp === null) missing.push(`LTGP:CAC 365 d (${isNa(input.ltgp365) ? input.ltgp365.na.toLowerCase() : "n/a"})`);
   if (amer === null || be === null) missing.push("aMER or its break-even");
-  return none(missing.length ? `No rule matched; missing ${missing.join(" and ")}.` : "GP after ads above 0, but no Scale or Hold rule matched.");
+  return none(missing.length ? `No rule matched; missing ${missing.join(" and ")}.` : `${P} above 0, but no Scale or Hold rule matched.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -751,14 +992,16 @@ export interface MarketsModel {
 /** How many indexed candidates the Scouting map labels next to the research ones. */
 export const SCOUT_MAP_TOP = 8;
 
-export type RankKey = "gpAfterAds" | "grossProfit" | "netRevenue";
+export type RankKey = "cm3" | "gpAfterAds" | "grossProfit" | "netRevenue";
 
 export const RANK_LABEL: Record<RankKey, string> = {
+  cm3: "CM3",
   gpAfterAds: "GP after ads",
   grossProfit: "gross profit",
   netRevenue: "net revenue",
 };
 
+/** Fallbacks below CM3, which ranks only once every sold market has a cost card. */
 const RANK_KEYS: RankKey[] = ["gpAfterAds", "grossProfit", "netRevenue"];
 
 export function soldMarkets(raw: MarketsRaw): string[] {
@@ -841,14 +1084,25 @@ export function buildModel(raw: MarketsRaw): MarketsModel {
     });
   }
 
+  // Cost cards by market. Other has its own card (key OTHER) for every country
+  // pooled into it; Unallocated carries spend only and needs none.
+  const cards = raw.costCards ?? [];
+  const cardsOf = (key: string) => cards.filter((c) => c.market === key);
+  const costsOf = (key: string, p: MarketPeriodRaw | null, range: { from: string; to: string } | null): CostResult =>
+    !p || !range ? { na: NO_CARD } : marketCosts(cardsOf(key), p, range, raw.platform);
+  const costed: Array<{ key: string; cur: CostResult; prev: CostResult | null }> = [];
+
   const homeCur = raw.homeMarket ? curBy.get(raw.homeMarket) ?? null : null;
-  const homeMetrics = homeCur ? periodMetrics(homeCur, ctx) : null;
+  const homeMetrics = homeCur && raw.homeMarket ? periodMetrics(homeCur, { ...ctx, costs: costsOf(raw.homeMarket, homeCur, raw.range) }) : null;
 
   const build = (s: Spec): MarketColumn => {
     const curRaw = s.cur ?? { market: s.key, sums: emptySums(), extras: null };
     const spendLabel = allocationLabel(raw.allocation[s.key]);
-    const cur = periodMetrics(curRaw, { ...ctx, spendLabel });
-    const prev = s.prev ? periodMetrics(s.prev, ctxPrev) : null;
+    const costCur = costsOf(s.key, curRaw, raw.range);
+    const costPrev = s.prev ? costsOf(s.key, s.prev, raw.compareRange) : null;
+    if (s.kind === "sold" || s.kind === "other") costed.push({ key: s.key, cur: costCur, prev: costPrev });
+    const cur = periodMetrics(curRaw, { ...ctx, spendLabel, costs: costCur });
+    const prev = s.prev ? periodMetrics(s.prev, { ...ctxPrev, costs: costPrev ?? undefined }) : null;
     const cohortRows = raw.cohorts.filter((r) => s.members.includes(r.market) || (s.kind === "other" && r.market === MARKET_OTHER));
     const fcRows = raw.forecast.filter((r) => s.members.includes(r.market) || (s.kind === "other" && r.market === MARKET_OTHER));
     const cohorts = cohortRows.length ? cohortSummary(cohortRows, { platform: raw.platform, nCac: cur.nCac }) : null;
@@ -893,18 +1147,24 @@ export function buildModel(raw: MarketsRaw): MarketsModel {
 
   const columns = specs.map(build);
 
-  // Ranking: the first key every market has, GP after ads first.
+  // Ranking: CM3 once every sold market has it (SPEC 1: CM3 decides), else
+  // the first key every market has, GP after ads first.
   let rankKey: RankKey = "netRevenue";
   let why = "";
-  for (const k of RANK_KEYS) {
-    if (columns.every((c) => !isNa(c.cur[k]))) {
-      rankKey = k;
-      break;
+  const soldCols = columns.filter((c) => c.kind === "sold");
+  if (soldCols.length > 0 && soldCols.every((c) => !isNa(c.cur.cm3))) {
+    rankKey = "cm3";
+  } else {
+    for (const k of RANK_KEYS) {
+      if (columns.every((c) => !isNa(c.cur[k]))) {
+        rankKey = k;
+        break;
+      }
+      const missing = columns.find((c) => isNa(c.cur[k]));
+      if (!why && missing) why = (missing.cur[k] as { na: string }).na;
     }
-    const missing = columns.find((c) => isNa(c.cur[k]));
-    if (!why && missing) why = (missing.cur[k] as { na: string }).na;
   }
-  if (rankKey === "gpAfterAds") why = "";
+  if (rankKey === "gpAfterAds" || rankKey === "cm3") why = "";
   const ranked = columns
     .filter((c) => c.kind === "sold")
     .sort((a, b) => (num(b.cur[rankKey]) ?? -Infinity) - (num(a.cur[rankKey]) ?? -Infinity));
@@ -929,16 +1189,20 @@ export function buildModel(raw: MarketsRaw): MarketsModel {
     unallocated.forecast = null;
   }
 
-  // Total: every row summed, unallocated spend included.
+  // Total: every row summed, unallocated spend included. Its costs are the
+  // markets' costs added up (each market on its own card), so the Total has
+  // CM2 only when every column does.
   const totalCur = pool(raw.current, "TOTAL") ?? { market: "TOTAL", sums: emptySums(), extras: null };
   const totalPrev = raw.previous ? pool(raw.previous, "TOTAL") : null;
-  const tCur = periodMetrics(totalCur, ctx);
+  const tCur = periodMetrics(totalCur, { ...ctx, costs: sumCosts(costed.map((c) => ({ key: c.key, costs: c.cur }))) });
   const total: MarketColumn = {
     key: "TOTAL",
     kind: "total",
     members: [],
     cur: tCur,
-    prev: totalPrev ? periodMetrics(totalPrev, ctxPrev) : null,
+    prev: totalPrev
+      ? periodMetrics(totalPrev, { ...ctxPrev, costs: sumCosts(costed.map((c) => ({ key: c.key, costs: c.prev ?? { na: NO_CARD } }))) })
+      : null,
     localCurrency: totalCur.extras?.localCurrency ?? null,
     rate: { cur: localRate(totalCur), prev: localRate(totalPrev) },
     allocation: {},
@@ -1010,10 +1274,14 @@ export const MAP_METRICS: Array<{ key: MapMetric; label: string }> = [
   { key: "status", label: "Status" },
 ];
 
-export function mapValue(c: MarketColumn, metric: MapMetric): Val {
+/**
+ * The figure a market shows on the map. `gpa` is the profit line the ranking
+ * uses: CM3 once every sold market has a cost card, GP after ads before.
+ */
+export function mapValue(c: MarketColumn, metric: MapMetric, rank?: RankKey): Val {
   switch (metric) {
     case "gpa":
-      return c.cur.gpAfterAds;
+      return rank === "cm3" ? c.cur.cm3 : c.cur.gpAfterAds;
     case "net":
       return c.cur.netRevenue;
     case "ncac":

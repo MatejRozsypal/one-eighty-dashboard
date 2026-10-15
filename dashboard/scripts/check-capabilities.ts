@@ -160,7 +160,8 @@ eq("selectedClient pick", selectedClient([{ clientId: "a" }, { clientId: "b" }],
   const all = [...NAV, ...CREATIVE_NAV].flatMap((g) => g.items);
   eq("every top-level item has an icon", all.every((i) => typeof i.icon === "string" && i.icon.length > 0), true);
   eq("icons are unique", new Set(all.map((i) => i.icon)).size, all.length);
-  eq("items with children", all.filter((i) => i.children).map((i) => i.label), ["Paid", "Repurchase", "Breakdown", "Velocity"]);
+  eq("items with children", all.filter((i) => i.children).map((i) => i.label), ["Markets", "Paid", "Repurchase", "Breakdown", "Velocity"]);
+  eq("Markets children", NAV.flatMap((g) => g.items).find((i) => i.href === "/markets")?.children?.map((c) => c.label), ["Overview", "Trends & analysis", "Products"]);
   eq("Paid children", NAV.flatMap((g) => g.items).find((i) => i.href === "/paid")?.children?.map((c) => c.label), ["Overview", "Meta", "Google", "GA4"]);
   eq("Breakdown has ten dimension children", CREATIVE_NAV[0].items.find((i) => i.label === "Breakdown")?.children?.length, 10);
   eq("creative nav is the same for every client", navForProduct("creative", false, FIXTURES.rawbark), CREATIVE_NAV);

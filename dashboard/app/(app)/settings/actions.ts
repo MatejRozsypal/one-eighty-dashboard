@@ -12,6 +12,9 @@
 import { revalidatePath } from "next/cache";
 import { requireInternalForConfig } from "@/lib/authz";
 import { saveCreativeSettings } from "@/lib/creative/store";
+import { saveMarketCostCard } from "@/lib/markets/costStore";
+import { checkCostCard, COST_FIELDS, isCardMarket, type CostField } from "@/lib/markets/costCardForm";
+import { isDemo } from "@/lib/demo/client";
 
 // ---------------------------------------------------------------------------
 // Creative Engine thresholds
@@ -83,4 +86,34 @@ export async function saveCreativeSettingsAction(formData: FormData): Promise<vo
 
   revalidatePath("/settings");
   revalidatePath("/creative");
+}
+
+// ---------------------------------------------------------------------------
+// Market cost cards (Markets page CM2 / CM3)
+// ---------------------------------------------------------------------------
+
+/**
+ * One market's cost card. Saving with a new "effective from" date adds a card
+ * and keeps the old one (history); the same date corrects that card.
+ *
+ * The form validates as you type; this repeats the same check because a server
+ * action is a POST endpoint anyone signed in can call without the form.
+ */
+export async function saveMarketCostCardAction(formData: FormData): Promise<void> {
+  const { email } = await requireInternalForConfig();
+  const clientId = String(formData.get("clientId") ?? "");
+  const market = String(formData.get("market") ?? "").toUpperCase();
+  if (!clientId || isDemo(clientId)) throw new Error("This client is read only.");
+  if (!isCardMarket(market)) throw new Error("Unknown market.");
+
+  const values = Object.fromEntries(
+    COST_FIELDS.map((f) => [f.key, String(formData.get(f.key) ?? "")])
+  ) as Record<CostField, string>;
+  const checked = checkCostCard({ effectiveFrom: String(formData.get("effectiveFrom") ?? ""), values });
+  if (!checked.card) throw new Error(`Invalid cost card: ${Object.values(checked.errors).join(", ")}`);
+
+  await saveMarketCostCard(clientId, { market, ...checked.card }, email);
+
+  revalidatePath("/settings");
+  revalidatePath("/markets");
 }

@@ -36,7 +36,7 @@ export function VerdictChip({
   const dim = maturity === "Directional";
   const tip = [
     verdict.why,
-    verdict.onCm1 ? "Rules run on CM1 while CM2 needs rate cards." : "",
+    verdict.onCm1 ? "Rules run on CM1 until the market has a cost card (Settings > Market costs)." : "",
     dim && maturityWhy ? `Directional: ${maturityWhy.toLowerCase()}.` : "",
   ]
     .filter(Boolean)

@@ -107,7 +107,17 @@ export const NAV: NavGroup[] = [
       { label: "Orders", href: "/orders", icon: "orders" },
       { label: "Products", href: "/products", icon: "products" },
       { label: "Unit economics", href: "/unit-economics", icon: "unit-economics" },
-      { label: "Markets", href: "/markets", icon: "markets" },
+      {
+        label: "Markets",
+        href: "/markets",
+        icon: "markets",
+        // The Overview stays a brief look-through; deeper reads are subpages.
+        children: [
+          { label: "Overview", href: "/markets" },
+          { label: "Trends & analysis", href: "/markets/trends", title: "Trends & analysis" },
+          { label: "Products", href: "/markets/products", title: "Market products" },
+        ],
+      },
     ],
   },
   {

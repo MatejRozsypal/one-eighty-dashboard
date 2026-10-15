@@ -21,6 +21,12 @@
  * index. PL is a sold test market in eu, so
  * the signals view excludes it, as the mart does.
  *
+ * Cost cards (Settings > Market costs) are set for every market of both
+ * shapes, so the demo shows CM2 and CM3 filled and ranks by CM3. US carries a
+ * rate change 45 days before the last complete day, so a range across it is
+ * costed day by day with the card in effect; CA and PL carry a fixed monthly
+ * market cost. Real clients show n/a until the owner fills their cards.
+ *
  * The proportions (new-customer share, AOV new vs returning, discount depth
  * and penetration, COGS %, nCAC, repeat curves, COD and free-shipping shares)
  * follow the 2026-10 market audit of a North American and a Czech client
@@ -38,6 +44,8 @@ import {
   type Allocation,
   type CohortAge,
   type CohortRow,
+  type CostCard,
+  type CostDay,
   type DailySums,
   type ForecastRow,
   type MarketLifetimeRaw,
@@ -443,6 +451,46 @@ function sumDays(days: Day[], currency: string | null): { sums: DailySums; extra
   return { sums: s, extras: x };
 }
 
+/**
+ * Cost cards per shape, base currency. Dates are relative to the last
+ * complete day so the history stays inside any range the page asks for.
+ */
+type CardSpec = Omit<CostCard, "effectiveFrom" | "updatedAt" | "updatedBy"> & { daysAgo: number };
+const CARDS: Record<DemoRegion, CardSpec[]> = {
+  na: [
+    { market: "US", daysAgo: 400, shipCostPerOrder: 7.2, payFeePct: 0.029, codFee: null, returnCost: 9, fixedMonthly: null },
+    { market: "US", daysAgo: 45, shipCostPerOrder: 7.9, payFeePct: 0.029, codFee: null, returnCost: 9, fixedMonthly: null },
+    { market: "CA", daysAgo: 400, shipCostPerOrder: 13.5, payFeePct: 0.034, codFee: null, returnCost: 14, fixedMonthly: 400 },
+    { market: MARKET_OTHER, daysAgo: 400, shipCostPerOrder: 24, payFeePct: 0.039, codFee: null, returnCost: 25, fixedMonthly: null },
+  ],
+  eu: [
+    { market: "CZ", daysAgo: 400, shipCostPerOrder: 79, payFeePct: 0.018, codFee: 25, returnCost: 60, fixedMonthly: null },
+    { market: "SK", daysAgo: 400, shipCostPerOrder: 118, payFeePct: 0.02, codFee: 35, returnCost: 90, fixedMonthly: null },
+    { market: "PL", daysAgo: 400, shipCostPerOrder: 145, payFeePct: 0.022, codFee: 30, returnCost: 120, fixedMonthly: 3000 },
+    { market: MARKET_OTHER, daysAgo: 400, shipCostPerOrder: 190, payFeePct: 0.025, codFee: 40, returnCost: 150, fixedMonthly: null },
+  ],
+};
+
+/** The demo client's cost cards for one shape, as the Postgres store returns them. */
+export function demoCostCards(region: DemoRegion): CostCard[] {
+  const last = dataThrough();
+  return CARDS[region].map(({ daysAgo, ...c }) => ({ ...c, effectiveFrom: addDays(last, -daysAgo), updatedAt: null, updatedBy: "demo" }));
+}
+
+/** Order counts per day, the base the cost card is applied to (several markets summed by date). */
+function costDays(days: Day[]): CostDay[] {
+  const by = new Map<string, CostDay>();
+  for (const d of days) {
+    const t = by.get(d.date) ?? { date: d.date, orders: 0, codOrders: 0, refundedOrders: 0, netRevenue: 0 };
+    t.orders += d.sums.orders;
+    t.codOrders = (t.codOrders ?? 0) + (d.sums.codOrders ?? 0);
+    t.refundedOrders = (t.refundedOrders ?? 0) + (d.extras.refundedOrders ?? 0);
+    t.netRevenue += d.sums.netRevenue;
+    by.set(d.date, t);
+  }
+  return [...by.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /** Markets the demo client "configured" (mk_client_markets): the ones with campaigns. */
 function configured(shape: Shape): MarketSpec[] {
   return shape.markets.filter((s) => s.nCac !== null);
@@ -466,13 +514,15 @@ function periodRows(region: DemoRegion, range: { from: string; to: string }): Ma
   const rows: MarketPeriodRaw[] = [];
   let allocatedSpend = 0;
   for (const spec of configured(shape)) {
-    const summed = sumDays(inRange(g.byMarket.get(spec.market) ?? [], range), spec.localCurrency);
+    const days = inRange(g.byMarket.get(spec.market) ?? [], range);
+    const summed = sumDays(days, spec.localCurrency);
     if (!summed) continue;
     allocatedSpend += summed.sums.spend;
-    rows.push({ market: spec.market, ...summed });
+    rows.push({ market: spec.market, ...summed, costDays: costDays(days) });
   }
-  const other = sumDays(tails(shape).flatMap((spec) => inRange(g.byMarket.get(spec.market) ?? [], range)), null);
-  if (other) rows.push({ market: MARKET_OTHER, ...other });
+  const otherDays = tails(shape).flatMap((spec) => inRange(g.byMarket.get(spec.market) ?? [], range));
+  const other = sumDays(otherDays, null);
+  if (other) rows.push({ market: MARKET_OTHER, ...other, costDays: costDays(otherDays) });
   if (allocatedSpend > 0) {
     rows.push({ market: MARKET_UNALLOCATED, sums: { ...ZERO_SUMS, spend: allocatedSpend * shape.unallocatedShare }, extras: null });
   }
@@ -769,5 +819,6 @@ export function demoMarkets(
     cohorts: cohorts.map((c) => c.row),
     forecast: forecastRows(region, cohorts),
     scoutingSignals: scoutingSignals(region),
+    costCards: demoCostCards(region),
   };
 }

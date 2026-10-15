@@ -1,18 +1,19 @@
 "use client";
 
 /**
- * Profit waterfall for one market: gross sales down to GP after ads.
+ * Profit waterfall for one market: gross sales down to CM3, or to GP after
+ * ads while the market has no cost card.
  *
- * The CM2 lines (shipping and fulfilment, payment fees) keep their place as
- * empty dashed rows until rate cards exist, so the reader sees what the
- * figure at the bottom does not yet subtract. A line the platform does not
- * send is a row with n/a and its reason, never a zero.
+ * Without a cost card the CM2 lines (shipping and fulfilment, payment fees)
+ * keep their place as empty dashed rows with the reason, so the reader sees
+ * what the figure at the bottom does not yet subtract. A line the platform
+ * does not send is a row with n/a and its reason, never a zero.
  */
 
 import { useId } from "react";
 import { ChartSummary } from "@/components/ui/ChartSummary";
 import { NaValue } from "@/components/markets/bits";
-import { isNa, NOT_YET, type PeriodMetrics } from "@/lib/markets/model";
+import { isNa, type PeriodMetrics } from "@/lib/markets/model";
 import { formatMoney, MINUS } from "@/lib/format";
 
 type Step =
@@ -58,16 +59,34 @@ export function Waterfall({ m, currency, factor }: { m: PeriodMetrics; currency:
   } else {
     steps.push({ kind: "na", label: "COGS", reason: (m.grossProfit as { na: string }).na });
   }
-  steps.push({ kind: "placeholder", label: "Shipping and fulfilment", reason: NOT_YET.shipCost });
-  steps.push({ kind: "placeholder", label: "Payment fees", reason: NOT_YET.payFees });
-  steps.push({ kind: "placeholder", label: "CM2", reason: NOT_YET.cm2 });
-  if (gp !== null) {
-    const gpa = gp - spend;
-    steps.push({ kind: "minus", label: "Ad spend", from: gpa, to: gp, value: -spend });
-    steps.push({ kind: "result", label: "GP after ads", from: Math.min(0, gpa), to: Math.max(0, gpa), value: gpa });
+  const ship = v(m.shippingCost);
+  const fees = v(m.paymentFees);
+  const cm2 = v(m.cm2);
+  const cm3 = v(m.cm3);
+  const fixed = v(m.fixedCost) ?? 0;
+  const span = (a: number, b: number) => ({ from: Math.min(a, b), to: Math.max(a, b) });
+  if (gp !== null && ship !== null && fees !== null && cm2 !== null) {
+    // The market has a cost card: real CM2 lines, down to CM3.
+    steps.push({ kind: "minus", label: "Shipping and fulfilment", ...span(gp - ship, gp), value: -ship });
+    steps.push({ kind: "minus", label: "Payment fees", ...span(gp - ship - fees, gp - ship), value: -fees });
+    steps.push({ kind: "total", label: "CM2", ...span(0, cm2), value: cm2 });
+    steps.push({ kind: "minus", label: "Ad spend", ...span(cm2 - spend, cm2), value: -spend });
+    if (fixed > 0) steps.push({ kind: "minus", label: "Fixed market cost", ...span(cm2 - spend - fixed, cm2 - spend), value: -fixed });
+    if (cm3 !== null) steps.push({ kind: "result", label: "CM3", ...span(0, cm3), value: cm3 });
+    else steps.push({ kind: "na", label: "CM3", reason: isNa(m.cm3) ? m.cm3.na : "" });
   } else {
-    steps.push({ kind: "minus", label: "Ad spend", from: 0, to: spend, value: -spend });
-    steps.push({ kind: "na", label: "GP after ads", reason: (m.grossProfit as { na: string }).na });
+    const cm2Why = isNa(m.cm2) ? m.cm2.na : "";
+    steps.push({ kind: "placeholder", label: "Shipping and fulfilment", reason: isNa(m.shippingCost) ? m.shippingCost.na : cm2Why });
+    steps.push({ kind: "placeholder", label: "Payment fees", reason: isNa(m.paymentFees) ? m.paymentFees.na : cm2Why });
+    steps.push({ kind: "placeholder", label: "CM2", reason: cm2Why });
+    if (gp !== null) {
+      const gpa = gp - spend;
+      steps.push({ kind: "minus", label: "Ad spend", from: gpa, to: gp, value: -spend });
+      steps.push({ kind: "result", label: "GP after ads", from: Math.min(0, gpa), to: Math.max(0, gpa), value: gpa });
+    } else {
+      steps.push({ kind: "minus", label: "Ad spend", from: 0, to: spend, value: -spend });
+      steps.push({ kind: "na", label: "GP after ads", reason: (m.grossProfit as { na: string }).na });
+    }
   }
 
   const drawn = steps.filter((s): s is Extract<Step, { from: number }> => "from" in s);
@@ -81,7 +100,7 @@ export function Waterfall({ m, currency, factor }: { m: PeriodMetrics; currency:
 
   return (
     <div>
-      <div role="img" aria-label="Profit waterfall, gross sales to GP after ads" aria-describedby={`${id}-sum`} className="flex flex-col gap-1.5">
+      <div role="img" aria-label={`Profit waterfall, gross sales to ${steps[steps.length - 1].label}`} aria-describedby={`${id}-sum`} className="flex flex-col gap-1.5">
         {steps.map((s) => {
           const isTotal = s.kind === "total" || s.kind === "result";
           return (

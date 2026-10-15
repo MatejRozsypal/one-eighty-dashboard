@@ -98,6 +98,51 @@ export interface MarketPeriodRaw {
   market: string;
   sums: DailySums;
   extras: OrderExtras | null;
+  /**
+   * Order counts per day, the base a cost card is applied to (a card change
+   * inside the range splits it). Absent: the period sums are used with the
+   * card in effect on the last day of the range.
+   */
+  costDays?: CostDay[] | null;
+}
+
+/**
+ * A market cost card: what one order in one market costs beyond COGS, typed by
+ * the owner in Settings > Market costs (Postgres `market_cost_cards`, see
+ * lib/markets/costStore.ts). A new `effectiveFrom` adds a card and keeps the
+ * old one, so a range before the change is costed with the old rates.
+ *
+ * Every field is nullable: empty means "not stated", never zero. Money is in
+ * the client's base currency, ex VAT.
+ */
+export interface CostCard {
+  /** ISO-2 of a sold market, or OTHER for every country pooled into Other. */
+  market: string;
+  /** YYYY-MM-DD. The card applies from this day until the next card. */
+  effectiveFrom: string;
+  /** Carrier, packaging and pick-and-pack per order. */
+  shipCostPerOrder: number | null;
+  /** Payment processing as a share of net revenue (0.029 = 2.9 %). */
+  payFeePct: number | null;
+  /** Extra fee per cash-on-delivery order. */
+  codFee: number | null;
+  /** Handling per refunded order (return label, restocking). */
+  returnCost: number | null;
+  /** Fixed cost of running the market per month (local warehouse, support). */
+  fixedMonthly: number | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+/** One day of one market: the counts a cost card multiplies. */
+export interface CostDay {
+  date: string;
+  orders: number;
+  /** Null when the payment method is not ingested. */
+  codOrders: number | null;
+  /** Null when refund amounts are not ingested. */
+  refundedOrders: number | null;
+  netRevenue: number;
 }
 
 /** `none` marks the UNALLOCATED rows (contract amendment). */
@@ -244,4 +289,9 @@ export interface MarketsRaw {
   forecast: ForecastRow[];
   /** Opportunity index inputs; null when the signals view cannot be read. */
   scoutingSignals: ScoutingSignalsRaw | null;
+  /**
+   * Every cost card of the client, all markets, all effective dates. Empty or
+   * absent: CM2 and CM3 are n/a and the verdicts run on CM1.
+   */
+  costCards?: CostCard[];
 }

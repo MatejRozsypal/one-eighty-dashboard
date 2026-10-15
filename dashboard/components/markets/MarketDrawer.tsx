@@ -226,7 +226,14 @@ export function MarketDrawer({
           </Card>
           {compareLabel && c.prev && <p className="m-0 px-1 text-[11.5px] text-content-muted">Changes {compareLabel}.</p>}
 
-          <Block title="Waterfall" info="Gross sales to GP after ads in this range. The dashed lines are the CM2 costs that need market rate cards (F6).">
+          <Block
+            title="Waterfall"
+            info={
+              isNa(c.cur.cm2)
+                ? "Gross sales to GP after ads in this range. The dashed lines are the CM2 costs that need a cost card for this market (Settings > Market costs)."
+                : "Gross sales to CM3 in this range, with shipping, payment fees and the fixed market cost from the market's cost card."
+            }
+          >
             <Waterfall m={c.cur} currency={ccy.code} factor={ccy.cur} />
           </Block>
 

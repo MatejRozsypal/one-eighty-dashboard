@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Markets ranked by absolute GP after ads (gross profit, then net revenue
- * when a market lacks it), each with its verdict chip, maturity badge and the
- * change against the comparison. A row opens the market.
+ * Markets ranked by absolute CM3 once every sold market has a cost card, by
+ * GP after ads before (gross profit, then net revenue when a market lacks
+ * it), each with its verdict chip, maturity badge and the change against the
+ * comparison. A row opens the market.
  */
 
 import { DeltaChip } from "@/components/ui/Delta";
@@ -30,9 +31,11 @@ export function Leaderboard({
         Ranked by {RANK_LABEL[key]}
         <InfoTip
           text={
-            model.ranking.why
-              ? `Not every market has GP after ads: ${model.ranking.why}.`
-              : "Absolute GP after ads decides the order; ratios explain it. CM3 takes over once rate cards exist."
+            key === "cm3"
+              ? "Absolute CM3 decides the order; ratios explain it."
+              : model.ranking.why
+                ? `Not every market has GP after ads: ${model.ranking.why}.`
+                : "Absolute GP after ads decides the order; ratios explain it. CM3 takes over once every market has a cost card (Settings > Market costs)."
           }
         />
       </h2>

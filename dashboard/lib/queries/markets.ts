@@ -21,6 +21,13 @@
  * A table that does not exist yet (QA build not run) returns null and the page
  * says so in one line; any other failure reaches the error page.
  *
+ * ── Cost cards ──────────────────────────────────────────────────────────────
+ * The owner's market cost cards live in Postgres (`lib/markets/costStore.ts`,
+ * Settings > Market costs). When a client has any, the order counts per day
+ * and market are read too (`market_orders`), so a rate change inside the
+ * range costs each day with the card in effect. No cards, no extra query, and
+ * CM2 / CM3 show n/a with the Settings reason.
+ *
  * ── Scouting signals ────────────────────────────────────────────────────────
  * The opportunity index reads `mart.market_scouting_signals` (migration 297),
  * the client's vertical (`ref.client_verticals`) and Meta CPM benchmarks
@@ -34,7 +41,9 @@ import { query, PROJECT_ID } from "@/lib/bigquery";
 import { optional } from "@/lib/queries/errors";
 import { isoDate, num, num0 } from "@/lib/coerce";
 import { isDemo } from "@/lib/demo/client";
-import { demoMarkets, type DemoRegion } from "@/lib/demo/markets";
+import { demoCostCards, demoMarkets, type DemoRegion } from "@/lib/demo/markets";
+import { getMarketCostCards } from "@/lib/markets/costStore";
+import type { CostCardMarketRow } from "@/lib/markets/costCardForm";
 import type { Client } from "@/lib/clients";
 import type { DateRange } from "@/lib/period";
 import {
@@ -42,6 +51,8 @@ import {
   type Allocation,
   type AllocationRule,
   type CohortRow,
+  type CostCard,
+  type CostDay,
   type DailySums,
   type ForecastMethod,
   type CountryOrders,
@@ -214,14 +225,46 @@ async function periodExtras(clientId: string, range: DateRange): Promise<Map<str
   return out;
 }
 
+/** Order counts per market and day: the base a cost card is applied to. */
+async function costDays(clientId: string, range: DateRange): Promise<Map<string, CostDay[]>> {
+  const rows = await query<Row>(
+    `SELECT market, order_date,
+            COUNT(*) AS orders,
+            IF(COUNT(is_cod) = 0, NULL, COUNTIF(is_cod)) AS cod_orders,
+            IF(COUNT(refunds) = 0, NULL, COUNTIF(refunds > 0)) AS refunded_orders,
+            SUM(net_revenue) AS net_revenue
+     FROM ${marketsTable("market_orders")}
+     WHERE client_id = @clientId AND order_date BETWEEN @from AND @to
+     GROUP BY market, order_date
+     ORDER BY market, order_date`,
+    { clientId, from: range.from, to: range.to }
+  );
+  const out = new Map<string, CostDay[]>();
+  for (const r of rows) {
+    const m = String(r.market);
+    const list = out.get(m) ?? [];
+    list.push({
+      date: isoDate(r.order_date as never) ?? String(r.order_date),
+      orders: num0(r.orders),
+      codOrders: num(r.cod_orders),
+      refundedOrders: num(r.refunded_orders),
+      netRevenue: num0(r.net_revenue),
+    });
+    out.set(m, list);
+  }
+  return out;
+}
+
 async function period(
   clientId: string,
-  range: DateRange
+  range: DateRange,
+  withCostDays = false
 ): Promise<{ rows: MarketPeriodRaw[]; allocation: Map<string, Allocation> }> {
-  const [sums, spend, extras] = await Promise.all([
+  const [sums, spend, extras, days] = await Promise.all([
     periodSums(clientId, range),
     periodSpend(clientId, range),
     periodExtras(clientId, range),
+    withCostDays ? costDays(clientId, range) : Promise.resolve(null),
   ]);
   const markets = new Set([...sums.keys(), ...spend.keys()]);
   const rows = [...markets].map((market) => {
@@ -234,7 +277,7 @@ async function period(
     };
     const a = spend.get(market) ?? {};
     s.spend = Object.values(a).reduce((t, v) => t + (v ?? 0), 0);
-    return { market, sums: s, extras: extras.get(market) ?? null };
+    return { market, sums: s, extras: extras.get(market) ?? null, ...(days ? { costDays: days.get(market) ?? [] } : {}) };
   });
   return { rows, allocation: spend };
 }
@@ -507,10 +550,13 @@ export async function getMarkets(
   if (isDemo(client.clientId)) return demoMarkets(opts.demoRegion ?? "na", range, comparison);
 
   const clientId = client.clientId;
+  // Postgres first: the per-day counts are read only for a client with cards.
+  const costCards: CostCard[] = await getMarketCostCards(clientId);
+  const withDays = costCards.length > 0;
   return optional(async () => {
     const [current, previous, life, cohortRows, forecastRows, config, gapCur, gapPrev, others, scout] = await Promise.all([
-      period(clientId, range),
-      comparison ? period(clientId, comparison) : Promise.resolve(null),
+      period(clientId, range, withDays),
+      comparison ? period(clientId, comparison, withDays) : Promise.resolve(null),
       lifetimeAndSold(clientId, range.to),
       cohorts(clientId),
       forecast(clientId),
@@ -541,6 +587,50 @@ export async function getMarkets(
       cohorts: cohortRows,
       forecast: forecastRows,
       scoutingSignals: scout,
+      costCards,
     } satisfies MarketsRaw;
+  }, null);
+}
+
+/** A market a cost card can be filled for in Settings. */
+export type CostCardMarket = CostCardMarketRow;
+
+/**
+ * The markets Settings > Market costs shows a card for: the client's sold set
+ * (the `client_markets` config, else markets with spend in the trailing 365
+ * days or at least 5% of net revenue, plus the home market), then Other.
+ * Null when the Markets tables cannot be read for this client.
+ */
+export async function getCostCardMarkets(client: Client): Promise<CostCardMarket[] | null> {
+  if (isDemo(client.clientId)) {
+    const markets = [...new Set(demoCostCards("na").map((c) => c.market))];
+    return markets.map((market) => ({ market, isHome: market === client.country }));
+  }
+  const clientId = client.clientId;
+  return optional(async () => {
+    const config = await clientMarkets(clientId);
+    let sold: string[];
+    let home = config?.home ?? client.country ?? null;
+    if (config) {
+      sold = config.markets;
+    } else {
+      const rows = await query<Row>(
+        `WITH d AS (
+           SELECT market, SUM(net_revenue) AS net, SUM(IFNULL(spend_base, 0)) AS spend
+           FROM ${marketsTable("market_daily")}
+           WHERE client_id = @clientId AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 365 DAY)
+           GROUP BY market)
+         SELECT market FROM d
+         WHERE market NOT IN ('OTHER', 'UNALLOCATED')
+           AND (spend > 0 OR SAFE_DIVIDE(net, (SELECT SUM(net) FROM d)) >= 0.05)`,
+        { clientId }
+      );
+      sold = rows.map((r) => String(r.market));
+      if (home && !sold.includes(home)) sold.unshift(home);
+    }
+    sold = sold.filter((m) => m !== "OTHER" && m !== "UNALLOCATED");
+    sold.sort((a, b) => (a === home ? -1 : b === home ? 1 : a.localeCompare(b)));
+    home = home && sold.includes(home) ? home : null;
+    return [...sold.map((market) => ({ market, isHome: market === home })), { market: "OTHER", isHome: false }];
   }, null);
 }

@@ -21,13 +21,18 @@ import { Notice } from "@/components/ui/Notice";
 import { saveSettingsAction } from "@/app/(app)/admin/actions";
 import { CreateUserForm } from "@/app/(app)/admin/UserForms";
 import { PeopleList } from "@/components/settings/PeopleList";
-import { saveCreativeSettingsAction } from "./actions";
+import { saveCreativeSettingsAction, saveMarketCostCardAction } from "./actions";
 import { Header } from "@/components/shell/Header";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { SaveButton } from "@/components/settings/SaveButton";
 import { CreativeThresholds } from "@/components/settings/CreativeThresholds";
 import { getCreativeSettings } from "@/lib/creative/store";
+import { MarketCostCards } from "@/components/settings/MarketCostCards";
+import { marketCostSummary } from "@/lib/markets/costCardForm";
+import { getMarketCostCards } from "@/lib/markets/costStore";
+import { getCostCardMarkets } from "@/lib/queries/markets";
+import { demoCostCards } from "@/lib/demo/markets";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -223,6 +228,13 @@ export default async function SettingsPage({
     (u) => u.role === "client" && u.clientId === selected.clientId
   );
   const demo = isDemo(selected.clientId);
+  // Market cost cards: the markets come from the warehouse (sold set), the
+  // cards from Postgres. Either failing leaves the section saying so, not the page down.
+  const [costMarkets, costCards] = await Promise.all([
+    getCostCardMarkets(selected).catch(() => null),
+    demo ? Promise.resolve(demoCostCards("na")) : getMarketCostCards(selected.clientId),
+  ]);
+  const today = new Date().toISOString().slice(0, 10);
 
   // What each collapsed section says about itself. "Not stated" is the useful
   // answer where nothing is set, it is exactly what someone opening Settings
@@ -347,6 +359,26 @@ export default async function SettingsPage({
               </span>
             )}
           </form>
+        </SettingsSection>
+
+        <SettingsSection
+          title="Market costs"
+          summary={costMarkets ? marketCostSummary(costMarkets, costCards) : "Markets data is not built for this client yet"}
+          description="Per market costs beyond COGS: they turn gross profit into CM2 and CM3 on the Markets page. Empty fields show n/a there, never zero."
+        >
+          {costMarkets ? (
+            <MarketCostCards
+              clientId={selected.clientId}
+              currency={selected.currency}
+              markets={costMarkets}
+              cards={costCards}
+              today={today}
+              readOnly={demo}
+              action={saveMarketCostCardAction}
+            />
+          ) : (
+            <p className="m-0 text-[13px] text-content-muted">Markets data is not built for this client yet.</p>
+          )}
         </SettingsSection>
 
         <SettingsSection

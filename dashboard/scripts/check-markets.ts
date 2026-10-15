@@ -10,6 +10,10 @@
  *   - countries outside the sold set pool into Other and list in Scouting;
  *   - verdicts follow the rules on CM1 (Scale, Hold, Fix structure, Fix
  *     acquisition), Young markets get none, Directional ones keep theirs;
+ *   - cost cards: CM2 / CM3 math, a card change inside the range, empty
+ *     fields and missing cards are n/a with the reason, the Total needs every
+ *     card, first-order GP after ads, verdicts and break-even move to CM2,
+ *     the ranking moves to CM3 once every sold market has a card;
  *   - the forecast never reaches a total, the ranking or a verdict;
  *   - n/a carries a platform reason (Shoptet discounts, Woo COGS), never zero;
  *   - payback interpolates between cohort ages and says "not yet";
@@ -27,7 +31,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { demoMarkets } from "@/lib/demo/markets";
 import {
   buildModel,
+  cardOn,
   cohortSummary,
+  marketCosts,
+  NO_CARD,
   discountFlag,
   forecastSummary,
   isNa,
@@ -38,8 +45,10 @@ import {
   type MarketsModel,
 } from "@/lib/markets/model";
 import { buildMapGeometry } from "@/lib/markets/geo";
-import type { CohortRow, MarketPeriodRaw } from "@/lib/markets/types";
+import type { CohortRow, CostCard, MarketPeriodRaw } from "@/lib/markets/types";
 import { PnlMatrix } from "@/components/markets/PnlMatrix";
+import { Waterfall } from "@/components/markets/Waterfall";
+import { cardToValues, checkCostCard, marketCostSummary, parseAmount } from "@/lib/markets/costCardForm";
 import { ScoutingView } from "@/components/markets/ScoutingView";
 import {
   candidateSignals,
@@ -66,6 +75,9 @@ const PREV = { from: "2026-04-17", to: "2026-07-15" };
 
 const na = buildModel(demoMarkets("na", RANGE, PREV));
 const eu = buildModel(demoMarkets("eu", RANGE, PREV));
+// The same demo before anybody fills a cost card: the CM1 rules.
+const naCm1 = buildModel({ ...demoMarkets("na", RANGE, PREV), costCards: [] });
+const euCm1 = buildModel({ ...demoMarkets("eu", RANGE, PREV), costCards: [] });
 const col = (m: MarketsModel, k: string) => m.markets.find((c) => c.key === k)!;
 
 // ── Columns and totals ────────────────────────────────────────────────────
@@ -83,16 +95,30 @@ for (const [name, m] of [["na", na], ["eu", eu]] as const) {
   const gpaParts = m.markets.reduce((t, c) => t + (num(c.cur.gpAfterAds) ?? 0), 0) - (m.unallocated ? num(m.unallocated.cur.spend) ?? 0 : 0);
   check(`${name} total GP after ads = markets minus unallocated spend`, close(gpa, gpaParts, 1e-4), `${gpa} vs ${gpaParts}`);
   check(`${name} total has no forecast or cohorts`, m.total.forecast === null && m.total.cohorts === null);
-  check(`${name} ranking by GP after ads`, m.ranking.key === "gpAfterAds");
-  const ranked = m.markets.filter((c) => c.kind === "sold").map((c) => num(c.cur.gpAfterAds) ?? -Infinity);
+  check(`${name} ranking by CM3 with every card`, m.ranking.key === "cm3" && m.ranking.why === "", JSON.stringify(m.ranking));
+  const ranked = m.markets.filter((c) => c.kind === "sold").map((c) => num(c.cur.cm3) ?? -Infinity);
   check(`${name} ranking order`, ranked.every((v, i) => i === 0 || ranked[i - 1] >= v), ranked.join());
   check(`${name} share of client sums to 100%`, close(m.markets.reduce((t, c) => t + (num(c.cur.shareOfClient) ?? 0), 0), 1, 1e-9));
 }
 
+for (const [name, m] of [["na", naCm1], ["eu", euCm1]] as const) {
+  check(`${name} no cards: ranking by GP after ads`, m.ranking.key === "gpAfterAds" && m.ranking.why === "", JSON.stringify(m.ranking));
+  const ranked = m.markets.filter((c) => c.kind === "sold").map((c) => num(c.cur.gpAfterAds) ?? -Infinity);
+  check(`${name} no cards: ranking order`, ranked.every((v, i) => i === 0 || ranked[i - 1] >= v), ranked.join());
+}
+
 // ── Verdicts and maturity ─────────────────────────────────────────────────
-check("US Scale", col(na, "US").verdict?.key === "scale", col(na, "US").verdict?.why);
-check("US on CM1", col(na, "US").verdict?.onCm1 === true);
-check("CA Fix structure", col(na, "CA").verdict?.key === "fix-structure", col(na, "CA").verdict?.why);
+// On CM1 (no cost cards): the rules as first built.
+check("US Scale", col(naCm1, "US").verdict?.key === "scale", col(naCm1, "US").verdict?.why);
+check("US on CM1", col(naCm1, "US").verdict?.onCm1 === true);
+check("CA Fix structure", col(naCm1, "CA").verdict?.key === "fix-structure", col(naCm1, "CA").verdict?.why);
+check("CA driver named", /Driver: COGS/.test(col(naCm1, "CA").verdict?.why ?? ""));
+check("CZ Hold", col(euCm1, "CZ").verdict?.key === "hold", col(euCm1, "CZ").verdict?.why);
+check("SK keeps a verdict while Directional", col(euCm1, "SK").verdict?.key === "fix-acquisition", col(euCm1, "SK").verdict?.key);
+// On CM2 (demo cost cards): same verdicts, run on CM2 / CM3 and saying so.
+check("US Scale on CM2", col(na, "US").verdict?.key === "scale" && col(na, "US").verdict?.onCm1 === false, JSON.stringify(col(na, "US").verdict));
+check("US verdict reads CM3", /^CM3 above 0/.test(col(na, "US").verdict?.why ?? ""), col(na, "US").verdict?.why);
+check("CA Fix structure on CM2 margin", col(na, "CA").verdict?.key === "fix-structure" && /^CM2 margin/.test(col(na, "CA").verdict?.why ?? ""), col(na, "CA").verdict?.why);
 check("CA driver named", /Driver: COGS/.test(col(na, "CA").verdict?.why ?? ""));
 check("Other Directional", col(na, "OTHER").maturity.level === "Directional");
 check("CZ Hold", col(eu, "CZ").verdict?.key === "hold", col(eu, "CZ").verdict?.why);
@@ -100,6 +126,109 @@ check("SK Directional", col(eu, "SK").maturity.level === "Directional", col(eu, 
 check("SK keeps a verdict while Directional", col(eu, "SK").verdict?.key === "fix-acquisition", col(eu, "SK").verdict?.key);
 check("PL Young", col(eu, "PL").maturity.level === "Young", col(eu, "PL").maturity.why);
 check("PL Young has no verdict", col(eu, "PL").verdict?.key === "none");
+
+// ── Cost cards: CM2 and CM3 ───────────────────────────────────────────────
+{
+  const card = (market: string, from: string, x: Partial<CostCard> = {}): CostCard => ({
+    market, effectiveFrom: from, shipCostPerOrder: 50, payFeePct: 0.02, codFee: 20, returnCost: 100, fixedMonthly: 3000, ...x,
+  });
+  const p: MarketPeriodRaw = {
+    market: "CZ",
+    sums: {
+      orders: 100, newCustomers: 40, returningOrders: 60, grossSales: null, discounts: null, refunds: null,
+      netSales: 90000, netRevenue: 100000, newCustomerRevenue: 40000, returningRevenue: 60000,
+      newCustomerNetSales: 36000, returningNetSales: 54000, newCustomerGrossProfit: 24000, newCustomerCostedOrders: 40,
+      costedNetSales: 90000, cogs: 30000, grossProfit: 60000, costedOrders: 100, discountedOrders: 5, codOrders: 20,
+      zeroShippingOrders: 10, shippingCharged: 3000, spend: 20000,
+    },
+    extras: null,
+  };
+  const range = { from: "2026-07-01", to: "2026-09-28" }; // 90 days
+  const ctx = { platform: "woocommerce", clientNetRevenue: 100000, days: 90 };
+  const costs = marketCosts([card("CZ", "2026-01-01")], p, range, "woocommerce");
+  const m = periodMetrics(p, { ...ctx, costs });
+  const fixed = 3000 * (12 / 365) * 90;
+  // ship 50 x 100 = 5000 net of 3000 charged; fees 2% x 100000 + 20 x 20 COD.
+  check("cost card: shipping net of charged", close(num(m.shippingCost), 5000 - 3000));
+  check("cost card: payment fees incl. COD", close(num(m.paymentFees), 2000 + 400));
+  check("cost card: CM2 = GP + charged - ship - fees - COD", close(num(m.cm2), 60000 + 3000 - 5000 - 2000 - 400));
+  check("cost card: CM2 %", close(num(m.cm2Pct), 55600 / 100000));
+  check("cost card: fixed monthly pro rata", close(num(m.fixedCost), fixed));
+  check("cost card: CM3 = CM2 - spend - fixed", close(num(m.cm3), 55600 - 20000 - fixed));
+  check("cost card: CM3 %", close(num(m.cm3Pct), (55600 - 20000 - fixed) / 100000));
+  check("cost card: refunds not ingested is a note, not a zero", /return handling is not subtracted/.test((m.shippingCost as { note?: string }).note ?? ""));
+  // Return cost x refunded orders once refunds are known.
+  const withRefunds = periodMetrics({ ...p, costDays: [{ date: "2026-08-01", orders: 100, codOrders: 20, refundedOrders: 3, netRevenue: 100000 }] }, {
+    ...ctx, costs: marketCosts([card("CZ", "2026-01-01")], { ...p, costDays: [{ date: "2026-08-01", orders: 100, codOrders: 20, refundedOrders: 3, netRevenue: 100000 }] }, range, "woocommerce"),
+  });
+  check("cost card: return cost x refunded orders", close(num(withRefunds.cm2), 55600 - 300));
+  // Break-even aMER moves to CM2: first-order GP 600 minus the average cost per order.
+  const perOrder = (5000 - 3000 + 400) / 100 + 0.02 * (40000 / 40);
+  check("break-even on CM2", m.breakEvenBasis === "cm2" && close(num(m.breakEvenAmer), 900 / (600 - perOrder)), String(num(m.breakEvenAmer)));
+  const noCard = periodMetrics(p, ctx);
+  check("break-even falls back to CM1", noCard.breakEvenBasis === "cm1" && close(num(noCard.breakEvenAmer), 900 / 600));
+  check("missing card: shipping n/a with Settings reason", isNa(noCard.shippingCost) && (noCard.shippingCost as { na: string }).na === NO_CARD);
+  check("missing card: fees, CM2, CM3 n/a", isNa(noCard.paymentFees) && isNa(noCard.cm2) && isNa(noCard.cm3) && (noCard.cm2 as { na: string }).na === NO_CARD);
+  check("missing card reason names Settings", NO_CARD === "No cost card for this market (Settings > Market costs)");
+  // Empty required fields are n/a naming the field; optional ones are not.
+  const emptyShip = marketCosts([card("CZ", "2026-01-01", { shipCostPerOrder: null })], p, range, "woocommerce");
+  check("empty shipping cost: n/a naming it", "na" in emptyShip && /Shipping cost per order is empty/.test(emptyShip.na));
+  const emptyCod = marketCosts([card("CZ", "2026-01-01", { codFee: null })], p, range, "woocommerce");
+  check("empty COD fee with COD orders: n/a", "na" in emptyCod && /COD fee is empty/.test(emptyCod.na));
+  const noCodOrders = marketCosts([card("CZ", "2026-01-01", { codFee: null })], { ...p, sums: { ...p.sums, codOrders: 0 } }, range, "woocommerce");
+  check("empty COD fee without COD orders: fine", !("na" in noCodOrders));
+  const noFixed = periodMetrics(p, { ...ctx, costs: marketCosts([card("CZ", "2026-01-01", { fixedMonthly: null })], p, range, "woocommerce") });
+  check("empty fixed cost is none", close(num(noFixed.fixedCost), 0) && close(num(noFixed.cm3), 55600 - 20000));
+  // CM2 needs gross profit: no COGS stays the COGS reason, not the card's.
+  const woo = periodMetrics({ ...p, sums: { ...p.sums, cogs: null, grossProfit: null, costedOrders: 0 } }, { ...ctx, costs });
+  check("no COGS: CM2 n/a with the COGS reason", isNa(woo.cm2) && /F7/.test((woo.cm2 as { na: string }).na));
+  // A card change inside the range: each day on the card in effect that day.
+  const days = [
+    { date: "2026-08-30", orders: 10, codOrders: 0, refundedOrders: 0, netRevenue: 10000 },
+    { date: "2026-09-02", orders: 10, codOrders: 0, refundedOrders: 0, netRevenue: 10000 },
+  ];
+  const hist = [card("CZ", "2026-01-01", { shipCostPerOrder: 50, fixedMonthly: null }), card("CZ", "2026-09-01", { shipCostPerOrder: 80, fixedMonthly: null })];
+  const split = marketCosts(hist, { ...p, costDays: days, sums: { ...p.sums, shippingCharged: 0 } }, range, "woocommerce");
+  check("card history: day by day", !("na" in split) && close(split.shipCost, 10 * 50 + 10 * 80), JSON.stringify(split));
+  check("card in effect: latest started", cardOn(hist, "2026-09-15")?.shipCostPerOrder === 80 && cardOn(hist, "2026-08-31")?.shipCostPerOrder === 50);
+  check("card before the first: the first applies", cardOn(hist, "2025-06-01")?.shipCostPerOrder === 50);
+  // First-order GP after ads: first-order GP of all new customers minus spend.
+  check("first-order GP after ads", close(num(m.firstOrderGpAfterAds), 600 * 40 - 20000));
+  check("first-order GP after ads = per-customer row x new customers", close(num(m.firstOrderGpAfterAds), num(m.firstOrderProfit)! * 40));
+  const gapM = periodMetrics(p, { ...ctx, costs, spendGapDays: 5 });
+  check("spend gap: CM3 and first-order GP after ads n/a, CM2 kept", isNa(gapM.cm3) && isNa(gapM.firstOrderGpAfterAds) && !isNa(gapM.cm2));
+}
+for (const [name, m] of [["na", na], ["eu", eu]] as const) {
+  const sold = [...m.markets];
+  const cm2 = sold.reduce((t, c) => t + (num(c.cur.cm2) ?? NaN), 0);
+  check(`${name} total CM2 = sum of markets`, close(num(m.total.cur.cm2), cm2, 1e-6), `${num(m.total.cur.cm2)} vs ${cm2}`);
+  const cm3 = sold.reduce((t, c) => t + (num(c.cur.cm3) ?? NaN), 0) - (m.unallocated ? num(m.unallocated.cur.spend) ?? 0 : 0);
+  check(`${name} total CM3 = markets minus unallocated spend`, close(num(m.total.cur.cm3), cm3, 1e-6), `${num(m.total.cur.cm3)} vs ${cm3}`);
+  const fo = sold.reduce((t, c) => t + (num(c.cur.firstOrderGpAfterAds) ?? NaN), 0) - (m.unallocated ? num(m.unallocated.cur.spend) ?? 0 : 0);
+  check(`${name} total first-order GP after ads = markets minus unallocated`, close(num(m.total.cur.firstOrderGpAfterAds), fo, 1e-6), `${num(m.total.cur.firstOrderGpAfterAds)} vs ${fo}`);
+  check(`${name} every market on CM2 break-even`, m.markets.every((c) => c.cur.breakEvenBasis === "cm2"));
+}
+{
+  const raw = demoMarkets("na", RANGE, PREV);
+  // Heavy shipping makes CM3 negative while GP after ads stays positive: the verdict follows CM3.
+  const heavy = buildModel({ ...raw, costCards: raw.costCards!.map((c) => (c.market === "US" ? { ...c, shipCostPerOrder: 108 } : c)) });
+  const usH = col(heavy, "US");
+  check("verdict uses CM3 when present", (num(usH.cur.gpAfterAds) ?? 0) > 0 && (num(usH.cur.cm3) ?? 0) <= 0 && usH.verdict?.key === "fix-acquisition" && /^CM3 at or below 0/.test(usH.verdict.why), JSON.stringify(usH.verdict));
+  check("same market on CM1 would Scale", col(naCm1, "US").verdict?.key === "scale");
+  // A sold market without a card: its lines n/a, the ranking falls back, its chip says on CM1.
+  const noCa = buildModel({ ...raw, costCards: raw.costCards!.filter((c) => c.market !== "CA") });
+  check("missing CA card: CM2 n/a with reason", isNa(col(noCa, "CA").cur.cm2) && (col(noCa, "CA").cur.cm2 as { na: string }).na === NO_CARD);
+  check("missing CA card: ranking falls back to GP after ads", noCa.ranking.key === "gpAfterAds");
+  check("missing CA card: CA on CM1, US on CM2", col(noCa, "CA").verdict?.onCm1 === true && col(noCa, "US").verdict?.onCm1 === false);
+  check("missing CA card: Total CM2 n/a naming CA", isNa(noCa.total.cur.cm2) && /missing: CA/.test((noCa.total.cur.cm2 as { na: string }).na));
+  // No Other card: the Total waits for it, the ranking (sold markets only) does not.
+  const noOther = buildModel({ ...raw, costCards: raw.costCards!.filter((c) => c.market !== "OTHER") });
+  check("missing Other card: ranking still CM3", noOther.ranking.key === "cm3");
+  check("missing Other card: Total CM2 n/a naming Other", isNa(noOther.total.cur.cm2) && /missing: Other/.test((noOther.total.cur.cm2 as { na: string }).na));
+  // The rate change 45 days back is applied day by day, not with today's card.
+  const flat = buildModel({ ...raw, costCards: raw.costCards!.filter((c) => !(c.market === "US" && c.shipCostPerOrder === 7.2)) });
+  check("demo US history: older rate lowers shipping", (num(col(na, "US").cur.shippingCost) ?? 0) < (num(col(flat, "US").cur.shippingCost) ?? 0));
+}
 
 // ── Forecast stays out ────────────────────────────────────────────────────
 const us = col(na, "US");
@@ -176,6 +305,24 @@ check("SK small market: no forecast, with reason", col(eu, "SK").forecast?.value
   check("demo UNALLOCATED allocation is none", Object.keys(demoMarkets("na", RANGE, PREV).allocation.UNALLOCATED ?? {}).join() === "none");
   check("demo eu quarterly forecast keyed by quarter", demoMarkets("eu", RANGE, PREV).forecast.filter((f) => f.method === "multiplier_quarterly").every((f) => ["01", "04", "07", "10"].includes(f.cohortMonth.slice(5, 7))));
   check("config decides the sold set", buildModel({ ...demoMarkets("na", RANGE, PREV), configuredMarkets: ["US"] }).markets.map((c) => c.key).join() === "US,OTHER");
+}
+
+// ── Cost card form validation ─────────────────────────────────────────────
+{
+  const blank = { shipCostPerOrder: "", payFeePct: "", codFee: "", returnCost: "", fixedMonthly: "" };
+  const ok = checkCostCard({ effectiveFrom: "2026-10-01", values: { ...blank, shipCostPerOrder: "7,9", payFeePct: "2.9" } });
+  check("form: comma decimal, percent stored as share", ok.card !== null && ok.card.shipCostPerOrder === 7.9 && close(ok.card.payFeePct, 0.029) && ok.card.codFee === null);
+  check("form: empty is null, not 0", ok.card?.returnCost === null && ok.card?.fixedMonthly === null);
+  check("form: every field empty refused", checkCostCard({ effectiveFrom: "2026-10-01", values: blank }).errors.card !== undefined);
+  check("form: negative refused", checkCostCard({ effectiveFrom: "2026-10-01", values: { ...blank, codFee: "-1" } }).errors.codFee === "Cannot be negative");
+  check("form: text refused", checkCostCard({ effectiveFrom: "2026-10-01", values: { ...blank, returnCost: "abc" } }).errors.returnCost === "Enter a number");
+  check("form: percent over 100 refused", checkCostCard({ effectiveFrom: "2026-10-01", values: { ...blank, payFeePct: "120" } }).errors.payFeePct !== undefined);
+  check("form: bad date refused", checkCostCard({ effectiveFrom: "2026-02-30", values: { ...blank, codFee: "1" } }).errors.effectiveFrom !== undefined);
+  check("form: parseAmount", parseAmount(" 1 200,5 ") === 1200.5 && parseAmount("") === null && Number.isNaN(parseAmount("1e3") as number));
+  check("form: stored share shown as percent", cardToValues({ market: "US", effectiveFrom: "2026-01-01", shipCostPerOrder: 7, payFeePct: 0.029, codFee: null, returnCost: null, fixedMonthly: null }).payFeePct === "2.9");
+  const rows = [{ market: "US", isHome: true }, { market: "CA", isHome: false }, { market: "OTHER", isHome: false }];
+  check("form summary: missing named", marketCostSummary(rows, demoMarkets("na", RANGE, PREV).costCards!.filter((c) => c.market !== "CA")) === "2 of 3 have a card · missing CA");
+  check("form summary: none", marketCostSummary(rows, []) === "No cards: CM2 and CM3 show n/a");
 }
 
 // ── Payback and map scale ─────────────────────────────────────────────────
@@ -335,11 +482,30 @@ check("markets needs a shop", pageAvailability({ capabilities: { shopify: false,
   check("matrix renders markets", html.includes(">US<") && html.includes(">CA<") && html.includes("Total"));
   check("matrix labels the forecast", html.includes("forecast"));
   check("matrix shows n/a", html.includes("n/a"));
-  check("matrix CM2 placeholder", html.includes("CM2"));
+  check("matrix CM2 row", html.includes("CM2"));
+  const rowAt = (label: string) => html.indexOf(`${label}<`);
+  check("matrix: First-order GP after ads right after GP after ads", rowAt("GP after ads") > 0 && rowAt("First-order GP after ads") > rowAt("GP after ads") && rowAt("First-order GP after ads") < html.indexOf(">CM3<"), `${rowAt("GP after ads")} ${rowAt("First-order GP after ads")} ${html.indexOf(">CM3<")}`);
+  check("matrix keeps First-order GP minus nCAC", html.includes("First-order GP minus nCAC"));
+  const rowOf = (h: string, label: string) => {
+    const i = h.indexOf(`>${label}<`);
+    return i < 0 ? "" : h.slice(i, h.indexOf("</tr>", i));
+  };
+  const htmlCm1 = renderToStaticMarkup(createElement(PnlMatrix, { model: naCm1, mode: "base", periodLabel: "x", onOpen: () => {} }));
+  for (const label of ["Shipping and fulfilment", "Payment fees incl. COD", "CM2", "CM3", "First-order GP after ads"]) {
+    check(`matrix ${label} filled with cards`, rowOf(html, label) !== "" && !rowOf(html, label).includes("n/a"), rowOf(html, label).slice(0, 200));
+  }
+  check("matrix CM2 n/a without cards", rowOf(htmlCm1, "CM2").includes("n/a"));
+  check("no cards: CM2 reason points to Settings", (col(naCm1, "US").cur.cm2 as { na: string }).na === NO_CARD);
+  const wf = renderToStaticMarkup(createElement(Waterfall, { m: col(na, "US").cur, currency: "USD", factor: 1 }));
+  check("waterfall ends at CM3 with cards", wf.includes("gross sales to CM3") && !wf.includes("border-dashed"));
+  const wf1 = renderToStaticMarkup(createElement(Waterfall, { m: col(naCm1, "US").cur, currency: "USD", factor: 1 }));
+  check("waterfall keeps dashed CM2 placeholders without cards", wf1.includes("gross sales to GP after ads") && wf1.includes("border-dashed"));
   const local = renderToStaticMarkup(createElement(PnlMatrix, { model: na, mode: "local", periodLabel: "x", onOpen: () => {} }));
   check("matrix local shows CAD", local.includes("CAD"));
   const lb = renderToStaticMarkup(createElement(Leaderboard, { model: eu, mode: "base", onOpen: () => {} }));
-  check("leaderboard ranks", lb.includes("Ranked by GP after ads") && lb.includes("Czechia"));
+  check("leaderboard ranks by CM3 with cards", lb.includes("Ranked by CM3") && lb.includes("Czechia"));
+  const lb1 = renderToStaticMarkup(createElement(Leaderboard, { model: euCm1, mode: "base", onOpen: () => {} }));
+  check("leaderboard ranks by GP after ads without cards", lb1.includes("Ranked by GP after ads"));
   check("leaderboard shows Young", lb.includes("Young"));
   const scoutNa = renderToStaticMarkup(createElement(ScoutingView, { model: na, geometry: null, candidates: na.candidates, ga4Connected: true, rangeText: "x" }));
   check("scouting lists the index", scoutNa.includes("Opportunity index") && scoutNa.includes("3 of 4") && scoutNa.includes("not a verdict"));
@@ -354,7 +520,7 @@ check("markets needs a shop", pageAvailability({ capabilities: { shopify: false,
 {
   const ROOT = join(__dirname, "..");
   const dirs = ["components/markets", "lib/markets", "app/(app)/markets"].map((d) => join(ROOT, d));
-  const files = [...dirs.flatMap((d) => readdirSync(d).map((f) => join(d, f))), join(ROOT, "lib/demo/markets.ts"), join(ROOT, "lib/queries/markets.ts")].filter((f) => statSync(f).isFile());
+  const files = [...dirs.flatMap((d) => readdirSync(d).map((f) => join(d, f))), join(ROOT, "lib/demo/markets.ts"), join(ROOT, "lib/queries/markets.ts"), join(ROOT, "components/settings/MarketCostCards.tsx"), join(ROOT, "app/dev/market-costs/page.tsx"), join(ROOT, "app/(app)/settings/actions.ts"), join(ROOT, "app/(app)/settings/page.tsx")].filter((f) => statSync(f).isFile());
   for (const f of files) check(`no em dash in ${f.slice(ROOT.length + 1)}`, !readFileSync(f, "utf8").includes("\u2014"));
 }
 

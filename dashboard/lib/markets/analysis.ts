@@ -25,6 +25,21 @@
 import { formatMoney, formatNumber, formatRatio, MINUS } from "@/lib/format";
 import { isNa, marketCosts, periodMetrics, type MarketsModel, type PeriodMetrics, type Val } from "@/lib/markets/model";
 import { MARKET_OTHER, MARKET_UNALLOCATED, type CostCard, type DailySums, type MarketPeriodRaw } from "@/lib/markets/types";
+import { GA4_MIN_DAYS } from "@/lib/markets/opportunity";
+
+/** "1 day", "2 days", "1,204 orders": the count, then the word in the right number. */
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${formatNumber(n)} ${Math.abs(n) === 1 ? one : many}`;
+}
+
+/**
+ * A compact money label for the bridge: whole units under 1,000 ("CZK 415",
+ * never "CZK 415.1"), then K / M with at most one decimal ("CZK 23.4K").
+ */
+export function bridgeMoney(v: number, currency: string): string {
+  if (Math.abs(v) < 1000) return formatMoney(Math.round(v), currency, { decimals: 0 });
+  return formatMoney(v, currency, { compact: true });
+}
 
 // ---------------------------------------------------------------------------
 // Dates and weeks
@@ -212,6 +227,23 @@ export function portfolioPoints(model: Pick<MarketsModel, "markets">): Portfolio
       return { market: c.key, x: xv, y: yv, basis: yv === null ? null : basis, size, ratio: xv && yv !== null ? yv / xv : null, why };
     })
     .filter((p) => p.market !== MARKET_OTHER || p.x !== null);
+}
+
+/** A point the portfolio chart can place: both coordinates are finite numbers. */
+export function isPlottable(p: PortfolioPoint): p is PortfolioPoint & { x: number; y: number } {
+  return p.x !== null && p.y !== null && Number.isFinite(p.x) && Number.isFinite(p.y);
+}
+
+/**
+ * Why the portfolio chart has nothing to draw, or null when at least one
+ * market can be plotted. The chart shows this instead of empty axes.
+ */
+export function portfolioEmptyReason(points: PortfolioPoint[]): string | null {
+  if (points.some(isPlottable)) return null;
+  if (points.length === 0) return "No market can be plotted: no sold market has orders in this range.";
+  const reasons = [...new Set(points.map((p) => p.why).filter((w): w is string => !!w))];
+  const head = `No market can be plotted: ${points.length === 1 ? `${nameOf(points[0].market)} has` : "none of the markets has"} both an nCAC and a GP per customer in this range.`;
+  return reasons.length === 1 ? `${head} ${reasons[0].replace(/\.?$/, ".")}` : head;
 }
 
 // ---------------------------------------------------------------------------
@@ -663,29 +695,84 @@ export function reallocate(
 // 5. Funnel
 // ---------------------------------------------------------------------------
 
+/**
+ * Fewest units in a rate's denominator (sessions, engaged sessions, add-to-cart
+ * sessions) for the rate and its index to be shown. Under it the page prints
+ * the counts and says "too few to compare": 2 purchases of 2 sessions is not
+ * a 100 % CVR anybody can act on.
+ */
+export const FUNNEL_MIN_DENOMINATOR = 30;
+/** Every low-data n/a reason starts with this, so the UI can print it as text. */
+export const TOO_FEW = "Too few to compare";
+
+export function isTooFew(v: Val): boolean {
+  return isNa(v) && v.na.startsWith(TOO_FEW);
+}
+
+/** The three step conversions between the four funnel stages. */
+export const FUNNEL_STEPS: ReadonlyArray<{ label: string; den: string; over: string; overShort: string }> = [
+  { label: "engaged / sessions", den: "sessions", over: "More engaged sessions than sessions in GA4", overShort: "more engaged than sessions" },
+  { label: "add to cart / engaged", den: "engaged sessions", over: "Add-to-cart sessions GA4 did not count as engaged", overShort: "not counted as engaged" },
+  { label: "purchase / add to cart", den: "add-to-cart sessions", over: "Purchases without a tracked add to cart: GA4 records a purchase even when the session has no add_to_cart event", overShort: "no tracked add to cart" },
+];
+
+export interface FunnelStep {
+  num: number;
+  den: number;
+  /** num / den; n/a under FUNNEL_MIN_DENOMINATOR. Above 100 % stays, flagged by `over`. */
+  rate: Val;
+  /** Why the step is above 100 %; null when it is not. */
+  over: string | null;
+  /** vs the home market's same step, home = 100; n/a when either side is too few or above 100 %. */
+  index: Val;
+}
+
 export interface FunnelRow {
   market: string;
   sessions: number;
   engagedSessions: number;
+  unpaidEngagedSessions: number;
+  addToCartSessions: number;
+  purchases: number;
   unpaidShare: Val;
   addToCartRate: Val;
   cvr: Val;
   /** Index vs the home market, home = 100. */
   index: { unpaidShare: Val; addToCartRate: Val; cvr: Val };
+  /** engaged / sessions, add to cart / engaged, purchase / add to cart. */
+  steps: [FunnelStep, FunnelStep, FunnelStep];
   /** Same figures in the compare range, null without one. */
   previous: { sessions: number; unpaidShare: Val; addToCartRate: Val; cvr: Val } | null;
 }
 
-function rate(a: number, b: number, why: string): Val {
-  return b > 0 ? { v: a / b } : { na: why };
+/** a / b, n/a with `why` when b is 0 and "too few to compare" under FUNNEL_MIN_DENOMINATOR. */
+export function funnelRate(a: number, b: number, why: string, noun = "sessions"): Val {
+  if (!(b > 0)) return { na: why };
+  if (b < FUNNEL_MIN_DENOMINATOR) return { na: `${TOO_FEW}: ${formatNumber(b)} ${b === 1 ? noun.replace(/s$/, "") : noun} (needs ${FUNNEL_MIN_DENOMINATOR})` };
+  return { v: a / b };
 }
 
 function idx(v: Val, home: Val | null, isHome: boolean): Val {
-  if (isHome) return isNa(v) ? v : { v: 100 };
+  if (isHome) return isNa(v) ? v : v.v > 1 ? { na: "Above 100 %, not indexed" } : { v: 100 };
   if (!home) return { na: "No home market in the GA4 data" };
   if (isNa(v)) return v;
-  if (isNa(home) || home.v === 0) return { na: "The home market has no value to index against" };
+  if (v.v > 1) return { na: "Above 100 %, not indexed" };
+  if (isNa(home)) return { na: isTooFew(home) ? `${TOO_FEW}: the home market has too little data` : "The home market has no value to index against" };
+  if (home.v === 0 || home.v > 1) return { na: "The home market has no value to index against" };
   return { v: (v.v / home.v) * 100 };
+}
+
+function stepsOf(r: Ga4Row): Array<Omit<FunnelStep, "index">> {
+  const pairs: Array<[number, number]> = [
+    [r.engagedSessions, r.sessions],
+    [r.addToCartSessions, r.engagedSessions],
+    [r.purchases, r.addToCartSessions],
+  ];
+  return pairs.map(([num, den], i) => {
+    const step = FUNNEL_STEPS[i];
+    const rate = funnelRate(num, den, `No ${step.den} from this market`, step.den);
+    return { num, den, rate, over: !isNa(rate) && rate.v > 1 ? step.over : null };
+  });
 }
 
 function bucket(rows: Ga4Row[], sold: string[]): Map<string, Ga4Row> {
@@ -706,38 +793,61 @@ function bucket(rows: Ga4Row[], sold: string[]): Map<string, Ga4Row> {
 /**
  * Sessions to purchase per market. Unpaid share = unpaid engaged sessions /
  * engaged sessions (organic and direct); add-to-cart rate and purchase CVR are
- * per session. Countries outside the sold set pool into Other.
+ * per session. Countries outside the sold set pool into Other. Low-data rule:
+ * no rate and no index on a denominator under FUNNEL_MIN_DENOMINATOR. A step
+ * above 100 % (GA4 purchases with no add_to_cart in the session) keeps its
+ * value, is flagged and is never indexed, so it cannot read as "better than
+ * home".
  */
 export function funnelRows(input: { current: Ga4Row[]; previous: Ga4Row[] | null; sold: string[]; home: string | null }): FunnelRow[] {
   const cur = bucket(input.current, input.sold);
   const prev = input.previous ? bucket(input.previous, input.sold) : null;
   const noSessions = "No GA4 sessions from this market in the range";
   const figures = (r: Ga4Row) => ({
-    unpaidShare: rate(r.unpaidEngagedSessions, r.engagedSessions, "No engaged sessions from this market"),
-    addToCartRate: rate(r.addToCartSessions, r.sessions, noSessions),
-    cvr: rate(r.purchases, r.sessions, noSessions),
+    unpaidShare: funnelRate(r.unpaidEngagedSessions, r.engagedSessions, "No engaged sessions from this market", "engaged sessions"),
+    addToCartRate: funnelRate(r.addToCartSessions, r.sessions, noSessions),
+    cvr: funnelRate(r.purchases, r.sessions, noSessions),
   });
   const homeRow = input.home ? cur.get(input.home) : undefined;
   const home = homeRow ? figures(homeRow) : null;
+  const homeSteps = homeRow ? stepsOf(homeRow) : null;
   const order = [...input.sold.filter((m) => cur.has(m)), ...(cur.has(MARKET_OTHER) ? [MARKET_OTHER] : [])];
   return order.map((m) => {
     const r = cur.get(m)!;
     const f = figures(r);
     const isHome = m === input.home;
     const p = prev?.get(m);
+    const steps = stepsOf(r).map((st, i) => {
+      const h = homeSteps?.[i];
+      return { ...st, index: idx(st.rate, h ? h.rate : null, isHome) };
+    }) as [FunnelStep, FunnelStep, FunnelStep];
     return {
       market: m,
       sessions: r.sessions,
       engagedSessions: r.engagedSessions,
+      unpaidEngagedSessions: r.unpaidEngagedSessions,
+      addToCartSessions: r.addToCartSessions,
+      purchases: r.purchases,
       ...f,
       index: {
         unpaidShare: idx(f.unpaidShare, home?.unpaidShare ?? null, isHome),
         addToCartRate: idx(f.addToCartRate, home?.addToCartRate ?? null, isHome),
         cvr: idx(f.cvr, home?.cvr ?? null, isHome),
       },
+      steps,
       previous: prev ? (p ? { sessions: p.sessions, ...figures(p) } : { sessions: 0, unpaidShare: { na: noSessions }, addToCartRate: { na: noSessions }, cvr: { na: noSessions } }) : null,
     };
   });
+}
+
+/**
+ * The GA4 coverage warning: GA4 rows on fewer days than GA4_MIN_DAYS (or than
+ * the range when the range is shorter). Null when coverage is enough.
+ */
+export function ga4CoverageNote(daysCovered: number, daysInRange: number): string | null {
+  const need = Math.min(GA4_MIN_DAYS, daysInRange);
+  if (daysCovered >= need) return null;
+  return `GA4 covers only ${plural(daysCovered, "day")} of ${formatNumber(daysInRange)} in this range (needs ${need}): read the counts, not the rates.`;
 }
 
 // ---------------------------------------------------------------------------

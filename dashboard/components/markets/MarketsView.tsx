@@ -31,6 +31,7 @@ import {
   MAP_METRICS,
   mapStep,
   mapValue,
+  RANK_TITLE,
   VERDICT_LABEL,
   type MapMetric,
   type MarketsModel,
@@ -131,9 +132,10 @@ export function MarketsView({
 
   // Map metric, with the fallback when no market has the chosen figure.
   const sold = model.markets.filter((m) => m.kind === "sold");
-  // The profit metric follows the ranking: CM3 once every sold market has it.
+  // The first metric is the ranking's: CM3, GP after ads, gross profit or net
+  // revenue, whichever the leaderboard ranks by, so map and list agree.
   const rank = model.ranking.key;
-  const metrics = MAP_METRICS.map((m) => (m.key === "gpa" && rank === "cm3" ? { ...m, label: "CM3" } : m));
+  const metrics = MAP_METRICS.map((m) => (m.key === "gpa" ? { ...m, label: RANK_TITLE[rank] } : m));
   let metric = state.map;
   let metricNote = "";
   if (metric !== "status" && sold.length > 0 && sold.every((m) => isNa(mapValue(m, metric, rank)))) {

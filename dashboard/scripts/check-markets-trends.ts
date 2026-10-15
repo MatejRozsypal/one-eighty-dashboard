@@ -16,6 +16,11 @@
  *     no gross sales folds the discount step into AOV; spend gaps and missing
  *     COGS give n/a with a reason;
  *   - the funnel indexes the home market at 100 and pools other countries;
+ *     no rate or index on a denominator under 30 ("too few to compare");
+ *     a step above 100 % is flagged and never indexed; the GA4 coverage
+ *     warning shows under 28 days;
+ *   - bridge labels carry no decimals under 1,000 in the currency;
+ *   - a portfolio with nothing to plot says why instead of drawing axes;
  *   - the free-shipping threshold is the step, not the cliff above it, and
  *     says when there is none;
  *   - portfolio points fall back to first-order GP and say why a market is not drawn;
@@ -32,8 +37,14 @@ import { dataThrough } from "@/lib/demo/business";
 import { buildModel, isNa } from "@/lib/markets/model";
 import type { DailySums } from "@/lib/markets/types";
 import {
+  FUNNEL_MIN_DENOMINATOR,
   bridge,
   bridgeFactors,
+  bridgeMoney,
+  ga4CoverageNote,
+  isTooFew,
+  plural,
+  portfolioEmptyReason,
   decompose,
   fitLog,
   funnelRows,
@@ -246,6 +257,107 @@ function sums(p: Partial<DailySums>): DailySums {
   const last = dataThrough();
   const g = demoGa4("na", { from: new Date(Date.parse(`${last}T00:00:00Z`) - 89 * 86_400_000).toISOString().slice(0, 10), to: last }, null);
   check("demo na: GA4 covers fewer days than a 90-day range", g.daysCurrent > 60 && g.daysCurrent < 90);
+}
+
+// ── Funnel: low data, steps above 100 %, GA4 coverage ───────────────────────
+{
+  check("min denominator is 30", FUNNEL_MIN_DENOMINATOR === 30);
+  // Manami Other: 7 purchases on 5 add-to-cart sessions (GA4 purchases with no
+  // add_to_cart in the session). Prod showed 140.0 % in green, idx 262.
+  const manami = funnelRows({
+    current: [
+      { iso: "CZ", sessions: 20000, engagedSessions: 12000, unpaidEngagedSessions: 5000, addToCartSessions: 900, purchases: 480 },
+      { iso: "DE", sessions: 400, engagedSessions: 220, unpaidEngagedSessions: 120, addToCartSessions: 40, purchases: 60 },
+      { iso: "AT", sessions: 300, engagedSessions: 180, unpaidEngagedSessions: 90, addToCartSessions: 5, purchases: 7 },
+    ],
+    previous: null,
+    sold: ["CZ"],
+    home: "CZ",
+  });
+  const other = manami.find((r) => r.market === "OTHER")!;
+  const buy = other.steps[2];
+  check("Other: counts kept for the steps", other.addToCartSessions === 45 && other.purchases === 67);
+  check("Other: purchase / add to cart above 100 % keeps its value", !isNa(buy.rate) && near(buy.rate.v, 67 / 45));
+  check("Other: above 100 % is flagged with the GA4 reason", !!buy.over && buy.over.includes("without a tracked add to cart"));
+  check("Other: above 100 % is never indexed", isNa(buy.index));
+  const cz = manami.find((r) => r.market === "CZ")!;
+  check("home step indexes at 100", !isNa(cz.steps[2].index) && cz.steps[2].index.v === 100);
+  check("home step not flagged", cz.steps.every((st) => st.over === null));
+
+  // Under 30 in the denominator: counts, no rate, no index.
+  const few = funnelRows({
+    current: [
+      { iso: "CZ", sessions: 20000, engagedSessions: 12000, unpaidEngagedSessions: 5000, addToCartSessions: 900, purchases: 300 },
+      { iso: "SK", sessions: 400, engagedSessions: 200, unpaidEngagedSessions: 80, addToCartSessions: 5, purchases: 7 },
+    ],
+    previous: null,
+    sold: ["CZ", "SK"],
+    home: "CZ",
+  });
+  const sk = few.find((r) => r.market === "SK")!;
+  check("5 add-to-cart sessions: purchase step too few", isTooFew(sk.steps[2].rate) && isNa(sk.steps[2].index), JSON.stringify(sk.steps[2]));
+  check("too few still has the counts", sk.steps[2].num === 7 && sk.steps[2].den === 5);
+  check("too few is not flagged as above 100 %", sk.steps[2].over === null);
+  check("29 is too few, 30 is enough", (() => {
+    const at = (n: number) => funnelRows({ current: [{ iso: "CZ", sessions: n, engagedSessions: n, unpaidEngagedSessions: 0, addToCartSessions: 1, purchases: 1 }], previous: null, sold: ["CZ"], home: "CZ" })[0];
+    return isTooFew(at(29).cvr) && !isNa(at(30).cvr);
+  })());
+  check("SK 200 engaged: add to cart / engaged is a rate", !isNa(sk.steps[1].rate));
+
+  // Venev: 1 to 2 sessions per market showed CVR 100 %.
+  const venev = funnelRows({
+    current: [
+      { iso: "CZ", sessions: 2, engagedSessions: 2, unpaidEngagedSessions: 1, addToCartSessions: 2, purchases: 2 },
+      { iso: "SK", sessions: 1, engagedSessions: 1, unpaidEngagedSessions: 0, addToCartSessions: 1, purchases: 1 },
+    ],
+    previous: null,
+    sold: ["CZ", "SK"],
+    home: "CZ",
+  });
+  check("Venev: no CVR on 2 sessions", venev.every((r) => isTooFew(r.cvr) && isTooFew(r.addToCartRate) && isTooFew(r.unpaidShare)));
+  check("Venev: no index on 2 sessions", venev.every((r) => isNa(r.index.cvr) && r.steps.every((st) => isNa(st.index))));
+  check("Venev: the reason says too few and the count", isNa(venev[1].cvr) && venev[1].cvr.na === "Too few to compare: 1 session (needs 30)", isNa(venev[1].cvr) ? venev[1].cvr.na : "");
+  check("home too few: other markets not indexed either", (() => {
+    const r = funnelRows({ current: [{ iso: "CZ", sessions: 10, engagedSessions: 8, unpaidEngagedSessions: 4, addToCartSessions: 2, purchases: 1 }, { iso: "SK", sessions: 500, engagedSessions: 300, unpaidEngagedSessions: 100, addToCartSessions: 40, purchases: 10 }], previous: null, sold: ["CZ", "SK"], home: "CZ" });
+    const s2 = r.find((x) => x.market === "SK")!;
+    return !isNa(s2.cvr) && isNa(s2.index.cvr) && s2.index.cvr.na.includes("too little data");
+  })());
+
+  // GA4 coverage warning: under 28 days (or the whole range when shorter).
+  const thin = ga4CoverageNote(2, 90);
+  check("2 of 90 days warns", !!thin && thin.startsWith("GA4 covers only 2 days of 90"), thin ?? "null");
+  check("1 day is singular", (ga4CoverageNote(1, 90) ?? "").includes("only 1 day of"));
+  check("27 of 90 warns, 28 does not", !!ga4CoverageNote(27, 90) && ga4CoverageNote(28, 90) === null);
+  check("a 7-day range fully covered does not warn", ga4CoverageNote(7, 7) === null);
+  check("a 7-day range with 5 days warns", !!ga4CoverageNote(5, 7));
+}
+
+// ── Bridge labels: no decimals under 1,000 ──────────────────────────────────
+{
+  const sp = (t: string) => t.replace(/\s/g, " ");
+  check("CZK 16.4 reads CZK 16", sp(bridgeMoney(16.4, "CZK")) === "CZK 16", bridgeMoney(16.4, "CZK"));
+  check("CZK 415.1 reads CZK 415", sp(bridgeMoney(415.1, "CZK")) === "CZK 415", bridgeMoney(415.1, "CZK"));
+  check("negative under 1,000 has no decimals", !/[.,]\d/.test(bridgeMoney(-16.4, "CZK")), bridgeMoney(-16.4, "CZK"));
+  check("EUR and USD whole units", bridgeMoney(12.7, "EUR") === "€13" && bridgeMoney(999.4, "USD") === "$999", `${bridgeMoney(12.7, "EUR")} ${bridgeMoney(999.4, "USD")}`);
+  check("thousands stay compact", sp(bridgeMoney(23000, "CZK")) === "CZK 23K", bridgeMoney(23000, "CZK"));
+}
+
+// ── Portfolio: nothing to plot says why ─────────────────────────────────────
+{
+  const pt = (market: string, x: number | null, y: number | null, why: string | null): PortfolioPoint => ({ market, x, y, basis: y === null ? null : "ltgp365", size: 100, ratio: x && y !== null ? y / x : null, why });
+  const none = portfolioEmptyReason([pt("CZ", null, 500, "No ad spend in this range"), pt("SK", null, 300, "No ad spend in this range")]);
+  check("no market plottable: a reason, not empty axes", !!none && none.startsWith("No market can be plotted") && none.includes("No ad spend in this range"), none ?? "null");
+  check("one plottable market: no empty state", portfolioEmptyReason([pt("CZ", 100, 500, null), pt("SK", null, 300, "x")]) === null);
+  check("no points at all: a reason", (portfolioEmptyReason([]) ?? "").includes("no sold market"));
+  check("mixed reasons: one sentence, reasons stay per market", (portfolioEmptyReason([pt("CZ", null, 1, "a"), pt("SK", 5, null, "b")]) ?? "").endsWith("in this range."));
+}
+
+// ── Pluralisation ───────────────────────────────────────────────────────────
+{
+  check("1 day", plural(1, "day") === "1 day");
+  check("3 days", plural(3, "day") === "3 days");
+  const screen = readFileSync(join(__dirname, "..", "components/markets/trends/TrendsScreen.tsx"), "utf8");
+  check("trends screen: no raw ${n} days", !/\$\{(gap|days|ga4\.daysCurrent)\} days/.test(screen));
 }
 
 // ── Free-shipping threshold ─────────────────────────────────────────────────

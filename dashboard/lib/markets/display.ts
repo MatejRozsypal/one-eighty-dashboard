@@ -68,12 +68,22 @@ export function deltaKind(k: FigureKind): DeltaKind {
   return k === "unit" ? "money" : k;
 }
 
+/**
+ * Currencies whose unit is small enough that the page prints them whole, unit
+ * values included: CZK 41, not CZK 40.55. Per-unit figures of these markets
+ * (AOV, nCAC, GP per customer, first-order GP minus nCAC) then read alike
+ * whether a value lands above or below 100.
+ */
+const WHOLE_UNIT_CURRENCIES = new Set(["CZK", "HUF", "JPY", "KRW", "ISK", "RSD", "CLP", "COP", "IDR", "VND"]);
+
 export function formatFigure(v: number, kind: FigureKind, currency: string, compact = false): string {
   switch (kind) {
     case "money":
       return formatMoney(v, currency, compact ? { compact: true } : {});
     case "unit":
-      return formatMoney(v, currency, { unit: true });
+      return WHOLE_UNIT_CURRENCIES.has(currency.toUpperCase())
+        ? formatMoney(v, currency, { decimals: 0 })
+        : formatMoney(v, currency, { unit: true });
     case "count":
       return formatNumber(v);
     case "rate":
@@ -81,6 +91,11 @@ export function formatFigure(v: number, kind: FigureKind, currency: string, comp
     case "ratio":
       return formatRatio(v);
   }
+}
+
+/** Decimals of an absolute money delta: whole for whole-unit currencies, else the delta's own rule. */
+export function deltaDecimals(kind: FigureKind, currency: string): number | undefined {
+  return (kind === "money" || kind === "unit") && WHOLE_UNIT_CURRENCIES.has(currency.toUpperCase()) ? 0 : undefined;
 }
 
 /** A value with a currency factor applied (money kinds only). */

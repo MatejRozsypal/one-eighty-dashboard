@@ -172,6 +172,31 @@ export interface CohortRow {
   /** Market spend inside the cohort month; null where spend history does not reach. */
   cohortSpend: number | null;
   firstOrderGp: number | null;
+  /**
+   * How complete the client's spend data is in the cohort month (client level,
+   * the same on every market's row of that month). Absent: complete.
+   */
+  spendCoverage?: SpendCoverage | null;
+}
+
+/** Spend completeness of one cohort month, for the client as a whole. */
+export interface SpendCoverage {
+  /** Days of the month in the data, and those with no spend data at all. */
+  days: number;
+  gapDays: number;
+  /** Ad platforms whose spend history in the warehouse starts after the month's first day. */
+  lateHistory: Array<{ platform: string; from: string }>;
+  /** Spend no allocation rule could place in a market, and all spend, base currency. */
+  unallocatedSpend: number;
+  clientSpend: number;
+}
+
+/** Lifetime refund tracking of the client: order count and refunded orders since the first order. */
+export interface RefundHistory {
+  orders: number;
+  /** Null when refund amounts are not ingested at all. */
+  refundedOrders: number | null;
+  since: string;
 }
 
 export type ForecastMethod = "multiplier_monthly" | "multiplier_quarterly" | "none";
@@ -283,6 +308,12 @@ export interface MarketsRaw {
   spendMarkets365: string[];
   /** Days in each range with no spend data at all for the client (ad history not started). */
   spendGapDays: { current: number; previous: number | null };
+  /**
+   * Refunds over the client's whole order history. A shop that records
+   * (almost) none is not tracking them: refund figures are then n/a, not 0.
+   * Absent: not checked.
+   */
+  refundHistory?: RefundHistory | null;
   /** Countries inside OTHER, current range (empty when the source has no country column). */
   otherCountries: CountryOrders[];
   cohorts: CohortRow[];

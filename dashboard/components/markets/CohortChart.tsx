@@ -4,7 +4,8 @@
  * Cohort value against acquisition cost for one market.
  *
  * Solid: cumulative GP per new customer at 0 (first order), 30, 60, 90, 180
- * and 365 days, each point the latest complete cohorts at that age. Grey: the
+ * and 365 days, every point the same complete cohorts (lib/markets/model
+ * cohortSummary), so the curve cannot fall with age. Grey: the
  * home market on the same scale. Flat line: today's nCAC, so the crossing is
  * the payback. Dashed with a band: the forecast for young cohorts, labelled
  * as such and drawn apart from the actuals it never mixes with.

@@ -39,7 +39,9 @@ import {
   type MarketsRaw,
   type OrderExtras,
   type PaymentShare,
+  type RefundHistory,
   type ScoutingSignalsRaw,
+  type SpendCoverage,
 } from "@/lib/markets/types";
 import { candidateSignals, opportunityIndex, scoutCandidates, type Opportunity } from "@/lib/markets/opportunity";
 import { researchCandidates } from "@/lib/markets/scouting";
@@ -65,6 +67,32 @@ function ratio(a: number | null, b: number | null, naA: string, naB: string): Va
   if (b === null || b === 0) return { na: naB };
   return { v: a / b };
 }
+
+/** "1 day", "12 days". */
+export function dayCount(n: number): string {
+  return `${n} ${n === 1 ? "day" : "days"}`;
+}
+/** "1 order", "4 orders". */
+function plural(n: number, one: string, many: string): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+}
+
+/**
+ * Days without any spend data may be up to this share of a range before the
+ * spend ratios turn n/a. Below it the figures stand, with the gap in a note:
+ * one missing day in ninety should not blank a column.
+ */
+export const SPEND_GAP_MAX_SHARE = 0.1;
+
+/**
+ * Unallocated spend may be up to this share of the client's spend in a set of
+ * cohort months before cohort CAC turns n/a (above it, the market's share of
+ * that spend is too large an unknown).
+ */
+export const UNALLOCATED_MAX_SHARE = 0.1;
+
+/** Fewest customers a cohort read needs; the Directional rule's 30 new customers. */
+export const COHORT_MIN_CUSTOMERS = 30;
 
 /** A metric the warehouse cannot produce for anyone yet. */
 export const NOT_YET = {
@@ -98,10 +126,25 @@ export function gapReason(
     case "cogs":
       return p === "woocommerce" ? "No COGS: no Woo line cost and no product cost rows (F7)" : "No costed orders in this range";
     case "shipping":
-      return p === "shoptet" ? "Shoptet folds shipping and the payment fee into the order total" : "Shipping charged is not in the mart for this client";
+      return p === "shoptet"
+        ? "Shoptet's order total includes shipping and the payment fee and does not send them apart, so shipping charged cannot be separated; both sit inside net revenue"
+        : "Shipping charged is not in the mart for this client";
     case "payments":
       return "Payment method is not ingested for this platform";
   }
+}
+
+/**
+ * A shop whose order history has no refunds (or next to none: under 1 in 1,000
+ * orders over at least 1,000) is not recording them; its refund figures would
+ * read as a true zero. Null when refunds look tracked or were not checked.
+ */
+export function refundsUntracked(h: RefundHistory | null | undefined): string | null {
+  if (!h || h.refundedOrders === null || h.orders <= 0) return null;
+  const none = h.refundedOrders === 0;
+  const tooFew = h.orders >= 1000 && h.refundedOrders / h.orders < 0.001;
+  if (!none && !tooFew) return null;
+  return `Refunds are not tracked by this shop: ${plural(h.refundedOrders, "refunded order", "refunded orders")} in ${plural(h.orders, "order", "orders")} since ${h.since}, so refund figures would read as 0`;
 }
 
 // ---------------------------------------------------------------------------
@@ -403,8 +446,14 @@ export function periodMetrics(
     clientNetRevenue: number | null;
     days: number;
     spendLabel?: string;
-    /** Days in the range with no spend data for the client: spend ratios are lower bounds, so n/a. */
+    /**
+     * Days in the range with no spend data for the client. Over
+     * SPEND_GAP_MAX_SHARE of the range the spend ratios are n/a (lower
+     * bounds); below it they stand with a note.
+     */
     spendGapDays?: number;
+    /** Set when the shop does not track refunds: the refund rows are n/a with this reason. */
+    refundsNa?: string | null;
     /** The market's costs from its cost card(s); absent = no card. */
     costs?: CostResult;
   }
@@ -428,16 +477,29 @@ export function periodMetrics(
   const grossNa = gapReason("grossSales", plat);
   const discNa = gapReason("discounts", plat);
 
-  const grossProfit: Val = gpNa ? { na: gpNa } : val(s.grossProfit, gpNa ?? "", costNote);
-  const gpa: Val = isNa(grossProfit) ? grossProfit : { v: (s.grossProfit as number) - s.spend, ...(costNote ? { note: costNote } : {}) };
+  const joinNotes = (...n: Array<string | undefined>) => {
+    const t = n.filter(Boolean).join(". ");
+    return t || undefined;
+  };
+  const withNote = (v: number, note?: string): Val => (note ? { v, note } : { v });
 
+  const grossProfit: Val = gpNa ? { na: gpNa } : val(s.grossProfit, gpNa ?? "", costNote);
+
+  // Spend gap: proportional. Over the threshold the ratios are lower bounds
+  // and n/a; under it they stand and the note says which days are missing.
   const gap = ctx.spendGapDays ?? 0;
-  const spendGap = gap > 0 ? `Spend data covers only part of this range (${gap} days without any), so spend ratios would be lower bounds` : null;
+  const gapOver = gap > 0 && gap / Math.max(1, ctx.days) > SPEND_GAP_MAX_SHARE;
+  const spendGap = gapOver
+    ? `Spend data is missing on ${dayCount(gap)} of ${ctx.days} in this range (over ${Math.round(SPEND_GAP_MAX_SHARE * 100)}%), so spend ratios would be lower bounds`
+    : null;
+  const gapNote = gap > 0 && !gapOver ? `Spend data is missing on ${dayCount(gap)} of ${ctx.days} in this range; those days count as no spend` : undefined;
+
+  const gpa: Val = isNa(grossProfit) ? grossProfit : withNote((s.grossProfit as number) - s.spend, joinNotes(costNote, gapNote));
   const nCac: Val =
     spendGap ? { na: spendGap }
     : s.spend <= 0 ? { na: noSpend }
     : s.newCustomers === 0 ? { na: noNew }
-    : { v: s.spend / s.newCustomers };
+    : withNote(s.spend / s.newCustomers, gapNote);
   // First-order GP: the daily columns when the source has them (contract
   // amendment), else the order-grain extras.
   const firstOrderGp: Val =
@@ -453,11 +515,6 @@ export function periodMetrics(
 
   // ── CM2 and CM3 from the cost card ──────────────────────────────────────
   const costs: CostResult = ctx.costs ?? { na: NO_CARD };
-  const joinNotes = (...n: Array<string | undefined>) => {
-    const t = n.filter(Boolean).join(". ");
-    return t || undefined;
-  };
-  const withNote = (v: number, note?: string): Val => (note ? { v, note } : { v });
   const shippingCost: Val = isCostNa(costs)
     ? costs
     : withNote(costs.shipCost + costs.returnCost - costs.shipCharged, joinNotes(...costs.shipNotes));
@@ -473,7 +530,7 @@ export function periodMetrics(
   const cm3: Val =
     isNa(cm2) ? cm2
     : spendGap ? { na: spendGap }
-    : withNote(cm2.v - s.spend - (fixedCost as { v: number }).v, cm2.note);
+    : withNote(cm2.v - s.spend - (fixedCost as { v: number }).v, joinNotes(cm2.note, gapNote));
   const pctOfNet = (x: Val): Val => (isNa(x) ? x : ratio(x.v, s.netRevenue, "", "No net revenue in this range"));
 
   // First-order CM2 per new customer: the market's average variable cost per
@@ -501,10 +558,25 @@ export function periodMetrics(
     spendGap ? { na: spendGap }
     : s.newCustomers === 0 ? { na: noNew }
     : isNa(firstOrderGp) ? firstOrderGp
-    : { v: firstOrderGp.v * s.newCustomers - s.spend };
+    : withNote(firstOrderGp.v * s.newCustomers - s.spend, gapNote);
+
+  // Orders without a customer key (no e-mail) are neither new nor returning.
+  const unkeyed = s.orders - s.newCustomers - s.returningOrders;
+  const refundReason = ctx.refundsNa ?? gapReason("refunds", plat);
+  // Shoptet's order total carries shipping and the payment fee: say what the
+  // gap between net revenue and net sales is.
+  const netRevNote =
+    (plat ?? "").toLowerCase() === "shoptet" && s.shippingCharged === null && s.netRevenue !== s.netSales
+      ? "Includes shipping and payment fees charged to customers: Shoptet's order total carries them and does not send them apart, so net revenue minus net sales is those fees"
+      : undefined;
 
   return {
-    orders: { v: s.orders },
+    orders: withNote(
+      s.orders,
+      unkeyed > 0
+        ? `${plural(unkeyed, "order has", "orders have")} no customer key (no e-mail), so ${unkeyed === 1 ? "it counts" : "they count"} in orders but neither as new nor as returning`
+        : undefined
+    ),
     newCustomers: { v: s.newCustomers },
     returningOrders: { v: s.returningOrders },
     returningRevenueShare: ratio(s.returningRevenue, s.netRevenue, "", "No net revenue in this range"),
@@ -513,11 +585,11 @@ export function periodMetrics(
     discounts: val(s.discounts, discNa),
     discountRate: s.discounts === null ? { na: discNa } : ratio(s.discounts, gross, discNa, grossNa),
     discountPenetration: ratio(s.discountedOrders, s.orders, discNa, "No orders in this range"),
-    refunds: val(s.refunds, gapReason("refunds", plat)),
-    refundRate: !x ? { na: NOX } : ratio(x.refundedOrders, s.orders, gapReason("refunds", plat), "No orders in this range"),
+    refunds: ctx.refundsNa ? { na: ctx.refundsNa } : val(s.refunds, refundReason),
+    refundRate: ctx.refundsNa ? { na: ctx.refundsNa } : !x ? { na: NOX } : ratio(x.refundedOrders, s.orders, refundReason, "No orders in this range"),
     netSales: { v: s.netSales },
     shippingCharged: val(s.shippingCharged, gapReason("shipping", plat)),
-    netRevenue: { v: s.netRevenue },
+    netRevenue: withNote(s.netRevenue, netRevNote),
     aovNew,
     aovReturning: ratio(s.returningNetSales ?? s.returningRevenue, s.returningOrders, "", "No returning orders in this range"),
     cogsPct: gpNa
@@ -526,8 +598,8 @@ export function periodMetrics(
     grossProfit,
     cm1Pct: isNa(grossProfit) ? grossProfit : ratio(grossProfit.v, s.netSales, "", "No net sales in this range"),
     spend: spendGap
-      ? { v: s.spend, note: `Partial: ${gap} days in this range have no spend data` }
-      : { v: s.spend, ...(ctx.spendLabel ? { note: ctx.spendLabel } : {}) },
+      ? { v: s.spend, note: `Partial: ${dayCount(gap)} in this range ${gap === 1 ? "has" : "have"} no spend data` }
+      : withNote(s.spend, joinNotes(ctx.spendLabel, gapNote)),
     gpAfterAds: spendGap && !isNa(gpa) ? { na: spendGap } : gpa,
     gpAfterAdsPct: spendGap ? { na: spendGap } : isNa(gpa) ? gpa : ratio(gpa.v, s.netRevenue, "", "No net revenue in this range"),
     shippingCost,
@@ -541,11 +613,11 @@ export function periodMetrics(
     firstOrderCm2,
     breakEvenBasis,
     nCac,
-    mer: spendGap ? { na: spendGap } : s.spend <= 0 ? { na: noSpend } : { v: s.netRevenue / s.spend },
-    amer: spendGap ? { na: spendGap } : s.spend <= 0 ? { na: noSpend } : { v: s.newCustomerRevenue / s.spend },
+    mer: spendGap ? { na: spendGap } : s.spend <= 0 ? { na: noSpend } : withNote(s.netRevenue / s.spend, gapNote),
+    amer: spendGap ? { na: spendGap } : s.spend <= 0 ? { na: noSpend } : withNote(s.newCustomerRevenue / s.spend, gapNote),
     breakEvenAmer,
     firstOrderGp,
-    firstOrderProfit: isNa(firstOrderGp) ? firstOrderGp : isNa(nCac) ? nCac : { v: firstOrderGp.v - nCac.v },
+    firstOrderProfit: isNa(firstOrderGp) ? firstOrderGp : isNa(nCac) ? nCac : withNote(firstOrderGp.v - nCac.v, nCac.note),
     avgDepth: !x ? { na: NOX } : ratio(x.discountedDiscounts, x.discountedGross, discNa, "No discounted orders in this range"),
     fullPriceShare: !x ? { na: NOX } : ratio(x.fullPriceRevenue, s.netRevenue, discNa, "No net revenue in this range"),
     newDiscountRate: !x ? { na: NOX } : ratio(x.newDiscounts, x.newGross, discNa, grossNa),
@@ -561,7 +633,7 @@ export function periodMetrics(
 // Cohorts
 // ---------------------------------------------------------------------------
 
-/** Complete cohorts read per age: the latest this many months that reached it. */
+/** Complete cohorts read: the latest this many months of the set. */
 export const COHORT_WINDOW = 12;
 
 export interface CohortPoint {
@@ -581,8 +653,17 @@ export type Payback =
   | { na: string };
 
 export interface CohortSummary {
+  /**
+   * Every age is read on one set of cohorts: the latest COHORT_WINDOW months
+   * that reached the anchor age, so the rows and the curve are one curve
+   * (cumulative figures cannot fall with age) and never a mix of sets.
+   */
   points: Partial<Record<CohortAge, CohortPoint>>;
-  /** First-order GP per customer over the latest complete cohorts: the curve at day 0. */
+  /** The oldest age read: 365 d once enough cohorts reached it. Null without cohorts. */
+  anchorAge: CohortAge | null;
+  /** Why an age has no point (not reached, or too few customers reached it). */
+  missing: Partial<Record<CohortAge, string>>;
+  /** First-order GP per customer over the same cohorts: the curve at day 0. */
   firstOrderGpPerCustomer: Val;
   payback: Payback;
 }
@@ -610,23 +691,107 @@ function poolCohorts(rows: CohortRow[]): CohortRow[] {
     }
     t.cohortSpend = addN(t.cohortSpend, r.cohortSpend);
     t.firstOrderGp = addN(t.firstOrderGp, r.firstOrderGp);
+    // Coverage is client level: every market's row of a month carries the same.
+    t.spendCoverage = t.spendCoverage ?? r.spendCoverage ?? null;
   }
   return [...by.values()].sort((a, b) => a.cohortMonth.localeCompare(b.cohortMonth));
+}
+
+const PLATFORM_NAME: Record<string, string> = { meta: "Meta", google: "Google Ads", sklik: "Sklik", tiktok: "TikTok" };
+
+/**
+ * Whether the market spend of some cohort months is their whole acquisition
+ * cost. It is not when an ad platform's history starts after a month began
+ * (that platform's spend is simply absent), when days have no spend data at
+ * all, or when much of the client's spend in those months is Unallocated (the
+ * market's part of it is unknown). Then cohort CAC is n/a with the reason,
+ * never an understated value. Small gaps stand, with a note.
+ */
+export function cohortSpendCheck(rows: CohortRow[]): { na: string } | { note?: string } {
+  if (rows.length === 0) return { na: "No cohorts for these months" };
+  if (rows.some((r) => r.cohortSpend === null)) return { na: "Spend history does not reach these cohort months" };
+  const byMonth = new Map<string, SpendCoverage | null>();
+  for (const r of rows) {
+    const k = r.cohortMonth.slice(0, 7);
+    if (!byMonth.get(k)) byMonth.set(k, r.spendCoverage ?? null);
+  }
+  const n = byMonth.size;
+  const covs = [...byMonth.values()].filter((c): c is SpendCoverage => c !== null);
+
+  const late = new Map<string, { from: string; months: number }>();
+  for (const c of covs) {
+    for (const l of c.lateHistory) {
+      const t = late.get(l.platform) ?? { from: l.from, months: 0 };
+      t.months += 1;
+      late.set(l.platform, t);
+    }
+  }
+  if (late.size > 0) {
+    const parts = [...late.entries()].map(
+      ([p, t]) => `${PLATFORM_NAME[p] ?? p} spend history starts ${t.from} and ${t.months} of the ${n} cohort months began before it`
+    );
+    return { na: `${parts.join("; ")}, so cohort CAC would leave that spend out` };
+  }
+
+  const days = covs.reduce((t, c) => t + c.days, 0);
+  const gap = covs.reduce((t, c) => t + c.gapDays, 0);
+  if (gap > 0 && gap / Math.max(1, days) > SPEND_GAP_MAX_SHARE) {
+    return { na: `Spend data is missing on ${dayCount(gap)} of ${days} in these cohort months, so cohort CAC would be a lower bound` };
+  }
+  const all = covs.reduce((t, c) => t + c.clientSpend, 0);
+  const un = covs.reduce((t, c) => t + c.unallocatedSpend, 0);
+  const unShare = all > 0 ? un / all : 0;
+  if (unShare > UNALLOCATED_MAX_SHARE) {
+    return {
+      na: `${Math.round(unShare * 100)}% of the ad spend in these cohort months is Unallocated (no market), so the market's acquisition cost is unknown`,
+    };
+  }
+  const notes: string[] = [];
+  if (gap > 0) notes.push(`Spend data is missing on ${dayCount(gap)} of ${days} in these cohort months; those days count as no spend`);
+  if (un > 0) notes.push(`${(unShare * 100).toFixed(1)}% of the ad spend in these months is Unallocated and in no market's cohort CAC`);
+  return notes.length ? { note: notes.join(". ") } : {};
 }
 
 export function cohortSummary(
   rows: CohortRow[],
   ctx: { platform: string | null; nCac: Val }
 ): CohortSummary {
-  const months = poolCohorts(rows);
+  const months = poolCohorts(rows).filter((m) => m.customers > 0);
   const points: Partial<Record<CohortAge, CohortPoint>> = {};
+  const missing: Partial<Record<CohortAge, string>> = {};
   const gpReason = gapReason("cogs", ctx.platform);
+  const reached = (age: CohortAge) =>
+    months.filter((m) => m.revenue[age] !== null && m.revenue[age] !== undefined).slice(-COHORT_WINDOW);
+  const count = (list: CohortRow[]) => list.reduce((t, m) => t + m.customers, 0);
+
+  // Anchor: the oldest age whose latest cohorts hold enough customers to read;
+  // the oldest age reached at all when none does (its figures then say so).
+  let anchor: CohortAge | null = null;
+  let anyReached: CohortAge | null = null;
+  for (const a of COHORT_AGES) {
+    const r = reached(a);
+    if (r.length === 0) continue;
+    anyReached = a;
+    if (count(r) >= COHORT_MIN_CUSTOMERS) anchor = a;
+  }
+  anchor = anchor ?? anyReached;
+  const set = anchor === null ? [] : reached(anchor);
 
   for (const age of COHORT_AGES) {
-    const reached = months.filter((m) => m.revenue[age] !== null && m.revenue[age] !== undefined && m.customers > 0);
-    const win = reached.slice(-COHORT_WINDOW);
-    if (win.length === 0) continue;
-    const customers = win.reduce((t, m) => t + m.customers, 0);
+    if (anchor === null || age > anchor) {
+      const r = reached(age);
+      missing[age] =
+        r.length === 0
+          ? `No complete cohort has reached ${age} days`
+          : `Only ${plural(count(r), "customer", "customers")} in cohorts that reached ${age} days, under ${COHORT_MIN_CUSTOMERS}; every age reads the cohorts that reached ${anchor} days`;
+      continue;
+    }
+    const win = set.filter((m) => m.revenue[age] !== null && m.revenue[age] !== undefined);
+    if (win.length === 0) {
+      missing[age] = `No complete cohort has reached ${age} days`;
+      continue;
+    }
+    const customers = count(win);
     const costed = win.reduce((t, m) => t + m.costedCustomers, 0);
     const sumOf = (pick: (m: CohortRow) => number | null | undefined) =>
       win.reduce<number | null>((t, m) => addN(t, pick(m) ?? null), 0);
@@ -634,34 +799,43 @@ export function cohortSummary(
     const rev = sumOf((m) => m.revenue[age]);
     const gp = sumOf((m) => m.gp[age]);
     const spend = sumOf((m) => m.cohortSpend);
+    const tiny =
+      customers < COHORT_MIN_CUSTOMERS
+        ? `Only ${plural(customers, "cohort customer", "cohort customers")} in these months, under ${COHORT_MIN_CUSTOMERS}: too few to read (Directional rule)`
+        : null;
 
     // GP sums cover costed customers only (contract amendment): divide by those.
-    const gpPerCustomer: Val = gp === null || costed === 0 ? { na: gpReason } : { v: gp / costed };
+    const gpPerCustomer: Val = tiny ? { na: tiny } : gp === null || costed === 0 ? { na: gpReason } : { v: gp / costed };
+    const check = cohortSpendCheck(win);
     const cac: Val =
-      spend === null ? { na: "Spend history does not reach these cohort months" }
+      tiny ? { na: tiny }
+      : "na" in check ? check
+      : spend === null ? { na: "Spend history does not reach these cohort months" }
       : spend <= 0 ? { na: "No paid spend in these cohort months" }
+      : check.note ? { v: spend / customers, note: check.note }
       : { v: spend / customers };
     points[age] = {
       age,
       customers,
       months: win.length,
-      repeatRate: rep === null ? { na: "Repeat counts are not in the mart" } : { v: rep / customers },
-      revenuePerCustomer: rev === null ? { na: "Cohort revenue is not in the mart" } : { v: rev / customers },
+      repeatRate: tiny ? { na: tiny } : rep === null ? { na: "Repeat counts are not in the mart" } : { v: rep / customers },
+      revenuePerCustomer: tiny ? { na: tiny } : rev === null ? { na: "Cohort revenue is not in the mart" } : { v: rev / customers },
       gpPerCustomer,
       cac,
-      ltgpCac: isNa(gpPerCustomer) ? gpPerCustomer : isNa(cac) ? cac : { v: gpPerCustomer.v / cac.v },
+      ltgpCac: isNa(gpPerCustomer) ? gpPerCustomer : isNa(cac) ? cac : cac.note ? { v: gpPerCustomer.v / cac.v, note: cac.note } : { v: gpPerCustomer.v / cac.v },
     };
   }
 
-  // Day 0 of the curve: first-order GP per customer over the latest complete
-  // year of cohorts (those that reached 365 d), or the latest 12 otherwise.
-  const base = months.filter((m) => m.customers > 0).slice(-COHORT_WINDOW);
-  const fgSum = base.reduce<number | null>((t, m) => addN(t, m.firstOrderGp), 0);
-  const fgCust = base.reduce((t, m) => t + m.costedCustomers, 0);
+  // Day 0 of the curve: first-order GP per customer over the same cohorts.
+  const fgSum = set.reduce<number | null>((t, m) => addN(t, m.firstOrderGp), 0);
+  const fgCust = set.reduce((t, m) => t + m.costedCustomers, 0);
   const firstOrderGpPerCustomer: Val =
-    base.length === 0 ? { na: "No cohorts for this market" } : fgSum === null || fgCust === 0 ? { na: gpReason } : { v: fgSum / fgCust };
+    set.length === 0 ? { na: "No cohorts for this market" }
+    : count(set) < COHORT_MIN_CUSTOMERS ? { na: `Only ${plural(count(set), "cohort customer", "cohort customers")}, under ${COHORT_MIN_CUSTOMERS}: too few to read (Directional rule)` }
+    : fgSum === null || fgCust === 0 ? { na: gpReason }
+    : { v: fgSum / fgCust };
 
-  return { points, firstOrderGpPerCustomer, payback: payback(points, firstOrderGpPerCustomer, ctx.nCac) };
+  return { points, anchorAge: anchor, missing, firstOrderGpPerCustomer, payback: payback(points, firstOrderGpPerCustomer, ctx.nCac) };
 }
 
 /**
@@ -759,6 +933,7 @@ export function forecastSummary(
   let w = 0, actual = 0, fc = 0, lo = 0, hi = 0, age = 0, refs = 0;
   let spend: number | null = 0;
   let allCustomers = 0;
+  const usedRows: CohortRow[] = [];
   const methods = new Set<string>();
   for (const f of usable) {
     const months = monthsFrom(f.cohortMonth, f.method === "multiplier_quarterly" ? 3 : 1);
@@ -776,6 +951,7 @@ export function forecastSummary(
     for (const r of rows) {
       spend = addN(spend, r.cohortSpend);
       allCustomers += r.customers;
+      usedRows.push(r);
     }
     if (rows.length === 0) spend = null;
     methods.add(f.method);
@@ -783,9 +959,12 @@ export function forecastSummary(
   if (w === 0) return { value: null, reason: "No customers in the forecast cohorts", ltgpCac: { na: "No customers in the forecast cohorts" } };
 
   const forecast = fc / w;
+  const check = cohortSpendCheck(usedRows);
   const ltgpCac: Val =
     spend === null ? { na: "Spend history does not reach these cohort months" }
+    : "na" in check ? check
     : spend <= 0 || allCustomers === 0 ? { na: "No paid spend in these cohort months" }
+    : check.note ? { v: forecast / (spend / allCustomers), note: check.note }
     : { v: forecast / (spend / allCustomers) };
   return {
     value: {
@@ -1001,6 +1180,14 @@ export const RANK_LABEL: Record<RankKey, string> = {
   netRevenue: "net revenue",
 };
 
+/** The same keys as a heading (map metric pill, chart title). */
+export const RANK_TITLE: Record<RankKey, string> = {
+  cm3: "CM3",
+  gpAfterAds: "GP after ads",
+  grossProfit: "Gross profit",
+  netRevenue: "Net revenue",
+};
+
 /** Fallbacks below CM3, which ranks only once every sold market has a cost card. */
 const RANK_KEYS: RankKey[] = ["gpAfterAds", "grossProfit", "netRevenue"];
 
@@ -1048,7 +1235,22 @@ function allocationLabel(a: Allocation | undefined): string | undefined {
   return `Allocated by ${parts.join(", ")}`;
 }
 
-export function buildModel(raw: MarketsRaw): MarketsModel {
+/** A period's rows with every refund figure taken out (the shop does not track them). */
+function withoutRefunds(rows: MarketPeriodRaw[]): MarketPeriodRaw[] {
+  return rows.map((r) => ({
+    ...r,
+    sums: { ...r.sums, refunds: null },
+    extras: r.extras ? { ...r.extras, refundedOrders: null } : null,
+    costDays: r.costDays ? r.costDays.map((d) => ({ ...d, refundedOrders: null })) : r.costDays,
+  }));
+}
+
+export function buildModel(input: MarketsRaw): MarketsModel {
+  // Refunds a shop does not record are n/a, never a measured 0.
+  const refundsNa = refundsUntracked(input.refundHistory);
+  const raw: MarketsRaw = refundsNa
+    ? { ...input, current: withoutRefunds(input.current), previous: input.previous ? withoutRefunds(input.previous) : null }
+    : input;
   const days = daysInclusive(raw.range);
   const prevDays = raw.compareRange ? daysInclusive(raw.compareRange) : days;
   const sold = soldMarkets(raw);
@@ -1060,8 +1262,8 @@ export function buildModel(raw: MarketsRaw): MarketsModel {
   const clientNet = raw.current.filter((r) => r.market !== MARKET_UNALLOCATED).reduce((t, r) => t + r.sums.netRevenue, 0);
   const clientNetPrev = (raw.previous ?? []).filter((r) => r.market !== MARKET_UNALLOCATED).reduce((t, r) => t + r.sums.netRevenue, 0);
 
-  const ctx = { platform: raw.platform, clientNetRevenue: clientNet || null, days, spendGapDays: raw.spendGapDays.current };
-  const ctxPrev = { platform: raw.platform, clientNetRevenue: clientNetPrev || null, days: prevDays, spendGapDays: raw.spendGapDays.previous ?? 0 };
+  const ctx = { platform: raw.platform, clientNetRevenue: clientNet || null, days, spendGapDays: raw.spendGapDays.current, refundsNa };
+  const ctxPrev = { platform: raw.platform, clientNetRevenue: clientNetPrev || null, days: prevDays, spendGapDays: raw.spendGapDays.previous ?? 0, refundsNa };
 
   const otherMembers = [...new Set([...raw.current, ...(raw.previous ?? [])].map((r) => r.market).filter(isOtherMember))];
 
@@ -1116,7 +1318,7 @@ export function buildModel(raw: MarketsRaw): MarketsModel {
         }
       : null;
     const mat = maturity(lifetime, cur, raw.lastCompleteDay);
-    const ltgp365 = cohorts?.points[365]?.ltgpCac ?? { na: "No cohort has reached 365 days" };
+    const ltgp365 = cohorts?.points[365]?.ltgpCac ?? { na: cohorts?.missing[365] ?? "No cohort has reached 365 days" };
     const v = verdict({
       market: s.key,
       homeMarket: raw.homeMarket,
@@ -1275,19 +1477,20 @@ export const MAP_METRICS: Array<{ key: MapMetric; label: string }> = [
 ];
 
 /**
- * The figure a market shows on the map. `gpa` is the profit line the ranking
- * uses: CM3 once every sold market has a cost card, GP after ads before.
+ * The figure a market shows on the map. `gpa` is the line the ranking uses
+ * (CM3, GP after ads, gross profit, net revenue: the first every market has),
+ * so the map and the leaderboard always show the same figure.
  */
 export function mapValue(c: MarketColumn, metric: MapMetric, rank?: RankKey): Val {
   switch (metric) {
     case "gpa":
-      return rank === "cm3" ? c.cur.cm3 : c.cur.gpAfterAds;
+      return c.cur[rank ?? "gpAfterAds"];
     case "net":
       return c.cur.netRevenue;
     case "ncac":
       return c.cur.nCac;
     case "ltgp":
-      return c.cohorts?.points[365]?.ltgpCac ?? { na: "No cohort has reached 365 days" };
+      return c.cohorts?.points[365]?.ltgpCac ?? { na: c.cohorts?.missing[365] ?? "No cohort has reached 365 days" };
     case "status":
       return { na: "Status is categorical" };
   }

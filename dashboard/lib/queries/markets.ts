@@ -65,6 +65,7 @@ import {
   type MarketsRaw,
   type MarketsSource,
   type OrderExtras,
+  type RefundHistory,
 } from "@/lib/markets/types";
 
 export const MARKETS_SOURCE: Exclude<MarketsSource, "demo"> =
@@ -289,20 +290,45 @@ function age<T>(r: Row, prefix: string, conv: (v: unknown) => T): Partial<Record
 }
 
 async function cohorts(clientId: string): Promise<CohortRow[]> {
-  // A cohort month with days of no spend data at all (ad history starting
-  // mid-month, Dobias 2026-04) has a lower-bound cohort_spend: read it as
-  // missing, so cohort CAC and LTGP:CAC say n/a rather than flatter.
+  // Spend coverage per cohort month, client level: days with no spend data at
+  // all, ad platforms whose history starts after the month began (Google
+  // GeoStats from 2025-09, a Meta account connected mid-month), and the
+  // Unallocated share. The model turns cohort CAC n/a when the month's spend
+  // is incomplete, instead of an understated figure (cohortSpendCheck).
   const rows = await query<Row>(
-    `WITH gaps AS (
-       SELECT DISTINCT DATE_TRUNC(date, MONTH) AS m
+    `WITH days AS (
+       SELECT DATE_TRUNC(date, MONTH) AS m, COUNT(DISTINCT date) AS days,
+              COUNT(DISTINCT IF(spend_base IS NULL, date, NULL)) AS gap_days
        FROM ${marketsTable("market_daily")}
-       WHERE client_id = @clientId AND spend_base IS NULL
+       WHERE client_id = @clientId
+       GROUP BY m
+     ),
+     starts AS (
+       SELECT platform, MIN(date) AS first_day
+       FROM ${marketsTable("market_spend_daily")}
+       WHERE client_id = @clientId
+       GROUP BY platform
+     ),
+     spend AS (
+       SELECT DATE_TRUNC(date, MONTH) AS m, SUM(spend_base) AS client_spend,
+              SUM(IF(market = 'UNALLOCATED', spend_base, 0)) AS unallocated_spend
+       FROM ${marketsTable("market_spend_daily")}
+       WHERE client_id = @clientId
+       GROUP BY m
+     ),
+     late AS (
+       SELECT d.m, STRING_AGG(CONCAT(s.platform, '=', FORMAT_DATE('%Y-%m-%d', s.first_day)), '|' ORDER BY s.platform) AS late_history
+       FROM days d JOIN starts s ON s.first_day > d.m
+       GROUP BY d.m
      )
      SELECT c.first_order_market AS market, c.cohort_month, c.customers, c.costed_customers,
             ${COHORT_AGES.map((a) => `c.repeat_customers_${a}, c.revenue_${a}, c.gp_${a}`).join(", ")},
-            IF(g.m IS NULL, c.cohort_spend, NULL) AS cohort_spend, c.first_order_gp
+            c.cohort_spend, c.first_order_gp,
+            d.days, d.gap_days, sp.client_spend, sp.unallocated_spend, l.late_history
      FROM ${marketsTable("market_cohorts")} c
-     LEFT JOIN gaps g ON g.m = c.cohort_month
+     LEFT JOIN days d ON d.m = c.cohort_month
+     LEFT JOIN spend sp ON sp.m = c.cohort_month
+     LEFT JOIN late l ON l.m = c.cohort_month
      WHERE c.client_id = @clientId
      ORDER BY c.cohort_month`,
     { clientId }
@@ -317,6 +343,20 @@ async function cohorts(clientId: string): Promise<CohortRow[]> {
     gp: age(r, "gp", num),
     cohortSpend: num(r.cohort_spend),
     firstOrderGp: num(r.first_order_gp),
+    spendCoverage: {
+      days: num0(r.days),
+      gapDays: num0(r.gap_days),
+      lateHistory: r.late_history
+        ? String(r.late_history)
+            .split("|")
+            .map((x) => {
+              const [platform, from] = x.split("=");
+              return { platform, from };
+            })
+        : [],
+      unallocatedSpend: num0(r.unallocated_spend),
+      clientSpend: num0(r.client_spend),
+    },
   }));
 }
 
@@ -502,8 +542,9 @@ async function lifetimeAndSold(clientId: string, to: string): Promise<{
   lifetime: Record<string, MarketLifetimeRaw>;
   sold: string[];
   lastDay: string | null;
+  refunds: RefundHistory | null;
 }> {
-  const [life, sold, last] = await Promise.all([
+  const [life, sold, last, refunds] = await Promise.all([
     query<Row>(
       `SELECT market, MIN(order_date) AS first_order_date, COUNT(*) AS orders
        FROM ${marketsTable("market_orders")}
@@ -522,7 +563,16 @@ async function lifetimeAndSold(clientId: string, to: string): Promise<{
       `SELECT MAX(date) AS last_day FROM ${marketsTable("market_daily")} WHERE client_id = @clientId`,
       { clientId }
     ),
+    // Refunds over the whole history: a shop that records none is not tracking them.
+    query<Row>(
+      `SELECT COUNT(*) AS orders, IF(COUNT(refunds) = 0, NULL, COUNTIF(refunds > 0)) AS refunded_orders,
+              MIN(order_date) AS since
+       FROM ${marketsTable("market_orders")}
+       WHERE client_id = @clientId`,
+      { clientId }
+    ),
   ]);
+  const rf = refunds[0];
   const lifetime: Record<string, MarketLifetimeRaw> = {};
   for (const r of life) {
     lifetime[String(r.market)] = {
@@ -534,6 +584,9 @@ async function lifetimeAndSold(clientId: string, to: string): Promise<{
     lifetime,
     sold: sold.map((r) => String(r.market)),
     lastDay: isoDate(last[0]?.last_day as never) ?? null,
+    refunds: rf && num0(rf.orders) > 0
+      ? { orders: num0(rf.orders), refundedOrders: num(rf.refunded_orders), since: isoDate(rf.since as never) ?? String(rf.since) }
+      : null,
   };
 }
 
@@ -583,6 +636,7 @@ export async function getMarkets(
       localCurrencyOf: config?.localCurrencyOf ?? {},
       spendMarkets365: life.sold,
       spendGapDays: { current: gapCur, previous: gapPrev },
+      refundHistory: life.refunds,
       otherCountries: others,
       cohorts: cohortRows,
       forecast: forecastRows,

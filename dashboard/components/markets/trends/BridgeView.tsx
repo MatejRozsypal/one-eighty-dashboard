@@ -15,7 +15,7 @@ import { ChartSummary } from "@/components/ui/ChartSummary";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { SegmentPills } from "@/components/controls/SegmentedControl";
 import { formatMoney, NO_VALUE } from "@/lib/format";
-import type { MarketChange } from "@/lib/markets/analysis";
+import { bridgeMoney, type MarketChange } from "@/lib/markets/analysis";
 import { AXIS_TICK, TooltipBox, TooltipRow, marketLabel } from "@/components/markets/trends/bits";
 
 const POS = "var(--positive)";
@@ -56,7 +56,7 @@ export function BridgeView({
   const walk: WalkRow[] | null = sel?.decomposition
     ? (() => {
         const d = sel.decomposition!;
-        const short = (v: number) => formatMoney(v, currency, { compact: true });
+        const short = (v: number) => bridgeMoney(v, currency);
         const signed = (v: number) => `${v >= 0 ? "+" : "−"}${short(Math.abs(v))}`;
         const rows: WalkRow[] = [{ name: "Compare period", value: d.before, range: [0, d.before], kind: "level", label: short(d.before) }];
         let at = d.before;
@@ -99,7 +99,7 @@ export function BridgeView({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={bars} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 4 }}>
                 <CartesianGrid stroke="var(--border)" horizontal={false} />
-                <XAxis type="number" tickLine={false} axisLine={false} tick={AXIS_TICK} tickFormatter={(v: number) => formatMoney(v, currency, { compact: true })} />
+                <XAxis type="number" tickLine={false} axisLine={false} tick={AXIS_TICK} tickFormatter={(v: number) => bridgeMoney(v, currency)} />
                 <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={84} tick={{ ...AXIS_TICK, fill: "var(--text-body)" }} />
                 <ReferenceLine x={0} stroke="var(--gray-400)" />
                 <Tooltip cursor={{ fill: "var(--gray-100)", opacity: 0.6 }} content={<ValueTooltip currency={currency} />} />
@@ -154,7 +154,7 @@ export function BridgeView({
                   axisLine={false}
                   width={68}
                   tick={AXIS_TICK}
-                  tickFormatter={(v: number) => formatMoney(v, currency, { compact: true })}
+                  tickFormatter={(v: number) => bridgeMoney(v, currency)}
                 />
                 {!zoomed && <ReferenceLine y={0} stroke="var(--gray-400)" />}
                 <Tooltip cursor={{ fill: "var(--gray-100)", opacity: 0.6 }} content={<WalkTooltip currency={currency} />} />
@@ -171,7 +171,7 @@ export function BridgeView({
               </BarChart>
             </ResponsiveContainer>
           </div>
-          {zoomed && <p className="m-0 text-[11.5px] text-content-muted">Value axis starts at {formatMoney(walkDomain![0], currency, { compact: true })}, zoomed to the band the change moves in.</p>}
+          {zoomed && <p className="m-0 text-[11.5px] text-content-muted">Value axis starts at {bridgeMoney(walkDomain![0], currency)}, zoomed to the band the change moves in.</p>}
           <ChartSummary
             id={walkId}
             categories

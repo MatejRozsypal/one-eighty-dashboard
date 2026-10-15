@@ -9,42 +9,46 @@
  * purchase / add to cart), coloured against the home market's same step:
  * green when this market converts better, red when worse, so the step where a
  * market leaks is the red one.
+ *
+ * The rules come from funnelRows (lib/markets/analysis): no step rate and no
+ * index on a denominator under 30 ("too few to compare", the counts stay); a
+ * step above 100 % keeps its value in neutral grey with a note below the chart
+ * and is never coloured against home.
  */
 
 import { useId } from "react";
 import { ChartSummary } from "@/components/ui/ChartSummary";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { isNa } from "@/lib/markets/model";
-import type { FunnelRow } from "@/lib/markets/analysis";
+import { FUNNEL_MIN_DENOMINATOR, FUNNEL_STEPS, type FunnelRow, type FunnelStep } from "@/lib/markets/analysis";
 import { marketLabel } from "@/components/markets/trends/bits";
 
 const STAGES = ["Sessions", "Engaged", "Add to cart", "Purchase"] as const;
-const STEPS = ["engaged / sessions", "add to cart / engaged", "purchase / add to cart"] as const;
+const STEPS = FUNNEL_STEPS.map((s) => s.label);
 
 /** Within this many percent of home, a step reads as level (grey). */
 const LEVEL_BAND = 5;
 
 interface FunnelCounts {
   market: string;
-  counts: [number, number, number | null, number | null];
-  steps: [number | null, number | null, number | null];
+  counts: [number, number, number, number];
+  steps: [FunnelStep, FunnelStep, FunnelStep];
 }
 
 function countsOf(r: FunnelRow): FunnelCounts {
-  const atc = isNa(r.addToCartRate) ? null : r.addToCartRate.v * r.sessions;
-  const buy = isNa(r.cvr) ? null : r.cvr.v * r.sessions;
-  const ratio = (a: number | null, b: number | null) => (a !== null && b !== null && b > 0 ? a / b : null);
   return {
     market: r.market,
-    counts: [r.sessions, r.engagedSessions, atc, buy],
-    steps: [ratio(r.engagedSessions, r.sessions), ratio(atc, r.engagedSessions), ratio(buy, atc)],
+    counts: [r.sessions, r.engagedSessions, r.addToCartSessions, r.purchases],
+    steps: r.steps,
   };
 }
 
 export function FunnelChart({ rows, home }: { rows: FunnelRow[]; home: string | null }) {
   const sumId = useId();
   const data = rows.filter((r) => r.sessions > 0).map(countsOf);
-  const homeRow = data.find((d) => d.market === home) ?? null;
+  const overs = data.flatMap((d) =>
+    d.steps.flatMap((st, i) => (st.over && !isNa(st.rate) ? [{ market: d.market, step: i, st }] : []))
+  );
 
   const W = 820;
   const ROW_H = 112;
@@ -65,8 +69,10 @@ export function FunnelChart({ rows, home }: { rows: FunnelRow[]; home: string | 
         {data.map((d, row) => {
           const top = 24 + row * ROW_H;
           const mid = top + ROW_H / 2 - 6;
-          const shares = d.counts.map((c) => (c === null ? null : c / d.counts[0]));
-          const hs = shares.map((s) => (s === null ? null : height(s)));
+          const shares = d.counts.map((c) => c / d.counts[0]);
+          const hs = shares.map((s) => height(s));
+          // Shares of sessions are rates too: none on fewer than 30 sessions.
+          const shareOk = d.counts[0] >= FUNNEL_MIN_DENOMINATOR;
           return (
             <g key={d.market}>
               {row > 0 && <line x1={0} x2={W} y1={top} y2={top} style={{ stroke: "var(--border)" }} />}
@@ -82,7 +88,6 @@ export function FunnelChart({ rows, home }: { rows: FunnelRow[]; home: string | 
               {[0, 1, 2].map((i) => {
                 const a = hs[i];
                 const b = hs[i + 1];
-                if (a === null || b === null) return null;
                 const x1 = stageX(i) + BAR_W / 2;
                 const x2 = stageX(i + 1) - BAR_W / 2;
                 return (
@@ -94,41 +99,44 @@ export function FunnelChart({ rows, home }: { rows: FunnelRow[]; home: string | 
                 );
               })}
               {/* Stages */}
-              {hs.map((h, i) =>
-                h === null ? (
-                  <text key={`s${i}`} x={stageX(i)} y={mid + 4} textAnchor="middle" style={{ fontSize: 11, fill: "var(--text-muted)" }}>
-                    n/a
-                  </text>
-                ) : (
+              {hs.map((h, i) => (
                   <g key={`s${i}`}>
                     <rect x={stageX(i) - BAR_W / 2} y={mid - h / 2} width={BAR_W} height={h} rx={3} style={{ fill: i === 0 ? "var(--growth-300)" : "var(--growth-500)" }} />
                     <text x={stageX(i)} y={mid + Math.max(h, 6) / 2 + 14} textAnchor="middle" className="tabular" style={{ fontSize: 11.5, fill: "var(--text-strong)" }}>
                       {formatNumber(Math.round(d.counts[i] as number))}
                     </text>
-                    {i > 0 && (
+                    {i > 0 && shareOk && (
                       <text x={stageX(i)} y={mid + Math.max(h, 6) / 2 + 27} textAnchor="middle" className="tabular" style={{ fontSize: 10.5, fill: "var(--text-muted)" }}>
-                        {formatPercent(shares[i] as number)} of sessions
+                        {formatPercent(shares[i])} of sessions
                       </text>
                     )}
                   </g>
-                )
-              )}
+              ))}
               {/* Step conversion between stages, against home. */}
               {[0, 1, 2].map((i) => {
-                const v = d.steps[i];
-                if (v === null) return null;
-                const h = homeRow?.steps[i] ?? null;
-                const idx = h && d.market !== home ? (v / h) * 100 : null;
-                const tone = idx === null ? "var(--text-body)" : idx >= 100 + LEVEL_BAND ? "var(--positive-text)" : idx <= 100 - LEVEL_BAND ? "var(--negative-text)" : "var(--text-body)";
+                const st = d.steps[i];
                 const x = (stageX(i) + stageX(i + 1)) / 2;
+                const halo = { paintOrder: "stroke" as const, stroke: "var(--paper)", strokeWidth: 3 };
+                if (isNa(st.rate)) {
+                  // Too few to compare (or nothing to divide by): the counts above say it all.
+                  return (
+                    <text key={`r${i}`} x={x} y={mid + 4} textAnchor="middle" style={{ fontSize: 10.5, fill: "var(--text-muted)", ...halo }}>
+                      {st.den > 0 ? "too few to compare" : "n/a"}
+                    </text>
+                  );
+                }
+                const idx = d.market !== home && !isNa(st.index) ? st.index.v : null;
+                const tone = idx === null ? "var(--text-body)" : idx >= 100 + LEVEL_BAND ? "var(--positive-text)" : idx <= 100 - LEVEL_BAND ? "var(--negative-text)" : "var(--text-body)";
+                const second = st.over ? FUNNEL_STEPS[i].overShort : idx !== null ? `idx ${formatNumber(Math.round(idx))}` : null;
                 return (
                   <g key={`r${i}`}>
-                    <text x={x} y={mid + (idx !== null ? -1 : 4)} textAnchor="middle" className="tabular" style={{ fontSize: 12.5, fontWeight: 600, fill: tone, paintOrder: "stroke", stroke: "var(--paper)", strokeWidth: 3 }}>
-                      {formatPercent(v)}
+                    <text x={x} y={mid + (second !== null ? -1 : 4)} textAnchor="middle" className="tabular" style={{ fontSize: 12.5, fontWeight: 600, fill: tone, ...halo }}>
+                      {formatPercent(st.rate.v)}
+                      {st.over ? "*" : ""}
                     </text>
-                    {idx !== null && (
-                      <text x={x} y={mid + 13} textAnchor="middle" className="tabular" style={{ fontSize: 10.5, fill: tone, paintOrder: "stroke", stroke: "var(--paper)", strokeWidth: 3 }}>
-                        idx {formatNumber(Math.round(idx))}
+                    {second !== null && (
+                      <text x={x} y={mid + 13} textAnchor="middle" className="tabular" style={{ fontSize: 10.5, fill: st.over ? "var(--text-muted)" : tone, ...halo }}>
+                        {second}
                       </text>
                     )}
                   </g>
@@ -139,13 +147,22 @@ export function FunnelChart({ rows, home }: { rows: FunnelRow[]; home: string | 
         })}
       </svg>
       <p className="m-0 text-[11.5px] text-content-muted">
-        Between stages: step conversion ({STEPS.join(", ")}). Green or red against the home market, idx = home 100. Stage height on a square-root scale.
+        Between stages: step conversion ({STEPS.join(", ")}). Green or red against the home market, idx = home 100. No rate under {FUNNEL_MIN_DENOMINATOR} in the denominator: too few to compare. Stage height on a square-root scale.
       </p>
+      {overs.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-1 p-0 text-[11.5px] text-content-muted">
+          {overs.map(({ market, step, st }) => (
+            <li key={`${market}-${step}`}>
+              {`* ${marketLabel(market)}, ${FUNNEL_STEPS[step].label} ${formatPercent(isNa(st.rate) ? null : st.rate.v)} (${formatNumber(st.num)} of ${formatNumber(st.den)}): ${st.over}. Not indexed against home.`}
+            </li>
+          ))}
+        </ul>
+      )}
       <ChartSummary
         id={sumId}
         categories
         labels={data.map((d) => marketLabel(d.market))}
-        series={STEPS.map((s, i) => ({ name: s, values: data.map((d) => d.steps[i]) }))}
+        series={STEPS.map((s, i) => ({ name: s, values: data.map((d) => (isNa(d.steps[i].rate) ? null : d.steps[i].rate.v)) }))}
         format={(v) => formatPercent(v)}
       />
     </div>

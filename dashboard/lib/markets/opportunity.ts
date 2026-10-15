@@ -12,6 +12,7 @@
  *
  *   proven pull      new customers, 365 d             weight 0.35  log scale
  *   unpaid interest  unpaid engaged GA4 sessions, 90 d weight 0.25  log scale
+ *                    (n/a when GA4 covers fewer than GA4_MIN_DAYS of the 90)
  *   search demand    core monthly search volume       weight 0.25  log scale
  *   cost to reach    home Meta CPM / country Meta CPM weight 0.15  ratio / max ratio
  *
@@ -20,7 +21,9 @@
  * Index = round(100 x sum(w x s) / sum(w over the available signals)), only
  * with at least two available signals; otherwise n/a with the missing ones
  * named. A signal is n/a, not zero, when it is not measured (GA4 not
- * connected, search terms not confirmed, CPM benchmark missing). A measured
+ * connected or covering under 28 days, search terms not confirmed, either
+ * Meta CPM benchmark missing). Cost to reach exists exactly when both CPMs of
+ * one pair exist (`Opportunity.cpm`), and the table prints that same pair. A measured
  * zero (no orders, no sessions) stays zero. No shrinkage, no smoothing (owner
  * rule: pure numbers).
  */
@@ -29,12 +32,28 @@ import type { CpmBenchmark, ScoutingSignalsRaw, ScoutSignalRow } from "./types";
 
 export type SignalKey = "pull" | "unpaid" | "search" | "cost";
 
-export const SIGNALS: ReadonlyArray<{ key: SignalKey; label: string; short: string; weight: number; what: string }> = [
-  { key: "pull", label: "Proven pull", short: "Pull", weight: 0.35, what: "New customers with no campaign behind them, last 365 days" },
-  { key: "unpaid", label: "Unpaid interest", short: "Unpaid", weight: 0.25, what: "Engaged GA4 sessions from unpaid channels, last 90 days" },
-  { key: "search", label: "Search demand", short: "Search", weight: 0.25, what: "Monthly searches for the confirmed core terms" },
-  { key: "cost", label: "Cost to reach", short: "Cost", weight: 0.15, what: "Home-market Meta CPM benchmark divided by the country's" },
+export const SIGNALS: ReadonlyArray<{ key: SignalKey; label: string; short: string; basis: string; weight: number; what: string }> = [
+  { key: "pull", label: "Proven pull", short: "Pull, 365 d", basis: "new customers, last 365 days", weight: 0.35, what: "New customers with no campaign behind them, last 365 days" },
+  { key: "unpaid", label: "Unpaid interest", short: "Unpaid, 90 d", basis: "unpaid engaged GA4 sessions, last 90 days", weight: 0.25, what: "Engaged GA4 sessions from unpaid channels, last 90 days" },
+  { key: "search", label: "Search demand", short: "Search", basis: "core monthly searches", weight: 0.25, what: "Monthly searches for the confirmed core terms" },
+  { key: "cost", label: "Cost to reach", short: "Cost", basis: "home Meta CPM / country Meta CPM", weight: 0.15, what: "Home-market Meta CPM benchmark divided by the country's" },
 ];
+
+/**
+ * Fewest GA4 days (of the 90-day window) for GA4 to count as a signal. Under
+ * it the sessions are a few days' worth, so a zero there is not a measured
+ * zero: unpaid interest is n/a and the page says why.
+ */
+export const GA4_MIN_DAYS = 28;
+
+/** Whether GA4 counts in the 90-day window; the reason when it does not. */
+export function ga4Coverage(days: number | null): { ok: true; days: number } | { ok: false; na: string } {
+  if (days === null) return { ok: false, na: "GA4 is not connected for this client" };
+  if (days < GA4_MIN_DAYS) {
+    return { ok: false, na: `GA4 covers only ${days} of the last 90 days (needs ${GA4_MIN_DAYS}), too little to read unpaid interest` };
+  }
+  return { ok: true, days };
+}
 
 /** Fewest available signals an index is computed on. */
 export const MIN_SIGNALS = 2;
@@ -44,6 +63,12 @@ export const FALLBACK_VERTICALS = ["all_ecommerce"] as const;
 
 export type RawSignal = { v: number } | { na: string };
 
+/** The two Meta CPM benchmarks cost to reach is computed from: one vertical, one source, one currency. */
+export interface CpmPair {
+  home: CpmBenchmark;
+  country: CpmBenchmark;
+}
+
 export interface CandidateSignals {
   iso: string;
   pull: RawSignal;
@@ -51,6 +76,8 @@ export interface CandidateSignals {
   search: RawSignal;
   /** The CPM ratio home / country, not the CPM itself. */
   cost: RawSignal;
+  /** The CPM pair behind `cost`; null whenever `cost` is n/a. */
+  cpm?: CpmPair | null;
 }
 
 export interface SignalScore {
@@ -70,6 +97,8 @@ export interface Opportunity {
   /** Available signals, out of 4. */
   coverage: number;
   signals: Record<SignalKey, SignalScore>;
+  /** The Meta CPM pair behind cost to reach; null exactly when cost to reach is n/a. */
+  cpm: CpmPair | null;
 }
 
 const has = (x: RawSignal): x is { v: number } => "v" in x;
@@ -127,6 +156,7 @@ export function opportunityIndex(cands: CandidateSignals[]): Opportunity[] {
       rank: null,
       coverage,
       signals,
+      cpm: signals.cost.score !== null ? c.cpm ?? null : null,
     };
   });
 
@@ -149,21 +179,23 @@ export function opportunityIndex(cands: CandidateSignals[]): Opportunity[] {
 }
 
 /**
- * The CPM ratio home / country. Both CPMs come from one vertical (the
- * client's, then all_ecommerce) and one source, so the ratio compares like
- * with like: sources differ by up to 1.5x on the same country. Within a
- * vertical the source covering the most countries goes first (then by name),
- * and the first that has both countries in one currency is used.
+ * The Meta CPM pair cost to reach is computed from. Both CPMs come from one
+ * vertical (the client's, then all_ecommerce) and one source, so the ratio
+ * compares like with like: sources differ by up to 1.5x on the same country.
+ * Within a vertical the source covering the most countries goes first (then by
+ * name), and the first that has both countries in one currency is used. Only
+ * ISO-2 rows count: a regional row (CEE, GLOBAL) never stands in for a
+ * country, so a country with no benchmark of its own is n/a.
  */
-export function cpmRatio(
+export function cpmPair(
   iso: string,
   home: string | null,
   cpm: CpmBenchmark[] | null,
   vertical: string | null
-): RawSignal {
+): CpmPair | { na: string } {
   if (cpm === null) return { na: "Benchmarks not loaded" };
   if (!home) return { na: "Home market unknown" };
-  const rows = cpm.filter((r) => r.value > 0);
+  const rows = cpm.filter((r) => r.value > 0 && Number.isFinite(r.value) && /^[A-Z]{2}$/.test(r.iso));
   const verticals = [...new Set([vertical, ...FALLBACK_VERTICALS].filter((v): v is string => !!v))];
   let sawCurrencyGap = false;
   for (const v of verticals) {
@@ -179,7 +211,7 @@ export function cpmRatio(
         sawCurrencyGap = true;
         continue;
       }
-      return { v: h.value / c.value };
+      return { home: h, country: c };
     }
   }
   if (sawCurrencyGap) return { na: `Meta CPM benchmarks for ${home} and ${iso} are in different currencies` };
@@ -187,6 +219,17 @@ export function cpmRatio(
   if (!inVerticals(iso)) return { na: `No Meta CPM benchmark for ${iso}` };
   if (!inVerticals(home)) return { na: `No Meta CPM benchmark for the home market (${home})` };
   return { na: `No single source has Meta CPM benchmarks for both ${home} and ${iso}` };
+}
+
+/** The CPM ratio home / country from `cpmPair`; n/a whenever either CPM is missing. */
+export function cpmRatio(
+  iso: string,
+  home: string | null,
+  cpm: CpmBenchmark[] | null,
+  vertical: string | null
+): RawSignal {
+  const p = cpmPair(iso, home, cpm, vertical);
+  return "na" in p ? p : { v: p.home.value / p.country.value };
 }
 
 /**
@@ -202,23 +245,23 @@ export function candidateSignals(input: {
   const { signals } = input;
   if (!signals) {
     const na = { na: "Scouting signals are not built for this client" };
-    return input.candidates.map((iso) => ({ iso, pull: na, unpaid: na, search: na, cost: na }));
+    return input.candidates.map((iso) => ({ iso, pull: na, unpaid: na, search: na, cost: na, cpm: null }));
   }
   const byIso = new Map<string, ScoutSignalRow>(signals.rows.map((r) => [r.iso, r]));
+  const ga4 = ga4Coverage(signals.ga4Days90);
   return input.candidates.map((iso) => {
     const r = byIso.get(iso);
+    const pair = cpmPair(iso, input.home, signals.cpm, signals.vertical);
     return {
       iso,
       pull: { v: r?.newCustomers365 ?? 0 },
-      unpaid:
-        signals.ga4Days90 === null
-          ? { na: "GA4 is not connected for this client" }
-          : { v: r?.unpaidEngagedSessions90 ?? 0 },
+      unpaid: ga4.ok ? { v: r?.unpaidEngagedSessions90 ?? 0 } : { na: ga4.na },
       search:
         r?.searchVolumeCore !== null && r?.searchVolumeCore !== undefined
           ? { v: r.searchVolumeCore }
           : { na: `No confirmed core search terms for ${iso} yet` },
-      cost: cpmRatio(iso, input.home, signals.cpm, signals.vertical),
+      cost: "na" in pair ? pair : { v: pair.home.value / pair.country.value },
+      cpm: "na" in pair ? null : pair,
     };
   });
 }

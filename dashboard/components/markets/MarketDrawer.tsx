@@ -33,6 +33,7 @@ import {
 } from "@/lib/markets/model";
 import {
   columnCurrency,
+  deltaDecimals,
   deltaKind,
   formatFigure,
   longName,
@@ -67,7 +68,7 @@ function Figure({
         {v.note ? <InfoTip text={v.note} label="Note" /> : null}
       </span>
       {p && good && (
-        <DeltaChip change={{ current: v.v, previous: p.v, kind: deltaKind(kind), currency: currency.code }} goodWhen={good} className="text-[11px]" />
+        <DeltaChip change={{ current: v.v, previous: p.v, kind: deltaKind(kind), currency: currency.code, decimals: deltaDecimals(kind, currency.code) }} goodWhen={good} className="text-[11px]" />
       )}
     </span>
   );
@@ -145,14 +146,14 @@ export function MarketDrawer({
   const ccy = columnCurrency(c, mode, base);
   const home = model.markets.find((m) => m.key === model.homeMarket) ?? null;
   const flag = discountFlag(c.cur, c.prev);
-  const ltgp365 = c.cohorts?.points[365]?.ltgpCac ?? ({ na: "No complete cohort has reached 365 days" } as Val);
+  const ltgp365 = c.cohorts?.points[365]?.ltgpCac ?? ({ na: c.cohorts?.missing[365] ?? "No complete cohort has reached 365 days" } as Val);
   const pb = c.cohorts ? c.cohorts.payback : { na: "No cohorts for this market" };
   const fig = (x: Val, kind: FigureKind, prev?: Val | null, good?: GoodWhen) => (
     <Figure x={x} prev={prev} kind={kind} currency={ccy} good={good} />
   );
   const rep = (age: 30 | 60, col: MarketColumn | null): Val => {
     const p = col?.cohorts?.points[age];
-    return p ? p.repeatRate : { na: `No complete cohort has reached ${age} days` };
+    return p ? p.repeatRate : { na: col?.cohorts?.missing[age] ?? `No complete cohort has reached ${age} days` };
   };
   const idx = (x: Val) => (isNa(x) ? <NaValue reason={x.na} /> : <span className="font-mono tabular text-content-strong">{formatNumber(x.v)}</span>);
   const ppVsHome = (a: Val, h: Val) =>
@@ -237,7 +238,7 @@ export function MarketDrawer({
             <Waterfall m={c.cur} currency={ccy.code} factor={ccy.cur} />
           </Block>
 
-          <Block title="Cohort value vs acquisition cost" info="Complete cohorts only; each point is the latest twelve cohort months that reached that age. Does not follow the date range.">
+          <Block title="Cohort value vs acquisition cost" info="Complete cohorts only; every point reads the same cohorts, the latest twelve cohort months that reached 365 days (or the oldest age with at least 30 customers). Does not follow the date range.">
             <CohortChart market={c} home={home} currency={ccy.code} factor={ccy.cur} />
           </Block>
 

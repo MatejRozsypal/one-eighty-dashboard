@@ -3,7 +3,7 @@
 /**
  * Markets ranked by absolute CM3 once every sold market has a cost card, by
  * GP after ads before (gross profit, then net revenue when a market lacks
- * it), each with its verdict chip, maturity badge and the change against the
+ * it; the map's first metric follows the same key), each with its verdict chip, maturity badge and the change against the
  * comparison. A row opens the market.
  */
 
@@ -34,7 +34,7 @@ export function Leaderboard({
             key === "cm3"
               ? "Absolute CM3 decides the order; ratios explain it."
               : model.ranking.why
-                ? `Not every market has GP after ads: ${model.ranking.why}.`
+                ? `Not every market has GP after ads${key === "netRevenue" ? " or gross profit" : ""}: ${model.ranking.why}. The map's first metric follows the same ranking.`
                 : "Absolute GP after ads decides the order; ratios explain it. CM3 takes over once every market has a cost card (Settings > Market costs)."
           }
         />

@@ -3,7 +3,9 @@
 /**
  * Funnel by market from GA4: sessions, engaged sessions, unpaid share,
  * add-to-cart rate and purchase CVR, each rate indexed to the home market
- * (home = 100) and, with Compare on, its change in the delta mode.
+ * (home = 100) and, with Compare on, its change in the delta mode. Under 30 in
+ * a rate's denominator the cell prints "too few to compare" and the counts,
+ * no rate and no index (funnelRows' low-data rule).
  */
 
 import { DataTable, type DataTableRow } from "@/components/ui/DataTable";
@@ -12,10 +14,37 @@ import { InfoTip } from "@/components/ui/InfoTip";
 import { NoValue } from "@/components/ui/EmptyState";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { isNa, type Val } from "@/lib/markets/model";
-import type { FunnelRow } from "@/lib/markets/analysis";
+import { isTooFew, type FunnelRow } from "@/lib/markets/analysis";
 import { marketLabel } from "@/components/markets/trends/bits";
 
-function RateCell({ v, prev, index, showIndex, comparing }: { v: Val; prev: Val | null; index: Val; showIndex: boolean; comparing: boolean }) {
+function RateCell({
+  v,
+  prev,
+  index,
+  showIndex,
+  comparing,
+  num,
+  den,
+}: {
+  v: Val;
+  prev: Val | null;
+  index: Val;
+  showIndex: boolean;
+  comparing: boolean;
+  num: number;
+  den: number;
+}) {
+  if (isTooFew(v)) {
+    return (
+      <span className="flex flex-col items-end gap-0.5 text-[11.5px] text-content-muted">
+        <span className="inline-flex items-center gap-1">
+          too few to compare
+          <InfoTip text={(v as { na: string }).na} label="Why no rate" />
+        </span>
+        <span className="tabular">{`${formatNumber(num)} of ${formatNumber(den)}`}</span>
+      </span>
+    );
+  }
   if (isNa(v)) {
     return (
       <span className="inline-flex items-center gap-1 text-content-muted">
@@ -51,9 +80,9 @@ export function FunnelTable({ rows, home, comparing }: { rows: FunnelRow[]; home
         )}
       </span>,
       <span key="e" className="tabular">{formatNumber(r.engagedSessions)}</span>,
-      <RateCell key="u" v={r.unpaidShare} prev={r.previous?.unpaidShare ?? null} index={r.index.unpaidShare} showIndex={r.market !== home} comparing={comparing} />,
-      <RateCell key="a" v={r.addToCartRate} prev={r.previous?.addToCartRate ?? null} index={r.index.addToCartRate} showIndex={r.market !== home} comparing={comparing} />,
-      <RateCell key="c" v={r.cvr} prev={r.previous?.cvr ?? null} index={r.index.cvr} showIndex={r.market !== home} comparing={comparing} />,
+      <RateCell key="u" v={r.unpaidShare} prev={r.previous?.unpaidShare ?? null} index={r.index.unpaidShare} showIndex={r.market !== home} comparing={comparing} num={r.unpaidEngagedSessions} den={r.engagedSessions} />,
+      <RateCell key="a" v={r.addToCartRate} prev={r.previous?.addToCartRate ?? null} index={r.index.addToCartRate} showIndex={r.market !== home} comparing={comparing} num={r.addToCartSessions} den={r.sessions} />,
+      <RateCell key="c" v={r.cvr} prev={r.previous?.cvr ?? null} index={r.index.cvr} showIndex={r.market !== home} comparing={comparing} num={r.purchases} den={r.sessions} />,
     ],
     sort: [
       r.market,

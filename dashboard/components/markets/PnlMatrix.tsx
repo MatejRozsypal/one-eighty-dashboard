@@ -29,6 +29,7 @@ import {
 import type { CohortAge } from "@/lib/markets/types";
 import {
   columnCurrency,
+  deltaDecimals,
   deltaKind,
   formatFigure,
   longName,
@@ -71,7 +72,7 @@ const cohortVal = (age: CohortAge, pick: "repeatRate" | "revenuePerCustomer" | "
   (c: MarketColumn): Val => {
     const p = c.cohorts?.points[age];
     if (!c.cohorts) return { na: "No cohorts for this market" };
-    if (!p) return { na: `No complete cohort has reached ${age} days` };
+    if (!p) return { na: c.cohorts.missing[age] ?? `No complete cohort has reached ${age} days` };
     return p[pick];
   };
 
@@ -138,11 +139,11 @@ const SECTIONS: Section[] = [
     label: "Lifetime",
     cohort: true,
     rows: [
-      { id: "c365", label: "Cohort customers, 365 d", kind: "count", good: "neutral", cohort: (c) => (c.cohorts?.points[365] ? { v: c.cohorts.points[365]!.customers } : { na: "No complete cohort has reached 365 days" }) },
-      ...([90, 180, 365] as const).map<RowDef>((a) => ({ id: `rep${a}`, label: `Repeat rate ${a} d`, kind: "rate", good: "up", cohort: cohortVal(a, "repeatRate") })),
+      { id: "c365", label: "Cohort customers, 365 d", kind: "count", good: "neutral", cohort: (c) => (c.cohorts?.points[365] ? { v: c.cohorts.points[365]!.customers } : { na: c.cohorts?.missing[365] ?? "No complete cohort has reached 365 days" }) },
+      ...([90, 180, 365] as const).map<RowDef>((a) => ({ id: `rep${a}`, label: `Repeat rate ${a} d`, kind: "rate", good: "up", cohort: cohortVal(a, "repeatRate"), info: a === 90 ? "Every age reads the same cohorts: the latest 12 cohort months that reached 365 days (the oldest age with at least 30 customers when none did), so the rows form one curve. Under 30 cohort customers the figures are n/a." : undefined })),
       ...([90, 180, 365] as const).map<RowDef>((a) => ({ id: `rev${a}`, label: `Revenue per customer ${a} d`, kind: "unit", good: "up", cohort: cohortVal(a, "revenuePerCustomer") })),
       ...([90, 180, 365] as const).map<RowDef>((a) => ({ id: `gp${a}`, label: `GP per customer ${a} d`, kind: "unit", good: "up", strong: a === 365, cohort: cohortVal(a, "gpPerCustomer") })),
-      ...([90, 180, 365] as const).map<RowDef>((a) => ({ id: `cac${a}`, label: `Cohort CAC ${a} d`, kind: "unit", good: "down", cohort: cohortVal(a, "cac"), info: a === 90 ? "Market spend inside the cohort months / cohort customers." : undefined })),
+      ...([90, 180, 365] as const).map<RowDef>((a) => ({ id: `cac${a}`, label: `Cohort CAC ${a} d`, kind: "unit", good: "down", cohort: cohortVal(a, "cac"), info: a === 90 ? "Market spend inside the cohort months / cohort customers. n/a when part of that spend is not in the data: a platform's history starting later, days without spend data or over 10% Unallocated spend." : undefined })),
       ...([90, 180, 365] as const).map<RowDef>((a) => ({ id: `ltgp${a}`, label: `LTGP:CAC ${a} d`, kind: "ratio", good: "up", strong: a === 365, cohort: cohortVal(a, "ltgpCac"), info: a === 365 ? "Target 3:1 at 365 days." : undefined })),
       {
         id: "payback",
@@ -207,7 +208,7 @@ function Cell({
       {forecastBand && <span className="whitespace-nowrap font-mono text-[11px] tabular text-content-muted">{forecastBand}</span>}
       {p && (
         <DeltaChip
-          change={{ current: v.v, previous: p.v, kind: deltaKind(kind), currency: currency.code, compact: kind === "money" }}
+          change={{ current: v.v, previous: p.v, kind: deltaKind(kind), currency: currency.code, compact: kind === "money", decimals: deltaDecimals(kind, currency.code) }}
           goodWhen={good}
           className="text-[11px]"
           after={compareLabel ? <span className="sr-only">{compareLabel}</span> : undefined}

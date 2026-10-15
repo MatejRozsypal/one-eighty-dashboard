@@ -42,10 +42,17 @@ import {
   num,
   payback,
   periodMetrics,
+  cohortSpendCheck,
+  dayCount,
+  mapValue,
+  RANK_TITLE,
+  refundsUntracked,
+  COHORT_MIN_CUSTOMERS,
   type MarketsModel,
 } from "@/lib/markets/model";
+import { formatFigure } from "@/lib/markets/display";
 import { buildMapGeometry } from "@/lib/markets/geo";
-import type { CohortRow, CostCard, MarketPeriodRaw } from "@/lib/markets/types";
+import type { CohortRow, CostCard, MarketPeriodRaw, SpendCoverage } from "@/lib/markets/types";
 import { PnlMatrix } from "@/components/markets/PnlMatrix";
 import { Waterfall } from "@/components/markets/Waterfall";
 import { cardToValues, checkCostCard, marketCostSummary, parseAmount } from "@/lib/markets/costCardForm";
@@ -195,8 +202,10 @@ check("PL Young has no verdict", col(eu, "PL").verdict?.key === "none");
   // First-order GP after ads: first-order GP of all new customers minus spend.
   check("first-order GP after ads", close(num(m.firstOrderGpAfterAds), 600 * 40 - 20000));
   check("first-order GP after ads = per-customer row x new customers", close(num(m.firstOrderGpAfterAds), num(m.firstOrderProfit)! * 40));
-  const gapM = periodMetrics(p, { ...ctx, costs, spendGapDays: 5 });
-  check("spend gap: CM3 and first-order GP after ads n/a, CM2 kept", isNa(gapM.cm3) && isNa(gapM.firstOrderGpAfterAds) && !isNa(gapM.cm2));
+  const gapM = periodMetrics(p, { ...ctx, costs, spendGapDays: 10 });
+  check("spend gap over 10%: CM3 and first-order GP after ads n/a, CM2 kept", isNa(gapM.cm3) && isNa(gapM.firstOrderGpAfterAds) && !isNa(gapM.cm2));
+  const gapS = periodMetrics(p, { ...ctx, costs, spendGapDays: 5 });
+  check("spend gap under 10%: CM3 and first-order GP after ads stand, noted", !isNa(gapS.cm3) && !isNa(gapS.firstOrderGpAfterAds) && /5 days of 90/.test((gapS.cm3 as { note?: string }).note ?? ""));
 }
 for (const [name, m] of [["na", na], ["eu", eu]] as const) {
   const sold = [...m.markets];
@@ -305,6 +314,134 @@ check("SK small market: no forecast, with reason", col(eu, "SK").forecast?.value
   check("demo UNALLOCATED allocation is none", Object.keys(demoMarkets("na", RANGE, PREV).allocation.UNALLOCATED ?? {}).join() === "none");
   check("demo eu quarterly forecast keyed by quarter", demoMarkets("eu", RANGE, PREV).forecast.filter((f) => f.method === "multiplier_quarterly").every((f) => ["01", "04", "07", "10"].includes(f.cohortMonth.slice(5, 7))));
   check("config decides the sold set", buildModel({ ...demoMarkets("na", RANGE, PREV), configuredMarkets: ["US"] }).markets.map((c) => c.key).join() === "US,OTHER");
+}
+
+// ── Production QA fixes (2026-10-16) ──────────────────────────────────────
+{
+  // Issue 2: cohort CAC is n/a when the cohort months' spend is incomplete.
+  const cov = (x: Partial<SpendCoverage> = {}): SpendCoverage => ({ days: 30, gapDays: 0, lateHistory: [], unallocatedSpend: 0, clientSpend: 10000, ...x });
+  const crow = (month: string, x: Partial<CohortRow> = {}): CohortRow => ({
+    market: "CZ", cohortMonth: month, customers: 100, costedCustomers: 100,
+    repeatCustomers: { 30: 5, 60: 8, 90: 10, 180: 15, 365: 20 }, revenue: { 30: 1, 60: 1, 90: 1, 180: 1, 365: 1 },
+    gp: { 30: 30000, 60: 32000, 90: 35000, 180: 40000, 365: 50000 }, cohortSpend: 30000, firstOrderGp: 25000, spendCoverage: cov(), ...x,
+  });
+  const months = ["2024-10", "2024-11", "2024-12", "2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06", "2025-07", "2025-08", "2025-09"];
+  const ok = cohortSummary(months.map((m) => crow(`${m}-01`)), { platform: "woocommerce", nCac: { v: 300 } });
+  check("cohort CAC with complete spend", close(num(ok.points[365]!.cac), 300));
+  // RawBark: Google spend history starts 2025-09-01, eleven of twelve cohort months began before it.
+  const google = months.map((m) => crow(`${m}-01`, { spendCoverage: cov({ lateHistory: m < "2025-09" ? [{ platform: "google", from: "2025-09-01" }] : [] }) }));
+  const gs = cohortSummary(google, { platform: "woocommerce", nCac: { v: 300 } });
+  const gReason = isNa(gs.points[365]!.cac) ? gs.points[365]!.cac.na : "";
+  check("cohort CAC n/a when a platform's history starts later", /Google Ads spend history starts 2025-09-01 and 11 of the 12 cohort months/.test(gReason), gReason);
+  check("LTGP:CAC n/a with the same reason", isNa(gs.points[365]!.ltgpCac) && (gs.points[365]!.ltgpCac as { na: string }).na === gReason);
+  check("cohort CAC late history: GP per customer still read", !isNa(gs.points[365]!.gpPerCustomer));
+  // Gap days: proportional, like the period rule.
+  const gap7 = cohortSpendCheck(months.map((m) => crow(`${m}-01`, { spendCoverage: cov({ gapDays: m === "2025-03" ? 7 : 0 }) })));
+  check("cohort spend: 7 gap days in 360 is a note", !("na" in gap7) && /7 days of 360/.test(gap7.note ?? ""), JSON.stringify(gap7));
+  const gapBig = cohortSpendCheck(months.map((m) => crow(`${m}-01`, { spendCoverage: cov({ gapDays: 5 }) })));
+  check("cohort spend: 60 gap days in 360 is n/a", "na" in gapBig && /60 days of 360/.test(gapBig.na), JSON.stringify(gapBig));
+  // Manami: Unallocated spend is a large share of the months' spend.
+  const unBig = cohortSpendCheck(months.map((m) => crow(`${m}-01`, { spendCoverage: cov({ unallocatedSpend: 2000 }) })));
+  check("cohort spend: 20% Unallocated is n/a", "na" in unBig && /20% of the ad spend/.test(unBig.na), JSON.stringify(unBig));
+  const unSmall = cohortSpendCheck(months.map((m) => crow(`${m}-01`, { spendCoverage: cov({ unallocatedSpend: 500 }) })));
+  check("cohort spend: 5% Unallocated is a note", !("na" in unSmall) && /5.0% of the ad spend/.test(unSmall.note ?? ""), JSON.stringify(unSmall));
+  check("cohort spend: months before any history stay n/a", "na" in cohortSpendCheck([crow("2023-01-01", { cohortSpend: null })]));
+  // The forecast LTGP:CAC reads the same check.
+  const fq = forecastSummary(
+    [{ market: "CZ", cohortMonth: "2025-08-01", customers: 100, asOfAgeDays: 400, actualGpPerCustomer: 300, forecastGp365PerCustomer: 500, bandLow: 450, bandHigh: 550,
+       multiplier: 1.5, nReferenceCohorts: 6, method: "multiplier_monthly", reasonIfNone: null, runDate: "2026-10-14" }].map((f) => ({ ...f, asOfAgeDays: 200 })) as never,
+    [crow("2025-08-01", { spendCoverage: cov({ lateHistory: [{ platform: "google", from: "2025-09-01" }] }) })],
+    "2025-12-01"
+  );
+  check("forecast LTGP:CAC n/a when the month's spend is incomplete", isNa(fq.ltgpCac) && /Google Ads/.test((fq.ltgpCac as { na: string }).na), JSON.stringify(fq.ltgpCac));
+
+  // Issue 13: every age reads the same cohorts, so cumulative figures cannot fall with age.
+  const mixed = [
+    ...months.map((m) => crow(`${m}-01`, { customers: 40, costedCustomers: 40, repeatCustomers: { 90: 2, 180: 3, 365: 4 } })),
+    // Younger cohorts that reached 90 and 180 d only, with a much higher repeat rate.
+    ...["2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03"].map((m) =>
+      crow(`${m}-01`, { customers: 40, costedCustomers: 40, repeatCustomers: { 90: 10, 180: 12, 365: null }, revenue: { 30: 1, 60: 1, 90: 1, 180: 1, 365: null }, gp: { 30: 1, 60: 1, 90: 1, 180: 1, 365: null } })
+    ),
+  ];
+  const same = cohortSummary(mixed, { platform: "woocommerce", nCac: { v: 300 } });
+  const r90 = num(same.points[90]!.repeatRate)!, r180 = num(same.points[180]!.repeatRate)!, r365 = num(same.points[365]!.repeatRate)!;
+  check("lifetime: same cohorts at every age", same.anchorAge === 365 && same.points[90]!.customers === same.points[365]!.customers && same.points[90]!.months === 12);
+  check("lifetime: repeat rate does not fall with age", r90 <= r180 && r180 <= r365, `${r90} ${r180} ${r365}`);
+  // Venev: tiny cohorts are n/a, consistent with the Directional 30-customer rule.
+  const tiny = cohortSummary([crow("2025-06-01", { customers: 8, costedCustomers: 8 }), crow("2025-07-01", { customers: 6, costedCustomers: 6 })], { platform: "shopify", nCac: { v: 300 } });
+  check("lifetime: under 30 cohort customers is n/a", COHORT_MIN_CUSTOMERS === 30 && isNa(tiny.points[365]!.repeatRate) && /14 cohort customers/.test((tiny.points[365]!.repeatRate as { na: string }).na));
+  check("lifetime: tiny cohorts give no payback", "na" in tiny.payback);
+  // A market whose only 365 d cohorts are tiny reads the 180 d set, and says why 365 d is missing.
+  const young = cohortSummary(
+    [crow("2024-09-01", { customers: 5, costedCustomers: 5 }), ...["2025-11", "2025-12", "2026-01", "2026-02"].map((m) => crow(`${m}-01`, { customers: 30, costedCustomers: 30, revenue: { 30: 1, 60: 1, 90: 1, 180: 1, 365: null }, gp: { 30: 1, 60: 1, 90: 1, 180: 1, 365: null } }))],
+    { platform: "shopify", nCac: { v: 300 } }
+  );
+  check("lifetime: anchor falls back to the oldest readable age", young.anchorAge === 180 && !young.points[365] && /Only 5 customers in cohorts that reached 365 days/.test(young.missing[365] ?? ""), JSON.stringify(young.missing));
+
+  // Issue 3: refunds a shop does not record are n/a, not 0.
+  check("refunds untracked: 1 in 50,398 orders", /1 refunded order in 50,398 orders since 2022-10-01/.test(refundsUntracked({ orders: 50398, refundedOrders: 1, since: "2022-10-01" }) ?? ""));
+  check("refunds untracked: none at all", refundsUntracked({ orders: 120, refundedOrders: 0, since: "2026-01-01" }) !== null);
+  check("refunds tracked: 6 in 3,787 orders", refundsUntracked({ orders: 3787, refundedOrders: 6, since: "2022-07-25" }) === null);
+  check("refunds not ingested: no extra reason", refundsUntracked({ orders: 3787, refundedOrders: null, since: "2022-07-25" }) === null);
+  const rawRb = demoMarkets("eu", RANGE, PREV);
+  const rb = buildModel({ ...rawRb, refundHistory: { orders: 50398, refundedOrders: 1, since: "2022-10-01" } });
+  const cz = col(rb, "CZ");
+  check("untracked refunds: refunds row n/a", isNa(cz.cur.refunds) && /not tracked/.test((cz.cur.refunds as { na: string }).na));
+  check("untracked refunds: refunded orders n/a", isNa(cz.cur.refundRate) && isNa(rb.total.cur.refunds));
+  check("untracked refunds: return handling not subtracted, noted", /return handling is not subtracted/.test((cz.cur.shippingCost as { note?: string }).note ?? ""));
+  check("tracked refunds: demo keeps its figures", !isNa(col(eu, "CZ").cur.refunds));
+
+  // Issue 5: Shoptet shipping and net revenue say why; orders without a customer key are explained.
+  const sp: MarketPeriodRaw = {
+    market: "CZ",
+    sums: {
+      orders: 662, newCustomers: 542, returningOrders: 116, grossSales: null, discounts: null, refunds: null,
+      netSales: 650993, netRevenue: 684301, newCustomerRevenue: 540000, returningRevenue: 140000,
+      newCustomerNetSales: 520000, returningNetSales: 130993, newCustomerGrossProfit: null, newCustomerCostedOrders: 0,
+      costedNetSales: null, cogs: null, grossProfit: null, costedOrders: 0, discountedOrders: null, codOrders: null,
+      zeroShippingOrders: null, shippingCharged: null, spend: 256000,
+    },
+    extras: null,
+  };
+  const sm = periodMetrics(sp, { platform: "shoptet", clientNetRevenue: 756261, days: 90 });
+  check("shoptet shipping reason: order total includes shipping and the payment fee", isNa(sm.shippingCharged) && /order total includes shipping and the payment fee/.test((sm.shippingCharged as { na: string }).na));
+  check("shoptet net revenue noted above net sales", /Shoptet's order total carries them/.test((sm.netRevenue as { note?: string }).note ?? ""));
+  check("orders without a customer key are explained", /^4 orders have no customer key/.test((sm.orders as { note?: string }).note ?? ""), (sm.orders as { note?: string }).note);
+  const one = periodMetrics({ ...sp, sums: { ...sp.sums, orders: 659 } }, { platform: "shoptet", clientNetRevenue: 756261, days: 90 });
+  check("one order without a key reads singular", /^1 order has no customer key/.test((one.orders as { note?: string }).note ?? ""));
+  check("orders add up: no note", (periodMetrics({ ...sp, sums: { ...sp.sums, orders: 658 } }, { platform: "shoptet", clientNetRevenue: 1, days: 90 }).orders as { note?: string }).note === undefined);
+
+  // Issue 11: CZK unit figures print whole, like the other unit rows.
+  const ff = (v: number, c: string) => formatFigure(v, "unit", c).replace(/\s/g, " ");
+  check("CZK unit under 100 has no decimals", ff(40.55, "CZK") === "CZK 41", ff(40.55, "CZK"));
+  check("CZK unit over 100 unchanged", ff(1778.4, "CZK") === "CZK 1,778", ff(1778.4, "CZK"));
+  check("EUR unit under 100 keeps cents", ff(40.55, "EUR") === "€40.55", ff(40.55, "EUR"));
+
+  // Issue 12: one day without spend data in 90 keeps nCAC, MER, aMER, GP after ads and CM3, with a note.
+  const g1 = periodMetrics(sp, { platform: "shopify", clientNetRevenue: 1, days: 90, spendGapDays: 1 });
+  check("spend gap 1 of 90: nCAC, MER, aMER stand", !isNa(g1.nCac) && !isNa(g1.mer) && !isNa(g1.amer));
+  check("spend gap 1 of 90: note says 1 day, singular", /missing on 1 day of 90/.test((g1.nCac as { note?: string }).note ?? "") && !/1 days/.test(JSON.stringify(g1)), (g1.nCac as { note?: string }).note);
+  const g9 = periodMetrics(sp, { platform: "shopify", clientNetRevenue: 1, days: 90, spendGapDays: 9 });
+  check("spend gap 9 of 90 (10%): still stands", !isNa(g9.nCac));
+  const g10 = periodMetrics(sp, { platform: "shopify", clientNetRevenue: 1, days: 90, spendGapDays: 10 });
+  check("spend gap 10 of 90: n/a with the share", isNa(g10.nCac) && /10 days of 90 in this range \(over 10%\)/.test((g10.nCac as { na: string }).na));
+  check("day counts pluralise", dayCount(1) === "1 day" && dayCount(2) === "2 days");
+  {
+    const ROOT = join(__dirname, "..");
+    const mine = ["lib/markets/model.ts", "lib/markets/display.ts", "lib/queries/markets.ts", "components/markets/PnlMatrix.tsx", "components/markets/MarketDrawer.tsx", "components/markets/Leaderboard.tsx"];
+    for (const f of mine) check(`no "\${n} days" without plural in ${f}`, !/\$\{gap\} days|\$\{n\} days without/.test(readFileSync(join(ROOT, f), "utf8")));
+  }
+
+  // Issue 13b: the map's first metric is the ranking's key.
+  const rawV = demoMarkets("eu", RANGE, PREV);
+  const venev = buildModel({ ...rawV, costCards: [], spendGapDays: { current: 30, previous: 0 } });
+  check("spend gap over 10%: ranking falls back to gross profit", venev.ranking.key === "grossProfit", venev.ranking.key);
+  check("map first metric = ranking figure", venev.markets.filter((c) => c.kind === "sold").every((c) => {
+    const a = mapValue(c, "gpa", venev.ranking.key), b = c.cur.grossProfit;
+    return !isNa(a) && !isNa(b) && a.v === b.v;
+  }));
+  check("map first metric title follows the ranking", RANK_TITLE[venev.ranking.key] === "Gross profit");
+  check("map CM3 / GP after ads unchanged", mapValue(col(na, "US"), "gpa", "cm3") === col(na, "US").cur.cm3 && mapValue(col(naCm1, "US"), "gpa", "gpAfterAds") === col(naCm1, "US").cur.gpAfterAds);
 }
 
 // ── Cost card form validation ─────────────────────────────────────────────
@@ -507,6 +644,11 @@ check("markets needs a shop", pageAvailability({ capabilities: { shopify: false,
   const lb1 = renderToStaticMarkup(createElement(Leaderboard, { model: euCm1, mode: "base", onOpen: () => {} }));
   check("leaderboard ranks by GP after ads without cards", lb1.includes("Ranked by GP after ads"));
   check("leaderboard shows Young", lb.includes("Young"));
+  const lbGap = renderToStaticMarkup(createElement(Leaderboard, { model: buildModel({ ...demoMarkets("eu", RANGE, PREV), costCards: [], spendGapDays: { current: 30, previous: 0 } }), mode: "base", onOpen: () => {} }));
+  check("leaderboard says gross profit when GP after ads is n/a", lbGap.replace(/<!-- -->/g, "").includes("Ranked by gross profit"));
+  const czk = renderToStaticMarkup(createElement(PnlMatrix, { model: eu, mode: "base", periodLabel: "x", onOpen: () => {} }));
+  const fopRow = rowOf(czk, "First-order GP minus nCAC");
+  check("matrix CZK unit rows print whole", fopRow !== "" && /CZK\s/.test(fopRow) && !/CZK\s\S*\d\.\d/.test(fopRow) && !/CZK\s\S*\d\.\d/.test(rowOf(czk, "nCAC")), fopRow.slice(0, 300));
   const scoutNa = renderToStaticMarkup(createElement(ScoutingView, { model: na, geometry: null, candidates: na.candidates, ga4Connected: true, rangeText: "x" }));
   check("scouting lists the index", scoutNa.includes("Opportunity index") && scoutNa.includes("3 of 4") && scoutNa.includes("not a verdict"));
   check("scouting says GA4 day coverage", scoutNa.includes("GA4 covers 74 of 90 days"));

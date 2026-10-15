@@ -37,8 +37,10 @@ import { MARKET_OTHER, MARKET_UNALLOCATED, type MarketPeriodRaw, type MarketsRaw
 import {
   bridge,
   funnelRows,
+  ga4CoverageNote,
   histogram,
   marketColors,
+  plural,
   portfolioPoints,
   responseByMarket,
   weeklyTrends,
@@ -190,7 +192,7 @@ async function BridgeSection({ baseP, compareLabel }: { baseP: Promise<BaseResul
     previous: poolRows(raw.previous ?? [], base.sold),
     markets: base.keys,
     noGpReason: gapReason("cogs", raw.platform),
-    spendGap: gap > 0 ? `Spend data is missing on ${gap} days of one of the two periods, so GP after ads would not compare like with like` : null,
+    spendGap: gap > 0 ? `Spend data is missing on ${plural(gap, "day")} of one of the two periods, so GP after ads would not compare like with like` : null,
   });
   return (
     <TrendCard title="What changed" info={info}>
@@ -248,7 +250,7 @@ async function FunnelSection({
   compareRange: Range | null;
 }) {
   const [base, ga4] = await Promise.all([baseP, ga4P]);
-  const info = "GA4 sessions by the visitor's country, grouped into the client's markets; countries outside them are Other. Rates are indexed to the home market (home = 100).";
+  const info = "GA4 sessions by the visitor's country, grouped into the client's markets; countries outside them are Other. Rates are indexed to the home market (home = 100). A rate needs 30 or more in its denominator; below that only the counts show.";
   let body;
   if ("empty" in base) body = <Empty base={base} />;
   else if (!ga4 || !ga4.firstDay) body = <NotConnected source="GA4" />;
@@ -258,12 +260,19 @@ async function FunnelSection({
     const days = daysIn(range);
     const coverage = [
       `GA4 by country from ${fmtDay(ga4.firstDay)}`,
-      `${ga4.daysCurrent} of ${days} days in this range`,
+      `${ga4.daysCurrent} of ${plural(days, "day")} in this range`,
       ...(compareRange && ga4.daysPrevious !== null ? [`${ga4.daysPrevious} of ${daysIn(compareRange)} in the compare period`] : []),
     ].join(", ");
+    const thin = ga4CoverageNote(ga4.daysCurrent, days);
     body = (
       <div className="flex flex-col gap-3">
         <p className="m-0 text-[12px] text-content-muted">{coverage}</p>
+        {thin && (
+          <p role="note" className="m-0 flex items-center gap-2 text-[12.5px] text-warning-700">
+            <span aria-hidden="true" className="h-1.5 w-1.5 flex-none rounded-full bg-warning" />
+            {thin}
+          </p>
+        )}
         <FunnelChart rows={rows} home={base.model.homeMarket} />
         <FunnelTable rows={rows} home={base.model.homeMarket} comparing={!!ga4.previous && (ga4.daysPrevious ?? 0) > 0} />
       </div>

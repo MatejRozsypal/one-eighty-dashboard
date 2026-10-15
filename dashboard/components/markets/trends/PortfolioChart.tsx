@@ -12,8 +12,9 @@ import { useId } from "react";
 import { CartesianGrid, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartSummary } from "@/components/ui/ChartSummary";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { EmptyNote } from "@/components/ui/PageNotes";
 import { formatMoney, formatRatio } from "@/lib/format";
-import { niceWidth, portfolioTakeaway, type PortfolioPoint } from "@/lib/markets/analysis";
+import { isPlottable, niceWidth, portfolioEmptyReason, portfolioTakeaway, type PortfolioPoint } from "@/lib/markets/analysis";
 import { AXIS_TICK, TooltipBox, TooltipRow, marketLabel } from "@/components/markets/trends/bits";
 
 type Dot = PortfolioPoint & { x: number; y: number; r: number; color: string };
@@ -37,8 +38,9 @@ export function PortfolioChart({
   currency: string;
 }) {
   const summaryId = useId();
-  const drawn = points.filter((p): p is PortfolioPoint & { x: number; y: number } => p.x !== null && p.y !== null);
-  const missing = points.filter((p) => p.x === null || p.y === null);
+  const drawn = points.filter(isPlottable);
+  const missing = points.filter((p) => !isPlottable(p));
+  const empty = portfolioEmptyReason(points);
   const maxSize = Math.max(1, ...drawn.map((p) => p.size));
   const dots: Dot[] = drawn.map((p) => ({ ...p, r: 7 + 20 * Math.sqrt(Math.max(0, p.size) / maxSize), color: colors[p.market] ?? "var(--gray-400)" }));
 
@@ -56,6 +58,27 @@ export function PortfolioChart({
   const anyFallback = dots.some((d) => d.basis === "firstOrder");
   const fmt = (v: number) => formatMoney(v, currency, { unit: true });
   const takeaway = portfolioTakeaway(points, currency);
+
+  const notDrawn = missing.length > 0 && (
+    <ul className="m-0 flex list-none flex-col gap-1 p-0 text-[12px] text-content-muted">
+      {missing.map((p) => (
+        <li key={p.market} className="inline-flex items-center gap-1.5">
+          <span className="font-mono text-content-body">{marketLabel(p.market)}</span> not drawn
+          <InfoTip text={p.why ?? "No value"} label={`Why ${marketLabel(p.market)} is not drawn`} />
+        </li>
+      ))}
+    </ul>
+  );
+
+  // Nothing to place: say why instead of drawing empty axes with the 3:1 and 1:1 lines.
+  if (empty) {
+    return (
+      <div className="flex flex-col gap-3">
+        <EmptyNote>{empty}</EmptyNote>
+        {notDrawn}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -167,16 +190,7 @@ export function PortfolioChart({
         )}
         <span>Bubble size: net revenue</span>
       </div>
-      {missing.length > 0 && (
-        <ul className="m-0 flex list-none flex-col gap-1 p-0 text-[12px] text-content-muted">
-          {missing.map((p) => (
-            <li key={p.market} className="inline-flex items-center gap-1.5">
-              <span className="font-mono text-content-body">{marketLabel(p.market)}</span> not drawn
-              <InfoTip text={p.why ?? "No value"} label={`Why ${marketLabel(p.market)} is not drawn`} />
-            </li>
-          ))}
-        </ul>
-      )}
+      {notDrawn}
     </div>
   );
 }

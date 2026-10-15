@@ -1,0 +1,1638 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Markets Page Proposal</title>
+<meta name="description" content="Metric proposal and three clickable design options for the One Eighty dashboard Markets page, built on real client numbers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column for the proposal, a wide stage for the three live mockups.
+   House tokens (dashboard/styles/tokens) for the document, Options A and B; Health skin tokens for Option C. */
+:root {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --bg: #F4F4F3;
+  --surface: #FFFFFF;
+  --surface-2: #FAFAFA;
+  --sunken: #F1F1F1;
+  --ink: #1A1A1A;
+  --text: #303030;
+  --muted: #616161;
+  --faint: #9797A0;
+  --line: #E3E3E3;
+  --line-strong: #D2D2D2;
+
+  --accent: #0E9F5D;
+  --accent-ink: #0A7C47;
+  --accent-soft: #EAFAF2;
+
+  --pos: #1C7F45;  --pos-t: #D9EFE1;
+  --neg: #D8332A;  --neg-t: #FBDFDD;
+  --warn: #8A5B0A; --warn-t: #F8E8CD; --warn-g: #F5A623;
+  --serious: #B5470F; --serious-t: #FBE3D3;
+  --info: #0A6CD8; --info-t: #D9E7FA;
+  --neutral: #6C6C70; --neutral-t: #EBEBED;
+
+  --land: #E4E4E1;
+  --land-line: #FFFFFF;
+  --hatch: #8E8E93;
+  --seq1: #D6F6E7; --seq2: #9EEBC8; --seq3: #2CD489; --seq4: #0E9F5D; --seq5: #0A7C47;
+  --iseq1: #D9E7FA; --iseq2: #A9C9F3; --iseq3: #5B9BE8; --iseq4: #0A6CD8; --iseq5: #084F9E;
+
+  --hk-bg: #FFFFFF;
+  --hk-card: #FFFFFF;
+  --hk-fill: rgba(17, 24, 28, 0.06);
+  --hk-border: rgba(17, 24, 28, 0.07);
+  --hk-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 2px rgba(17,24,28,0.05), 0 14px 32px rgba(17,24,28,0.07);
+  --shadow-xs: 0 1px 2px rgba(10,10,11,0.05);
+  --shadow-lg: 0 12px 32px rgba(10,10,11,0.12), 0 4px 8px rgba(10,10,11,0.05);
+  --tip-bg: #1C1C20;
+  --tip-fg: #F1F1F1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0A0A0B; --surface: #141416; --surface-2: #1A1A1D; --sunken: #0F0F11;
+    --ink: #F5F5F5; --text: #E2E2E4; --muted: #A1A1A8; --faint: #6A6A72;
+    --line: #26262B; --line-strong: #34343A;
+    --accent: #2CD489; --accent-ink: #4FDF9E; --accent-soft: #0F2E21;
+    --pos: #45D18A; --pos-t: #123322;
+    --neg: #FF7A72; --neg-t: #3A1715;
+    --warn: #F0C070; --warn-t: #3A2C10; --warn-g: #F5A623;
+    --serious: #FF9A5C; --serious-t: #3D1F0F;
+    --info: #6AAEFF; --info-t: #0F2742;
+    --neutral: #A1A1A8; --neutral-t: #26262B;
+    --land: #2A2A30; --land-line: #0A0A0B; --hatch: #7A7A82;
+    --seq1: #0F3A27; --seq2: #13603F; --seq3: #0E9F5D; --seq4: #2CD489; --seq5: #8EF0C3;
+    --iseq1: #102A4A; --iseq2: #18457A; --iseq3: #2468B8; --iseq4: #4D93E8; --iseq5: #9CC6FF;
+    --hk-bg: #000000; --hk-card: #1C1C1E; --hk-fill: rgba(255,255,255,0.08); --hk-border: rgba(255,255,255,0.08);
+    --hk-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.5);
+    --tip-bg: #F1F1F1; --tip-fg: #141416;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0A0A0B; --surface: #141416; --surface-2: #1A1A1D; --sunken: #0F0F11;
+  --ink: #F5F5F5; --text: #E2E2E4; --muted: #A1A1A8; --faint: #6A6A72;
+  --line: #26262B; --line-strong: #34343A;
+  --accent: #2CD489; --accent-ink: #4FDF9E; --accent-soft: #0F2E21;
+  --pos: #45D18A; --pos-t: #123322;
+  --neg: #FF7A72; --neg-t: #3A1715;
+  --warn: #F0C070; --warn-t: #3A2C10; --warn-g: #F5A623;
+  --serious: #FF9A5C; --serious-t: #3D1F0F;
+  --info: #6AAEFF; --info-t: #0F2742;
+  --neutral: #A1A1A8; --neutral-t: #26262B;
+  --land: #2A2A30; --land-line: #0A0A0B; --hatch: #7A7A82;
+  --seq1: #0F3A27; --seq2: #13603F; --seq3: #0E9F5D; --seq4: #2CD489; --seq5: #8EF0C3;
+  --iseq1: #102A4A; --iseq2: #18457A; --iseq3: #2468B8; --iseq4: #4D93E8; --iseq5: #9CC6FF;
+  --hk-bg: #000000; --hk-card: #1C1C1E; --hk-fill: rgba(255,255,255,0.08); --hk-border: rgba(255,255,255,0.08);
+  --hk-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.5);
+  --tip-bg: #F1F1F1; --tip-fg: #141416;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--font-sans); font-size: 15px; line-height: 1.55;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1, "case" 1;
+  padding-inline: 16px; padding-block: 0 64px;
+}
+a { color: var(--accent-ink); text-underline-offset: 2px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 4px; }
+h1, h2, h3, h4 { color: var(--ink); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 4.4vw, 2.75rem); line-height: 1.08; letter-spacing: -0.03em; font-weight: 650; }
+h2 { font-size: 1.5rem; line-height: 1.2; letter-spacing: -0.02em; font-weight: 650; }
+h3 { font-size: 1.0625rem; letter-spacing: -0.01em; font-weight: 600; }
+p { margin: 0; }
+.mono { font-family: var(--font-mono); }
+.eyebrow { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.wrap { max-width: 1240px; margin-inline: auto; }
+.col { max-width: 880px; }
+section.doc { padding-block: 48px 8px; border-top: 1px solid var(--line); margin-top: 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+section.doc > *, .tree > *, .two > *, .findings > * { min-width: 0; }
+section.doc > header { display: grid; gap: 6px; }
+.lede { color: var(--muted); max-width: 68ch; }
+
+/* ---------- top ---------- */
+.top { padding-block: 40px 8px; display: grid; gap: 14px; }
+.dateline { color: var(--muted); font-size: 14px; max-width: 72ch; }
+.jump { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.jump a { color: var(--muted); text-decoration: none; }
+.jump a:hover { color: var(--ink); text-decoration: underline; }
+
+.decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 18px; }
+.dec { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 8px; align-content: start; }
+.dec .num { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.dec h3 { font-size: 15.5px; }
+.dec p { font-size: 13.5px; color: var(--text); }
+.dec .rec { font-size: 12.5px; color: var(--accent-ink); font-weight: 600; }
+
+/* ---------- option tabs ---------- */
+.opt-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.opt-tab { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; cursor: pointer; display: grid; gap: 2px; min-width: 0; }
+.opt-tab:hover { border-color: var(--line-strong); }
+.opt-tab[aria-selected="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.opt-tab .k { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); }
+.opt-tab .n { font-weight: 650; color: var(--ink); font-size: 16px; }
+.opt-tab .d { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+@media (max-width: 640px) { .opt-tab .d { display: none; } }
+
+.stage { position: relative; border: 1px solid var(--line-strong); border-radius: 16px; overflow: hidden; }
+.verdict-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.pc { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 13.5px; }
+.pc h4 { font-size: 12px; font-family: var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 500; margin-bottom: 6px; }
+.pc ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+
+/* ---------- mock shell (shared) ---------- */
+.mk { background: var(--mk-bg); color: var(--text); font-size: 13.5px; position: relative; min-height: 520px; }
+.mk-house { --mk-bg: var(--sunken); --mk-card: var(--surface); --mk-radius: 14px; --mk-shadow: var(--shadow-xs); --mk-border: var(--line); --mk-ctl-r: 9px; --mk-fill: var(--surface-2); }
+.mk-health { --mk-bg: var(--hk-bg); --mk-card: var(--hk-card); --mk-radius: 22px; --mk-shadow: var(--hk-shadow); --mk-border: var(--hk-border); --mk-ctl-r: 999px; --mk-fill: var(--hk-fill); }
+.mk-in { padding: 18px; display: grid; gap: 14px; }
+.mk-bar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: space-between; }
+.mk-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.mk-title h3 { font-size: 20px; letter-spacing: -0.02em; }
+.mk-title .sub { color: var(--muted); font-size: 12.5px; }
+.ctl-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; background: var(--mk-fill); border: 1px solid var(--mk-border); border-radius: var(--mk-ctl-r); padding: 2px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 5px 10px; border-radius: var(--mk-ctl-r); font-size: 12.5px; cursor: pointer; color: var(--muted); white-space: nowrap; }
+.seg button:hover:not(:disabled) { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--mk-card); color: var(--ink); font-weight: 600; box-shadow: var(--shadow-xs); }
+.seg button:disabled { cursor: not-allowed; opacity: 0.55; }
+.mk-health .seg { border-color: transparent; }
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.chk input { accent-color: var(--ink); margin: 0; }
+.card { background: var(--mk-card); border: 1px solid var(--mk-border); border-radius: var(--mk-radius); box-shadow: var(--mk-shadow); min-width: 0; }
+.card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 12px 14px 0; flex-wrap: wrap; }
+.card-h h4 { font-size: 13px; font-weight: 600; color: var(--ink); }
+.card-h .meta { font-size: 12px; color: var(--muted); }
+.card-b { padding: 10px 14px 14px; }
+
+.na { color: var(--muted); font-style: normal; }
+[data-tip] { cursor: help; }
+.na[data-tip], .noted[data-tip] { text-decoration: underline dotted var(--faint); text-underline-offset: 3px; }
+.dl { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.dl .ar { font-size: 8.5px; }
+.dl.good { color: var(--pos); } .dl.bad { color: var(--neg); } .dl.flat, .dl.neutral { color: var(--muted); }
+
+/* chips */
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; line-height: 1.5; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.chip.scale { color: var(--pos); background: var(--pos-t); }
+.chip.hold { color: var(--info); background: var(--info-t); }
+.chip.fixacq { color: var(--warn); background: var(--warn-t); }
+.chip.fixstr { color: var(--serious); background: var(--serious-t); }
+.chip.exit { color: var(--neg); background: var(--neg-t); }
+.chip.none { color: var(--neutral); background: var(--neutral-t); }
+.chip.dim { opacity: 0.62; }
+.badge { display: inline-flex; font-size: 10.5px; font-family: var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; }
+.tag-oncm1 { font-size: 10.5px; color: var(--muted); font-family: var(--font-mono); }
+.health-word { font-size: 12.5px; font-weight: 650; }
+.health-word.scale { color: var(--pos); } .health-word.hold { color: var(--info); } .health-word.fixacq { color: var(--warn); }
+.health-word.fixstr { color: var(--serious); } .health-word.exit { color: var(--neg); } .health-word.none { color: var(--neutral); }
+
+/* ---------- map ---------- */
+.map { position: relative; width: 100%; }
+.map svg { display: block; width: 100%; height: auto; }
+.map .c { stroke: var(--land-line); stroke-width: 0.6; }
+.map .c.mkt { cursor: pointer; }
+.map .c.mkt:hover { filter: brightness(0.93); }
+.map .lbl { font-size: 11.5px; font-weight: 650; fill: var(--ink); paint-order: stroke; stroke: var(--mk-card, var(--surface)); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.map .lbl .v { font-weight: 500; fill: var(--text); }
+.map-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11.5px; color: var(--muted); align-items: center; }
+.map-legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; border: 1px solid var(--line); }
+.sw.hatch { background: repeating-linear-gradient(135deg, var(--land) 0 3px, var(--hatch) 3px 4.5px); }
+.grid-fallback { display: grid; gap: 6px; padding: 8px; }
+.tile { border-radius: 8px; padding: 8px; min-height: 58px; display: grid; align-content: center; justify-items: center; font-size: 12px; text-align: center; border: 1px solid var(--line); background: var(--land); color: var(--ink); cursor: default; }
+.tile.mkt { cursor: pointer; }
+.tile.hatched { background: repeating-linear-gradient(135deg, var(--land) 0 4px, color-mix(in srgb, var(--hatch) 55%, transparent) 4px 6px); }
+.tile b { font-size: 13px; }
+.fallback-note { font-size: 11.5px; color: var(--muted); padding: 0 8px 6px; }
+
+/* ---------- leaderboard ---------- */
+.lb { list-style: none; margin: 0; padding: 0; }
+.lb li { border-top: 1px solid var(--mk-border); }
+.lb li:first-child { border-top: 0; }
+.lb button { width: 100%; background: none; border: 0; text-align: left; cursor: pointer; padding: 10px 14px; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; }
+.lb button:hover { background: var(--mk-fill); }
+.lb .rk { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.lb .nm { font-weight: 600; color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb .vl { text-align: right; font-weight: 600; color: var(--ink); }
+.lb .sub { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; }
+.lb .bar { grid-column: 2 / 4; height: 4px; background: var(--mk-fill); border-radius: 2px; overflow: hidden; }
+.lb .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.lb .bar i.neg { background: var(--neg); }
+
+/* ---------- matrix ---------- */
+.mx-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.mx { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12.5px; }
+.mx th, .mx td { padding: 6px 10px; border-bottom: 1px solid var(--mk-border); text-align: right; vertical-align: top; white-space: nowrap; }
+.mx thead th { position: sticky; top: 0; background: var(--mk-fill); font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); vertical-align: bottom; }
+.mk-house .mx thead th, .mk-health .mx thead th { background: var(--mk-card); }
+.mx thead th.mcol { cursor: pointer; color: var(--ink); }
+.mx thead th.mcol:hover { text-decoration: underline; }
+.mx thead th .chip { margin-top: 4px; text-transform: none; letter-spacing: 0; font-family: var(--font-sans); }
+.mx th.rl, .mx td.rl { text-align: left; position: sticky; left: 0; background: var(--mk-card); z-index: 1; white-space: normal; min-width: 170px; max-width: 220px; color: var(--text); }
+.mx thead th.rl { z-index: 2; }
+.mx tr.sec td { background: var(--mk-fill); font-weight: 600; color: var(--ink); text-align: left; cursor: pointer; font-size: 12px; padding-block: 7px; }
+.mx tr.sec td.rl { background: var(--mk-fill); }
+.mx tr.sec .caret { display: inline-block; width: 12px; color: var(--muted); }
+.mx tr.sec .per { font-weight: 400; color: var(--muted); font-family: var(--font-mono); font-size: 10.5px; margin-left: 6px; letter-spacing: 0.04em; }
+.mx tr.strong td { font-weight: 650; color: var(--ink); }
+.mx tr.sub td.rl { padding-left: 22px; color: var(--muted); }
+.mx td .v { display: block; }
+.mx td .dl { display: inline-flex; margin-top: 1px; }
+.mx td.sel, .mx th.sel { background: color-mix(in srgb, var(--accent) 7%, var(--mk-card)); }
+.mx td.tot, .mx th.tot { border-left: 1px solid var(--mk-border); }
+.mx .minus::before { content: "\2212\00a0"; color: var(--muted); }
+.mx-legend { font-size: 11.5px; color: var(--muted); padding: 8px 14px 12px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
+/* Ledger density */
+.mk-ledger .mx { font-size: 12px; }
+.mk-ledger .mx th, .mk-ledger .mx td { padding: 4px 8px; }
+.mk-ledger .mx td .cellrow { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+.micro { display: inline-block; vertical-align: middle; }
+.mk-ledger .mx td.sel.expanded { min-width: 150px; }
+.prevv { color: var(--muted); font-size: 11px; display: block; }
+
+/* ---------- drawer (Option A) ---------- */
+.scrim { position: absolute; inset: 0; background: color-mix(in srgb, var(--ink) 22%, transparent); z-index: 5; }
+.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(540px, 100%); background: var(--mk-card); border-left: 1px solid var(--mk-border); box-shadow: var(--shadow-lg); z-index: 6; overflow-y: auto; }
+.drawer-in { padding: 16px; display: grid; gap: 14px; }
+.drawer-h { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.xbtn { border: 1px solid var(--mk-border); background: var(--mk-fill); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 16px; line-height: 1; color: var(--ink); flex: none; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.kpi { background: var(--mk-fill); border-radius: 10px; padding: 8px 10px; display: grid; gap: 1px; min-width: 0; }
+.mk-health .kpi { border-radius: 14px; }
+.kpi .l { font-size: 11px; color: var(--muted); }
+.kpi .v { font-size: 16px; font-weight: 650; color: var(--ink); }
+.blk h5 { font-size: 12px; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
+.blk { display: grid; gap: 6px; align-content: start; min-width: 0; }
+
+/* waterfall (HTML) */
+.wf { display: grid; gap: 3px; }
+.wf-r { display: grid; grid-template-columns: minmax(96px, 34%) minmax(0, 1fr) 78px; gap: 8px; align-items: center; font-size: 12px; }
+.wf-r .l { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-r.t .l { font-weight: 600; color: var(--ink); }
+.wf-r .trk { position: relative; height: 16px; }
+.wf-r .trk i { position: absolute; top: 2px; bottom: 2px; border-radius: 3px; }
+.wf-r .trk i.tot { background: var(--ink); opacity: 0.85; }
+.wf-r .trk i.neg { background: var(--neg); opacity: 0.75; }
+.wf-r .trk i.pos { background: var(--accent); }
+.wf-r .trk i.plain { background: var(--neutral); opacity: 0.6; }
+.wf-r .trk i.ghost { border: 1.5px dashed var(--line-strong); background: transparent; }
+.wf-r .trk .zero { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line-strong); }
+.wf-r .val { text-align: right; color: var(--ink); white-space: nowrap; }
+.wf-r.na .val { color: var(--muted); }
+
+.mini-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px 10px; }
+.mini-grid .it { display: grid; gap: 0; font-size: 12px; min-width: 0; }
+.mini-grid .it .l { color: var(--muted); font-size: 11px; }
+.mini-grid .it .v { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.flag { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 600; }
+.flag.on { color: var(--serious); } .flag.off { color: var(--pos); } .flag.unk { color: var(--muted); }
+
+.blk svg.chart { width: 100%; max-width: 440px; height: auto; display: block; }
+svg.chart text { font-family: var(--font-sans); font-size: 10.5px; fill: var(--muted); }
+#illusChart svg.chart text { font-size: 12px; }
+svg.chart .ax { stroke: var(--line-strong); stroke-width: 1; }
+svg.chart .gr { stroke: var(--line); stroke-width: 1; }
+
+/* ---------- Option A layout ---------- */
+.a-top { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); gap: 14px; }
+@media (max-width: 860px) { .a-top { grid-template-columns: 1fr; } }
+
+/* ---------- Option B layout ---------- */
+.b-strip { display: grid; grid-template-columns: minmax(180px, 300px) minmax(0, 1fr); gap: 12px; align-items: stretch; }
+@media (max-width: 700px) { .b-strip { grid-template-columns: 1fr; } }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+.pill { flex: 1 1 140px; border: 1px solid var(--mk-border); background: var(--mk-card); border-radius: 10px; padding: 8px 10px; cursor: pointer; text-align: left; display: grid; gap: 2px; min-width: 132px; }
+.pill:hover { border-color: var(--line-strong); }
+.pill[aria-pressed="true"] { border-color: var(--ink); }
+.pill .t { font-weight: 650; color: var(--ink); font-size: 13px; }
+.pill .s { font-size: 11.5px; color: var(--muted); }
+.pill .bar { height: 3px; background: var(--mk-fill); border-radius: 2px; overflow: hidden; margin-top: 3px; }
+.pill .bar i { display: block; height: 100%; background: var(--ink); opacity: 0.7; }
+.b-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+
+/* ---------- Option C layout ---------- */
+.c-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.mcard { background: var(--mk-card); border-radius: var(--mk-radius); box-shadow: var(--mk-shadow); border: 1px solid var(--mk-border); padding: 16px; display: grid; gap: 12px; cursor: pointer; text-align: left; width: 100%; }
+.mcard:hover { box-shadow: var(--mk-shadow), 0 0 0 1px var(--line-strong); }
+.mcard[aria-pressed="true"] { box-shadow: var(--mk-shadow), 0 0 0 2px var(--info); }
+.mcard .hd { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.mcard .nm { font-size: 17px; font-weight: 650; color: var(--ink); letter-spacing: -0.01em; }
+.mcard .code { font-size: 12px; color: var(--muted); }
+.mcard .ringrow { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; align-items: center; }
+.mcard .rl1 { font-size: 22px; font-weight: 650; color: var(--ink); letter-spacing: -0.02em; line-height: 1.1; }
+.mcard .rl2 { font-size: 12px; color: var(--muted); }
+.mcard .figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border-top: 1px solid var(--mk-border); padding-top: 10px; }
+.mcard .figs .l { font-size: 11px; color: var(--muted); }
+.mcard .figs .v { font-size: 13.5px; font-weight: 650; color: var(--ink); }
+.mcard .foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; }
+.c-sheet { background: var(--mk-card); border-radius: var(--mk-radius); box-shadow: var(--mk-shadow); border: 1px solid var(--mk-border); overflow: hidden; }
+
+/* ---------- scouting ---------- */
+.scout-t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.scout-t th, .scout-t td { padding: 7px 10px; border-bottom: 1px solid var(--mk-border); text-align: left; vertical-align: top; }
+.scout-t th { font-family: var(--font-mono); font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
+.scout-t td.r { text-align: right; white-space: nowrap; }
+.empty-cell { color: var(--muted); font-size: 11.5px; }
+
+/* ---------- document tables ---------- */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+table.doc-t { border-collapse: collapse; width: 100%; font-size: 13px; }
+.doc-t th, .doc-t td { padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.doc-t thead th { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+.doc-t tbody tr:last-child td { border-bottom: 0; }
+.doc-t td:first-child { color: var(--ink); font-weight: 600; }
+.doc-t code, .tree code { font-family: var(--font-mono); font-size: 11.5px; background: var(--sunken); padding: 1px 4px; border-radius: 4px; color: var(--text); }
+
+.tree { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.tree details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.tree summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.tree summary::-webkit-details-marker { display: none; }
+.tree summary::before { content: "+"; font-family: var(--font-mono); color: var(--muted); width: 12px; }
+.tree details[open] summary::before { content: "\2212"; }
+.tree summary b { color: var(--ink); font-weight: 600; }
+.tree summary .k { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.tree summary .s { color: var(--muted); font-size: 13px; }
+.tree .body { padding: 0 14px 14px; overflow-x: auto; }
+.tree table { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 560px; }
+.tree th, .tree td { padding: 6px 8px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+.tree th { font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.tree td:first-child { font-weight: 600; color: var(--ink); white-space: nowrap; }
+
+.rd { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.rd::before { content: ""; width: 8px; height: 8px; border-radius: 2px; }
+.rd.ok { color: var(--pos); } .rd.ok::before { background: var(--pos); }
+.rd.part { color: var(--warn); } .rd.part::before { background: var(--warn-g); }
+.rd.no { color: var(--neg); } .rd.no::before { background: var(--neg); }
+.rd.nil { color: var(--muted); } .rd.nil::before { background: var(--line-strong); }
+.rd-note { display: block; font-size: 11.5px; color: var(--muted); font-weight: 400; margin-top: 2px; white-space: normal; min-width: 120px; }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.panel h3 { font-size: 15px; }
+.panel p, .panel li { font-size: 13.5px; }
+.panel ul, .panel ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.illus { display: inline-flex; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; font-weight: 500; color: var(--warn); border: 1px solid var(--warn-g); background: var(--warn-t); padding: 2px 8px; border-radius: 6px; }
+.findings { display: grid; gap: 10px; counter-reset: f; }
+.finding { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 4px; }
+.finding b { color: var(--ink); }
+.finding .src { font-size: 12px; color: var(--muted); }
+.phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.ph { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; }
+.ph .k { font-family: var(--font-mono); font-size: 12px; color: var(--accent-ink); font-weight: 500; }
+.ph p { font-size: 13px; }
+
+#tip { position: fixed; z-index: 50; max-width: 280px; background: var(--tip-bg); color: var(--tip-fg); font-size: 12px; line-height: 1.45; padding: 7px 9px; border-radius: 8px; pointer-events: none; box-shadow: var(--shadow-lg); }
+@media (prefers-reduced-motion: no-preference) {
+  .drawer { animation: slide 180ms ease-out; }
+  @keyframes slide { from { transform: translateX(24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+}
+@media (max-width: 520px) {
+  .mk-in { padding: 12px; }
+  .mx th.rl, .mx td.rl { min-width: 132px; max-width: 150px; }
+  h2 { font-size: 1.3rem; }
+}
+</style>
+
+<div id="tip" hidden></div>
+
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow">One Eighty dashboard &middot; new page</span>
+    <h1>Markets</h1>
+    <p class="dateline">Proposal of 15 Oct 2026. Every figure is a real BigQuery number from the data audit: L90 = 17 Jul to 14 Oct 2026, P90 = 18 Apr to 16 Jul 2026, L12M = 15 Oct 2025 to 14 Oct 2026. Money in each client's base currency, ex VAT.</p>
+    <nav class="jump" aria-label="Sections">
+      <a href="#decisions">Decisions</a><a href="#options">Design options</a><a href="#tree">Metric tree</a><a href="#status">Status logic</a><a href="#readiness">Data readiness</a><a href="#ltgp">Predicted LTGP</a><a href="#research">Research</a><a href="#fixes">Fixes and phases</a>
+    </nav>
+
+    <div class="decisions" id="decisions">
+      <article class="dec">
+        <span class="num">Decision 1</span>
+        <h3>Pick a design option</h3>
+        <p>Atlas (map first), Ledger (P&amp;L first) or Health (status cards first). All three run on the same metrics and data.</p>
+        <span class="rec">Suggested: Atlas layout on the Health skin, with Ledger's expanding column in the matrix.</span>
+      </article>
+      <article class="dec">
+        <span class="num">Decision 2</span>
+        <h3>Approve the order of fixes</h3>
+        <p>v1a: F1, F2, F3, F8, F12. v1b: F4, F6, F9, F10, F11. v1c: F5, F7. Without F6 there is no CM2 or CM3; without F7 RawBark has no gross profit.</p>
+        <span class="rec">Suggested: approve as listed in section 8.</span>
+      </article>
+      <article class="dec">
+        <span class="num">Decision 3</span>
+        <h3>Prediction method, after a backtest</h3>
+        <p>Option A maturity multiplier (SQL) or Option B BG/NBD + Gamma-Gamma (Python job). Both are scored on Jan 2024 to Sep 2025 cohorts before anything is shown.</p>
+        <span class="rec">Suggested: run the backtest, default to A if there is no clear winner.</span>
+      </article>
+      <article class="dec">
+        <span class="num">Decision 4</span>
+        <h3>Confirm the campaign-name rule</h3>
+        <p>The "last suffix" fallback finds a country in 6 of 59 campaigns. Keep the token-anywhere rule, add <code class="mono">~</code> as a delimiter (+222k CZK RawBark), split "US &amp; CA" (6,688 USD) and use the client country for single-market clients.</p>
+        <span class="rec">Suggested: confirm (fix F3).</span>
+      </article>
+    </div>
+  </header>
+
+  <section class="doc" id="options" style="border-top:0; margin-top:24px;">
+    <header>
+      <span class="eyebrow">Design options</span>
+      <h2>Three ways to build the page</h2>
+      <p class="lede">Each mockup is live: switch client, period and compare, click a market. Options A and B use the house tokens, C the Apple Health skin from Goals.</p>
+    </header>
+    <div class="opt-tabs" role="tablist" aria-label="Design option">
+      <button class="opt-tab" role="tab" id="tab-A" data-opt="A" aria-selected="true"><span class="k">OPTION A</span><span class="n">Atlas</span><span class="d">Map hero, leaderboard, P&amp;L matrix, side drawer, scouting</span></button>
+      <button class="opt-tab" role="tab" id="tab-B" data-opt="B" aria-selected="false"><span class="k">OPTION B</span><span class="n">Ledger</span><span class="d">P&amp;L matrix as the canvas, map strip, expanding columns</span></button>
+      <button class="opt-tab" role="tab" id="tab-C" data-opt="C" aria-selected="false"><span class="k">OPTION C</span><span class="n">Health</span><span class="d">Map and one card per market with ring and status</span></button>
+    </div>
+    <div class="stage" id="stage"></div>
+    <div class="verdict-row" id="optnotes"></div>
+  </section>
+
+  <section class="doc col" id="tree">
+    <header>
+      <span class="eyebrow">Metric tree</span>
+      <h2>Top to bottom, per market</h2>
+      <p class="lede">Ex VAT, base or local currency. P = follows the period picker and Compare. C = cohort metric read at a fixed age, only once cohorts reach it.</p>
+    </header>
+    <div class="tree" id="treeList"></div>
+  </section>
+
+  <section class="doc col" id="status">
+    <header>
+      <span class="eyebrow">Status logic</span>
+      <h2>Maturity badge first, then the verdict</h2>
+    </header>
+    <div class="two">
+      <div class="panel">
+        <h3>Maturity</h3>
+        <ul>
+          <li><span class="badge">Young</span> under 100 orders lifetime or first order under 90 days ago. Shows leading indicators, no LTGP verdict.</li>
+          <li><span class="badge">Directional</span> under 50 orders a week or under 30 new customers in L90. Numbers shown, chip greyed.</li>
+          <li><span class="badge">Established</span> everything else.</li>
+        </ul>
+        <p class="lede" style="font-size:13px">In the mockups maturity reads L90: Dobias OTHER, RawBark SK, Manami SK and both Venev markets are Directional.</p>
+      </div>
+      <div class="panel">
+        <h3>While CM2 is n/a</h3>
+        <p>The rules run on gross profit and the chip says "on CM1". A verdict that needs LTGP:CAC 365, payback or break-even aMER shows "No verdict" with the missing input on hover. Today that is most markets, which is the case for F5, F6 and F7.</p>
+        <p>Computed from real data today: <b>Dobias CA, Fix structure</b> on CM1. COGS is 25.3 % of net sales against 18.7 % in the US (L90), a 6.6 pp gap; the same holds in L12M (26.1 vs 19.2) and P90.</p>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table class="doc-t">
+        <thead><tr><th>Chip</th><th>Rule (Established markets, defaults editable per client)</th></tr></thead>
+        <tbody>
+          <tr><td><span class="chip scale">Scale</span></td><td>CM3 &gt; 0 AND (LTGP:CAC 365 &ge; 3.0 OR payback &lt; 180 d) AND aMER &gt; break-even + 10 %</td></tr>
+          <tr><td><span class="chip hold">Hold</span></td><td>CM3 &gt; 0 AND (LTGP:CAC 2.0 to 3.0 OR aMER within 10 % of break-even)</td></tr>
+          <tr><td><span class="chip fixacq">Fix acquisition</span></td><td>CM2 % within 5 pp of the home market BUT CM3 &le; 0 or LTGP:CAC &lt; 2.0</td></tr>
+          <tr><td><span class="chip fixstr">Fix structure</span></td><td>CM2 % more than 5 pp below home; the chip names the cost line driving the gap</td></tr>
+          <tr><td><span class="chip exit">Exit / pause</span></td><td>CM3 &lt; &minus;10 % of net revenue after the test window, no improving leading indicator</td></tr>
+          <tr><td><span class="chip none">No verdict</span></td><td>An input the rule needs is n/a; hover names it</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tbl-wrap">
+      <table class="doc-t">
+        <thead><tr><th>Threshold</th><th>Default</th><th>Basis</th></tr></thead>
+        <tbody>
+          <tr><td>CM3 % healthy</td><td>20 to 35 % of net revenue, danger under 15 %</td><td>CTC contribution margin guide</td></tr>
+          <tr><td>LTGP:CAC at 365 d</td><td>3:1 scale, 2 to 3:1 hold, under 2:1 fix</td><td>3:1 convention; 2.5 to 4:1 DTC range (Eightx)</td></tr>
+          <tr><td>CAC payback</td><td>consumables under 180 d, good under 90 d</td><td>Amp / Lifetimely</td></tr>
+          <tr><td>Young market go</td><td>positive CM2 per order, CM3 not worse than &minus;10 % after about 100 orders or 90 d</td><td>ATTN 90-day test</td></tr>
+          <tr><td>Discount addiction flag</td><td>effective discount rate &gt; 15 % AND one more signal (penetration rising, full-price share falling, returning buy only on promo)</td><td>Eightx bands plus cohort test</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="doc" id="readiness">
+    <header class="col">
+      <span class="eyebrow">Data readiness</span>
+      <h2>What each client can show on day one</h2>
+      <p class="lede">From the coverage matrix in the audit. Hover a note for the source issue.</p>
+    </header>
+    <div class="tbl-wrap"><table class="doc-t" id="readyT"></table></div>
+    <p class="lede" style="font-size:13px">Cross-client gaps: shipping cost, payment fees, delivery time and compare-at history exist for nobody; <code class="mono">ref.industry_benchmarks</code> and <code class="mono">ref.client_monthly_costs</code> are empty; GA4 by country only Dobias and Manami, 3 Aug to 3 Oct 2026.</p>
+  </section>
+
+  <section class="doc col" id="ltgp">
+    <header>
+      <span class="eyebrow">Predicted LTGP</span>
+      <h2>Two ways to forecast 365-day gross profit</h2>
+      <p class="lede">Actuals stay actuals. A forecast lives in its own column, is drawn dashed with a band, says "forecast", carries its method and run date, and never enters a verdict or a total.</p>
+    </header>
+    <div class="two">
+      <div class="panel">
+        <h3>Option A: maturity multiplier</h3>
+        <p>Learns from older cohorts as a whole. "Past cohorts grew 4.5x in repeat GP between day 60 and day 365."</p>
+        <ul>
+          <li>First-order GP stays actual; only repeat GP is projected: repeat GP at day N &times; median ratio (day 365 / day N) of the last 6 to 12 mature cohorts of the same market.</li>
+          <li>November and December cohorts use their own same-month-last-year ratio.</li>
+          <li>Small markets use quarterly cohorts. No forecast before day 30 or for markets under about 50 new customers a month.</li>
+          <li>Pure SQL, cheap, explainable. Needs 18+ months of history in the market.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Option B: BG/NBD + Gamma-Gamma</h3>
+        <p>Learns from every customer: how often they buy, how likely they have silently left, how much GP an order carries.</p>
+        <ul>
+          <li>Python job (PyMC-Marketing) on the VPS or Cloud Run, writes back to BigQuery. BigQuery ML has no such model.</li>
+          <li>Uses young customers too, so it can help small or young markets.</li>
+          <li>Breaks on seasonality, replenishment rhythm and subscriptions; its interval covers parameter noise only.</li>
+          <li>Needs about 1,000 customers and 150 repeaters in the fitting window.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="illus">ILLUSTRATIVE</span><h3>How a forecast would look</h3></div>
+      <p class="lede" style="font-size:13px">Made-up numbers from the research note to show the mechanics. Not RawBark data.</p>
+      <div id="illusChart"></div>
+      <div class="tbl-wrap">
+        <table class="doc-t">
+          <thead><tr><th>Step</th><th>Option A (illustrative)</th><th>Option B (illustrative)</th></tr></thead>
+          <tbody>
+            <tr><td>Cohort, day 60</td><td colspan="2">120 customers; first-order GP 22.0 EUR, repeat GP 9.0 EUR, actual GP 31.0 EUR per customer</td></tr>
+            <tr><td>Learned</td><td>Median repeat multiplier 4.51 (10 non-Q4 cohorts, range 4.13 to 4.95)</td><td>1.15 expected purchases day 61 to 365 &times; 27.0 EUR GP per order</td></tr>
+            <tr><td>LTGP 365 forecast</td><td>22.0 + 9.0 &times; 4.51 = <b>62.6 EUR</b>, band about 46 to 79</td><td>31.0 + 31.1 = <b>62.1 EUR</b>, interval about 55 to 70</td></tr>
+            <tr><td>Biggest uncertainty</td><td>The young cohort's own sample of 120, not the multiplier</td><td>Whether the model's story fits (season, rhythm)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Choose by backtest</h3>
+      <p>Predict 365-day GP from day 30, 60, 90 and 180 for cohorts Jan 2024 to Sep 2025, using only data available at each freeze date. Compare MAPE, bias and band coverage against a naive baseline, per market. Switch to B only on a clear win (for example 3+ pp lower MAPE). Default when there is no time: A, repeat-only, median, non-Q4, quarterly cohorts for small markets, no forecast for tiny ones (Venev).</p>
+    </div>
+  </section>
+
+  <section class="doc col" id="research">
+    <header>
+      <span class="eyebrow">What the research says</span>
+      <h2>Seven findings that shaped the page</h2>
+    </header>
+    <div class="findings">
+      <div class="finding"><b>Rank markets by absolute contribution, not ROAS.</b><span>Common Thread puts business-level contribution margin above channel ROAS. Ratios explain, CM3 decides.</span><span class="src"><a href="https://commonthreadco.com/blogs/coachs-corner/the-complete-guide-to-ecommerce-contribution-margin" target="_blank" rel="noopener">CTC, contribution margin guide</a></span></div>
+      <div class="finding"><b>First-order profit governs spend.</b><span>Break-even aMER = first-order AOV / max CAC; at 50 % gross margin that is about 2:1. Chase LTV over first-order profit only with exceptional LTV.</span><span class="src"><a href="https://commonthreadco.com/blogs/bridges/unlock-first-order-profitability" target="_blank" rel="noopener">CTC, first-order profitability</a></span></div>
+      <div class="finding"><b>LTV:CAC on revenue flatters.</b><span>3:1 is a SaaS import; DTC sources suggest 2.5 to 4:1 on a 12-month cohort using contribution. Revenue LTV is why brands think they are at 3:1 when they are nearer 1:1.</span><span class="src"><a href="https://eightx.co/blog/average-ecommerce-ltv-cac-ratio-by-vertical-2026" target="_blank" rel="noopener">Eightx, LTV:CAC by vertical</a> (vendor)</span></div>
+      <div class="finding"><b>Test-market thresholds disagree, so pre-register one.</b><span>Portless advances a market only if intent metrics beat home by 50 %+, OpenBorder at 10 to 20 %. ATTN: go if CM is positive after 90 days, stop below &minus;10 %.</span><span class="src"><a href="https://www.portless.com/blogs/test-new-markets-ecommerce" target="_blank" rel="noopener">Portless</a>, <a href="https://www.attnagency.com/blog/international-expansion-unit-economics" target="_blank" rel="noopener">ATTN</a> (vendors)</span></div>
+      <div class="finding"><b>Cash on delivery hits the P&amp;L three ways.</b><span>COD fee, refused parcels shipped both ways with no revenue, and delayed cash. Hungary runs about 60 % COD; Manami SK is at 39 % in L90.</span><span class="src"><a href="https://www.penzcentrum.hu/vasarlas/20240311/bekemenyitenek-a-hazai-webaruhazak-legy-ovatos-ez-minden-megrendelot-erint-1148054" target="_blank" rel="noopener">P&eacute;nzcentrum, HU COD</a></span></div>
+      <div class="finding"><b>Some media cost never shows in the spend column.</b><span>Since 1 Jul 2026 Meta adds location fees on top of budget: Austria 5 %, France, Italy, Spain 3 %, UK 2 %. Per-market CM3 must add them.</span><span class="src"><a href="https://www.jonloomer.com/meta-location-fees/" target="_blank" rel="noopener">Jon Loomer, Meta location fees</a></span></div>
+      <div class="finding"><b>Compare cohorts only at equal age.</b><span>A live cohort's LTV is a lower bound; do not project from curves that have not flattened, and keep projected apart from realised. Black Friday cohorts ran about 20 % lower lifetime revenue.</span><span class="src"><a href="https://exacti.us/growth-library/cohort-analysis" target="_blank" rel="noopener">Exactius, cohort analysis</a>, <a href="https://commonthreadco.com/blogs/ecommerce-playbook/dont-hold-back-bfcm" target="_blank" rel="noopener">CTC, BFCM cohorts</a></span></div>
+    </div>
+  </section>
+
+  <section class="doc" id="fixes">
+    <header class="col">
+      <span class="eyebrow">Fixes and phases</span>
+      <h2>F1 to F12, each needs an owner OK</h2>
+    </header>
+    <div class="tbl-wrap"><table class="doc-t" id="fixT"></table></div>
+    <div class="phases">
+      <div class="ph"><span class="k">v1a &middot; data</span><h3>F1, F2, F3, F8, F12</h3><p>Page with map, matrix and detail on a CM1 basis. Dobias, RawBark (no GP), Manami, Venev counts.</p></div>
+      <div class="ph"><span class="k">v1b</span><h3>F4, F6, F9, F10, F11</h3><p>Rate cards bring CM2, CM3 and break-even aMER. List-price snapshot starts. GA4, benchmarks, scouting tab, status chips.</p></div>
+      <div class="ph"><span class="k">v1c</span><h3>F5, F7, prediction</h3><p>Dobias Meta backfill and Google, RawBark COGS, prediction method chosen by backtest. Migrations 290 to 299, prefix mk.</p></div>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datamaps@0.5.10/dist/datamaps.world.min.js"></script>
+<script>
+(function () {
+"use strict";
+
+/* =========================================================================
+   DATA: data-audit.md sections 2 and 3. Nothing here is estimated.
+   Keys: o orders, nc new customers, g gross sales, d discounts, dp discount % of gross,
+   od % orders discounted, rfa refund amount, rfp refunded order %, n net revenue,
+   an AOV new, ar AOV returning, cp COGS % of net sales, gp gross profit, fg first-order GP,
+   s ad spend, cac nCAC, mer MER, rs returning revenue share.
+   ========================================================================= */
+var CL = {
+  dobias: { name: "Dobias", ccy: "USD", platform: "Shopify", frame: "na", scoutFrame: "atl", home: "US",
+    markets: ["US", "CA", "OTHER"],
+    names: { US: "United States", CA: "Canada", OTHER: "Other (GB, RS, IE, CH, ...)" },
+    na: { rfa: "Refund amounts not ingested; payload refunds[] only from 2026-05 (F8)" },
+    noVerdict: "LTGP:CAC 365 and payback need Meta history before 2026-04-20 and Google (F5); break-even aMER needs CM2 (F6)" },
+  rawbark: { name: "RawBark", ccy: "CZK", platform: "WooCommerce", frame: "czsk", scoutFrame: "cee", home: "CZ",
+    markets: ["CZ", "SK"], names: { CZ: "Czechia", SK: "Slovakia" },
+    na: { cp: "No COGS: no Woo line cost, no ref.product_costs rows (F7)", gp: "No COGS (F7)", fg: "No COGS (F7)", rfp: "Refunds read 0 on all 12,345 L12M orders (I11)" },
+    noVerdict: "No COGS, so no gross profit, LTGP or payback (F7)" },
+  manami: { name: "Manami", ccy: "CZK", platform: "Shoptet", frame: "czsk", scoutFrame: "cee", home: "CZ",
+    markets: ["CZ", "SK"], names: { CZ: "Czechia", SK: "Slovakia" },
+    na: { g: "Shoptet gross sales not ingested", d: "Shoptet discount amounts not ingested", dp: "Shoptet discount amounts not ingested", rfa: "Shoptet refunds not ingested", rfp: "Shoptet refunds not ingested" },
+    notes: { od: "Lower bound: orders with a line discount_pct > 0; coupon codes not ingested" },
+    noVerdict: "LTGP:CAC 365 needs spend before 2025-05-07; break-even aMER needs CM2 (F6)" },
+  venev: { name: "Venev", ccy: "EUR", platform: "Shopify", frame: "czsk", scoutFrame: "cee", home: "CZ", small: true,
+    markets: ["CZ", "SK", "OTHER"], names: { CZ: "Czechia", SK: "Slovakia", OTHER: "Other" },
+    na: { rfp: "Not in the audit" },
+    noVerdict: "Sample too small for a verdict (about 55 orders a year)" }
+};
+
+var MISS = "Not in the audit for this period";
+var D = {
+  dobias: {
+    US: {
+      L12M: { o: 11604, nc: 2551, g: 1965921, d: 257825, dp: 13.1, od: 65.1, rfa: null, rfp: 2.3, n: 1781389, an: 115.0, ar: 156.3, cp: 19.2, gp: 1374588, fg: 91.7, s: null, cac: null, mer: null, rs: 82.2,
+        na: { s: "Meta in the warehouse only from 2026-04-20 (46,547 since), no Google (F5)", cac: "No spend for the full period (F5)", mer: "No spend for the full period (F5)" },
+        notes: { rfp: "271 orders refunded or partially refunded" } },
+      P12M: { o: 11032, nc: 3368, g: 1954520, d: 253591, dp: 13.0, od: 70.3, rfa: null, rfp: 2.4, n: 1771044, an: 123.1, ar: 167.9, cp: 18.4, gp: 1372521, fg: 99.6, s: null, cac: null, mer: null, rs: 74.9,
+        na: { s: "No spend data before 2026-04-20 (F5)", cac: "No spend data (F5)", mer: "No spend data (F5)" }, notes: { rfp: "269 orders" } },
+      L90: { o: 3013, nc: 663, g: 493678, d: 58006, dp: 11.7, od: 67.0, rfa: null, rfp: 1.5, n: 455788, an: 111.1, ar: 154.0, cp: 18.7, gp: 351156, fg: 86.5, s: 29037, cac: 43.8, mer: 15.7, rs: 82.4,
+        notes: { rfp: "46 orders", s: "Includes the two \"US & CA\" campaigns, tagged US (I8)" } },
+      P90: { o: 2845, nc: 609, g: 485077, d: 58884, dp: 12.1, od: 67.8, rfa: null, rfp: 2.6, n: 444069, an: 117.4, ar: 158.6, cp: 19.1, gp: 343773, fg: 93.8, s: 17510, cac: 28.8, mer: 25.4, rs: 82.6,
+        notes: { rfp: "75 orders", s: "Spend on 88 of 90 days" } },
+      coh: {
+        90: { n: 2523, rep: 22.7, rev: 164.1, gp: 122.5 }, 180: { n: 2644, rep: 30.8, rev: 199.3, gp: 148.6 }, 365: { n: 3368, rep: 42.4, rev: 282.6, gp: 215.0 },
+        na: { cac: "Spend starts 2026-04-20, cohort windows start earlier (F5)", ltgp: "No cohort CAC (F5). Proxies against today's nCAC are not LTGP:CAC" } },
+      ops: { pay: "shopify_payments 5,637, paypal 626, gift card 46, Afterpay 43, store credit 16 (all markets, since 2026-05)", cod: 0, zero: null, zeroNA: "Shipping-line automatic discount on 477 orders (all markets, since 2026-05)", ship: null, done: null }
+    },
+    CA: {
+      L12M: { o: 4659, nc: 656, g: 751156, d: 138769, dp: 18.5, od: 78.0, rfa: null, rfp: 2.4, n: 627389, an: 98.8, ar: 136.8, cp: 26.1, gp: 450023, fg: 73.3, s: null, cac: null, mer: null, rs: 89.0,
+        na: { s: "CA campaigns only from 2026-06-26 (24,701 since)", cac: "No spend for the full period", mer: "No spend for the full period" }, notes: { rfp: "113 orders" } },
+      P12M: { o: 4179, nc: 529, g: 677246, d: 106008, dp: 15.7, od: 76.2, rfa: null, rfp: 2.0, n: 589104, an: 101.6, ar: 141.9, cp: 24.1, gp: 430182, fg: 78.6, s: null, cac: null, mer: null, rs: 90.1,
+        na: { s: "No spend data (F5)", cac: "No spend data (F5)", mer: "No spend data (F5)" }, notes: { rfp: "84 orders" } },
+      L90: { o: 1352, nc: 242, g: 221569, d: 31893, dp: 14.4, od: 82.2, rfa: null, rfp: 2.1, n: 193183, an: 101.4, ar: 148.8, cp: 25.3, gp: 141176, fg: 75.5, s: 22326, cac: 92.3, mer: 8.65, rs: 86.6,
+        notes: { rfp: "28 orders", s: "Excludes the \"US & CA\" campaigns, which are tagged US (I8)" } },
+      P90: { o: 1058, nc: 157, g: 170480, d: 29285, dp: 17.2, od: 81.3, rfa: null, rfp: 2.9, n: 144536, an: 96.4, ar: 139.9, cp: 26.5, gp: 103807, fg: 71.9, s: 2375, cac: 15.1, mer: 60.9, rs: 88.8,
+        notes: { rfp: "31 orders", s: "CA campaigns ran 21 days only" }, nc_: ["s", "cac", "mer", "gpa", "fop"] },
+      coh: {
+        90: { n: 525, rep: 21.9, rev: 133.4, gp: 93.0 }, 180: { n: 485, rep: 31.1, rev: 164.6, gp: 117.1 }, 365: { n: 529, rep: 42.2, rev: 226.2, gp: 161.8 },
+        na: { cac: "Spend starts 2026-04-20, cohort windows start earlier (F5)", ltgp: "No cohort CAC (F5)" } },
+      ops: { pay: "reported for all markets together, see United States", cod: 0, zero: null, zeroNA: "Not split by market in the audit", ship: null, done: null }
+    },
+    OTHER: {
+      L12M: { o: 166, nc: 67, g: 37702, d: 9006, dp: 23.9, od: 82.5, rfa: null, rfp: null, n: 36263, an: 153.2, ar: 188.1, cp: 20.9, gp: 22699, fg: 123.3, s: 0, cac: null, mer: null, rs: 62.1,
+        na: { cac: "No spend in this market", mer: "No spend in this market", rfp: "9 orders refunded; share not in the audit" } },
+      L90: { o: 45, nc: 19, g: 10005, d: 2158, dp: 21.6, od: 84.4, rfa: null, rfp: null, n: 9996, an: 152.7, ar: 190.2, cp: 20.8, gp: 6216, fg: 119.7, s: 0, cac: null, mer: null, rs: 60.7,
+        na: { cac: "No spend in this market", mer: "No spend in this market", rfp: "1 order refunded" } },
+      coh: { 365: { n: 56, rep: 41.1, rev: 423.8, gp: 268.5 }, na: { cac: "No spend", ltgp: "No spend" }, missH: "Only the 365 d cohort is in the audit" },
+      ops: null
+    }
+  },
+  rawbark: {
+    CZ: {
+      L12M: { o: 10413, nc: 1627, g: 20280745, d: 1487331, dp: 7.3, od: 53.7, rfa: 0, rfp: null, n: 19306240, an: 978.4, ar: 1957.8, cp: null, gp: null, fg: null, s: 1955451, cac: 1201.9, mer: 9.87, rs: 91.2,
+        notes: { rfa: "0 refunds in 12 months: suspicious (I11)", s: "Allocated by campaign name and Google GeoStats. Incl. unallocated: 2,205,228", cac: "Incl. unallocated: 1,355.4", mer: "Incl. unallocated: 8.75" } },
+      P12M: { o: 14143, nc: 3714, g: 26067299, d: 1175330, dp: 4.5, od: 37.1, rfa: 0, rfp: null, n: 25549259, an: 1060.9, ar: 2009.0, cp: null, gp: null, fg: null, s: null, cac: null, mer: null, rs: 83.7,
+        na: { s: "Google before 2025-09 not in the warehouse; 1.23M Meta unallocated", cac: "Spend incomplete", mer: "Spend incomplete" } },
+      L90: { o: 2288, nc: 325, g: 4462823, d: 343083, dp: 7.7, od: 58.6, rfa: 0, rfp: null, n: 4245712, an: 988.3, ar: 1935.1, cp: null, gp: null, fg: null, s: 577981, cac: 1778.4, mer: 7.35, rs: 91.9, notes: { rfa: "Reads 0: suspicious (I11)" } },
+      P90: { o: 2475, nc: 405, g: 4886975, d: 444064, dp: 9.1, od: 55.4, rfa: 0, rfp: null, n: 4583180, an: 919.9, ar: 1966.3, cp: null, gp: null, fg: null, s: 509757, cac: 1258.7, mer: 8.99, rs: 91.2 },
+      coh: { 90: { n: 2150, rep: 27.9, rev: 1844.3 }, 180: { n: 2550, rep: 34.7, rev: 2522.3 }, 365: { n: 3714, rep: 40.6, rev: 3536.7 },
+        na: { gp: "No COGS (F7)", cac: "563,694 Meta unallocated in the window; Google geo only from 2025-09-01", ltgp: "No COGS (F7)" } },
+      ops: { pay: "GoPay card 1,738, bank transfer 543", cod: 0, zero: 42.5, ship: 55.1, done: "median 1.8 d (status change, not delivery)" }
+    },
+    SK: {
+      L12M: { o: 1912, nc: 243, g: 3626752, d: 263093, dp: 7.3, od: 54.1, rfa: 0, rfp: null, n: 3520400, an: 1129.4, ar: 1850.9, cp: null, gp: null, fg: null, s: 396222, cac: 1630.5, mer: 8.88, rs: 91.4,
+        notes: { s: "Incl. unallocated: 433,527", cac: "Incl. unallocated: 1,784.1", mer: "Incl. unallocated: 8.12", n: "EUR converted at the monthly ref.fx_rates rate" } },
+      P12M: { o: 2210, nc: 567, g: 3835504, d: 82101, dp: 2.1, od: 19.0, rfa: 0, rfp: null, n: 3927560, an: 1220.4, ar: 1863.3, cp: null, gp: null, fg: null, s: null, cac: null, mer: null, rs: 81.0,
+        na: { s: "Google before 2025-09 not in the warehouse", cac: "Spend incomplete", mer: "Spend incomplete" } },
+      L90: { o: 393, nc: 35, g: 748366, d: 63405, dp: 8.5, od: 65.1, rfa: 0, rfp: null, n: 721097, an: 1099.1, ar: 1805.8, cp: null, gp: null, fg: null, s: 107006, cac: 3057.3, mer: 6.74, rs: 93.9 },
+      P90: { o: 408, nc: 45, g: 818682, d: 59593, dp: 7.3, od: 59.8, rfa: 0, rfp: null, n: 794141, an: 1105.2, ar: 1954.1, cp: null, gp: null, fg: null, s: 115174, cac: 2559.4, mer: 6.90, rs: 93.0 },
+      coh: { 90: { n: 337, rep: 41.8, rev: 2412.4 }, 180: { n: 436, rep: 51.6, rev: 3311.3 }, 365: { n: 567, rep: 54.1, rev: 4696.2 },
+        na: { gp: "No COGS (F7)", cac: "Meta unallocated in the window; Google geo only from 2025-09-01", ltgp: "No COGS (F7)" } },
+      ops: { pay: "GoPay card 354, bank transfer 38", cod: 0, zero: 47.8, ship: 91.9, done: "median 1.8 d (status change, not delivery)" }
+    }
+  },
+  manami: {
+    CZ: {
+      L12M: { o: 1894, nc: 1571, g: null, d: null, dp: null, od: 5.4, rfa: null, rfp: null, n: 1927820, an: 852.3, ar: 1599.0, cp: 31.3, gp: 1262026, fg: 583.1, s: 570836, cac: 363.4, mer: 3.38, rs: 25.6,
+        notes: { s: "Incl. unallocated: 601,665", cac: "Incl. unallocated: 383.0", mer: "Incl. unallocated: 3.20", nc: "New/returning derived from 2024-05-06 on (I14)" } },
+      P12M: { o: 791, nc: 638, g: null, d: null, dp: null, od: 14.2, rfa: null, rfp: null, n: 856085, an: 897.8, ar: 1617.6, cp: 32.2, gp: 554134, fg: 605.4, s: null, cac: null, mer: null, rs: 29.4,
+        na: { s: "Meta from 2025-05-07, Google from 2025-10-01", cac: "Spend incomplete", mer: "Spend incomplete" } },
+      L90: { o: 662, nc: 542, g: null, d: null, dp: null, od: 4.4, rfa: null, rfp: null, n: 684301, an: 844.5, ar: 1666.4, cp: 31.7, gp: 444880, fg: 573.7, s: 255961, cac: 472.3, mer: 2.67, rs: 27.9,
+        notes: { s: "Google is 100 % CZ by GeoStats" } },
+      P90: { o: 628, nc: 533, g: null, d: null, dp: null, od: 7.3, rfa: null, rfp: null, n: 632957, an: 841.6, ar: 1660.2, cp: 31.3, gp: 414154, fg: 570.8, s: 230278, cac: 432.0, mer: 2.75, rs: 24.3 },
+      coh: { 90: { n: 1185, rep: 10.3, rev: 1100.1, gp: 722.1, cac: 308.1, ltgp: 2.34 }, 180: { n: 783, rep: 12.5, rev: 1159.5, gp: 763.2, cac: 189.9, ltgp: 4.02 }, 365: { n: 638, rep: 17.2, rev: 1309.9, gp: 845.9 },
+        notes: { cac90: "Incl. unallocated spend pro rata", cac180: "Spend coverage starts 2025-05-07, Google 2025-10-01: likely understated", ltgp180: "Upper bound: cohort CAC likely understated" },
+        na: { cac: "Spend before 2025-05-07 absent", ltgp: "Spend before 2025-05-07 absent" } },
+      ops: { pay: "card 227, Apple Pay 142, COD 132, transfer 104, Google Pay 53", cod: 19.9, zero: null, zeroNA: "Shipping not separable in Shoptet orders", ship: null, done: null }
+    },
+    SK: {
+      L12M: { o: 347, nc: 309, g: null, d: null, dp: null, od: 1.7, rfa: null, rfp: null, n: 339436, an: 821.5, ar: 1476.2, cp: 32.4, gp: 209500, fg: 555.7, s: 115260, cac: 373.0, mer: 2.94, rs: 16.0,
+        notes: { s: "Incl. unallocated: 121,324", cac: "Incl. unallocated: 392.6", mer: "Incl. unallocated: 2.80" } },
+      P12M: { o: 167, nc: 152, g: null, d: null, dp: null, od: 3.0, rfa: null, rfp: null, n: 159199, an: 789.9, ar: 1509.8, cp: 34.3, gp: 93698, fg: 516.0, s: null, cac: null, mer: null, rs: 15.0,
+        na: { s: "Meta from 2025-05-07, Google from 2025-10-01", cac: "Spend incomplete", mer: "Spend incomplete" } },
+      L90: { o: 71, nc: 64, g: null, d: null, dp: null, od: 2.8, rfa: null, rfp: null, n: 71960, an: 869.7, ar: 1395.7, cp: 34.3, gp: 43000, fg: 568.2, s: 29851, cac: 466.4, mer: 2.41, rs: 13.8 },
+      P90: { o: 70, nc: 59, g: null, d: null, dp: null, od: 4.3, rfa: null, rfp: null, n: 72371, an: 909.8, ar: 1303.2, cp: 33.2, gp: 45423, fg: 606.9, s: 24319, cac: 412.2, mer: 2.98, rs: 18.1,
+        notes: { s: "SK campaigns ran 31 of 90 days" } },
+      coh: { 90: { n: 317, rep: 6.6, rev: 1014.5, gp: 618.5, cac: 367.2, ltgp: 1.68 }, 180: { n: 262, rep: 8.4, rev: 1026.1, gp: 629.7, cac: 376.4, ltgp: 1.67 }, 365: { n: 152, rep: 13.2, rev: 1130.6, gp: 675.6 },
+        notes: { cac90: "Incl. unallocated spend pro rata" },
+        na: { cac: "Spend before 2025-05-07 absent", ltgp: "Spend before 2025-05-07 absent" } },
+      ops: { pay: "card 28, COD 28, Apple Pay 8, Google Pay 4, transfer 3", cod: 39.4, zero: null, zeroNA: "Shipping not separable in Shoptet orders", ship: null, done: null }
+    }
+  },
+  venev: {
+    CZ: {
+      L12M: { o: 31, nc: 27, g: 1519, d: 173, dp: 11.4, od: 45.2, rfa: 0, rfp: null, n: 1382, an: 46.1, ar: 33.4, cp: 22.0, gp: 967, fg: 35.3, s: 3804, cac: 140.9, mer: 0.36, rs: null,
+        notes: { s: "Meta account in CZK, converted. Incl. unallocated: 5,550" } },
+      L90: { o: 11, nc: 9, g: 511, d: 29, dp: 5.6, od: 27.3, rfa: 0, rfp: null, n: 487, an: 47.8, ar: 52.3, cp: 26.9, gp: 353, fg: 37.9, s: 3804, cac: 422.7, mer: 0.13, rs: null },
+      P90: { o: 4, s: 0, na: { s: "No Meta spend in P90" } },
+      P12M: { o: 1, s: 0, na: {} },
+      coh: { 90: { n: 18 }, missH: "Only the 90 d cohort is in the audit (18 customers)" },
+      ops: null
+    },
+    SK: {
+      L12M: { o: 23, nc: 8, g: 1098, d: 139, dp: 12.7, od: 52.2, rfa: 0, rfp: null, n: 992, an: 40.8, ar: 42.2, cp: 19.2, gp: 729, fg: 31.0, s: 139, cac: 17.4, mer: 7.14, rs: null,
+        notes: { s: "Incl. unallocated: 656" } },
+      L90: { o: 8, nc: 6, g: 323, d: 15, dp: 4.7, od: 37.5, rfa: 0, rfp: null, n: 317, an: 42.6, ar: 26.4, cp: 19.0, gp: 204, fg: 31.7, s: 139, cac: 23.2, mer: 2.28, rs: null,
+        notes: { s: "SK campaign from 2026-10-06" } },
+      P90: { o: 2, s: 0 },
+      P12M: { o: 63, s: 0 },
+      coh: { 90: { n: 5 }, missH: "Only the 90 d cohort is in the audit (5 customers)" },
+      ops: null
+    },
+    OTHER: {
+      L12M: { o: 4, nc: 2, g: 364, d: 46, dp: null, od: 50.0, rfa: 0, rfp: null, n: 344, an: 42.8, ar: 116.0, cp: 27.1, gp: 232, fg: 30.6, s: 0, cac: null, mer: null, rs: null },
+      coh: { missH: "No cohort data in the audit" },
+      ops: null
+    }
+  }
+};
+
+var PERIODS = {
+  L90: { label: "L90", cmp: "P90", weeks: 90 / 7, range: "17 Jul to 14 Oct 2026" },
+  L12M: { label: "L12M", cmp: "P12M", weeks: 365 / 7, range: "15 Oct 2025 to 14 Oct 2026" }
+};
+var ISO_NUM = { US: "USA", CA: "CAN", MX: "MEX", CZ: "CZE", SK: "SVK", PL: "POL", HU: "HUN", DE: "DEU", AT: "AUT", GB: "GBR", IE: "IRL", CH: "CHE", RS: "SRB", FR: "FRA", NL: "NLD", BE: "BEL", IT: "ITA", SI: "SVN", HR: "HRV", UA: "UKR", RO: "ROU", LT: "LTU", BY: "BLR", DK: "DNK" };
+var LABEL_AT = { US: [-98, 39], CA: [-106, 57], CZ: [15.4, 49.85], SK: [19.6, 48.75], PL: [19.4, 52.2], HU: [19.4, 47.1], DE: [10.4, 51.2], AT: [14.4, 47.55], GB: [-2.2, 53.4], IE: [-8.1, 53.2], CH: [8.2, 46.85], RS: [20.9, 44.1] };
+var OTHER_ISO = { dobias: ["GB", "RS", "IE", "CH"], venev: [] };
+
+/* ---------- rows ---------- */
+var COH_NOTE = "Cohort metric: fixed windows, complete cohorts only. Does not follow the period picker.";
+function cohRows() {
+  var r = [{ k: "c_n_365", l: "Cohort customers 365 d", kind: "count", h: 365, f: "n" }];
+  [90, 180, 365].forEach(function (h) { r.push({ k: "c_rep_" + h, l: "Repeat rate " + h + " d", kind: "pct", h: h, f: "rep", ratio: true, spark: "rep" }); });
+  [90, 180, 365].forEach(function (h) { r.push({ k: "c_rev_" + h, l: "Revenue per customer " + h + " d", kind: "money", h: h, f: "rev", ratio: true, spark: "rev" }); });
+  [90, 180, 365].forEach(function (h) { r.push({ k: "c_gp_" + h, l: "GP per customer " + h + " d", kind: "money", h: h, f: "gp", ratio: true, spark: "gp", strong: h === 365 }); });
+  [90, 180].forEach(function (h) { r.push({ k: "c_cac_" + h, l: "Cohort CAC " + h + " d", kind: "money", h: h, f: "cac", ratio: true }); });
+  [90, 180, 365].forEach(function (h) { r.push({ k: "c_ltgp_" + h, l: "LTGP:CAC " + h + " d", kind: "x2", h: h, f: "ltgp", ratio: true, strong: h === 365 }); });
+  r.push({ k: "payback", l: "CAC payback", allNA: "Needs daily cohort GP per customer (F2)" });
+  return r;
+}
+var SECTIONS = [
+  { id: "vol", label: "Volume", per: "P", rows: [
+    { k: "o", l: "Orders", kind: "count", good: "up" },
+    { k: "nc", l: "New customers", kind: "count", good: "up" },
+    { k: "rs", l: "Returning revenue share", kind: "pct", good: "neutral", ratio: true },
+    { k: "share", l: "Share of client net revenue", kind: "pct", good: "neutral", calc: true }
+  ] },
+  { id: "rev", label: "Revenue", per: "P", rows: [
+    { k: "g", l: "Gross sales", kind: "money", good: "up" },
+    { k: "d", l: "Discounts", kind: "money", good: "down", minus: true },
+    { k: "dp", l: "Effective discount rate", kind: "pct", good: "down", ratio: true, sub: true },
+    { k: "od", l: "Orders with a discount", kind: "pct", good: "down", ratio: true, sub: true },
+    { k: "mkd", l: "Compare-at markdown", minus: true, allNA: "No list-price history yet; snapshot starts with F9" },
+    { k: "rfa", l: "Refunds", kind: "money", good: "down", minus: true },
+    { k: "rfp", l: "Refunded orders", kind: "pct", good: "down", ratio: true, sub: true },
+    { k: "n", l: "Net revenue", kind: "money", good: "up", strong: true },
+    { k: "an", l: "AOV new", kind: "money", good: "up", ratio: true },
+    { k: "ar", l: "AOV returning", kind: "money", good: "up", ratio: true }
+  ] },
+  { id: "pro", label: "Profit", per: "P", rows: [
+    { k: "cp", l: "COGS % of net sales", kind: "pct", good: "down", ratio: true },
+    { k: "gp", l: "Gross profit", kind: "money", good: "up", strong: true, tip: "Net sales minus COGS (CM1 basis). Shipping charged, shipping cost and payment fees are outside it." },
+    { k: "ship", l: "Shipping and fulfilment", minus: true, allNA: "No carrier cost data for any client; rate cards (F6)" },
+    { k: "pay", l: "Payment fees incl. COD", minus: true, allNA: "No fee data for any client; rate cards (F6)" },
+    { k: "cm2", l: "CM2", strong: true, allNA: "Needs shipping and fee rate cards (F6)" },
+    { k: "s", l: "Ad spend", kind: "money", good: "neutral", minus: true },
+    { k: "gpa", l: "GP after ads", kind: "money", good: "up", strong: true, calc: true, tip: "Gross profit minus ad spend. The ranking column until CM3 exists." },
+    { k: "cm3", l: "CM3", strong: true, allNA: "Needs CM2 (F6)" }
+  ] },
+  { id: "acq", label: "Acquisition", per: "P", rows: [
+    { k: "cac", l: "nCAC", kind: "money", good: "down", ratio: true },
+    { k: "mer", l: "MER", kind: "x2", good: "up", ratio: true },
+    { k: "amer", l: "aMER", allNA: "New-customer revenue per market comes with the mart (F2)" },
+    { k: "be", l: "Break-even aMER", allNA: "Needs CM2 (F6)" },
+    { k: "fg", l: "First-order GP per new customer", kind: "money", good: "up", ratio: true },
+    { k: "fop", l: "First-order GP minus nCAC", kind: "money", good: "up", ratio: true, calc: true, tip: "First-order profit on a CM1 basis. Above 0 means a new customer pays back on the first order." }
+  ] },
+  { id: "life", label: "Lifetime", per: "C", cohort: true, rows: cohRows() }
+];
+var ADDITIVE = { o: 1, nc: 1, g: 1, d: 1, rfa: 1, n: 1, gp: 1, s: 1, gpa: 1 };
+
+/* ---------- state ---------- */
+var S = { opt: "A", client: "dobias", period: "L90", compare: true, mapMetric: "gpa", view: "sold", sel: null, collapsed: {} };
+try { var saved = JSON.parse(localStorage.getItem("mk-proposal-state") || "null"); if (saved && saved.opt) { S.opt = saved.opt; S.client = saved.client || S.client; } } catch (e) {}
+function persist() { try { localStorage.setItem("mk-proposal-state", JSON.stringify({ opt: S.opt, client: S.client })); } catch (e) {} }
+
+/* ---------- formatting ---------- */
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function fnum(v, d) { return Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+function sign(v) { return v < 0 ? "−" : ""; }
+function unit(ccy, s) { return ccy === "USD" ? "$" + s : ccy === "EUR" ? "€" + s : "CZK " + s; }
+function fmt(v, kind, ccy, withUnit) {
+  if (v == null) return "n/a";
+  if (kind === "count") return sign(v) + fnum(v, 0);
+  if (kind === "pct") return sign(v) + fnum(v, 1) + "%";
+  if (kind === "x2") return fnum(v, 2) + "×";
+  if (kind === "money") {
+    var s = fnum(v, Math.abs(v) < 1000 && Math.abs(v % 1) > 1e-9 ? 1 : 0);
+    return sign(v) + (withUnit ? unit(ccy, s) : s);
+  }
+  return String(v);
+}
+function compact(v, ccy) {
+  var a = Math.abs(v), s;
+  if (a >= 1e6) s = (a / 1e6).toFixed(2) + "M";
+  else if (a >= 1e4) s = Math.round(a / 1e3) + "k";
+  else if (a >= 1e3) s = (a / 1e3).toFixed(1) + "k";
+  else s = a.toFixed(a < 100 ? 1 : 0);
+  return sign(v) + unit(ccy, s);
+}
+function naSpan(reason) { return '<span class="na" tabindex="0" data-tip="' + esc(reason) + '">n/a</span>'; }
+
+/* ---------- value access ---------- */
+function rec(c, m, p) { return D[c][m] && D[c][m][p]; }
+function raw(c, m, p, k) {
+  var r = rec(c, m, p), cl = CL[c];
+  if (!r) return { na: MISS };
+  var v = r[k];
+  if (v == null) return { na: (r.na && r.na[k]) || (cl.na && cl.na[k]) || MISS };
+  var note = (r.notes && r.notes[k]) || (cl.notes && cl.notes[k]);
+  return { v: v, note: note, nc: !!(r.nc_ && r.nc_.indexOf(k) >= 0) };
+}
+function clientNet(c, p) {
+  var t = 0;
+  for (var i = 0; i < CL[c].markets.length; i++) { var x = raw(c, CL[c].markets[i], p, "n"); if (x.na) return null; t += x.v; }
+  return t;
+}
+function val(c, m, p, row) {
+  var cl = CL[c];
+  if (row.allNA) return { na: row.allNA };
+  if (cl.small && row.ratio) return { na: "Hidden: sample too small for ratios (about 55 orders a year)" };
+  if (row.h) return cohVal(c, m, row);
+  if (row.calc) {
+    var r0 = rec(c, m, p);
+    if (!r0) return { na: MISS };
+    if (row.k === "share") { var t = clientNet(c, p), n = raw(c, m, p, "n"); if (n.na) return n; if (t == null) return { na: "Client total needs every market" }; return { v: n.v / t * 100 }; }
+    if (row.k === "gpa") { var gp = raw(c, m, p, "gp"), s = raw(c, m, p, "s"); if (gp.na) return { na: gp.na }; if (s.na) return { na: s.na }; return { v: gp.v - s.v, nc: s.nc }; }
+    if (row.k === "fop") { var fg = raw(c, m, p, "fg"), cac = raw(c, m, p, "cac"); if (fg.na) return { na: fg.na }; if (cac.na) return { na: cac.na }; return { v: fg.v - cac.v, nc: cac.nc }; }
+  }
+  return raw(c, m, p, row.k);
+}
+function cohVal(c, m, row) {
+  var co = D[c][m].coh;
+  if (!co) return { na: "No cohort data in the audit" };
+  if (CL[c].small && row.f !== "n") return { na: "Hidden: sample too small for ratios" };
+  var h = co[row.h];
+  if (!h) return { na: co.missH || "Not in the audit" };
+  var v = h[row.f];
+  if (v == null) return { na: (co.na && co.na[row.f]) || (CL[c].na && CL[c].na[row.f]) || "Not in the audit" };
+  return { v: v, note: co.notes && co.notes[row.f + row.h] };
+}
+function totalVal(c, p, row) {
+  if (row.allNA || row.h) return null;
+  var ms = CL[c].markets;
+  function sum(k) { var t = 0; for (var i = 0; i < ms.length; i++) { var x = val(c, ms[i], p, { k: k, calc: k === "gpa" }); if (x.na) return null; t += x.v; } return t; }
+  if (ADDITIVE[row.k]) { var sv = sum(row.k); return sv == null ? { na: "Needs every market" } : { v: sv }; }
+  if (CL[c].small) return { na: "Hidden: sample too small" };
+  if (row.k === "share") return { v: 100 };
+  if (row.k === "dp") { var g = sum("g"), d = sum("d"); return g && d != null ? { v: d / g * 100 } : { na: "Needs every market" }; }
+  if (row.k === "cac") { var s = sum("s"), nc = sum("nc"); return s != null && nc ? (s ? { v: s / nc } : { na: "No spend" }) : { na: "Needs every market" }; }
+  if (row.k === "mer") { var s2 = sum("s"), n = sum("n"); return s2 && n != null ? { v: n / s2 } : { na: "Needs every market" }; }
+  return { na: "Not additive across markets" };
+}
+
+/* ---------- status ---------- */
+function maturity(c, m) {
+  var r = rec(c, m, "L90");
+  if (!r || r.nc == null) return "Directional";
+  if (CL[c].small) return "Directional";
+  return (r.nc < 30 || r.o / PERIODS.L90.weeks < 50) ? "Directional" : "Established";
+}
+function verdict(c, m, p) {
+  var cl = CL[c];
+  if (cl.small) return { cls: "none", label: "No verdict", why: cl.noVerdict };
+  var cp = raw(c, m, p, "cp"), home = raw(c, cl.home, p, "cp");
+  if (cp.na) return { cls: "none", label: "No verdict", why: cl.noVerdict };
+  if (m !== cl.home && !home.na && cp.v - home.v > 5) {
+    return { cls: "fixstr", label: "Fix structure", oncm1: true, why: "Gross margin " + fnum(100 - cp.v, 1) + "% vs " + fnum(100 - home.v, 1) + "% in " + cl.home + ". Driver: COGS " + fnum(cp.v, 1) + "% of net sales vs " + fnum(home.v, 1) + "%." };
+  }
+  var gpa = val(c, m, p, { k: "gpa", calc: true });
+  if (!gpa.na && gpa.v <= 0) return { cls: "fixacq", label: "Fix acquisition", oncm1: true, why: "GP after ads at or below 0 with gross margin within 5 pp of home." };
+  return { cls: "none", label: "No verdict", why: cl.noVerdict };
+}
+function chipHTML(c, m, p, opts) {
+  var v = verdict(c, m, p), mat = maturity(c, m), dim = mat !== "Established";
+  var tip = v.why + (v.oncm1 ? " Rules run on CM1 while CM2 is n/a." : "") + (dim ? " Directional: under 50 orders a week or under 30 new customers in L90." : "");
+  if (opts && opts.word) return '<span class="health-word ' + v.cls + (dim ? '" style="opacity:.62' : "") + '" tabindex="0" data-tip="' + esc(tip) + '">' + v.label + (v.oncm1 ? " · on CM1" : "") + "</span>";
+  return '<span class="chip ' + v.cls + (dim ? " dim" : "") + '" tabindex="0" data-tip="' + esc(tip) + '">' + v.label + (v.oncm1 ? '<span class="tag-oncm1">on CM1</span>' : "") + "</span>";
+}
+function badgeHTML(c, m) { var mat = maturity(c, m); return mat === "Established" ? "" : '<span class="badge">' + mat + "</span>"; }
+
+/* ---------- delta ---------- */
+function deltaHTML(cur, prev, kind, good) {
+  if (!cur || !prev || cur.na || prev.na) return "";
+  if (cur.nc || prev.nc) return '<span class="dl flat" tabindex="0" data-tip="Not comparable: the compare period has partial spend">n/c</span>';
+  var diff, mag;
+  if (kind === "pct") { diff = cur.v - prev.v; mag = fnum(diff, 1) + " pp"; }
+  else { if (prev.v === 0) return ""; diff = (cur.v - prev.v) / Math.abs(prev.v); mag = fnum(diff * 100, 1) + "%"; }
+  var flat = !/[1-9]/.test(mag);
+  var dir = flat ? "flat" : diff > 0 ? "up" : "down";
+  var sent = good === "neutral" || flat ? "neutral" : (dir === good ? "good" : "bad");
+  var arrow = { up: "▲", down: "▼", flat: "→" }[dir];
+  return '<span class="dl ' + sent + '"><span class="ar" aria-hidden="true">' + arrow + "</span>" + mag + '<span hidden> ' + ({ up: "increase", down: "decrease", flat: "no change" }[dir]) + "</span></span>";
+}
+
+/* ---------- small SVG pieces ---------- */
+function microBars(a, b) {
+  if (a == null || b == null) return "";
+  var mx = Math.max(Math.abs(a), Math.abs(b)) || 1, h1 = Math.max(1, Math.abs(b) / mx * 14), h2 = Math.max(1, Math.abs(a) / mx * 14);
+  return '<svg class="micro" width="14" height="16" viewBox="0 0 14 16" aria-hidden="true"><rect x="1" y="' + (16 - h1) + '" width="5" height="' + h1 + '" rx="1" fill="var(--faint)"/><rect x="8" y="' + (16 - h2) + '" width="5" height="' + h2 + '" rx="1" fill="var(--ink)"/></svg>';
+}
+function spark(vals) {
+  var pts = vals.filter(function (x) { return x != null; });
+  if (pts.length < 2) return "";
+  var mn = Math.min.apply(null, pts), mx = Math.max.apply(null, pts), rg = mx - mn || 1;
+  var xs = [90, 180, 365], d = "", last;
+  vals.forEach(function (v, i) { if (v == null) return; var x = 2 + (xs[i] / 365) * 32, y = 14 - ((v - mn) / rg) * 11; d += (d ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1); last = [x, y]; });
+  return '<svg class="micro" width="36" height="16" viewBox="0 0 36 16" aria-hidden="true"><path d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/><circle cx="' + last[0] + '" cy="' + last[1] + '" r="2" fill="var(--accent)"/></svg>';
+}
+
+/* ---------- matrix ---------- */
+function matrixHTML(opt) {
+  var c = S.client, cl = CL[c], p = S.period, cp = PERIODS[p].cmp, ms = cl.markets;
+  var ledger = opt === "B", selM = S.sel;
+  var h = '<div class="mx-wrap"><table class="mx" aria-label="P&L matrix"><thead><tr><th class="rl" scope="col">' + cl.ccy + ", ex VAT</th>";
+  ms.forEach(function (m) {
+    var isSel = selM === m;
+    h += '<th scope="col" class="mcol' + (isSel ? " sel" : "") + '" data-mkt="' + m + '" tabindex="0" title="Open ' + esc(cl.names[m]) + '">' + (m === "OTHER" ? "Other" : m) + '<br>' + chipHTML(c, m, p) + "</th>";
+    if (ledger && isSel && S.compare) h += '<th scope="col" class="sel">' + cp + "</th>";
+  });
+  h += '<th scope="col" class="tot">Total</th></tr></thead><tbody>';
+  SECTIONS.forEach(function (sec) {
+    var col = !!S.collapsed[sec.id];
+    var span = ms.length + 2 + (ledger && selM && S.compare ? 1 : 0);
+    h += '<tr class="sec" data-sec="' + sec.id + '" tabindex="0" aria-expanded="' + !col + '"><td class="rl"><span class="caret">' + (col ? "+" : "−") + "</span>" + sec.label + '<span class="per">' + (sec.per === "C" ? "cohorts" : p + (S.compare ? " vs " + cp : "")) + '</span></td><td colspan="' + (span - 1) + '"></td></tr>';
+    if (col) return;
+    sec.rows.forEach(function (row) {
+      var cls = (row.strong ? "strong " : "") + (row.sub ? "sub" : "");
+      var lab = esc(row.l);
+      if (row.tip) lab = '<span class="noted" tabindex="0" data-tip="' + esc(row.tip) + '">' + lab + "</span>";
+      if (row.h && sec.cohort && row.k === "c_n_365") lab = '<span class="noted" tabindex="0" data-tip="' + esc(COH_NOTE) + '">' + esc(row.l) + "</span>";
+      h += '<tr class="' + cls + '"><td class="rl">' + lab + "</td>";
+      ms.forEach(function (m) {
+        var cur = val(c, m, p, row), isSel = selM === m;
+        var prev = (!row.h && !row.allNA && S.compare) ? val(c, m, cp, row) : null;
+        var inner;
+        if (cur.na) inner = naSpan(cur.na);
+        else {
+          var txt = fmt(cur.v, row.kind, cl.ccy, false);
+          var vcls = row.minus && cur.v !== 0 ? "v minus" : "v";
+          inner = cur.note ? '<span class="' + vcls + ' noted" tabindex="0" data-tip="' + esc(cur.note) + '">' + txt + "</span>" : '<span class="' + vcls + '">' + txt + "</span>";
+          var dl = prev ? deltaHTML(cur, prev, row.kind, row.good) : "";
+          if (ledger) {
+            var mic = row.h ? (row.spark ? spark([90, 180, 365].map(function (hh) { var x = cohVal(c, m, { h: hh, f: row.f }); return x.na ? null : x.v; })) : "") : (prev && !prev.na ? microBars(cur.v, prev.v) : "");
+            inner = '<span class="cellrow">' + mic + inner + "</span>" + (dl ? dl : "");
+          } else if (dl) inner += dl;
+        }
+        h += '<td class="' + (isSel ? "sel" : "") + '">' + inner + "</td>";
+        if (ledger && isSel && S.compare) {
+          var pv = prev;
+          h += '<td class="sel">' + (row.h || row.allNA ? '<span class="na">&middot;</span>' : (pv && !pv.na ? '<span class="prevv">' + fmt(pv.v, row.kind, cl.ccy) + "</span>" : naSpan(pv ? pv.na : MISS))) + "</td>";
+        }
+      });
+      var t = totalVal(c, p, row);
+      h += '<td class="tot">' + (t == null ? '<span class="na">&middot;</span>' : t.na ? naSpan(t.na) : '<span class="v' + (row.minus && t.v !== 0 ? " minus" : "") + '">' + fmt(t.v, row.kind, cl.ccy) + "</span>" + (S.compare && !row.h && row.k !== "share" ? deltaHTML(t, totalVal(c, cp, row), row.kind, row.good) : "")) + "</td></tr>";
+    });
+  });
+  h += "</tbody></table></div>";
+  h += '<div class="mx-legend"><span>n/a: hover for the reason</span><span>Deltas: green good, red bad, grey neutral</span><span>' + (ledger ? "Bars: " + cp + " grey, " + p + " dark. Curves: 90, 180, 365 d" : "Click a market column to open it") + "</span></div>";
+  return h;
+}
+
+/* ---------- waterfall ---------- */
+function waterfallHTML(c, m, p) {
+  var cl = CL[c], ccy = cl.ccy;
+  var g = raw(c, m, p, "g"), d = raw(c, m, p, "d"), n = raw(c, m, p, "n"), gp = raw(c, m, p, "gp"), s = raw(c, m, p, "s");
+  var steps = [];
+  var top;
+  if (!g.na && !d.na) {
+    var ns = g.v - d.v;
+    steps.push({ l: "Gross sales", a: 0, b: g.v, k: "tot" });
+    steps.push({ l: "Discounts", a: ns, b: g.v, k: "neg", v: -d.v });
+    steps.push({ l: "Net sales", a: 0, b: ns, k: "tot" });
+    top = ns;
+    if (!gp.na) steps.push({ l: "COGS (implied)", a: gp.v, b: ns, k: "neg", v: -(ns - gp.v), tip: "Net sales minus gross profit" });
+    else steps.push({ l: "COGS", k: "na", na: gp.na });
+  } else if (!n.na) {
+    steps.push({ l: "Net revenue", a: 0, b: n.v, k: "tot", tip: "Shoptet order total incl. shipping and payment fee; gross sales and discounts not ingested" });
+    top = n.v;
+    if (!gp.na) steps.push({ l: "COGS and fees (implied)", a: gp.v, b: n.v, k: "neg", v: -(n.v - gp.v), tip: "Net revenue minus gross profit: COGS plus the shipping and payment-fee revenue that GP excludes" });
+  } else return '<p class="na">' + esc(n.na) + "</p>";
+  if (!gp.na) steps.push({ l: "Gross profit", a: 0, b: gp.v, k: "tot" });
+  else steps.push({ l: "Gross profit", k: "na", na: gp.na });
+  steps.push({ l: "Shipping cost", k: "na", na: "No carrier cost data; rate cards (F6)" });
+  steps.push({ l: "Payment fees", k: "na", na: "No fee data; rate cards (F6)" });
+  if (!s.na && !gp.na) {
+    steps.push({ l: "Ad spend", a: gp.v - s.v, b: gp.v, k: "neg", v: -s.v, tip: s.note });
+    var gpa = gp.v - s.v;
+    steps.push({ l: "GP after ads", a: Math.min(0, gpa), b: Math.max(0, gpa), k: gpa >= 0 ? "pos" : "neg", v: gpa, total: true });
+  } else if (!s.na) {
+    steps.push({ l: "Ad spend", a: 0, b: s.v, k: "plain", v: s.v, tip: "Shown as a plain bar: no gross profit to subtract it from" });
+    steps.push({ l: "GP after ads", k: "na", na: gp.na });
+  } else {
+    steps.push({ l: "Ad spend", k: "na", na: s.na });
+  }
+  var lo = 0, hi = 0;
+  steps.forEach(function (st) { if (st.k !== "na") { lo = Math.min(lo, st.a); hi = Math.max(hi, st.b); } });
+  var rg = hi - lo || 1;
+  function pc(x) { return ((x - lo) / rg * 100).toFixed(2) + "%"; }
+  var h = '<div class="wf" role="table" aria-label="Profit waterfall">';
+  steps.forEach(function (st) {
+    var isT = st.k === "tot" || st.total;
+    h += '<div class="wf-r' + (isT ? " t" : "") + (st.k === "na" ? " na" : "") + '" role="row"><span class="l" role="cell"' + (st.tip ? ' data-tip="' + esc(st.tip) + '" tabindex="0"' : "") + ">" + esc(st.l) + '</span><span class="trk" role="cell">';
+    if (lo < 0) h += '<span class="zero" style="left:' + pc(0) + '"></span>';
+    if (st.k === "na") h += '<i class="ghost" style="left:' + pc(lo) + ";width:" + (top ? (Math.min(top * 0.12, rg * 0.12) / rg * 100).toFixed(2) : 8) + '%"></i>';
+    else h += '<i class="' + st.k + '" style="left:' + pc(st.a) + ";width:" + Math.max(0.6, (st.b - st.a) / rg * 100).toFixed(2) + '%"></i>';
+    h += '</span><span class="val" role="cell">' + (st.k === "na" ? naSpan(st.na) : (st.v != null ? fmtSigned(st.v, ccy, st.total) : compact(st.b - st.a, ccy))) + "</span></div>";
+  });
+  return h + "</div>";
+}
+function fmtSigned(v, ccy, total) { return (v < 0 ? "−" : total ? "" : "+") + compact(Math.abs(v), ccy); }
+
+/* ---------- cohort chart ---------- */
+function cohortChart(c, m, p) {
+  var cl = CL[c], co = D[c][m].coh;
+  if (cl.small) return '<p class="empty-cell">Hidden: too few customers for cohort ratios.</p>';
+  if (!co) return '<p class="empty-cell">No cohort data in the audit.</p>';
+  var field = co[365] && co[365].gp != null ? "gp" : (co[365] && co[365].rev != null ? "rev" : null);
+  if (!field) return '<p class="empty-cell">' + esc(co.missH || "No cohort data") + "</p>";
+  var series = [{ m: m, main: true }];
+  if (m !== cl.home && D[c][cl.home].coh) series.push({ m: cl.home, main: false });
+  var all = [];
+  series.forEach(function (s) { s.pts = [90, 180, 365].map(function (hh) { var x = D[c][s.m].coh[hh]; return x && x[field] != null ? [hh, x[field]] : null; }).filter(Boolean); s.pts.forEach(function (q) { all.push(q[1]); }); });
+  var cac = raw(c, m, "L90", "cac");
+  if (field === "gp" && !cac.na) all.push(cac.v);
+  var W = 340, H = 176, L = 44, R = 70, T = 12, B = 26;
+  var ymax = Math.max.apply(null, all) * 1.12;
+  var step = niceStep(ymax / 4);
+  ymax = Math.ceil(ymax / step) * step;
+  function X(d) { return L + d / 365 * (W - L - R); }
+  function Y(v) { return T + (1 - v / ymax) * (H - T - B); }
+  var svg = '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + (field === "gp" ? "Gross profit" : "Revenue") + ' per customer by cohort age">';
+  for (var v = 0; v <= ymax + 0.001; v += step) svg += '<line class="gr" x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '"/><text x="' + (L - 6) + '" y="' + (Y(v) + 3.5) + '" text-anchor="end">' + shortNum(v) + "</text>";
+  [0, 90, 180, 365].forEach(function (d) { svg += '<text x="' + X(d) + '" y="' + (H - 8) + '" text-anchor="middle">' + d + " d</text>"; });
+  if (field === "gp" && !cac.na) {
+    svg += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(cac.v) + '" y2="' + Y(cac.v) + '" stroke="var(--warn-g)" stroke-width="1.5"/>';
+  }
+  var ends = [];
+  series.forEach(function (s) { var q = s.pts[s.pts.length - 1]; if (q) ends.push({ x: X(q[0]) + 7, y: Y(q[1]) + 3.5, t: (s.m === "OTHER" ? "Other" : s.m) + " " + shortNum(q[1]), st: "fill:var(--ink);font-weight:600" }); });
+  if (field === "gp" && !cac.na) ends.push({ x: W - R + 7, y: Y(cac.v) + 3.5, t: "nCAC " + shortNum(cac.v), st: "fill:var(--warn)" });
+  ends.sort(function (a, b) { return a.y - b.y; });
+  for (var e = 1; e < ends.length; e++) if (ends[e].y - ends[e - 1].y < 12) ends[e].y = ends[e - 1].y + 12;
+  series.slice().reverse().forEach(function (s) {
+    var col = s.main ? "var(--accent)" : "var(--faint)";
+    var dpath = s.pts.map(function (q, i) { return (i ? "L" : "M") + X(q[0]).toFixed(1) + " " + Y(q[1]).toFixed(1); }).join("");
+    svg += '<path d="' + dpath + '" fill="none" stroke="' + col + '" stroke-width="2" stroke-linejoin="round"/>';
+    s.pts.forEach(function (q, i) {
+      svg += '<circle cx="' + X(q[0]) + '" cy="' + Y(q[1]) + '" r="4" fill="' + col + '" stroke="var(--mk-card)" stroke-width="2"><title>' + s.m + " " + q[0] + " d: " + fmt(q[1], "money", cl.ccy, true) + "</title></circle>";
+    });
+  });
+  ends.forEach(function (en) { svg += '<text x="' + en.x + '" y="' + en.y + '" style="' + en.st + '">' + en.t + "</text>"; });
+  svg += "</svg>";
+  var leg = '<div class="map-legend"><span><span class="sw" style="background:var(--accent)"></span>' + (m === "OTHER" ? "Other" : m) + "</span>" + (series.length > 1 ? '<span><span class="sw" style="background:var(--faint)"></span>' + cl.home + " (home)</span>" : "") + (field === "gp" && !cac.na ? '<span><span class="sw" style="background:var(--warn-g)"></span>L90 nCAC, today\'s cost</span>' : "") + "</div>";
+  var cap = '<p class="empty-cell">' + (field === "gp" ? "GP" : "Revenue (no COGS, F7)") + " per new customer. Each point is the set of cohorts complete at that age." + (field === "gp" && cac.na ? " No nCAC line: " + esc(cac.na) : "") + "</p>";
+  return svg + leg + cap;
+}
+function niceStep(x) { var e = Math.pow(10, Math.floor(Math.log10(x))), f = x / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; }
+function shortNum(v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e4 ? Math.round(v / 1e3) + "k" : v >= 1000 ? (v / 1e3).toFixed(1) + "k" : (v % 1 ? v.toFixed(1) : String(v)); }
+
+/* ---------- discount + ops + leading indicators ---------- */
+function discountHTML(c, m, p) {
+  var cl = CL[c], cp = PERIODS[p].cmp;
+  var dp = raw(c, m, p, "dp"), od = raw(c, m, p, "od"), dpp = raw(c, m, cp, "dp"), odp = raw(c, m, cp, "od");
+  var flag;
+  if (cl.small) flag = '<span class="flag unk">Hidden: sample too small</span>';
+  else if (dp.na) flag = '<span class="flag unk" data-tip="' + esc(dp.na) + '" tabindex="0">Flag n/a</span>';
+  else if (dp.v <= 15) flag = '<span class="flag off">No flag: effective rate ' + fnum(dp.v, 1) + "% is under 15%</span>";
+  else {
+    var sig = !od.na && !odp.na && od.v > odp.v;
+    flag = sig ? '<span class="flag on">Discount-addiction flag: ' + fnum(dp.v, 1) + "% effective rate and penetration up " + fnum(od.v - odp.v, 1) + " pp vs " + cp + "</span>"
+      : '<span class="flag unk">Effective rate ' + fnum(dp.v, 1) + "% is over 15%; no second signal confirmed</span>";
+  }
+  function it(l, x, kind) { return '<div class="it"><span class="l">' + l + '</span><span class="v">' + (cl.small && kind === "pct" ? naSpan("Hidden: sample too small") : x.na ? naSpan(x.na) : fmt(x.v, kind, cl.ccy, true)) + "</span></div>"; }
+  return '<div class="mini-grid">' + it("Effective discount rate", dp, "pct") + it("Orders with a discount", od, "pct") + it("Discounts", raw(c, m, p, "d"), "money") +
+    '<div class="it"><span class="l">Average depth</span><span class="v">' + naSpan("Needs gross of discounted orders only (F2)") + '</span></div><div class="it"><span class="l">Full-price revenue share</span><span class="v">' + naSpan("Needs order-level discount flag in the mart (F2)") + '</span></div><div class="it"><span class="l">Code vs automatic</span><span class="v">' + naSpan(c === "rawbark" ? "Available in Woo (coupon vs fee lines); not split in the audit" : c === "dobias" ? "Payload discount_applications only from 2026-05" : "Not available") + "</span></div></div>" + flag;
+}
+function opsHTML(c, m) {
+  var o = D[c][m].ops, cl = CL[c];
+  if (!o) return '<p class="empty-cell">No ops snapshot for this market in the audit (L90 only).</p>';
+  function it(l, v) { return '<div class="it"><span class="l">' + l + '</span><span class="v">' + v + "</span></div>"; }
+  var ship = o.ship != null ? fmt(o.ship, "money", cl.ccy, true) : (c === "dobias" ? derivedShip(c, m) : naSpan("Shipping not separable"));
+  return '<div class="mini-grid">' + it("COD share", fmt(o.cod, "pct")) + it("Zero-shipping orders", o.zero != null ? fmt(o.zero, "pct") : naSpan(o.zeroNA || "n/a")) +
+    it("Shipping charged per order", ship) + it("Time to completed", o.done ? esc(o.done) : naSpan("No fulfilment timestamp in stg")) + it("COD refusal rate", naSpan("Not recorded by any platform")) + it("Delivery mix", naSpan("Not ingested")) +
+    '</div><p class="empty-cell" style="margin-top:6px">Payment mix L90: ' + esc(o.pay) + "</p>";
+}
+function derivedShip(c, m) {
+  var r = rec(c, m, "L90");
+  if (!r || r.g == null) return naSpan("n/a");
+  var v = (r.n - (r.g - r.d)) / r.o;
+  return '<span class="noted" tabindex="0" data-tip="Derived: (net revenue minus net sales) / orders, L90. Net revenue is net sales plus shipping, not refund-netted.">' + fmt(v, "money", CL[c].ccy, true) + "</span>";
+}
+function leadingHTML(c, m, p) {
+  var cl = CL[c];
+  var fg = raw(c, m, p, "fg"), fgh = raw(c, cl.home, p, "fg"), an = raw(c, m, p, "an"), anh = raw(c, cl.home, p, "an");
+  function idx(a, b) { return a.na || b.na || cl.small ? naSpan(cl.small ? "Hidden: sample too small" : (a.na || b.na)) : fnum(a.v / b.v * 100, 0); }
+  return '<div class="mini-grid"><div class="it"><span class="l">First-order GP, index vs ' + cl.home + '</span><span class="v">' + idx(fg, fgh) + '</span></div><div class="it"><span class="l">AOV new, index vs ' + cl.home + '</span><span class="v">' + idx(an, anh) + '</span></div><div class="it"><span class="l">CVR, add-to-cart, checkout</span><span class="v">' + naSpan(c === "dobias" || c === "manami" ? "GA4 country exists 2026-08-03 to 10-03; needs ISO mapping (F10)" : "No GA4 by country (F10)") + '</span></div><div class="it"><span class="l">CPM and CTR by country</span><span class="v">' + naSpan("Needs Meta breakdowns=country (F4)") + '</span></div><div class="it"><span class="l">30 and 60 d repeat vs home at equal age</span><span class="v">' + naSpan("Needs daily cohorts (F2)") + "</span></div></div>";
+}
+
+function detailBlocks(c, m, p, compactMode) {
+  var cl = CL[c];
+  var gpa = val(c, m, p, { k: "gpa", calc: true }), n = raw(c, m, p, "n"), cac = val(c, m, p, { k: "cac", ratio: true }), mer = val(c, m, p, { k: "mer", ratio: true });
+  function k(l, x, kind) { return '<div class="kpi"><span class="l">' + l + '</span><span class="v">' + (x.na ? naSpan(x.na) : (x.note ? '<span class="noted" tabindex="0" data-tip="' + esc(x.note) + '">' : "<span>") + fmt(x.v, kind, cl.ccy, true) + "</span>") + "</span></div>"; }
+  var h = '<div class="kpis">' + k("Net revenue", n, "money") + k("GP after ads", gpa, "money") + k("nCAC", cac, "money") + k("MER", mer, "x2") + "</div>";
+  h += '<div class="blk"><h5>Waterfall, ' + p + "</h5>" + waterfallHTML(c, m, p) + "</div>";
+  h += '<div class="blk"><h5>Cohort value vs acquisition cost</h5>' + cohortChart(c, m, p) + "</div>";
+  h += '<div class="blk"><h5>Discounts, ' + p + "</h5>" + discountHTML(c, m, p) + "</div>";
+  h += '<div class="blk"><h5>Ops friction, L90</h5>' + opsHTML(c, m) + "</div>";
+  if (maturity(c, m) !== "Established") h += '<div class="blk"><h5>Leading indicators (Directional market)</h5>' + leadingHTML(c, m, p) + "</div>";
+  return h;
+}
+
+/* ---------- controls ---------- */
+function segHTML(name, items, cur, label) {
+  return '<div class="seg" role="group" aria-label="' + label + '">' + items.map(function (it) {
+    return '<button type="button" data-ctl="' + name + '" data-val="' + it[0] + '" aria-pressed="' + (cur === it[0]) + '"' + (it[2] ? ' disabled data-tip="' + esc(it[2]) + '"' : "") + ">" + it[1] + "</button>";
+  }).join("") + "</div>";
+}
+function controlsHTML(extra) {
+  var cmpLabel = "vs " + PERIODS[S.period].cmp;
+  return '<div class="ctl-row">' +
+    segHTML("client", [["dobias", "Dobias"], ["rawbark", "RawBark"], ["manami", "Manami"], ["venev", "Venev"]], S.client, "Client") +
+    segHTML("period", [["L90", "L90"], ["L12M", "L12M"]], S.period, "Period") +
+    '<label class="chk"><input type="checkbox" id="cmp-' + S.opt + '" data-ctl="compare"' + (S.compare ? " checked" : "") + "> " + cmpLabel + "</label>" +
+    segHTML("ccy", [["base", CL[S.client].ccy], ["local", "Local", S.client === "dobias" ? "CA local currency needs payload presentment amounts or a CAD FX table after 2026-05 (F8)" : "Local amounts per market are not in the audit; toggle ships with the mart (F2)"]], "base", "Currency") +
+    (extra || "") + "</div>";
+}
+
+/* ---------- MAP ---------- */
+var worldP = null;
+function loadWorld() {
+  if (!worldP) {
+    /* World outlines ship as a script (datamaps world topology), so no fetch is needed. */
+    var topo = window.Datamap && window.Datamap.prototype && window.Datamap.prototype.worldTopo;
+    worldP = (window.d3 && window.topojson && topo)
+      ? Promise.resolve(topojson.feature(topo, topo.objects.world).features)
+      : Promise.reject(new Error("map libraries unavailable"));
+  }
+  return worldP;
+}
+var FRAMES = {
+  na: { proj: function () { return d3.geoConicConformal().rotate([98, 0]).parallels([30, 60]); }, box: [[-128, 24], [-62, 24], [-140, 62], [-52, 62], [-98, 72]], h: 0.62,
+    tiles: { cols: 2, at: { CA: [1, 1, 2], US: [2, 1, 2] } } },
+  czsk: { proj: function () { return d3.geoMercator(); }, box: [[11.6, 47.4], [22.9, 47.4], [11.6, 51.3], [22.9, 51.3]], h: 0.5,
+    tiles: { cols: 2, at: { CZ: [1, 1], SK: [1, 2] } } },
+  cee: { proj: function () { return d3.geoMercator(); }, box: [[8.5, 46.2], [24.8, 46.2], [8.5, 55.2], [24.8, 55.2]], h: 0.58,
+    tiles: { cols: 2, at: { DE: [1, 1], PL: [1, 2], CZ: [2, 1], SK: [2, 2], AT: [3, 1], HU: [3, 2] } } },
+  atl: { proj: function () { return d3.geoNaturalEarth1(); }, box: [[-128, 22], [30, 22], [-128, 64], [30, 64]], h: 0.5,
+    tiles: { cols: 5, at: { CA: [1, 1, 2], GB: [1, 4], IE: [1, 3], US: [2, 1, 2], CH: [2, 4], RS: [2, 5] } } }
+};
+/* spec: { frame, items: { ISO: { fill, hatch, label, value, mkt } }, h } */
+function drawMap(el, spec) {
+  el.innerHTML = '<div class="empty-cell" style="padding:20px">Loading map</div>';
+  loadWorld().then(function (features) {
+    var fr = FRAMES[spec.frame];
+    var w = Math.max(280, el.clientWidth || 600), hh = Math.round(w * (spec.h || fr.h));
+    var proj = fr.proj().fitExtent([[8, 8], [w - 8, hh - 8]], { type: "MultiPoint", coordinates: fr.box });
+    var path = d3.geoPath(proj);
+    var uid = "h" + Math.random().toString(36).slice(2, 8);
+    var byNum = {};
+    Object.keys(spec.items).forEach(function (iso) { byNum[ISO_NUM[iso]] = iso; });
+    var svg = '<svg viewBox="0 0 ' + w + " " + hh + '" role="img" aria-label="Map of markets"><defs><pattern id="' + uid + '" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="var(--land)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--hatch)" stroke-width="2.2"/></pattern><clipPath id="c' + uid + '"><rect width="' + w + '" height="' + hh + '"/></clipPath></defs><g clip-path="url(#c' + uid + ')">';
+    features.forEach(function (f) {
+      var id = String(f.id), iso = byNum[id], it = iso && spec.items[iso];
+      var d = path(f);
+      if (!d) return;
+      var fill = it ? (it.hatch ? "url(#" + uid + ")" : it.fill) : "var(--land)";
+      svg += '<path class="c' + (it && it.mkt ? " mkt" : "") + '" d="' + d + '" fill="' + fill + '"' + (it && it.mkt ? ' data-mkt="' + it.mkt + '" tabindex="0" role="button" aria-label="' + esc(it.aria || iso) + '"' : "") + ">" + (it ? "<title>" + esc(it.aria || iso) + "</title>" : "") + "</path>";
+    });
+    svg += "</g>";
+    Object.keys(spec.items).forEach(function (iso) {
+      var it = spec.items[iso], at = LABEL_AT[iso];
+      if (!at || !it.label) return;
+      var pt = proj(at);
+      if (!pt || pt[0] < 0 || pt[0] > w || pt[1] < 0 || pt[1] > hh) return;
+      if (it.hatch && it.dot !== false) { svg += '<circle cx="' + pt[0].toFixed(1) + '" cy="' + (pt[1] + 6).toFixed(1) + '" r="3.5" fill="var(--hatch)" stroke="var(--mk-card, var(--surface))" stroke-width="1.5"/>'; pt = [pt[0], pt[1] - 4]; }
+      svg += '<text class="lbl" x="' + pt[0].toFixed(1) + '" y="' + pt[1].toFixed(1) + '" text-anchor="middle">' + esc(it.label) + (it.value ? '<tspan class="v" x="' + pt[0].toFixed(1) + '" dy="13">' + esc(it.value) + "</tspan>" : "") + "</text>";
+    });
+    svg += "</svg>";
+    el.innerHTML = svg;
+  }).catch(function () { drawTiles(el, spec); });
+}
+function drawTiles(el, spec) {
+  var fr = FRAMES[spec.frame], t = fr.tiles;
+  var h = '<div class="grid-fallback" style="grid-template-columns:repeat(' + t.cols + ',minmax(0,1fr))">';
+  Object.keys(t.at).forEach(function (iso) {
+    var pos = t.at[iso], it = spec.items[iso];
+    var style = "grid-row:" + pos[0] + ";grid-column:" + pos[1] + (pos[2] ? " / span " + pos[2] : "") + ";";
+    if (it && !it.hatch && it.fill) style += "background:" + it.fill + ";";
+    h += '<div class="tile' + (it && it.mkt ? " mkt" : "") + (it && it.hatch ? " hatched" : "") + '" style="' + style + '"' + (it && it.mkt ? ' data-mkt="' + it.mkt + '" tabindex="0" role="button"' : "") + "><b>" + iso + "</b>" + (it && it.value ? "<span>" + esc(it.value) + "</span>" : "") + "</div>";
+  });
+  h += '</div><p class="fallback-note">Tile grid shown: map data could not load.</p>';
+  el.innerHTML = h;
+}
+
+/* metric -> fills */
+var MAP_METRICS = { gpa: "GP after ads", n: "Net revenue", cac: "nCAC", ltgp: "LTGP:CAC 90 d", status: "Status" };
+function mapValue(c, m, metric) {
+  var p = S.period;
+  if (metric === "gpa") return val(c, m, p, { k: "gpa", calc: true });
+  if (metric === "n") return raw(c, m, p, "n");
+  if (metric === "cac") return val(c, m, p, { k: "cac", ratio: true });
+  if (metric === "ltgp") return cohVal(c, m, { h: 90, f: "ltgp" });
+  if (metric === "pay1") { var fg = val(c, m, p, { k: "fg", ratio: true }), cac = val(c, m, p, { k: "cac", ratio: true }); if (fg.na) return fg; if (cac.na) return cac; if (cac.nc) return { na: "Not comparable: partial spend" }; return { v: fg.v / cac.v }; }
+  return { na: "n/a" };
+}
+var STATUS_FILL = { scale: "var(--pos-t)", hold: "var(--info-t)", fixacq: "var(--warn-t)", fixstr: "var(--serious-t)", exit: "var(--neg-t)", none: "var(--neutral-t)" };
+function mapItems(c, metric, ramp) {
+  var cl = CL[c], items = {}, vals = [];
+  var kind = metric === "ltgp" || metric === "pay1" ? "x2" : "money";
+  cl.markets.forEach(function (m) { if (m === "OTHER") return; var x = mapValue(c, m, metric); if (!x.na) vals.push(x.v); });
+  var mx = metric === "pay1" ? 2 : metric === "ltgp" ? 3 : Math.max.apply(null, vals.concat([0]));
+  cl.markets.forEach(function (m) {
+    if (m === "OTHER") return;
+    var it = { mkt: m, label: m };
+    if (metric === "status") { var v = verdict(c, m, S.period); it.fill = STATUS_FILL[v.cls]; it.value = v.label; it.aria = cl.names[m] + ": " + v.label; }
+    else {
+      var x = mapValue(c, m, metric);
+      if (x.na) { it.hatch = true; it.dot = false; it.value = "n/a"; it.aria = cl.names[m] + ": n/a, " + x.na; }
+      else {
+        var step = x.v <= 0 ? 0 : 1 + Math.round(Math.min(1, x.v / (mx || 1)) * 4);
+        it.fill = x.v <= 0 ? "var(--neg-t)" : "var(--" + (ramp || "seq") + step + ")";
+        it.value = kind === "x2" ? fmt(x.v, "x2") : compact(x.v, cl.ccy);
+        it.aria = cl.names[m] + ": " + it.value;
+      }
+    }
+    items[m] = it;
+  });
+  (OTHER_ISO[c] || []).forEach(function (iso) { items[iso] = { hatch: true, label: "", mkt: "OTHER", aria: iso + ": part of Other" }; });
+  return items;
+}
+function mapLegend(metric, ramp) {
+  if (metric === "status") return '<div class="map-legend">' + ["scale|Scale", "hold|Hold", "fixacq|Fix acquisition", "fixstr|Fix structure", "exit|Exit", "none|No verdict"].map(function (s) { var a = s.split("|"); return '<span><span class="sw" style="background:' + STATUS_FILL[a[0]] + '"></span>' + a[1] + "</span>"; }).join("") + "</div>";
+  var r = ramp || "seq";
+  var lo = metric === "pay1" || metric === "ltgp" ? "0\u00d7" : "0", hi = metric === "pay1" ? "2\u00d7 or more" : metric === "ltgp" ? "3\u00d7 or more" : "highest market";
+  return '<div class="map-legend"><span>' + lo + "</span>" + [1, 2, 3, 4, 5].map(function (i) { return '<span class="sw" style="background:var(--' + r + i + ');margin:0"></span>'; }).join("") + "<span>" + hi + '</span><span><span class="sw" style="background:var(--neg-t)"></span>At or below 0</span><span><span class="sw hatch"></span>n/a or not a market</span></div>';
+}
+
+/* =========================================================================
+   OPTION A: ATLAS
+   ========================================================================= */
+function rankMarkets(c, p) {
+  var cl = CL[c];
+  var get = function (m, k) { return k === "gpa" ? val(c, m, p, { k: "gpa", calc: true }) : raw(c, m, p, k); };
+  var key = ["gpa", "gp", "n"].filter(function (k) { return cl.markets.every(function (m) { return !get(m, k).na; }); })[0] || "n";
+  var why = key === "gpa" ? "" : key === "gp" ? get(cl.home, "s").na : cl.noVerdict;
+  var rows = cl.markets.map(function (m) { return { m: m, x: get(m, key) }; });
+  rows.sort(function (a, b) { return (b.x.na ? -Infinity : b.x.v) - (a.x.na ? -Infinity : a.x.v); });
+  return { key: key, rows: rows, why: why };
+}
+function renderA(root) {
+  var c = S.client, cl = CL[c], p = S.period;
+  var metricSel = '<span style="display:inline-flex;gap:6px;align-items:center"><label class="chk" for="mapm-A">Map</label><select id="mapm-A" data-ctl="mapMetric" style="font:inherit;font-size:12.5px;padding:4px 8px;border-radius:9px;border:1px solid var(--mk-border);background:var(--mk-card);color:var(--ink)">' +
+    Object.keys(MAP_METRICS).map(function (k) { return '<option value="' + k + '"' + (S.mapMetric === k ? " selected" : "") + ">" + MAP_METRICS[k] + "</option>"; }).join("") + "</select></span>";
+  var h = '<div class="mk mk-house"><div class="mk-in">';
+  h += '<div class="mk-bar"><div class="mk-title"><h3>Markets</h3><span class="sub">' + cl.name + " &middot; " + cl.platform + " &middot; " + PERIODS[p].range + "</span></div>" + segHTML("view", [["sold", "Sold markets"], ["scout", "Scouting"]], S.view, "View") + "</div>";
+  h += controlsHTML(S.view === "sold" ? metricSel : "");
+  if (S.view === "scout") { h += scoutingHTML(c); h += "</div></div>"; root.innerHTML = h; drawScoutMap(root.querySelector("#mapA"), c); return; }
+  var rk = rankMarkets(c, p);
+  var mm = S.mapMetric, mmNote = "";
+  if (mm !== "status" && cl.markets.every(function (m) { return m === "OTHER" || mapValue(c, m, mm).na; })) { mmNote = mapValue(c, cl.home, mm).na; mm = "n"; }
+  var maxAbs = Math.max.apply(null, rk.rows.map(function (r) { return r.x.na ? 0 : Math.abs(r.x.v); })) || 1;
+  h += '<div class="a-top"><div class="card"><div class="card-h"><h4>' + MAP_METRICS[mm] + ", " + p + "</h4>" + (mmNote ? '<span class="meta noted" tabindex="0" data-tip="' + esc(mmNote) + '">' + MAP_METRICS[S.mapMetric] + " is n/a</span>" : '<span class="meta">Click a country</span>') + '</div><div class="card-b"><div class="map" id="mapA"></div>' + mapLegend(mm) + "</div></div>";
+  h += '<div class="card"><div class="card-h"><h4>Ranked by ' + ({ gpa: "GP after ads", gp: "gross profit", n: "net revenue" })[rk.key] + "</h4>" + (rk.why ? '<span class="meta noted" data-tip="' + esc(rk.why) + '" tabindex="0">' + (rk.key === "gp" ? "ad spend n/a" : "no gross profit") + "</span>" : '<span class="meta">CM3 once rate cards exist</span>') + '</div><ol class="lb">';
+  rk.rows.forEach(function (r, i) {
+    var prev = S.compare ? (rk.key === "gpa" ? val(c, r.m, PERIODS[p].cmp, { k: "gpa", calc: true }) : raw(c, r.m, PERIODS[p].cmp, rk.key)) : null;
+    h += '<li><button type="button" data-mkt="' + r.m + '"><span class="rk">' + (i + 1) + '</span><span class="nm">' + esc(cl.names[r.m]) + '</span><span class="vl">' + (r.x.na ? naSpan(r.x.na) : fmt(r.x.v, "money", cl.ccy, true)) + "</span>";
+    h += '<span class="bar"><i class="' + (!r.x.na && r.x.v < 0 ? "neg" : "") + '" style="width:' + (r.x.na ? 0 : Math.abs(r.x.v) / maxAbs * 100).toFixed(1) + '%"></i></span>';
+    h += '<span class="sub"><span>' + chipHTML(c, r.m, p) + " " + badgeHTML(c, r.m) + "</span>" + (prev ? deltaHTML(r.x, prev, "money", "up") : "") + "</span></button></li>";
+  });
+  h += "</ol></div></div>";
+  h += '<div class="card"><div class="card-h"><h4>P&amp;L by market</h4><span class="meta">' + p + (S.compare ? " vs " + PERIODS[p].cmp : "") + "</span></div>" + matrixHTML("A") + "</div>";
+  h += "</div>";
+  if (S.sel) {
+    h += '<div class="scrim" data-close="1"></div><aside class="drawer" aria-label="Market detail"><div class="drawer-in"><div class="drawer-h"><div><span class="eyebrow">' + cl.name + " &middot; " + p + '</span><h3 style="font-size:20px;margin-top:2px">' + esc(cl.names[S.sel]) + '</h3><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' + chipHTML(c, S.sel, p) + badgeHTML(c, S.sel) + '</div></div><button class="xbtn" type="button" data-close="1" aria-label="Close detail">&times;</button></div>' + detailBlocks(c, S.sel, p) + "</div></aside>";
+  }
+  h += "</div>";
+  root.innerHTML = h;
+  drawMap(root.querySelector("#mapA"), { frame: cl.frame, items: mapItems(c, mm) });
+}
+
+/* scouting */
+var SCOUT_CEE = [
+  { iso: "PL", name: "Poland", aud: "21.0M", cpm: "$5.50 avg ($3.50 to 5.50 FB)", vat: "23 %", pay: "BLIK; COD about 16 % (2021)" },
+  { iso: "HU", name: "Hungary", aud: "5.8M", cpm: "$2.50 to 5.50 (Eastern Europe group)", vat: "27 %", pay: "COD about 60 %" },
+  { iso: "DE", name: "Germany", aud: "37.6M", cpm: "$10.05 avg", vat: "19 %", pay: "returns about 24 % of parcels" },
+  { iso: "AT", name: "Austria", aud: null, cpm: "$9.50 avg", vat: "20 %", pay: "Meta location fee 5 %" }
+];
+function scoutingHTML(c) {
+  var cl = CL[c];
+  var ga4 = c === "dobias" || c === "manami" ? "In the warehouse for 2026-08-03 to 10-03; country names need ISO mapping (F10)" : c === "venev" ? "GA4 export holds 4 days only (F10)" : "No GA4 connected (F10)";
+  var h = '<div class="a-top"><div class="card"><div class="card-h"><h4>Unsold countries</h4><span class="meta">Hatched: scouting candidates</span></div><div class="card-b"><div class="map" id="mapA"></div><div class="map-legend"><span><span class="sw" style="background:var(--seq3)"></span>Sold market</span><span><span class="sw hatch"></span>Candidate</span></div></div></div>';
+  h += '<div class="card"><div class="card-h"><h4>Opportunity index</h4></div><div class="card-b" style="display:grid;gap:8px"><p class="empty-cell">Not computable yet. It needs GA4 sessions and unpaid share by country (F10), search demand per country and benchmark CVR, AOV, CPM (F11).</p><p class="empty-cell">GA4 for ' + cl.name + ": " + esc(ga4) + ".</p>";
+  if (c === "dobias") {
+    var o12 = rec(c, "OTHER", "L12M"), o90 = rec(c, "OTHER", "L90");
+    h += '<div class="mini-grid"><div class="it"><span class="l">Other: orders L12M, no spend</span><span class="v">' + fmt(o12.o, "count") + '</span></div><div class="it"><span class="l">Other: orders L90</span><span class="v">' + fmt(o90.o, "count") + '</span></div><div class="it"><span class="l">AOV new, L12M</span><span class="v">' + fmt(o12.an, "money", "USD", true) + '</span></div><div class="it"><span class="l">Net revenue L12M</span><span class="v">' + fmt(o12.n, "money", "USD", true) + "</span></div></div>";
+  } else if (c === "venev") {
+    h += '<p class="empty-cell">4 orders outside CZ and SK in L12M; countries not split in the audit.</p>';
+  }
+  h += "</div></div></div>";
+  h += '<div class="card"><div class="card-h"><h4>Candidates</h4></div><div class="mx-wrap"><table class="scout-t"><thead><tr><th>Country</th><th>Why listed</th><th>Organic orders</th><th>GA4 sessions</th><th>Search demand</th><th>Meta audience 18+</th><th>Meta CPM benchmark</th><th>VAT</th><th>Market note</th></tr></thead><tbody>';
+  var empty = function (t) { return '<span class="empty-cell" tabindex="0" data-tip="' + esc(t) + '">empty</span>'; };
+  if (c === "dobias") {
+    [["GB", "United Kingdom"], ["IE", "Ireland"], ["CH", "Switzerland"], ["RS", "Serbia"]].forEach(function (x, i) {
+      h += "<tr><td><b>" + x[0] + "</b> " + x[1] + "</td><td>Orders with no market set up</td><td class=\"r\">" + (i === 0 ? '<span class="noted" tabindex="0" data-tip="Other bucket total; per-country split not in the audit">166 in Other, L12M</span>' : empty("Per-country split not in the audit")) + "</td><td>" + empty(ga4) + "</td><td>" + empty("Ahrefs or Keyword Planner volume per country (F11)") + "</td><td>" + empty("Not in the research") + "</td><td>" + (x[0] === "GB" ? "UK CAC 0.9 to 1.2x US" : empty("Not in the research")) + "</td><td>" + (x[0] === "GB" ? "20 %" : x[0] === "IE" ? "23 %" : x[0] === "CH" ? "8.1 %" : "20 %") + "</td><td>" + (x[0] === "GB" ? "Meta location fee 2 %" : "") + "</td></tr>";
+    });
+  } else {
+    SCOUT_CEE.forEach(function (x) {
+      h += "<tr><td><b>" + x.iso + "</b> " + x.name + "</td><td>Research candidate</td><td class=\"r\">" + empty("Per-country orders outside CZ/SK not in the audit") + "</td><td>" + empty(ga4) + "</td><td>" + empty("Ahrefs or Keyword Planner volume per country (F11)") + "</td><td>" + (x.aud ? x.aud : empty("Not in the research")) + "</td><td>" + esc(x.cpm) + "</td><td>" + x.vat + "</td><td>" + esc(x.pay) + "</td></tr>";
+    });
+  }
+  h += "</tbody></table></div></div>";
+  return h;
+}
+function drawScoutMap(el, c) {
+  var cl = CL[c], items = {};
+  cl.markets.forEach(function (m) { if (m !== "OTHER") items[m] = { fill: "var(--seq3)", label: m, value: "sold" }; });
+  if (c === "dobias") ["GB", "IE", "CH", "RS"].forEach(function (iso) { items[iso] = { hatch: true, label: iso }; });
+  else SCOUT_CEE.forEach(function (x) { items[x.iso] = { hatch: true, label: x.iso }; });
+  drawMap(el, { frame: cl.scoutFrame, items: items });
+}
+
+/* =========================================================================
+   OPTION B: LEDGER
+   ========================================================================= */
+function renderB(root) {
+  var c = S.client, cl = CL[c], p = S.period;
+  var tot = clientNet(c, p);
+  var h = '<div class="mk mk-house mk-ledger"><div class="mk-in">';
+  h += '<div class="mk-bar"><div class="mk-title"><h3>Markets</h3><span class="sub">' + cl.name + " &middot; " + PERIODS[p].range + "</span></div></div>";
+  h += controlsHTML("");
+  h += '<div class="b-strip"><div class="card" style="padding:6px"><div class="map" id="mapB"></div></div><div class="pills">';
+  cl.markets.forEach(function (m) {
+    var n = raw(c, m, p, "n");
+    h += '<button type="button" class="pill" data-mkt="' + m + '" aria-pressed="' + (S.sel === m) + '"><span class="t">' + (m === "OTHER" ? "Other" : m) + " " + chipHTML(c, m, p) + '</span><span class="s">' + (n.na ? "net revenue n/a" : compact(n.v, cl.ccy) + " net revenue") + '</span><span class="bar"><i style="width:' + (n.na || !tot ? 0 : n.v / tot * 100).toFixed(1) + '%"></i></span></button>';
+  });
+  h += "</div></div>";
+  if (S.sel) {
+    h += '<div class="card" id="bDetail"><div class="card-h"><h4>' + esc(cl.names[S.sel]) + ", " + p + '</h4><button class="xbtn" type="button" data-close="1" aria-label="Collapse">&times;</button></div><div class="card-b"><div class="b-detail"><div class="blk"><h5>Waterfall</h5>' + waterfallHTML(c, S.sel, p) + '</div><div class="blk"><h5>Cohort value vs acquisition cost</h5>' + cohortChart(c, S.sel, p) + '</div><div class="blk"><h5>Discounts</h5>' + discountHTML(c, S.sel, p) + '</div><div class="blk"><h5>Ops friction, L90</h5>' + opsHTML(c, S.sel) + "</div></div></div></div>";
+  }
+  h += '<div class="card">' + matrixHTML("B") + "</div>";
+  h += "</div></div>";
+  root.innerHTML = h;
+  var items = mapItems(c, "n");
+  drawMap(root.querySelector("#mapB"), { frame: cl.frame, items: items });
+}
+
+/* =========================================================================
+   OPTION C: HEALTH
+   ========================================================================= */
+function ringSVG(x, size) {
+  var box = 66, r = 26, sw = 8, C = 2 * Math.PI * r, s = size || 76;
+  var svg = '<svg width="' + s + '" height="' + s + '" viewBox="0 0 ' + box + " " + box + '" aria-hidden="true"><circle cx="33" cy="33" r="' + r + '" fill="none" stroke="var(--hk-fill)" stroke-width="' + sw + '"/>';
+  if (x == null) return svg + '<circle cx="33" cy="33" r="' + r + '" fill="none" stroke="var(--line-strong)" stroke-width="1.2" stroke-dasharray="3 3"/></svg>';
+  var main = Math.min(1, x), tone = x >= 1 ? "var(--pos)" : "var(--warn-g)";
+  svg += '<circle cx="33" cy="33" r="' + r + '" fill="none" stroke="' + tone + '" stroke-width="' + sw + '" stroke-linecap="round" stroke-dasharray="' + (main * C).toFixed(2) + " " + C.toFixed(2) + '" transform="rotate(-90 33 33)"/>';
+  if (x > 1) { var r2 = 17, C2 = 2 * Math.PI * r2, ex = Math.min(1, x - 1); svg += '<circle cx="33" cy="33" r="' + r2 + '" fill="none" stroke="var(--pos)" stroke-opacity="0.55" stroke-width="5" stroke-linecap="round" stroke-dasharray="' + (ex * C2).toFixed(2) + " " + C2.toFixed(2) + '" transform="rotate(-90 33 33)"/>'; }
+  return svg + "</svg>";
+}
+function renderC(root) {
+  var c = S.client, cl = CL[c], p = S.period, cmp = PERIODS[p].cmp;
+  var h = '<div class="mk mk-health"><div class="mk-in" style="gap:16px">';
+  h += '<div class="mk-bar"><div class="mk-title"><h3 style="font-size:26px">Markets</h3><span class="sub">' + cl.name + " &middot; " + PERIODS[p].range + "</span></div></div>";
+  h += controlsHTML("");
+  h += '<div class="card" style="padding:10px 12px"><div class="card-h" style="padding:4px 4px 6px"><h4>First-order payback by market</h4><span class="meta">first-order GP ÷ nCAC</span></div><div class="map" id="mapC"></div>' + mapLegend("pay1", "iseq") + "</div>";
+  h += '<div class="c-cards">';
+  cl.markets.forEach(function (m) {
+    var x = mapValue(c, m, "pay1");
+    var ring = cl.small ? null : (x.na ? null : x.v);
+    var ltgp = cohVal(c, m, { h: 90, f: "ltgp" }), ltgp365 = cohVal(c, m, { h: 365, f: "ltgp" });
+    var n = raw(c, m, p, "n"), gpa = val(c, m, p, { k: "gpa", calc: true }), cac = val(c, m, p, { k: "cac", ratio: true });
+    function fig(l, xx, kind, prevx) { return '<div><div class="l">' + l + '</div><div class="v">' + (xx.na ? naSpan(xx.na) : (kind === "money" ? compact(xx.v, cl.ccy) : fmt(xx.v, kind))) + "</div>" + (S.compare && prevx ? deltaHTML(xx, prevx, kind, l === "nCAC" ? "down" : "up") : "") + "</div>"; }
+    h += '<button type="button" class="mcard" data-mkt="' + m + '" aria-pressed="' + (S.sel === m) + '"><div class="hd"><div><div class="nm">' + esc(m === "OTHER" ? "Other" : cl.names[m]) + '</div><div class="code">' + (m === "OTHER" ? (c === "dobias" ? "GB, RS, IE, CH, ..." : "outside CZ and SK") : m) + (m === cl.home ? " &middot; home" : "") + "</div></div>" + badgeHTML(c, m) + "</div>";
+    h += '<div class="ringrow">' + ringSVG(ring) + "<div>";
+    if (cl.small) h += '<div class="rl1" style="font-size:16px">Too few orders</div><div class="rl2">Ratios hidden below the minimum sample</div>';
+    else if (x.na) h += '<div class="rl1">n/a</div><div class="rl2" tabindex="0" data-tip="' + esc(x.na) + '" style="text-decoration:underline dotted">' + esc(x.na.length > 60 ? x.na.slice(0, 58) + "…" : x.na) + "</div>";
+    else h += '<div class="rl1">' + fmt(x.v, "x2") + '</div><div class="rl2">first order pays back nCAC' + (x.v >= 1 ? "" : " only partly") + "</div>";
+    h += '<div class="rl2" style="margin-top:4px">LTGP:CAC 365 d ' + (ltgp365.na ? naSpan(ltgp365.na) : fmt(ltgp365.v, "x2")) + (ltgp.na ? "" : " &middot; 90 d " + fmt(ltgp.v, "x2")) + "</div></div></div>";
+    h += '<div class="figs">' + fig("Net revenue", n, "money", raw(c, m, cmp, "n")) + fig("GP after ads", gpa, "money", val(c, m, cmp, { k: "gpa", calc: true })) + fig("nCAC", cac, "money", val(c, m, cmp, { k: "cac", ratio: true })) + "</div>";
+    h += '<div class="foot">' + chipHTML(c, m, p, { word: true }) + '<span class="code" style="font-size:12px;color:var(--info)">P&amp;L ›</span></div></button>';
+  });
+  h += "</div>";
+  if (S.sel) {
+    h += '<div class="c-sheet" id="cSheet"><div class="card-h" style="padding:14px 16px 4px"><h4 style="font-size:16px">' + esc(cl.names[S.sel]) + " P&amp;L, " + p + '</h4><button class="xbtn" type="button" data-close="1" aria-label="Close" style="border-radius:999px">&times;</button></div><div class="card-b"><div class="b-detail" style="margin-bottom:12px"><div class="blk"><h5>Waterfall</h5>' + waterfallHTML(c, S.sel, p) + '</div><div class="blk"><h5>Cohort value vs acquisition cost</h5>' + cohortChart(c, S.sel, p) + "</div></div></div>" + matrixHTML("C") + "</div>";
+  }
+  h += "</div></div>";
+  root.innerHTML = h;
+  drawMap(root.querySelector("#mapC"), { frame: cl.frame, items: mapItems(c, "pay1", "iseq") });
+}
+
+/* ---------- option notes ---------- */
+var NOTES = {
+  A: { plus: ["Map is the entry, as asked; the leaderboard answers where the next 10k goes", "Drawer keeps the matrix in view while one market is open", "Scouting fits as a second view of the same map"], minus: ["With 2 or 3 markets the map carries little information (CZ/SK clients are two shapes)", "Most build: map, drawer and matrix are three surfaces to keep consistent"] },
+  B: { plus: ["Every number visible with its delta; reads like a P&L, good for client calls", "Expanding a column shows the compare period side by side", "Cheapest build: extends the existing DataTable"], minus: ["Map shrinks to a strip; the visual entry is weak", "n/a-heavy rows (RawBark, Manami) dominate the canvas", "Wide: horizontal scroll on a phone"] },
+  C: { plus: ["Status is visible at a glance, in the Goals vocabulary the team already reads", "One card per market works well on a phone", "Ring makes first-order payback obvious (Dobias US 1.97x vs CA 0.82x in L90)"], minus: ["Today the status word is mostly \"No verdict\" until F5, F6, F7 land", "LTGP:CAC 365 exists for no market here, so the ring uses first-order payback", "Matrix sits one tap away"] }
+};
+function renderNotes() {
+  var n = NOTES[S.opt];
+  document.getElementById("optnotes").innerHTML = '<div class="pc"><h4>Strengths</h4><ul>' + n.plus.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + '</ul></div><div class="pc"><h4>Weaknesses</h4><ul>' + n.minus.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
+}
+
+/* ---------- render + events ---------- */
+var stage = document.getElementById("stage");
+function render() {
+  document.querySelectorAll(".opt-tab").forEach(function (b) { b.setAttribute("aria-selected", String(b.dataset.opt === S.opt)); });
+  if (S.opt === "A") renderA(stage); else if (S.opt === "B") renderB(stage); else renderC(stage);
+  renderNotes();
+  persist();
+}
+document.querySelectorAll(".opt-tab").forEach(function (b) { b.addEventListener("click", function () { S.opt = b.dataset.opt; S.sel = null; render(); }); });
+stage.addEventListener("click", function (e) {
+  var t = e.target;
+  var ctl = t.closest("[data-ctl]");
+  if (ctl && ctl.tagName === "BUTTON") {
+    var k = ctl.dataset.ctl, v = ctl.dataset.val;
+    if (k === "client") { S.client = v; S.sel = null; if (v !== "dobias" && S.mapMetric === "ltgp") {} }
+    else if (k === "period") S.period = v;
+    else if (k === "view") { S.view = v; S.sel = null; }
+    else if (k === "ccy") return;
+    render(); return;
+  }
+  if (t.closest("[data-close]")) { S.sel = null; render(); return; }
+  var sec = t.closest("tr.sec");
+  if (sec) { var id = sec.dataset.sec; S.collapsed[id] = !S.collapsed[id]; render(); return; }
+  var mk = t.closest("[data-mkt]");
+  if (mk) {
+    var m = mk.dataset.mkt;
+    if (CL[S.client].markets.indexOf(m) < 0) return;
+    S.sel = (S.sel === m && S.opt !== "A") ? null : m;
+    render();
+    var target = S.opt === "A" ? stage : S.opt === "B" ? document.getElementById("bDetail") : document.getElementById("cSheet");
+    if (target && S.sel) target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return;
+  }
+});
+stage.addEventListener("change", function (e) {
+  var t = e.target;
+  if (t.dataset.ctl === "compare") { S.compare = t.checked; render(); }
+  if (t.dataset.ctl === "mapMetric") { S.mapMetric = t.value; render(); }
+});
+stage.addEventListener("keydown", function (e) {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-mkt]:not(button), tr.sec, tr.sec td")) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); }
+  if (e.key === "Escape" && S.sel) { S.sel = null; render(); }
+});
+var rT, lastW = window.innerWidth;
+window.addEventListener("resize", function () { clearTimeout(rT); rT = setTimeout(function () { if (window.innerWidth === lastW) return; lastW = window.innerWidth; render(); }, 200); });
+
+/* ---------- tooltip ---------- */
+var tip = document.getElementById("tip"), tipFor = null;
+function showTip(el) {
+  var txt = el.getAttribute("data-tip"); if (!txt) return;
+  tip.textContent = txt; tip.hidden = false; tipFor = el;
+  var r = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+  var x = Math.min(window.innerWidth - tw - 8, Math.max(8, r.left + r.width / 2 - tw / 2));
+  var y = r.top - th - 8; if (y < 8) y = r.bottom + 8;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.hidden = true; tipFor = null; }
+document.addEventListener("mouseover", function (e) { var el = e.target.closest && e.target.closest("[data-tip]"); if (el) showTip(el); else if (tipFor) hideTip(); });
+document.addEventListener("focusin", function (e) { var el = e.target.closest && e.target.closest("[data-tip]"); if (el) showTip(el); });
+document.addEventListener("focusout", hideTip);
+document.addEventListener("scroll", hideTip, { passive: true, capture: true });
+document.addEventListener("touchstart", function (e) { var el = e.target.closest && e.target.closest("[data-tip]"); if (el) { showTip(el); } else hideTip(); }, { passive: true });
+
+/* =========================================================================
+   STATIC SECTIONS
+   ========================================================================= */
+var TREE = [
+  { k: "3.1", t: "Volume", per: "P", s: "Orders, new customers, returning share, share of client", head: ["Metric", "Definition"], rows: [
+    ["Orders", "Deduped; cancelled and non-shippable (gift cards, payment-only, tests) excluded"],
+    ["New customers", "First order ever for the lower-cased email inside data history"],
+    ["Returning orders and revenue share", "Orders and net revenue from customers with an earlier order"],
+    ["Share of client", "Market net revenue / client net revenue"]] },
+  { k: "3.2", t: "Revenue waterfall", per: "P", s: "Gross sales down to net revenue, with platform field notes", head: ["Line", "Definition", "Shopify", "Shoptet", "WooCommerce"], rows: [
+    ["Gross sales", "List price × qty, ex VAT, before discounts", "subtotal + total_discounts (shopMoney)", "product items before discount", "subtotal_ex_tax + fee_discounts + discount_total"],
+    ["− Compare-at markdown", "(compare-at or regular minus sold price) × qty", "variant compareAtPrice snapshot, not on the order", "standard vs action price (to verify)", "regular_price vs sale_price (to verify)"],
+    ["− Code discounts", "Discount codes", "discountApplications DISCOUNT_CODE", "items type <code>discount-coupon</code>", "coupon_lines"],
+    ["− Automatic discounts", "Automatic, bundle, loyalty, manual", "AUTOMATIC / MANUAL / SCRIPT", "discount items other than coupon", "negative fee lines"],
+    ["− Free-shipping discount", "Shipping given away", "shipping-line discount allocations", "shipping item price 0 below threshold", "shipping_total 0"],
+    ["− Refunds", "By refund date", "refunds[] (payload)", "not ingested", "refunds_total"],
+    ["= Net revenue", "Ex VAT, incl. shipping charged", "", "", ""],
+    ["VAT rate applied", "Column per market: CZ 21, SK 23, HU 27, DE 19; US sales tax n/a", "", "", ""]] },
+  { k: "3.3", t: "Discount block", per: "P", s: "Penetration, effective rate, depth, full-price share, addiction flag", head: ["Metric", "Definition"], rows: [
+    ["Discount penetration", "% of orders with any discount"],
+    ["Effective discount rate", "All discounts / gross sales"],
+    ["Average depth", "Discount / gross of discounted orders only"],
+    ["Full-price revenue share", "Revenue sold with no discount"],
+    ["Split", "New vs returning"],
+    ["Addiction flag", "Effective rate &gt; 15 % AND one more signal: penetration rising, full-price share falling, returning buy only on promo"]] },
+  { k: "3.4", t: "Profit waterfall", per: "P", s: "COGS to CM1, cost lines to CM2, ad spend to CM3", head: ["Line", "Source today", "After rate cards"], rows: [
+    ["COGS", "line_cost: Dobias, Ethia, Manami, Venev. RawBark: none", "same"],
+    ["= CM1 and CM1 %", "computable for 4 of 5 clients", ""],
+    ["Shipping and fulfilment (net of shipping charged)", "nobody", "<code>ref.market_cost_rates.ship_cost_per_order</code>"],
+    ["Payment fees incl. COD fee", "nobody", "<code>pay_fee_pct</code>, <code>cod_fee</code>"],
+    ["Duties and brokerage (US/CA lane)", "nobody", "<code>duty_pct</code>"],
+    ["Returns handling, COD refusal", "nobody", "<code>return_cost</code>, <code>cod_refusal_pct</code>"],
+    ["= CM2 and CM2 %", "n/a until rate cards", ""],
+    ["Ad spend incl. location fees (Meta AT 5 %)", "Meta by campaign market, Google GeoStats", "+ Sklik by name"],
+    ["= CM3 and CM3 %", "ranking column", ""]] },
+  { k: "3.5", t: "Acquisition efficiency", per: "P", s: "MER, aMER, nCAC, break-even aMER, first-order profit", head: ["Metric", "Definition"], rows: [
+    ["MER", "Net revenue / spend"], ["aMER", "New-customer revenue / spend"], ["nCAC", "Market spend / new customers in the market"],
+    ["Break-even aMER", "First-order AOV / max affordable CAC from the market's own CM2"],
+    ["First-order profit per new customer", "First-order CM2 minus nCAC"], ["AOV new vs returning", ""]] },
+  { k: "3.6", t: "Retention and lifetime", per: "C", s: "Repeat, GP per customer, LTGP:CAC, payback at 90 / 180 / 365 d", head: ["Metric", "Definition"], rows: [
+    ["Repeat rate", "At 30 / 90 / 180 / 365 d; time to 2nd order (median)"],
+    ["GP per customer", "Cohort GP per new customer at 90 / 180 / 365 d"],
+    ["LTGP:CAC", "At the same age; cohort CAC = market spend inside the cohort window / cohort customers"],
+    ["CAC payback days", "First day cumulative GP per customer crosses nCAC; \"not yet\" otherwise"],
+    ["Forecast", "Separate, dashed, labelled (section 6)"]] },
+  { k: "3.7", t: "Traffic and funnel", per: "P", s: "GA4 by country, unpaid share, CVR, Meta CPM and CTR", head: ["Metric", "Definition"], rows: [
+    ["Sessions, unpaid share", "GA4 by country; organic + direct"], ["CVR, add-to-cart, checkout completion", "GA4 funnel by country"],
+    ["Meta CPM, CTR", "By delivery country (F4)"], ["Index vs home", "Home market = 100"]] },
+  { k: "3.8", t: "Ops friction", per: "P", s: "Payment and delivery mix, shipping, fulfilment, refunds", head: ["Metric", "Definition"], rows: [
+    ["Payment mix, COD share", "+ refusal rate when available"], ["Delivery mix", "Pickup / locker vs home"],
+    ["Shipping charged per order, zero-shipping share", "Free-shipping hit rate"], ["Time to fulfilment", "Proxy"], ["Refund rate", ""]] },
+  { k: "3.9", t: "Scouting", per: "P", s: "Unsold countries with demand signals, ranked, no verdict", head: ["Signal", "Source"], rows: [
+    ["Sessions and unpaid share", "GA4 by country"], ["Organic orders", "Orders with no market set up"],
+    ["Search demand", "Ahrefs / Keyword Planner volume for the client's head terms"], ["Meta audience size", "Ads Manager"],
+    ["Benchmarks", "<code>ref.industry_benchmarks</code> CVR, AOV, CPM by vertical × country (F11)"]] }
+];
+document.getElementById("treeList").innerHTML = TREE.map(function (g, i) {
+  return "<details" + (i === 1 ? " open" : "") + '><summary><span class="k">' + g.k + " &middot; " + g.per + "</span><b>" + g.t + '</b><span class="s">' + g.s + '</span></summary><div class="body"><table><thead><tr>' + g.head.map(function (x) { return "<th>" + x + "</th>"; }).join("") + "</tr></thead><tbody>" +
+    g.rows.map(function (r) { return "<tr>" + r.map(function (x) { return "<td>" + x + "</td>"; }).join("") + "</tr>"; }).join("") + "</tbody></table></div></details>";
+}).join("");
+
+var READY = {
+  cols: ["Dobias · Shopify · USD", "RawBark · Woo · CZK", "Ethia · Woo · CZK", "Manami · Shoptet · CZK", "Venev · Shopify · EUR"],
+  rows: [
+    ["Markets", ["nil", "US, CA, other"], ["nil", "CZ, SK"], ["nil", "CZ only"], ["nil", "CZ, SK"], ["nil", "CZ, SK, other"]],
+    ["Market key", ["ok", "Shipping country 99.6 %", "60 blank orders are non-shippable (I3)"], ["part", "Billing country", "No shipping address ingested (F12, I2)"], ["part", "Billing country", "I2"], ["part", "Currency fallback", "shipping_country NULL; migration 284 (F1)"], ["ok", "Shipping country 100 %", ""]],
+    ["Gross sales and discounts", ["ok", "OK", "Type split only from 2026-05 (I13)"], ["ok", "Code vs automatic", ""], ["ok", "OK", ""], ["no", "Not ingested", "Only a line discount flag"], ["ok", "OK", "Type split from 2026-06"]],
+    ["Refunds", ["part", "Order flag only", "Amounts in payload from 2026-05 (F8, I6)"], ["part", "Reads 0", "Suspicious (I11)"], ["ok", "OK", "7 orders L12M"], ["no", "Not ingested", ""], ["ok", "OK", ""]],
+    ["COGS / CM1", ["ok", "99.5 % costed", "Current cost, not at order (I20)"], ["no", "None", "F7"], ["ok", "100 %", ""], ["ok", "100 %", "4.5 % of lines imputed"], ["ok", "96.8 %", ""]],
+    ["CM2 cost lines", ["no", "None", "F6"], ["no", "None", "F6"], ["no", "None", "F6"], ["no", "None", "F6"], ["no", "None", "F6"]],
+    ["Ad spend by market", ["part", "Meta from 2026-04-20, no Google", "US & CA campaigns tagged US (F3, F5)"], ["ok", "Meta names + GeoStats", "222k CZK missed by the ~ delimiter (F3)"], ["part", "Client-country fallback", "No token in any name"], ["ok", "94 % L12M, 100 % L90", ""], ["part", "63 % L12M", ""]],
+    ["nCAC, L90", ["ok", "US 43.8, CA 92.3", ""], ["ok", "CZ 1,778, SK 3,057", ""], ["ok", "CZ 642", ""], ["ok", "CZ 472, SK 466", ""], ["nil", "Hidden", "Sample too small"]],
+    ["Cohorts 90 / 180 / 365 d", ["ok", "GP per customer", ""], ["part", "Revenue only", "No COGS"], ["ok", "GP per customer", ""], ["ok", "GP per customer", "History from 2024-05-06 (I14)"], ["nil", "Too small", ""]],
+    ["LTGP:CAC 365", ["no", "n/a", "No spend before 2026-04-20 (F5)"], ["no", "n/a", "No COGS (F7)"], ["ok", "2.72", "369 customers"], ["no", "n/a", "Spend starts 2025-05-07; 90 d 2.34 CZ, 1.68 SK"], ["no", "n/a", ""]],
+    ["GA4 by country", ["part", "2 months", "Aug 3 to Oct 3 2026, names not ISO (F10)"], ["no", "None", "F10"], ["no", "None", "F10"], ["part", "2 months", "F10"], ["no", "4 days", ""]],
+    ["Payment and COD", ["part", "From 2026-05", ""], ["ok", "No COD", ""], ["ok", "No COD", ""], ["ok", "COD 20 % CZ, 39 % SK", ""], ["part", "From 2026-06", ""]],
+    ["Local currency", ["part", "CAD FX ends 2026-05", "F8, I4, I5"], ["ok", "EUR for SK", ""], ["nil", "CZK only", ""], ["ok", "OK", ""], ["ok", "OK", ""]]
+  ]
+};
+var rlabel = { ok: "OK", part: "Partial", no: "No", nil: "" };
+document.getElementById("readyT").innerHTML = "<thead><tr><th>Input</th>" + READY.cols.map(function (c) { return "<th>" + c + "</th>"; }).join("") + "</tr></thead><tbody>" +
+  READY.rows.map(function (r) { return "<tr><td>" + r[0] + "</td>" + r.slice(1).map(function (x) { return '<td><span class="rd ' + x[0] + '">' + esc(x[1]) + "</span>" + (x[2] ? '<span class="rd-note">' + esc(x[2]) + "</span>" : "") + "</td>"; }).join("") + "</tr>"; }).join("") + "</tbody>";
+
+var FIX = [
+  ["F1", "Deploy migration 284 (Manami Shoptet market)", "Manami markets", "Done in QA", "v1a"],
+  ["F2", "Marts <code>mart_market_daily</code> + <code>mart_market_cohorts</code> on stg (raw is duplicated), market fallback chain, non-shippable exclusion, frozen first-order market", "Everything", "M", "v1a"],
+  ["F3", "Campaign market rule: token anywhere, <code>~</code> delimiter (+222k CZK RawBark), \"US &amp; CA\" split, client-country fallback", "Correct nCAC", "S", "v1a"],
+  ["F4", "Meta insights with <code>breakdowns=country</code>", "Geo spend split, CPM and CTR by country", "M", "v1b"],
+  ["F5", "Backfill Dobias Meta before 2026-04-20; connect Dobias Google", "Dobias 12M nCAC, LTGP:CAC", "M, owner access", "v1c"],
+  ["F6", "<code>ref.market_cost_rates</code> (ship cost, pay fee %, COD fee, duty %, return cost, COD refusal %) + Settings form", "CM2, CM3, break-even aMER", "M", "v1b"],
+  ["F7", "RawBark COGS (Woo native COGS or <code>ref.product_costs</code>)", "RawBark CM1 and LTGP", "Owner / client data", "v1c"],
+  ["F8", "Dobias refunds from payload <code>refunds[]</code>; FX table fix (CAD after 2026-05, USD&gt;CAD, EUR&gt;USD, GBP)", "Refund line, local currency", "S", "v1a"],
+  ["F9", "Daily list-price snapshot (compareAtPrice, regular_price, Shoptet standard price)", "Compare-at markdown line", "S, history starts at snapshot", "v1b"],
+  ["F10", "GA4 country to ISO; GA4 for RawBark and Ethia; stg lag fix", "Funnel and scouting", "M", "v1b"],
+  ["F11", "Fill <code>ref.industry_benchmarks</code> per vertical × country from research", "Benchmarks", "S", "v1b"],
+  ["F12", "Woo shipping address ingestion (market = shipping, not billing)", "Correct Woo market", "S", "v1a"]
+];
+document.getElementById("fixT").innerHTML = "<thead><tr><th>#</th><th>Fix</th><th>Unblocks</th><th>Effort</th><th>Phase</th></tr></thead><tbody>" + FIX.map(function (f) { return "<tr><td>" + f[0] + "</td><td>" + f[1] + "</td><td>" + f[2] + "</td><td>" + f[3] + "</td><td>" + f[4] + "</td></tr>"; }).join("") + "</tbody>";
+
+/* illustrative forecast chart (research-ltgp-prediction.md section 4, made-up numbers) */
+(function () {
+  var W = 420, H = 210, L = 30, R = 104, T = 14, B = 26;
+  function X(d) { return L + d / 365 * (W - L - R); }
+  function Y(v) { return T + (1 - v / 90) * (H - T - B); }
+  var s = '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Illustrative forecast: actual GP per customer to day 60, dashed forecast to day 365 with a band" style="width:100%;height:auto;max-width:540px;font-size:12.5px">';
+  [0, 20, 40, 60, 80].forEach(function (v) { s += '<line class="gr" x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '"/><text x="' + (L - 6) + '" y="' + (Y(v) + 3.5) + '" text-anchor="end">' + v + "</text>"; });
+  [0, 60, 180, 365].forEach(function (d) { s += '<text x="' + X(d) + '" y="' + (H - 8) + '" text-anchor="middle">' + d + " d</text>"; });
+  s += '<path d="M' + X(60) + " " + Y(31) + " L" + X(365) + " " + Y(79) + " L" + X(365) + " " + Y(46) + ' Z" fill="var(--info)" fill-opacity="0.13"/>';
+  s += '<path d="M' + X(0) + " " + Y(22) + " L" + X(30) + " " + Y(27) + " L" + X(60) + " " + Y(31) + '" fill="none" stroke="var(--ink)" stroke-width="2.2"/>';
+  s += '<path d="M' + X(60) + " " + Y(31) + " L" + X(365) + " " + Y(62.6) + '" fill="none" stroke="var(--info)" stroke-width="2.2" stroke-dasharray="6 5"/>';
+  s += '<circle cx="' + X(60) + '" cy="' + Y(31) + '" r="4.5" fill="var(--ink)" stroke="var(--surface)" stroke-width="2"/><circle cx="' + X(365) + '" cy="' + Y(62.6) + '" r="4.5" fill="var(--surface)" stroke="var(--info)" stroke-width="2"/>';
+  s += '<text x="' + (X(60) + 8) + '" y="' + (Y(31) + 16) + '" style="fill:var(--ink);font-weight:600">Actual 31.0 at day 60</text>';
+  s += '<text x="' + (X(365) + 8) + '" y="' + (Y(62.6) + 4) + '" style="fill:var(--info);font-weight:600">Forecast 62.6</text>';
+  s += '<text x="' + (X(365) + 8) + '" y="' + (Y(79) + 4) + '">band top 79</text><text x="' + (X(365) + 8) + '" y="' + (Y(46) + 4) + '">band bottom 46</text>';
+  s += '<text x="' + (L + 4) + '" y="' + (T + 10) + '" style="fill:var(--warn);font-weight:600;letter-spacing:.08em">ILLUSTRATIVE</text></svg>';
+  s += '<div class="map-legend" style="margin-top:6px"><span><span class="sw" style="background:var(--ink)"></span>Actual, solid</span><span><span class="sw" style="background:var(--info)"></span>Forecast, dashed, labelled</span><span><span class="sw" style="background:var(--info-t)"></span>Range band</span><span>EUR GP per customer</span></div>';
+  document.getElementById("illusChart").innerHTML = s;
+})();
+
+render();
+})();
+</script>

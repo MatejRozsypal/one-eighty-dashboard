@@ -33,12 +33,14 @@
     "check:retention": "tsx --tsconfig scripts/tsconfig.json scripts/check-retention.ts",
     "check:period": "tsx --tsconfig scripts/tsconfig.json scripts/check-period.ts",
     "check:xp": "tsx --tsconfig scripts/tsconfig.json scripts/check-presence-xp.ts",
-    "check:home-alerts": "tsx --tsconfig scripts/tsconfig.json scripts/check-home-alerts.ts"
+    "check:home-alerts": "tsx --tsconfig scripts/tsconfig.json scripts/check-home-alerts.ts",
+    "check:markets": "tsx --tsconfig scripts/tsconfig.json scripts/check-markets.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.0",
     "@google-cloud/storage": "^7.22.0",
     "bcryptjs": "^3.0.3",
+    "d3-geo": "^3.1.1",
     "date-fns": "^3.6.0",
     "geist": "^1.7.2",
     "next": "^14.2.18",
@@ -51,14 +53,19 @@
     "recharts": "^2.13.0",
     "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/d3-geo": "^3.1.1",
     "@types/node": "^20.14.0",
     "@types/pg": "^8.20.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/topojson-client": "^3.1.5",
+    "@types/topojson-specification": "^1.0.5",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.45",
     "tailwindcss": "^3.4.10",

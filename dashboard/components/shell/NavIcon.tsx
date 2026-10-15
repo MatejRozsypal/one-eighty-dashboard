@@ -50,6 +50,15 @@ const PATHS: Record<NavIconKey, React.ReactNode> = {
       <path d="M8.5 13.5h.01M12 13.5h.01M15.5 13.5h.01M8.5 17h.01M12 17h.01M15.5 17h.01" />
     </>
   ),
+  // A globe: meridian, equator and two parallels.
+  markets: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17" />
+      <path d="M12 3.5c2.4 2.3 3.6 5.1 3.6 8.5s-1.2 6.2-3.6 8.5c-2.4-2.3-3.6-5.1-3.6-8.5s1.2-6.2 3.6-8.5z" />
+      <path d="M5.2 7.5h13.6M5.2 16.5h13.6" />
+    </>
+  ),
   // Inventory
   stock: (
     <>

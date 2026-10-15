@@ -50,6 +50,7 @@ export const PAGE_REQUIREMENTS: readonly PageRequirement[] = [
   { prefix: "/orders", anyOf: SHOP, source: "Shop" },
   { prefix: "/products", anyOf: SHOP, source: "Shop" },
   { prefix: "/unit-economics", anyOf: SHOP, source: "Shop" },
+  { prefix: "/markets", anyOf: SHOP, source: "Shop" },
   // Retention
   { prefix: "/customers", anyOf: SHOP, source: "Shop" },
   { prefix: "/repeat-rate", anyOf: SHOP, source: "Shop" },

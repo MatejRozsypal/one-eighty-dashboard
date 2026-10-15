@@ -1,0 +1,352 @@
+-- =============================================================================
+-- 291_mk_market_spend.sql
+-- Markets page (v1a, F3): paid spend per client x day x market x platform,
+-- in base currency, with how each amount was allocated.
+-- Contract: docs/sessions/2026-10-15/markets/CONTRACT.md (mart_qa.mk_market_spend_daily).
+--
+-- Creates
+--   1. ref.naming_rules row  platform meta, entity campaign, dimension
+--                            'market_spend' (NEW dimension; the existing
+--                            'market' rows are not touched, so
+--                            mart_meta_campaign_dim and the Paid pages read
+--                            exactly what they read today).
+--   2. mart.sp_refresh_market_spend()  rebuilds mart.market_spend_daily
+--   3. mart.market_spend_daily         snapshot table (CALL at the end)
+--
+-- Rule (F3, owner 2026-10-15)
+--   Google  raw_google_ads GeoStats country per campaign x day (both location
+--           types), allocation 'geo'. Reconciles with
+--           stg_google_ads_campaign_insights to the crown (audit 2026-10-15);
+--           any campaign-day spend GeoStats does not cover (lag, new account)
+--           falls to the campaign-name rule below.
+--   Meta    market token found ANYWHERE in the campaign name, delimiters
+--           space | _ - and now ~ (rawbark legacy "PER_ADV_VID_CZ~...",
+--           audit I9). Every token is collected, not only the first:
+--             0 tokens  single-market client (one row in ref.client_markets)
+--                       -> that market, allocation 'client_default'
+--                       else market 'UNALLOCATED', allocation 'none'
+--                       (shown by the UI, never spread silently)
+--             1 market  -> allocation 'campaign_name'
+--             2+ markets ("US & CA I RecipeMaker ...", audit I8) -> split by
+--                       the markets' share of new customers that day,
+--                       allocation 'pro_rata'. A day where none of them
+--                       has a new customer uses the trailing 28-day share,
+--                       and if that is 0 too, an equal split.
+--           A token that is not a sold market of the client goes to 'OTHER';
+--           'EU' carries no country and is ignored.
+--           A market in ref.campaign_overrides (platform meta) wins over the
+--           name (0 rows today).
+--   Currency: ad-account currency -> base with ref.fx_rates (Venev Meta CZK
+--   -> EUR), as mart_daily_kpis. spend_local = spend_base in the market's
+--   local currency (ref.client_markets), NULL for OTHER / UNALLOCATED or
+--   when no rate exists (Dobias CAD after 2026-05, I5).
+--
+-- Not covered: Sklik, TikTok (not ingested). Dobias Meta before 2026-04-20
+--   and Google for Dobias / Ethia / Venev do not exist in the warehouse (I7).
+--   GeoStats tables are per Google Ads account; a new Google client needs
+--   its ads_GeoStats_<customer_id> added to gads_geo below.
+--
+-- Deviation from CONTRACT.md: allocation also takes 'none' (UNALLOCATED rows).
+-- Depends on 290 (reads mart.market_orders for the new-customer split).
+-- Refresh: mart.sp_refresh_markets() (294).
+-- QA copy: infra/bigquery/qa/291_mk_market_spend_qa.sql (rule row goes into
+--   mart_qa.mk_naming_rules, a copy of ref.naming_rules).
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- 1. Rule row (idempotent)
+-- -----------------------------------------------------------------------------
+INSERT INTO `oneeighty-warehouse.ref.naming_rules`
+  (client_id, platform, entity, dimension, pattern, value, priority, note, updated_at)
+SELECT '*', 'meta', 'campaign', 'market_spend',
+  r'(?:^|[\s|_~-])(us|ca|cz|sk|de|at|pl|hu|eu)(?:$|[\s|_~-])',
+  CAST(NULL AS STRING), 10,
+  'Markets spend split (291): market tokens anywhere in the name, ~ is a delimiter, ALL tokens are read (US & CA split). Read only by mart.sp_refresh_market_spend.',
+  CURRENT_TIMESTAMP()
+FROM (SELECT 1)
+WHERE NOT EXISTS (
+  SELECT 1 FROM `oneeighty-warehouse.ref.naming_rules`
+  WHERE client_id = '*' AND platform = 'meta' AND entity = 'campaign' AND dimension = 'market_spend');
+
+-- -----------------------------------------------------------------------------
+-- 2. mart.sp_refresh_market_spend
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE `oneeighty-warehouse.mart.sp_refresh_market_spend`()
+OPTIONS (description = 'Rebuilds mart.market_spend_daily (paid spend per client, day, market, platform, allocation; Google by GeoStats country, Meta by campaign-name market tokens with US & CA split by new-customer share, single-market default, rest UNALLOCATED). Checks: rows > 0, no NULL spend, total spend equals the stg platform totals within 1 unit per client. Migration 291. Called by mart.sp_refresh_markets (294).')
+BEGIN
+  DECLARE new_rows INT64;
+  DECLARE null_spend INT64;
+  DECLARE max_gap FLOAT64;
+
+  SET @@query_label = 'feature:markets-refresh';
+
+  CREATE OR REPLACE TABLE `oneeighty-warehouse.mart.market_spend_daily__next`
+  CLUSTER BY client_id, market, date
+  OPTIONS (description = 'Staging copy for mart.sp_refresh_market_spend. Not for reading.')
+  AS
+  WITH
+  clients AS (
+    SELECT client_id, currency, meta_currency, gads_currency, gads_customer_id
+    FROM `oneeighty-warehouse.ref.clients`
+  ),
+  sold AS (
+    SELECT client_id, market, local_currency, is_home FROM `oneeighty-warehouse.ref.client_markets`
+  ),
+  single_market AS (
+    SELECT client_id, ANY_VALUE(market) AS market
+    FROM sold GROUP BY client_id HAVING COUNT(*) = 1
+  ),
+  fx AS (
+    SELECT month_start, from_currency, to_currency, rate FROM `oneeighty-warehouse.ref.fx_rates`
+  ),
+  rules AS (             -- one rule per client and platform: market_spend first, then market
+    SELECT c.client_id, r.platform, r.pattern
+    FROM clients c
+    JOIN `oneeighty-warehouse.ref.naming_rules` r
+      ON r.entity = 'campaign'
+     AND r.dimension IN ('market_spend', 'market')
+     AND r.client_id IN (c.client_id, '*')
+    WHERE TRUE
+    QUALIFY ROW_NUMBER() OVER (
+      PARTITION BY c.client_id, r.platform
+      ORDER BY IF(r.dimension = 'market_spend', 0, 1), IF(r.client_id = '*', 1, 0), r.priority, r.pattern) = 1
+  ),
+  -- Meta campaign x day, base currency
+  meta_daily AS (
+    SELECT m.client_id, m.date_start AS date, m.campaign_id,
+      m.spend * IF(c.meta_currency = c.currency, NUMERIC '1', f.rate) AS spend_base
+    FROM `oneeighty-warehouse.stg.stg_meta_campaign_insights` m
+    JOIN clients c ON c.client_id = m.client_id
+    LEFT JOIN fx f
+      ON f.from_currency = c.meta_currency AND f.to_currency = c.currency
+     AND f.month_start = DATE_TRUNC(m.date_start, MONTH)
+    WHERE m.spend > 0
+  ),
+  -- Google GeoStats campaign x day x country, base currency
+  gads_geo_raw AS (
+    SELECT customer_id, segments_date AS date, CAST(campaign_id AS STRING) AS campaign_id,
+      geographic_view_country_criterion_id AS criterion_id, metrics_cost_micros
+    FROM `oneeighty-warehouse.raw_google_ads.ads_GeoStats_9406261058`
+    UNION ALL
+    SELECT customer_id, segments_date, CAST(campaign_id AS STRING),
+      geographic_view_country_criterion_id, metrics_cost_micros
+    FROM `oneeighty-warehouse.raw_google_ads.ads_GeoStats_5865960448`
+  ),
+  gads_geo AS (
+    SELECT c.client_id, g.date, g.campaign_id,
+      CASE g.criterion_id
+        WHEN 2203 THEN 'CZ' WHEN 2703 THEN 'SK' WHEN 2840 THEN 'US' WHEN 2124 THEN 'CA'
+        WHEN 2276 THEN 'DE' WHEN 2040 THEN 'AT' WHEN 2616 THEN 'PL' WHEN 2348 THEN 'HU'
+        WHEN 2826 THEN 'GB'
+      END AS country,
+      CAST(SUM(g.metrics_cost_micros) / 1e6 AS NUMERIC)
+        * IF(c.gads_currency = c.currency, NUMERIC '1', ANY_VALUE(f.rate)) AS spend_base
+    FROM gads_geo_raw g
+    JOIN clients c ON c.gads_customer_id = g.customer_id
+    LEFT JOIN fx f
+      ON f.from_currency = c.gads_currency AND f.to_currency = c.currency
+     AND f.month_start = DATE_TRUNC(g.date, MONTH)
+    WHERE g.metrics_cost_micros > 0
+    GROUP BY c.client_id, g.date, g.campaign_id, country, c.gads_currency, c.currency
+  ),
+  gads_stg AS (
+    SELECT g.client_id, g.date_start AS date, CAST(g.campaign_id AS STRING) AS campaign_id,
+      ANY_VALUE(g.campaign_name) AS campaign_name,
+      SUM(g.spend) * IF(ANY_VALUE(c.gads_currency) = ANY_VALUE(c.currency), NUMERIC '1', ANY_VALUE(f.rate)) AS spend_base
+    FROM `oneeighty-warehouse.stg.stg_google_ads_campaign_insights` g
+    JOIN clients c ON c.client_id = g.client_id
+    LEFT JOIN fx f
+      ON f.from_currency = c.gads_currency AND f.to_currency = c.currency
+     AND f.month_start = DATE_TRUNC(g.date_start, MONTH)
+    GROUP BY g.client_id, g.date_start, CAST(g.campaign_id AS STRING)
+  ),
+  gads_residual AS (     -- stg spend GeoStats does not cover (normally none)
+    SELECT s.client_id, s.date, s.campaign_id,
+      s.spend_base - IFNULL(SUM(g.spend_base), 0) AS spend_base
+    FROM gads_stg s
+    LEFT JOIN gads_geo g USING (client_id, date, campaign_id)
+    GROUP BY s.client_id, s.date, s.campaign_id, s.spend_base
+    HAVING ABS(s.spend_base - IFNULL(SUM(g.spend_base), 0)) >= 0.01
+  ),
+  -- Campaign names (latest) for both platforms
+  campaign_names AS (
+    SELECT 'meta' AS platform, client_id, campaign_id,
+      ARRAY_AGG(campaign_name IGNORE NULLS ORDER BY date_start DESC LIMIT 1)[SAFE_OFFSET(0)] AS campaign_name
+    FROM `oneeighty-warehouse.stg.stg_meta_campaign_insights`
+    GROUP BY client_id, campaign_id
+    UNION ALL
+    SELECT 'google', client_id, CAST(campaign_id AS STRING),
+      ARRAY_AGG(campaign_name IGNORE NULLS ORDER BY date_start DESC LIMIT 1)[SAFE_OFFSET(0)]
+    FROM `oneeighty-warehouse.stg.stg_google_ads_campaign_insights`
+    GROUP BY client_id, CAST(campaign_id AS STRING)
+  ),
+  -- Every token, not only the first: each non-alphanumeric character is
+  -- doubled so adjacent tokens ("_cz_sk_") each keep their own delimiter.
+  campaign_tokens AS (
+    SELECT n.platform, n.client_id, n.campaign_id, UPPER(t) AS token
+    FROM campaign_names n
+    JOIN rules r ON r.client_id = n.client_id AND r.platform = n.platform
+    CROSS JOIN UNNEST(REGEXP_EXTRACT_ALL(
+      REGEXP_REPLACE(LOWER(IFNULL(n.campaign_name, '')), r'([^a-z0-9])', r'\1\1'), r.pattern)) AS t
+    WHERE UPPER(t) != 'EU'
+  ),
+  overrides AS (
+    SELECT client_id, campaign_id, UPPER(market) AS market
+    FROM `oneeighty-warehouse.ref.campaign_overrides`
+    WHERE platform = 'meta' AND market IS NOT NULL
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY client_id, campaign_id ORDER BY updated_at DESC) = 1
+  ),
+  campaign_markets AS (
+    SELECT n.platform, n.client_id, n.campaign_id,
+      COALESCE(
+        IF(o.market IS NOT NULL, [IF(s1.market IS NOT NULL, o.market, 'OTHER')], NULL),
+        ARRAY_AGG(DISTINCT IF(t.token IS NULL, NULL, IF(s2.market IS NOT NULL, t.token, 'OTHER')) IGNORE NULLS
+                  ORDER BY IF(t.token IS NULL, NULL, IF(s2.market IS NOT NULL, t.token, 'OTHER')))
+      ) AS markets
+    FROM campaign_names n
+    LEFT JOIN overrides o ON n.platform = 'meta' AND o.client_id = n.client_id AND o.campaign_id = n.campaign_id
+    LEFT JOIN sold s1 ON s1.client_id = n.client_id AND s1.market = o.market
+    LEFT JOIN campaign_tokens t ON t.platform = n.platform AND t.client_id = n.client_id AND t.campaign_id = n.campaign_id
+    LEFT JOIN sold s2 ON s2.client_id = t.client_id AND s2.market = t.token
+    GROUP BY n.platform, n.client_id, n.campaign_id, o.market, s1.market
+  ),
+  -- Spend rows that need the name rule: all Meta, Google residual
+  by_name AS (
+    SELECT 'meta' AS platform, client_id, date, campaign_id, spend_base FROM meta_daily
+    UNION ALL
+    SELECT 'google', client_id, date, campaign_id, spend_base FROM gads_residual
+  ),
+  named AS (
+    SELECT b.*, IFNULL(cm.markets, []) AS markets
+    FROM by_name b
+    LEFT JOIN campaign_markets cm
+      ON cm.platform = b.platform AND cm.client_id = b.client_id AND cm.campaign_id = b.campaign_id
+  ),
+  single_rows AS (
+    SELECT n.client_id, n.date, n.platform,
+      CASE
+        WHEN ARRAY_LENGTH(n.markets) = 1 THEN n.markets[OFFSET(0)]
+        WHEN sm.market IS NOT NULL THEN sm.market
+        ELSE 'UNALLOCATED'
+      END AS market,
+      CASE
+        WHEN ARRAY_LENGTH(n.markets) = 1 THEN 'campaign_name'
+        WHEN sm.market IS NOT NULL THEN 'client_default'
+        ELSE 'none'
+      END AS allocation,
+      n.spend_base
+    FROM named n
+    LEFT JOIN single_market sm ON sm.client_id = n.client_id
+    WHERE ARRAY_LENGTH(n.markets) <= 1
+  ),
+  -- Multi-market campaigns: split by new-customer share
+  nc_daily AS (
+    SELECT client_id, order_date AS date, market, COUNTIF(is_new_customer) AS nc
+    FROM `oneeighty-warehouse.mart.market_orders`
+    GROUP BY client_id, order_date, market
+  ),
+  split_rows AS (
+    SELECT n.client_id, n.date, n.platform, n.campaign_id, n.spend_base, m AS market
+    FROM named n, UNNEST(n.markets) AS m
+    WHERE ARRAY_LENGTH(n.markets) > 1
+  ),
+  split_nc AS (
+    SELECT s.client_id, s.date, s.platform, s.campaign_id, s.spend_base, s.market,
+      IFNULL(SUM(IF(d.date = s.date, d.nc, 0)), 0) AS nc_day,
+      IFNULL(SUM(d.nc), 0) AS nc_28
+    FROM split_rows s
+    LEFT JOIN nc_daily d
+      ON d.client_id = s.client_id AND d.market = s.market
+     AND d.date BETWEEN DATE_SUB(s.date, INTERVAL 27 DAY) AND s.date
+    GROUP BY s.client_id, s.date, s.platform, s.campaign_id, s.spend_base, s.market
+  ),
+  split_alloc AS (
+    SELECT client_id, date, platform, market, 'pro_rata' AS allocation,
+      spend_base * CAST(CASE
+        WHEN SUM(nc_day) OVER k > 0 THEN SAFE_DIVIDE(nc_day, SUM(nc_day) OVER k)
+        WHEN SUM(nc_28)  OVER k > 0 THEN SAFE_DIVIDE(nc_28,  SUM(nc_28)  OVER k)
+        ELSE 1 / COUNT(*) OVER k
+      END AS NUMERIC) AS spend_base
+    FROM split_nc
+    WINDOW k AS (PARTITION BY client_id, date, platform, campaign_id)
+  ),
+  geo_rows AS (
+    SELECT g.client_id, g.date, 'google' AS platform,
+      CASE WHEN s.market IS NOT NULL THEN g.country ELSE 'OTHER' END AS market,
+      'geo' AS allocation, g.spend_base
+    FROM gads_geo g
+    LEFT JOIN sold s ON s.client_id = g.client_id AND s.market = g.country
+  ),
+  all_rows AS (
+    SELECT * FROM single_rows
+    UNION ALL SELECT * FROM split_alloc
+    UNION ALL SELECT * FROM geo_rows
+  ),
+  agg AS (
+    SELECT client_id, date, market, platform, allocation, SUM(spend_base) AS spend_base
+    FROM all_rows
+    GROUP BY client_id, date, market, platform, allocation
+  )
+  SELECT
+    a.client_id, a.date, a.market, a.platform,
+    a.spend_base,
+    SAFE_DIVIDE(a.spend_base, CASE
+      WHEN s.local_currency IS NULL THEN NULL
+      WHEN s.local_currency = c.currency THEN NUMERIC '1'
+      ELSE COALESCE(f1.rate, SAFE_DIVIDE(1, f2.rate))
+    END) AS spend_local,
+    a.allocation
+  FROM agg a
+  JOIN clients c ON c.client_id = a.client_id
+  LEFT JOIN sold s ON s.client_id = a.client_id AND s.market = a.market
+  LEFT JOIN fx f1
+    ON f1.from_currency = s.local_currency AND f1.to_currency = c.currency
+   AND f1.month_start = DATE_TRUNC(a.date, MONTH)
+  LEFT JOIN fx f2
+    ON f2.from_currency = c.currency AND f2.to_currency = s.local_currency
+   AND f2.month_start = DATE_TRUNC(a.date, MONTH);
+
+  SET new_rows = (SELECT COUNT(*) FROM `oneeighty-warehouse.mart.market_spend_daily__next`);
+  SET null_spend = (SELECT COUNTIF(spend_base IS NULL) FROM `oneeighty-warehouse.mart.market_spend_daily__next`);
+  -- Allocation must neither lose nor invent money: per client and platform the
+  -- table total equals the stg total (Meta and Google, base currency).
+  SET max_gap = (
+    WITH t AS (
+      SELECT client_id, platform, SUM(spend_base) AS v
+      FROM `oneeighty-warehouse.mart.market_spend_daily__next` GROUP BY 1, 2
+    ),
+    s AS (
+      SELECT m.client_id, 'meta' AS platform,
+        SUM(m.spend * IF(c.meta_currency = c.currency, NUMERIC '1', f.rate)) AS v
+      FROM `oneeighty-warehouse.stg.stg_meta_campaign_insights` m
+      JOIN `oneeighty-warehouse.ref.clients` c ON c.client_id = m.client_id
+      LEFT JOIN `oneeighty-warehouse.ref.fx_rates` f
+        ON f.from_currency = c.meta_currency AND f.to_currency = c.currency
+       AND f.month_start = DATE_TRUNC(m.date_start, MONTH)
+      WHERE m.spend > 0
+      GROUP BY 1
+      UNION ALL
+      SELECT g.client_id, 'google',
+        SUM(g.spend * IF(c.gads_currency = c.currency, NUMERIC '1', f.rate))
+      FROM `oneeighty-warehouse.stg.stg_google_ads_campaign_insights` g
+      JOIN `oneeighty-warehouse.ref.clients` c ON c.client_id = g.client_id
+      LEFT JOIN `oneeighty-warehouse.ref.fx_rates` f
+        ON f.from_currency = c.gads_currency AND f.to_currency = c.currency
+       AND f.month_start = DATE_TRUNC(g.date_start, MONTH)
+      GROUP BY 1
+    )
+    SELECT MAX(ABS(CAST(IFNULL(t.v, 0) - IFNULL(s.v, 0) AS FLOAT64)))
+    FROM s FULL JOIN t USING (client_id, platform));
+
+  ASSERT new_rows > 0 AS 'market_spend_daily: new build is empty';
+  ASSERT null_spend = 0 AS 'market_spend_daily: spend without fx rate (ref.fx_rates missing a month)';
+  ASSERT max_gap < 1 AS 'market_spend_daily: allocated spend differs from the stg platform totals';
+
+  CREATE OR REPLACE TABLE `oneeighty-warehouse.mart.market_spend_daily`
+  COPY `oneeighty-warehouse.mart.market_spend_daily__next`;
+  ALTER TABLE `oneeighty-warehouse.mart.market_spend_daily`
+  SET OPTIONS (description = 'Markets: paid spend per client, day, market (ISO-2, OTHER or UNALLOCATED), platform (meta | google), allocation (geo | campaign_name | pro_rata | client_default | none), base and local currency. Built by mart.sp_refresh_market_spend (migration 291).');
+  DROP TABLE `oneeighty-warehouse.mart.market_spend_daily__next`;
+END;
+
+CALL `oneeighty-warehouse.mart.sp_refresh_market_spend`();

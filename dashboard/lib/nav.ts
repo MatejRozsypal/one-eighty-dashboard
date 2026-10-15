@@ -29,6 +29,7 @@ export type NavIconKey =
   | "orders"
   | "products"
   | "unit-economics"
+  | "markets"
   | "stock"
   | "catalogue"
   | "buying"
@@ -106,6 +107,7 @@ export const NAV: NavGroup[] = [
       { label: "Orders", href: "/orders", icon: "orders" },
       { label: "Products", href: "/products", icon: "products" },
       { label: "Unit economics", href: "/unit-economics", icon: "unit-economics" },
+      { label: "Markets", href: "/markets", icon: "markets" },
     ],
   },
   {
